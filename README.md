@@ -27,7 +27,7 @@ FolioNote is designed specifically for STEM students, researchers, and engineers
 While the public GitHub repository is being structured for formal issue tracking and pull requests, we are collecting feedback, bug reports, and roadmap requests directly via Google Forms and live community tracking sheets:
 
 * 📝 **[Submit a Feature Request (Google Form)](https://docs.google.com/forms/d/e/1FAIpQLScfGA2J0oJ1Z1QIIk9O9DbA_I8v5NRboZD7fWB_C-n-vjFH6Q/viewform)** *(Replace with your Google Form URL)*
-* 📊 **[View the Public Roadmap & Request Tracker (Google Sheet)](#)** *(Replace with your Google Sheet URL)*
+* 📊 **[View the Public Roadmap & Request Tracker (Google Sheet)](https://docs.google.com/spreadsheets/d/1HbjkbjFGxSBP-3_nPj3hyaNFvNMIcEM9qTW_fi1OgAY/edit?usp=sharing)** *(Replace with your Google Sheet URL)*
 
 ---
 
