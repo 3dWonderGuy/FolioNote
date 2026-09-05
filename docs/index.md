@@ -23,86 +23,29 @@ Traditional note-taking tools force your thoughts into rigid constraints: fixed 
 
 ## ✨ What Makes FolioNote Special
 
-<div class="grid cards" markdown>
+* ✍️ **Paper-Like Inking**  
+  Writing feels natural and responsive. The pen engine captures your handwriting smoothly with zero noticeable lag, filtering out jitter so strokes always look clean.
 
--   :material-pen: **Paper-Like Inking**
-    
-    ---
-    
-    Writing feels natural, instant, and fluid. The pen engine responds to your stylus with zero noticeable delay and smooths out jitters so handwriting always looks crisp and clean.
+* 📁 **Effortless Organization**  
+  Keep projects structured without losing freeform flexibility. Group related ideas into clear **Notebooks**, **Sections**, and **Pages** that are easy to browse and rearrange.
 
--   :material-folder-multiple: **Effortless Organization**
-    
-    ---
-    
-    Keep your thoughts structured without losing flexibility. Group related ideas into clear **Notebooks**, **Sections**, and **Pages**, making even massive projects easy to navigate.
+* 🔍 **Notebook-Wide Search**  
+  Find what you need instantly. Search across all your notebooks and pages at once to quickly pull up notes, headings, and topics.
 
--   :material-magnify: **Notebook-Wide Search**
-    
-    ---
-    
-    Find what you need in seconds. Search across all your notebooks and pages instantly, whether you're looking for typed text, headings, or organized topics.
+* 📄 **Markdown & PDF Import / Export**  
+  Import PDFs directly onto the canvas to annotate and mark them up, or export your work cleanly into PDF and standard Markdown to share with anyone.
 
--   :material-file-document-outline: **Flexible Import & Export**
-    
-    ---
-    
-    Your notes aren't trapped. Import existing PDF documents to annotate directly on the canvas, or export your work cleanly to Markdown and PDF to share with anyone.
+* ♾️ **Truly Infinite Canvas**  
+  Never run out of room mid-thought. Pan and zoom across massive canvases smoothly without stutter or frame drops.
 
--   :material-infinity: **Truly Infinite Canvas**
-    
-    ---
-    
-    Never run out of room or get forced onto the next page mid-thought. Pan and zoom infinitely in any direction with stutter-free navigation, no matter how much you write or draw.
-
--   :material-shield-lock-outline: **Private & Local-First**
-    
-    ---
-    
-    Your data stays on your device. Everything saves locally in open, portable formats without mandatory logins, subscriptions, or cloud lock-in.
-
-</div>
-
----
-
-## 🛠️ Technology Stack at a Glance
-
-| Layer | Technology | Purpose |
-|---|---|---|
-| **Language Core** | C++20 | Native performance, memory safety via RAII, and deterministic execution. |
-| **Raster Engine** | Blend2D | High-speed, JIT-accelerated software 2D vector graphics. |
-| **User Interface** | Dear ImGui | Immediate-mode UI orchestration, telemetry HUDs, and modular toolbars. |
-| **Windowing & GL** | SDL3 + OpenGL 3.3 | Cross-platform event ingestion, DPI awareness, and frame presentation. |
-| **Data & Storage** | SQLite3 + zlib | Local-first relational document hierarchy and compressed vector binary storage. |
+* 🔒 **Private & Local-First**  
+  Everything is stored right on your device. No required accounts, no forced subscriptions, and no cloud dependency.
 
 ---
 
 ## 🚀 Explore the Documentation
 
-<div class="grid cards" markdown>
-
--   :material-layers-triple: **[Architecture Overview](architecture/overview.md)**
-    
-    ---
-    
-    Discover the internal subsystems, decoupled execution passes, and the component graph.
-
--   :material-calculator-variant: **[Mathematics & Foundations](math/overview.md)**
-    
-    ---
-    
-    Dive into the geometry behind stroke polygon construction, spline smoothing, and R-Tree spatial partitioning.
-
--   :material-hammer-wrench: **[Build & Setup Guide](dev/build.md)**
-    
-    ---
-    
-    Step-by-step instructions for compiling FolioNote on desktop systems and Android targets.
-
--   :material-git: **[Contributing Guidelines](dev/contributing.md)**
-    
-    ---
-    
-    Branching rules, nametag standards, and pull request workflows targeting the `develop` branch.
-
-</div>
+* 📐 **[Architecture Overview](architecture/overview.md)** — Core subsystems, runtime components, and data flow pipelines.
+* 🔬 **[Mathematics & Foundations](math/overview.md)** — Stroke geometry, spline smoothing algorithms, and R-Tree spatial partitioning.
+* 🛠️ **[Build & Setup Guide](dev/build.md)** — Step-by-step instructions for compiling on desktop systems and Android.
+* 🤝 **[Contributing Guidelines](dev/contributing.md)** — Code conventions, branching workflows, and pull request guidelines.
