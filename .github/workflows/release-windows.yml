@@ -42,7 +42,8 @@ jobs:
         run: |
           cmake -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CXX_STANDARD=20
+            -DCMAKE_CXX_STANDARD=20 `
+            -DBLEND2D_STATIC=ON
 
       - name: Build Executable
         run: |
@@ -52,7 +53,14 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/FolioNote
+
+          # Copy main executable
           Copy-Item "build/bin/FolioNote.exe" -Destination "dist/FolioNote/"
+
+          # Copy all runtime DLLs (SDL3.dll, blend2d.dll if shared, etc.)
+          Get-ChildItem -Path "build" -Filter "*.dll" -Recurse | Copy-Item -Destination "dist/FolioNote/" -Force
+
+          # Copy assets, config, and license
           if (Test-Path "assets") { Copy-Item -Recurse "assets" -Destination "dist/FolioNote/assets" }
           if (Test-Path "config") { Copy-Item -Recurse "config" -Destination "dist/FolioNote/config" }
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination "dist/FolioNote/" }
