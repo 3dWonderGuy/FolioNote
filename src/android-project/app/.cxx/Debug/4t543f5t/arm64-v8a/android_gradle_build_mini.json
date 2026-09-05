@@ -1,0 +1,793 @@
+{
+  "buildFiles": [
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\algorithm\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\base\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\cleanup\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\container\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\copts\\AbseilConfigureCopts.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\copts\\GENERATED_AbseilCopts.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\crc\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\debugging\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\flags\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\functional\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\hash\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\log\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\memory\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\meta\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\numeric\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\profiling\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\random\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\status\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\strings\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\synchronization\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\time\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\types\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\absl\\utility\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\CMake\\AbseilDll.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\abseil-cpp\\CMake\\AbseilHelpers.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\asmjit\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\blend2d\\blend2d-config.cmake.in",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\blend2d\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\ink-stroke-modeler\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\ink-stroke-modeler\\cmake\\InkBazelEquivalents.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\ink-stroke-modeler\\ink_stroke_modeler\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\ink-stroke-modeler\\ink_stroke_modeler\\internal\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\ink-stroke-modeler\\ink_stroke_modeler\\internal\\prediction\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\ink-stroke-modeler\\ink_stroke_modeler\\internal\\prediction\\kalman_filter\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\lunasvg\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\lunasvg\\cmake\\lunasvgConfig.cmake.in",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\lunasvg\\examples\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\lunasvg\\plutovg\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\lunasvg\\plutovg\\cmake\\plutovgConfig.cmake.in",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\3rdparty.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\FindLibUSB.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\GetGitRevisionDescription.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\macros.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\PreseedDOSCache.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\PreseedEmscriptenCache.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\PreseedHaikuCache.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\PreseedMSVCCache.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\PreseedNokiaNGageCache.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\SDL3Config.cmake.in",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\sdlchecks.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\sdlcommands.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\sdlcompilers.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\sdlcpu.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\sdlmanpages.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\cmake\\sdlplatform.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\include\\build_config\\SDL_build_config.h.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL\\include\\build_config\\SDL_revision.h.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL_image\\CMakeLists.txt",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL_image\\cmake\\Findwebp.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL_image\\cmake\\GetGitRevisionDescription.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL_image\\cmake\\PrivateSdlFunctions.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL_image\\cmake\\sdlcpu.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL_image\\cmake\\sdlmanpages.cmake",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\third_party\\SDL_image\\cmake\\sdlplatform.cmake"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\odyss\\AppData\\Local\\Android\\Sdk\\cmake\\3.30.3\\bin\\ninja.exe",
+      "-C",
+      "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\odyss\\AppData\\Local\\Android\\Sdk\\cmake\\3.30.3\\bin\\ninja.exe",
+    "-C",
+    "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "ink_stroke_modeler_stylus_state_modeler::@0d8fe7679b4005f56759": {
+      "artifactName": "ink_stroke_modeler_stylus_state_modeler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_stylus_state_modeler.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_nullguard::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_nullguard",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_nullguard.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_utils::@0d8fe7679b4005f56759": {
+      "artifactName": "ink_stroke_modeler_utils",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_utils.a",
+      "runtimeFiles": []
+    },
+    "absl_strings::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_strings",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_strings.a",
+      "runtimeFiles": []
+    },
+    "absl_die_if_null::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_die_if_null",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_die_if_null.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_log_sink_set::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_log_sink_set",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_log_sink_set.a",
+      "runtimeFiles": []
+    },
+    "absl_statusor::@eec4915894d7ef1676bd": {
+      "artifactName": "absl_statusor",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_statusor.a",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_distribution_test_util::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_distribution_test_util",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_distribution_test_util.a",
+      "runtimeFiles": []
+    },
+    "absl_strerror::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_strerror",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_strerror.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_internal_types::@0d8fe7679b4005f56759": {
+      "artifactName": "ink_stroke_modeler_internal_types",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_internal_types.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_usage::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_usage",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_usage.a",
+      "runtimeFiles": []
+    },
+    "blend2d::@11a51e8129d7a0bfaa43": {
+      "artifactName": "blend2d",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libblend2d.a",
+      "runtimeFiles": []
+    },
+    "absl_raw_hash_set::@49ad4cc58ca2b33d3cb1": {
+      "artifactName": "absl_raw_hash_set",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_raw_hash_set.a",
+      "runtimeFiles": []
+    },
+    "absl_debugging_internal::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_debugging_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_debugging_internal.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_validation::@0d8fe7679b4005f56759": {
+      "artifactName": "ink_stroke_modeler_validation",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_matrix::@49632fa0d4f7292f4e30": {
+      "artifactName": "ink_stroke_modeler_matrix",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "absl_vlog_config_internal::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_vlog_config_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_vlog_config_internal.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_input_predictor::@f93ad80a16d3662bc20a": {
+      "artifactName": "ink_stroke_modeler_input_predictor",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_loop_contraction_mitigation_modeler::@0d8fe7679b4005f56759": {
+      "artifactName": "ink_stroke_modeler_loop_contraction_mitigation_modeler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_loop_contraction_mitigation_modeler.a",
+      "runtimeFiles": []
+    },
+    "absl_raw_logging_internal::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_raw_logging_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_raw_logging_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_format::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_format",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_format.a",
+      "runtimeFiles": []
+    },
+    "absl_log_severity::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_log_severity",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_severity.a",
+      "runtimeFiles": []
+    },
+    "absl_stacktrace::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_stacktrace",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_stacktrace.a",
+      "runtimeFiles": []
+    },
+    "absl_base_cpu_detect::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_base_cpu_detect",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_base_cpu_detect.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_marshalling::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_marshalling",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_marshalling.a",
+      "runtimeFiles": []
+    },
+    "absl_throw_delegate::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_throw_delegate",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_throw_delegate.a",
+      "runtimeFiles": []
+    },
+    "absl_log_flags::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_flags",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_flags.a",
+      "runtimeFiles": []
+    },
+    "absl_source_location::@91b7f7e4da4a6a5cf896": {
+      "artifactName": "absl_source_location",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_source_location.a",
+      "runtimeFiles": []
+    },
+    "absl_status_builder::@eec4915894d7ef1676bd": {
+      "artifactName": "absl_status_builder",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_status_builder.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_check_op::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_check_op",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_check_op.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_stroke_modeler::@e8c17e6131ee074d620e": {
+      "artifactName": "ink_stroke_modeler_stroke_modeler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_stroke_modeler.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_parse::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_parse",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_parse.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_commandlineflag_internal::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_commandlineflag_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_commandlineflag_internal.a",
+      "runtimeFiles": []
+    },
+    "lunasvg::@f9db7a9eac5f8b174c1a": {
+      "artifactName": "lunasvg",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\liblunasvg.a",
+      "runtimeFiles": []
+    },
+    "absl_synchronization::@f8dca903cb46e5e9bef2": {
+      "artifactName": "absl_synchronization",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_synchronization.a",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_entropy_pool::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_entropy_pool",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_entropy_pool.a",
+      "runtimeFiles": []
+    },
+    "absl_log_globals::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_globals",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_globals.a",
+      "runtimeFiles": []
+    },
+    "svg2png::@1dc2678109a4c3090142": {
+      "artifactName": "svg2png",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\bin\\svg2png",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_randen_hwaes::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_randen_hwaes",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_randen_hwaes.a",
+      "runtimeFiles": []
+    },
+    "absl_tracing_internal::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_tracing_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_tracing_internal.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_stroke_end_predictor::@f93ad80a16d3662bc20a": {
+      "artifactName": "ink_stroke_modeler_stroke_end_predictor",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_stroke_end_predictor.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_config::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_config",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_config.a",
+      "runtimeFiles": []
+    },
+    "absl_cord_internal::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_cord_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_cord_internal.a",
+      "runtimeFiles": []
+    },
+    "SDL3-static::@7d0d1525ee0fd774d106": {
+      "artifactName": "SDL3-static",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libSDL3.a",
+      "runtimeFiles": []
+    },
+    "absl_cord::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_cord",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_cord.a",
+      "runtimeFiles": []
+    },
+    "absl_int128::@9d8e9017d0346130c5af": {
+      "artifactName": "absl_int128",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_int128.a",
+      "runtimeFiles": []
+    },
+    "absl_cordz_handle::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_cordz_handle",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_cordz_handle.a",
+      "runtimeFiles": []
+    },
+    "absl_city::@e82b4f9cfb0ccfacbdfd": {
+      "artifactName": "absl_city",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_city.a",
+      "runtimeFiles": []
+    },
+    "absl_str_format_internal::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_str_format_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_str_format_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_crc32c::@e7b73a99dc329af715ea": {
+      "artifactName": "absl_crc32c",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_crc32c.a",
+      "runtimeFiles": []
+    },
+    "absl_scoped_set_env::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_scoped_set_env",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_scoped_set_env.a",
+      "runtimeFiles": []
+    },
+    "absl_generic_printer_internal::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_generic_printer_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_generic_printer_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_graphcycles_internal::@f8dca903cb46e5e9bef2": {
+      "artifactName": "absl_graphcycles_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_graphcycles_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_randen_slow::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_randen_slow",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_randen_slow.a",
+      "runtimeFiles": []
+    },
+    "plutovg::@353c9238554b049cb5da": {
+      "artifactName": "plutovg",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libplutovg.a",
+      "runtimeFiles": []
+    },
+    "SDL3_test::@7d0d1525ee0fd774d106": {
+      "artifactName": "SDL3_test",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libSDL3_test.a",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_randen_hwaes_impl::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_randen_hwaes_impl",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_randen_hwaes_impl.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_program_name::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_program_name",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_program_name.a",
+      "runtimeFiles": []
+    },
+    "absl_log_entry::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_entry",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_entry.a",
+      "runtimeFiles": []
+    },
+    "absl_hashtablez_sampler::@49ad4cc58ca2b33d3cb1": {
+      "artifactName": "absl_hashtablez_sampler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_hashtablez_sampler.a",
+      "runtimeFiles": []
+    },
+    "absl_demangle_rust::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_demangle_rust",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_demangle_rust.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_reflection::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_reflection",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_reflection.a",
+      "runtimeFiles": []
+    },
+    "absl_periodic_sampler::@610112b8222b7e6b2b6f": {
+      "artifactName": "absl_periodic_sampler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_periodic_sampler.a",
+      "runtimeFiles": []
+    },
+    "absl_hardening::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_hardening",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_hardening.a",
+      "runtimeFiles": []
+    },
+    "absl_time::@b4524c795b0f97a08e67": {
+      "artifactName": "absl_time",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_time.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_wobble_smoother::@0d8fe7679b4005f56759": {
+      "artifactName": "ink_stroke_modeler_wobble_smoother",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_wobble_smoother.a",
+      "runtimeFiles": []
+    },
+    "absl_spinlock_wait::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_spinlock_wait",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_spinlock_wait.a",
+      "runtimeFiles": []
+    },
+    "absl_status::@eec4915894d7ef1676bd": {
+      "artifactName": "absl_status",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_status.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_kalman_predictor::@f93ad80a16d3662bc20a": {
+      "artifactName": "ink_stroke_modeler_kalman_predictor",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_kalman_predictor.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_private_handle_accessor::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_private_handle_accessor",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_private_handle_accessor.a",
+      "runtimeFiles": []
+    },
+    "absl_civil_time::@b4524c795b0f97a08e67": {
+      "artifactName": "absl_civil_time",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_civil_time.a",
+      "runtimeFiles": []
+    },
+    "absl_malloc_internal::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_malloc_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_malloc_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_examine_stack::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_examine_stack",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_examine_stack.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_proto::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_proto",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_proto.a",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_platform::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_platform",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_platform.a",
+      "runtimeFiles": []
+    },
+    "absl_hashtable_profiler::@610112b8222b7e6b2b6f": {
+      "artifactName": "absl_hashtable_profiler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_hashtable_profiler.a",
+      "runtimeFiles": []
+    },
+    "absl_random_seed_sequences::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_seed_sequences",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_seed_sequences.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_globals::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_globals",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_globals.a",
+      "runtimeFiles": []
+    },
+    "absl_kernel_timeout_internal::@f8dca903cb46e5e9bef2": {
+      "artifactName": "absl_kernel_timeout_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_kernel_timeout_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_log_initialize::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_initialize",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_initialize.a",
+      "runtimeFiles": []
+    },
+    "TestApp::@6890427a1f51a3e7e1df": {
+      "artifactName": "TestApp",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\bin\\TestApp",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_fnmatch::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_fnmatch",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_fnmatch.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_structured_proto::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_structured_proto",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_structured_proto.a",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_seed_material::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_seed_material",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_seed_material.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_kalman_filter::@49632fa0d4f7292f4e30": {
+      "artifactName": "ink_stroke_modeler_kalman_filter",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_kalman_filter.a",
+      "runtimeFiles": []
+    },
+    "absl_exponential_biased::@610112b8222b7e6b2b6f": {
+      "artifactName": "absl_exponential_biased",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_exponential_biased.a",
+      "runtimeFiles": []
+    },
+    "absl_leak_check::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_leak_check",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_leak_check.a",
+      "runtimeFiles": []
+    },
+    "absl_profile_builder::@610112b8222b7e6b2b6f": {
+      "artifactName": "absl_profile_builder",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_profile_builder.a",
+      "runtimeFiles": []
+    },
+    "absl_utf8_for_code_point::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_utf8_for_code_point",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_utf8_for_code_point.a",
+      "runtimeFiles": []
+    },
+    "absl_crc_internal::@e7b73a99dc329af715ea": {
+      "artifactName": "absl_crc_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_crc_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_conditions::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_conditions",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_conditions.a",
+      "runtimeFiles": []
+    },
+    "absl_time_zone::@b4524c795b0f97a08e67": {
+      "artifactName": "absl_time_zone",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_time_zone.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_types::@e8c17e6131ee074d620e": {
+      "artifactName": "ink_stroke_modeler_types",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_types.a",
+      "runtimeFiles": []
+    },
+    "absl_symbolize::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_symbolize",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_symbolize.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_params::@e8c17e6131ee074d620e": {
+      "artifactName": "ink_stroke_modeler_params",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_params.a",
+      "runtimeFiles": []
+    },
+    "absl_strings_internal::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_strings_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_strings_internal.a",
+      "runtimeFiles": []
+    },
+    "sqlite3::@6890427a1f51a3e7e1df": {
+      "artifactName": "sqlite3",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libsqlite3.a",
+      "runtimeFiles": []
+    },
+    "absl_failure_signal_handler::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_failure_signal_handler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_failure_signal_handler.a",
+      "runtimeFiles": []
+    },
+    "absl_poison::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_poison",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_poison.a",
+      "runtimeFiles": []
+    },
+    "SDL3_image-static::@40ecedb05329aa4c37c2": {
+      "artifactName": "SDL3_image-static",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libSDL3_image.a",
+      "runtimeFiles": []
+    },
+    "absl_log_internal_message::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_internal_message",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_internal_message.a",
+      "runtimeFiles": []
+    },
+    "absl_random_seed_gen_exception::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_seed_gen_exception",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_seed_gen_exception.a",
+      "runtimeFiles": []
+    },
+    "absl_random_distributions::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_distributions",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_distributions.a",
+      "runtimeFiles": []
+    },
+    "absl_random_internal_randen::@3722040ece9e7feeb0a1": {
+      "artifactName": "absl_random_internal_randen",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_random_internal_randen.a",
+      "runtimeFiles": []
+    },
+    "absl_decode_rust_punycode::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_decode_rust_punycode",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_decode_rust_punycode.a",
+      "runtimeFiles": []
+    },
+    "ink_stroke_modeler_position_modeler::@0d8fe7679b4005f56759": {
+      "artifactName": "ink_stroke_modeler_position_modeler",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libink_stroke_modeler_position_modeler.a",
+      "runtimeFiles": []
+    },
+    "absl_hash::@e82b4f9cfb0ccfacbdfd": {
+      "artifactName": "absl_hash",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_hash.a",
+      "runtimeFiles": []
+    },
+    "absl_cordz_sample_token::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_cordz_sample_token",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_cordz_sample_token.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_usage_internal::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_usage_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_usage_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_crc_cord_state::@e7b73a99dc329af715ea": {
+      "artifactName": "absl_crc_cord_state",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_crc_cord_state.a",
+      "runtimeFiles": []
+    },
+    "absl_log_sink::@ec0c5076da8ab1df7c81": {
+      "artifactName": "absl_log_sink",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_log_sink.a",
+      "runtimeFiles": []
+    },
+    "absl_base::@649cb5ab055927a76ab5": {
+      "artifactName": "absl_base",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_base.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_internal::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_cordz_functions::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_cordz_functions",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_cordz_functions.a",
+      "runtimeFiles": []
+    },
+    "absl_demangle_internal::@29ce828be0197ec6dd61": {
+      "artifactName": "absl_demangle_internal",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_demangle_internal.a",
+      "runtimeFiles": []
+    },
+    "absl_cordz_info::@cadd5db28f0587d4097f": {
+      "artifactName": "absl_cordz_info",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_cordz_info.a",
+      "runtimeFiles": []
+    },
+    "absl_flags_commandlineflag::@4e66689cfd0f0cabb9c5": {
+      "artifactName": "absl_flags_commandlineflag",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_flags_commandlineflag.a",
+      "runtimeFiles": []
+    },
+    "absl_clock_interface::@b4524c795b0f97a08e67": {
+      "artifactName": "absl_clock_interface",
+      "abi": "arm64-v8a",
+      "output": "C:\\SoftwareDevelopment\\UADE-Universal-Application-Development-Enviroment\\UniversalFrameworkapplication\\src\\android-project\\app\\.cxx\\Debug\\4t543f5t\\arm64-v8a\\lib\\libabsl_clock_interface.a",
+      "runtimeFiles": []
+    }
+  }
+}

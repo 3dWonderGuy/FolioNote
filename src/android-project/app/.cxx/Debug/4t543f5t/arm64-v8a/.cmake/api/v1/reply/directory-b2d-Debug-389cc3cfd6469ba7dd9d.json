@@ -1,0 +1,677 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"third_party/blend2d/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1001,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1008,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1017,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 1023,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"lib/libblend2d.a"
+			],
+			"targetId" : "blend2d::@11a51e8129d7a0bfaa43",
+			"targetIndex" : 98,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/blend2d",
+			"exportName" : "blend2d-targets",
+			"exportTargets" : 
+			[
+				{
+					"id" : "blend2d::@11a51e8129d7a0bfaa43",
+					"index" : 98
+				}
+			],
+			"paths" : 
+			[
+				"b2d/CMakeFiles/Export/a5cf91491401f5de375ff0918bb48814/blend2d-targets.cmake"
+			],
+			"type" : "export"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/blend2d",
+			"paths" : 
+			[
+				"src/android-project/app/.cxx/Debug/4t543f5t/arm64-v8a/b2d/blend2d-config.cmake"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 4,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/blend2d.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 5,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/blend2d-debug.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 6,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/blend2d-impl.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 7,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/api.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 8,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/api-impl.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 9,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/array.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 10,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/bitarray.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 11,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/bitset.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 12,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/context.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 13,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/filesystem.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 14,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/font.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 15,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/fontdata.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 16,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/fontdefs.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 17,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/fontface.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 18,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/fontfeaturesettings.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 19,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/fontmanager.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 20,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/fontvariationsettings.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 21,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/format.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 22,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/geometry.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 23,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/glyphbuffer.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 24,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/glyphrun.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 25,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/gradient.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 26,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/image.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 27,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/imagecodec.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 28,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/imagedecoder.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 29,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/imageencoder.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 30,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/matrix.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 31,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/object.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 32,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/path.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 33,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/pattern.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 34,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/pixelconverter.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 35,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/random.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 36,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/rgba.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 37,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/runtime.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 38,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/runtimescope.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 39,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/string.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 40,
+			"component" : "Unspecified",
+			"destination" : "include/blend2d/core",
+			"paths" : 
+			[
+				"third_party/blend2d/blend2d/core/var.h"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "b2d",
+		"source" : "third_party/blend2d"
+	}
+}

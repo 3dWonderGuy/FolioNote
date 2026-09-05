@@ -1,0 +1,345 @@
+{
+	"archive" : {},
+	"artifacts" : 
+	[
+		{
+			"path" : "lib/libink_stroke_modeler_kalman_predictor.a"
+		}
+	],
+	"backtrace" : 2,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"ink_cc_library",
+			"target_link_libraries",
+			"include_directories"
+		],
+		"files" : 
+		[
+			"third_party/ink-stroke-modeler/cmake/InkBazelEquivalents.cmake",
+			"third_party/ink-stroke-modeler/ink_stroke_modeler/internal/prediction/CMakeLists.txt",
+			"third_party/ink-stroke-modeler/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 1
+			},
+			{
+				"command" : 1,
+				"file" : 1,
+				"line" : 28,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 37,
+				"parent" : 1
+			},
+			{
+				"command" : 2,
+				"file" : 0,
+				"line" : 38,
+				"parent" : 1
+			},
+			{
+				"file" : 2
+			},
+			{
+				"command" : 3,
+				"file" : 2,
+				"line" : 125,
+				"parent" : 4
+			}
+		]
+	},
+	"compileGroups" : 
+	[
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -std=c++20 -fPIC"
+				},
+				{
+					"backtrace" : 3,
+					"fragment" : "-pthread"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 5,
+					"path" : "C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/ink-stroke-modeler"
+				},
+				{
+					"backtrace" : 3,
+					"path" : "C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/abseil-cpp"
+				}
+			],
+			"language" : "CXX",
+			"languageStandard" : 
+			{
+				"backtraces" : 
+				[
+					3
+				],
+				"standard" : "20"
+			},
+			"sourceIndexes" : 
+			[
+				0
+			],
+			"sysroot" : 
+			{
+				"path" : "C:/Android/android-ndk-r27d/toolchains/llvm/prebuilt/windows-x86_64/sysroot"
+			}
+		}
+	],
+	"dependencies" : 
+	[
+		{
+			"backtrace" : 3,
+			"id" : "absl_base_cpu_detect::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_hardening::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_log_severity::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_raw_logging_internal::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_base::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_spinlock_wait::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_throw_delegate::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_malloc_internal::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_tracing_internal::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_strerror::@649cb5ab055927a76ab5"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_crc_internal::@e7b73a99dc329af715ea"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_crc32c::@e7b73a99dc329af715ea"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_crc_cord_state::@e7b73a99dc329af715ea"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_demangle_internal::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_decode_rust_punycode::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_symbolize::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_stacktrace::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_debugging_internal::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_leak_check::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_demangle_rust::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_utf8_for_code_point::@29ce828be0197ec6dd61"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_hash::@e82b4f9cfb0ccfacbdfd"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_city::@e82b4f9cfb0ccfacbdfd"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_int128::@9d8e9017d0346130c5af"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_exponential_biased::@610112b8222b7e6b2b6f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_statusor::@eec4915894d7ef1676bd"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_status::@eec4915894d7ef1676bd"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_strings::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_strings_internal::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_cordz_functions::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_str_format_internal::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_cord_internal::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_cordz_info::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_cordz_handle::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_cord::@cadd5db28f0587d4097f"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_source_location::@91b7f7e4da4a6a5cf896"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_validation::@0d8fe7679b4005f56759"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_internal_types::@0d8fe7679b4005f56759"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_params::@e8c17e6131ee074d620e"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_types::@e8c17e6131ee074d620e"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_utils::@0d8fe7679b4005f56759"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_input_predictor::@f93ad80a16d3662bc20a"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_kalman_filter::@49632fa0d4f7292f4e30"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "ink_stroke_modeler_matrix::@49632fa0d4f7292f4e30"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_time::@b4524c795b0f97a08e67"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_synchronization::@f8dca903cb46e5e9bef2"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_graphcycles_internal::@f8dca903cb46e5e9bef2"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_kernel_timeout_internal::@f8dca903cb46e5e9bef2"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_civil_time::@b4524c795b0f97a08e67"
+		},
+		{
+			"backtrace" : 3,
+			"id" : "absl_time_zone::@b4524c795b0f97a08e67"
+		}
+	],
+	"id" : "ink_stroke_modeler_kalman_predictor::@f93ad80a16d3662bc20a",
+	"name" : "ink_stroke_modeler_kalman_predictor",
+	"nameOnDisk" : "libink_stroke_modeler_kalman_predictor.a",
+	"paths" : 
+	{
+		"build" : "ink_sm/ink_stroke_modeler/internal/prediction",
+		"source" : "third_party/ink-stroke-modeler/ink_stroke_modeler/internal/prediction"
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "Source Files",
+			"sourceIndexes" : 
+			[
+				0
+			]
+		},
+		{
+			"name" : "Header Files",
+			"sourceIndexes" : 
+			[
+				1
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 2,
+			"compileGroupIndex" : 0,
+			"path" : "third_party/ink-stroke-modeler/ink_stroke_modeler/internal/prediction/kalman_predictor.cc",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 2,
+			"path" : "third_party/ink-stroke-modeler/ink_stroke_modeler/internal/prediction/kalman_predictor.h",
+			"sourceGroupIndex" : 1
+		}
+	],
+	"type" : "STATIC_LIBRARY"
+}
