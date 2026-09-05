@@ -37,6 +37,11 @@ flowchart TD
 * **Cache Efficiency:** Viewport traversal iterates tightly packed bounding boxes in CPU cache lines without loading heavy stroke coordinate arrays into memory.
 * **Query Complexity:** Spatial search scales at $O(\log N)$ on average, keeping frame render loops at 120+ FPS regardless of total canvas scale.
 
+---
+
+## 🎮 Interactive R-Tree Spatial Explorer
+
+Interact directly with the spatial indexing engine below. Double-click to create note bounding boxes, left-click drag to run viewport range intersection queries, or right-click drag to relocate notes:
 <div style="position: relative; width: 100%; height: 600px; border-radius: 12px; overflow: hidden; border: 1px solid #334155; margin: 20px 0;">
   <iframe 
     src="../interactive/rtree-demo.html" 
