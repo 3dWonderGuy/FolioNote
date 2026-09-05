@@ -1,0 +1,118 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"third_party/lunasvg/plutovg/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 99,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 104,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 111,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 117,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 164,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include/plutovg",
+			"paths" : 
+			[
+				"third_party/lunasvg/plutovg/include/plutovg.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"lib/libplutovg.a"
+			],
+			"targetId" : "plutovg::@353c9238554b049cb5da",
+			"targetIndex" : 115,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/plutovg",
+			"exportName" : "plutovgTargets",
+			"exportTargets" : 
+			[
+				{
+					"id" : "plutovg::@353c9238554b049cb5da",
+					"index" : 115
+				}
+			],
+			"paths" : 
+			[
+				"lsvg/plutovg/CMakeFiles/Export/f6ef2f3f18222bc8084975f00f853305/plutovgTargets.cmake"
+			],
+			"type" : "export"
+		},
+		{
+			"backtrace" : 4,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/plutovg",
+			"paths" : 
+			[
+				"src/android-project/app/.cxx/Debug/4t543f5t/arm64-v8a/lsvg/plutovg/plutovgConfig.cmake",
+				"src/android-project/app/.cxx/Debug/4t543f5t/arm64-v8a/lsvg/plutovg/plutovgConfigVersion.cmake"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 5,
+			"component" : "Unspecified",
+			"destination" : "lib/pkgconfig",
+			"paths" : 
+			[
+				"src/android-project/app/.cxx/Debug/4t543f5t/arm64-v8a/lsvg/plutovg/plutovg.pc"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "lsvg/plutovg",
+		"source" : "third_party/lunasvg/plutovg"
+	}
+}
