@@ -26,11 +26,14 @@ jobs:
         id: get_version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          VERSION="${VERSION#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            VERSION="${VERSION#v}"
+          else
             VERSION="0.1.0-alpha"
           fi
+          # Strip any illegal characters for Windows filenames
+          VERSION=$(echo "$VERSION" | tr '/' '-' | tr -cd '[:alnum:].-_')
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Set up MSVC environment
@@ -61,7 +64,7 @@ jobs:
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
         with:
           path: installer/FolioNoteSetup.iss
-          options: /DMyAppVersion=${{ steps.get_version.outputs.VERSION }}
+          options: '/DMyAppVersion="${{ steps.get_version.outputs.VERSION }}"'
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
