@@ -32,7 +32,6 @@ jobs:
           else
             VERSION="0.1.0-alpha"
           fi
-          # Strip any illegal characters for Windows filenames
           VERSION=$(echo "$VERSION" | tr '/' '-' | tr -cd '[:alnum:].-_')
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
@@ -64,7 +63,16 @@ jobs:
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
         with:
           path: installer/FolioNoteSetup.iss
-          options: '/DMyAppVersion="${{ steps.get_version.outputs.VERSION }}"'
+          options: /DMyAppVersion=${{ steps.get_version.outputs.VERSION }}
+
+      - name: Upload Artifacts to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: FolioNote-Windows-Build
+          path: |
+            dist-installer/*.exe
+            FolioNote-Windows-Portable.zip
+          retention-days: 7
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
