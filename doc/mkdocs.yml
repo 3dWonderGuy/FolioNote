@@ -1,0 +1,50 @@
+site_name: FolioNote Engine Docs
+site_url: https://yourusername.github.io/FolioNote/
+theme:
+  name: material
+  palette:
+    scheme: slate # dark mode
+    primary: indigo
+    accent: cyan
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - System Overview: architecture/overview.md
+      - Component Graph: architecture/component-graph.md
+      - Data Flow: architecture/data-flow.md
+      - Input Pipeline: architecture/input.md
+      - Storage & DB: architecture/storage.md
+  - Math & Science:
+      - Overview: math/overview.md
+      - Stroke Polygon Math: math/stroke-polygon.md
+      - R-Tree Spatial Index: math/rtree.md
+      - Spline Interpolation: math/splines.md
+      - Curve Decimation: math/rdp-decimation.md
+  - Development:
+      - Build Guide: dev/build.md
+      - Contributing: dev/contributing.md
