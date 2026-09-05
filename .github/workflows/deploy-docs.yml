@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
+  workflow_dispatch: # Allows manual trigger from the Actions tab
 
 permissions:
   contents: write
@@ -14,9 +15,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.x
-      - run: pip install mkdocs-material
-      - run: mkdocs gh-deploy --force
+          python-version: '3.x'
+
+      - name: Install MkDocs Material & Plugins
+        run: |
+          pip install mkdocs-material
+
+      - name: Build and Deploy to gh-pages
+        run: |
+          mkdocs gh-deploy --force
