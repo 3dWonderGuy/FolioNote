@@ -7,7 +7,6 @@
 #define MyAppExeName "FolioNote.exe"
 
 [Setup]
-; Unique AppId guarantees that new versions overwrite and upgrade in-place
 AppId={{C8D49E22-5B90-4824-B831-75A0E63198AE}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -18,10 +17,9 @@ AppSupportURL={#MyAppURL}/issues
 AppUpdatesURL={#MyAppURL}/releases
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
-; Support both per-user and all-users installation
 PrivilegesRequiredOverridesAllowed=commandline dialog
 OutputDir=..\dist-installer
-OutputBaseFilename=FolioNote-Setup-{#MyAppVersion}
+OutputBaseFilename=FolioNote-Setup-{#StringChange(MyAppVersion, '"', '')}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -38,7 +36,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; Main Executable
 Source: "..\dist\FolioNote\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
-; Assets and Configuration folders (skip if empty/missing)
+; Optional asset and config directories
 Source: "..\dist\FolioNote\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Permissions: users-readexec
 Source: "..\dist\FolioNote\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\dist\FolioNote\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
