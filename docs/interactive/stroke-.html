@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FolioNote Indexing Explorer - B-Tree, B+-Tree & R-Tree Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        },
+                        btree: '#3b82f6',
+                        bplustree: '#10b981',
+                        rtree: '#f59e0b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        code, pre, .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .tree-node {
+            transition: all 0.25s ease-in-out;
+        }
+        .search-glow {
+            animation: search-glow-anim 1s infinite alternate;
+        }
+        @keyframes search-glow-anim {
+            from { stroke-width: 2.5px; filter: drop-shadow(0 0 3px rgba(59, 130, 246, 0.6)); }
+            to { stroke-width: 4px; filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.95)); }
+        }
+        .bplus-glow {
+            animation: bplus-glow-anim 1s infinite alternate;
+        }
+        @keyframes bplus-glow-anim {
+            from { stroke-width: 2.5px; filter: drop-shadow(0 0 3px rgba(16, 185, 129, 0.6)); }
+            to { stroke-width: 4px; filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.95)); }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-extrabold text-xl text-white shadow-lg shadow-indigo-500/20">
+                    FN
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                        FolioNote Indexing Explorer
+                    </h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">Interactive Multi-Structure Index Visualizer</p>
+                </div>
+            </div>
+
+            <!-- Main Navigation Tabs -->
+            <nav class="flex space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs sm:text-sm">
+                <button id="nav-visualizer" onclick="switchMainTab('visualizer')" class="px-4 py-1.5 rounded-lg font-medium transition-colors bg-brand-600 text-white shadow-sm">
+                    Interactive Visualizer
+                </button>
+                <button id="nav-comparison" onclick="switchMainTab('comparison')" class="px-4 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-colors">
+                    Side-by-Side Comparison
+                </button>
+                <button id="nav-matrix" onclick="switchMainTab('matrix')" class="px-4 py-1.5 rounded-lg font-medium text-slate-400 hover:text-white transition-colors">
+                    Architecture Deep Dive
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col">
+
+        <!-- TAB 1: INTERACTIVE VISUALIZER -->
+        <section id="tab-visualizer" class="space-y-4 flex-grow flex flex-col">
+            
+            <!-- Controls Header & Tree Mode Selection -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-xl">
+                
+                <!-- Tree Sub-Type Switches -->
+                <div class="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800/80">
+                    <button id="tree-sub-btree" onclick="switchTreeType('btree')" class="flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-blue-600/20 text-blue-400 border border-blue-500/30">
+                        <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                        <span>B-Tree</span>
+                    </button>
+                    <button id="tree-sub-bplustree" onclick="switchTreeType('bplustree')" class="flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span>B+-Tree</span>
+                    </button>
+                    <button id="tree-sub-rtree" onclick="switchTreeType('rtree')" class="flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white">
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                        <span>R-Tree (2D Canvas)</span>
+                    </button>
+                </div>
+
+                <!-- Node Degree (Order M) Slider -->
+                <div class="flex items-center space-x-3 text-xs bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800">
+                    <span class="text-slate-400 font-medium">Node Degree Order ($M$):</span>
+                    <input type="range" id="degree-slider" min="3" max="5" value="3" onchange="handleDegreeChange(this.value)" class="w-24 accent-indigo-500 cursor-pointer">
+                    <span id="degree-val-display" class="font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800">3</span>
+                </div>
+
+                <!-- Action Controls (Context Dynamic) -->
+                <div id="tree-controls" class="flex flex-wrap items-center gap-2">
+                    <!-- Injected dynamically via JS -->
+                </div>
+            </div>
+
+            <!-- Dynamic Banner Context -->
+            <div id="tree-info-banner" class="bg-slate-900/80 border-l-4 border-blue-500 p-3.5 rounded-xl border-y border-r border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm text-slate-300">
+                <!-- Injected via JS -->
+            </div>
+
+            <!-- Main Interactive Display Container -->
+            <div class="relative flex-grow bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden min-h-[520px] flex flex-col shadow-2xl">
+                
+                <!-- Live Execution Tracker & Status Bar -->
+                <div id="execution-log" class="bg-slate-900 border-b border-slate-800 px-4 py-3 text-xs font-mono text-indigo-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div class="flex items-center space-x-2">
+                        <span id="anim-indicator" class="inline-block w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
+                        <span id="log-message" class="text-slate-200">Ready. Execute an action above to inspect structure.</span>
+                    </div>
+                    <div class="flex items-center space-x-3 text-slate-400">
+                        <span id="tree-node-count" class="text-slate-400">Nodes: 0</span>
+                    </div>
+                </div>
+
+                <!-- Visual Viewport Canvas / SVG -->
+                <div id="tree-render-viewport" class="relative flex-grow w-full h-full overflow-auto p-6 flex items-center justify-center min-h-[440px]">
+                    <svg id="svg-tree-canvas" class="w-full h-full min-h-[420px]"></svg>
+                    
+                    <!-- R-Tree HTML5 Canvas Container -->
+                    <div id="rtree-container" class="hidden absolute inset-0 w-full h-full flex flex-col">
+                        <canvas id="rtree-canvas" class="w-full h-full bg-slate-950"></canvas>
+                    </div>
+                </div>
+
+                <!-- R-Tree Overlay Instructions & Visibility Controls -->
+                <div id="rtree-overlay-hint" class="hidden absolute bottom-4 right-4 bg-slate-900/95 border border-slate-700 rounded-xl p-4 text-xs text-slate-300 shadow-2xl max-w-sm backdrop-blur">
+                    <p class="font-semibold text-amber-400 mb-1.5 flex items-center justify-between">
+                        <span>2D Canvas Spatial Controls</span>
+                        <span class="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-1.5 py-0.5 rounded">R-Tree</span>
+                    </p>
+                    <ul class="space-y-1.5 text-slate-300 text-[11px] mb-3">
+                        <li>• <strong class="text-amber-300">Double Click Canvas:</strong> Create a new Spatial Note!</li>
+                        <li>• <strong class="text-indigo-300">Left Click & Drag:</strong> Execute Spatial Intersection Query.</li>
+                        <li>• <strong class="text-emerald-400">Right Click Hold & Drag Box:</strong> Relocate any Note in 2D space!</li>
+                    </ul>
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px]">
+                        <label class="flex items-center space-x-1.5 cursor-pointer">
+                            <input type="checkbox" id="chk-show-mbr" checked onchange="drawRTreeCanvas()" class="accent-amber-500 rounded">
+                            <span>Show Parent MBR Enclosures</span>
+                        </label>
+                        <button onclick="handleRTreeAddRandom()" class="bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 px-2 py-1 rounded transition">
+                            + Random Note
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Traversal & Operation Summary Card -->
+            <div id="algorithm-step-card" class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs space-y-1.5">
+                <h4 class="font-semibold text-indigo-400 uppercase tracking-wider text-[11px] font-mono">Structure State & Traversal Path</h4>
+                <p id="step-description" class="text-slate-300 leading-relaxed">
+                    Tree state updated. Use the controls above to insert keys, search exact IDs, or drag region bounds.
+                </p>
+            </div>
+
+        </section>
+
+        <!-- TAB 2: SIDE-BY-SIDE COMPARISON -->
+        <section id="tab-comparison" class="hidden space-y-6 flex-grow flex-col">
+            
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-bold text-white">Live Index Comparison</h2>
+                    <p class="text-xs text-slate-400">Run identical key lookups on B-Tree and B+-Tree simultaneously to compare traversal steps and memory layout.</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input type="number" id="cmp-key-input" placeholder="Enter Key (e.g. 25)" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white w-36 focus:outline-none focus:border-indigo-500">
+                    <button onclick="runSideBySideComparison()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold shadow-lg shadow-indigo-600/30">
+                        Compare Search Path
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow">
+                
+                <!-- B-Tree Panel -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col">
+                    <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                            <h3 class="font-bold text-blue-400 text-sm">B-Tree Structure</h3>
+                        </div>
+                        <span id="cmp-btree-stats" class="text-xs font-mono text-slate-400">Steps: 0</span>
+                    </div>
+                    <div class="flex-grow bg-slate-950 border border-slate-800/80 rounded-xl p-3 min-h-[320px] flex items-center justify-center overflow-auto">
+                        <svg id="svg-cmp-btree" class="w-full h-full min-h-[300px]"></svg>
+                    </div>
+                    <p id="cmp-btree-log" class="text-xs font-mono text-slate-400 mt-3 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        Ready for comparison lookup...
+                    </p>
+                </div>
+
+                <!-- B+-Tree Panel -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col">
+                    <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                            <h3 class="font-bold text-emerald-400 text-sm">B+-Tree Structure</h3>
+                        </div>
+                        <span id="cmp-bplus-stats" class="text-xs font-mono text-slate-400">Steps: 0</span>
+                    </div>
+                    <div class="flex-grow bg-slate-950 border border-slate-800/80 rounded-xl p-3 min-h-[320px] flex items-center justify-center overflow-auto">
+                        <svg id="svg-cmp-bplus" class="w-full h-full min-h-[300px]"></svg>
+                    </div>
+                    <p id="cmp-bplus-log" class="text-xs font-mono text-slate-400 mt-3 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        Ready for comparison lookup...
+                    </p>
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- TAB 3: DEEP DIVE ARCHITECTURE -->
+        <section id="tab-matrix" class="hidden space-y-6 flex-grow flex-col">
+            
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <h2 class="text-xl font-bold text-white mb-2">Technical Comparison & Structural Design Trade-offs</h2>
+                <p class="text-sm text-slate-300 leading-relaxed max-w-4xl">
+                    Disk page alignment, memory cache locality, and access geometries differ drastically between point lookups, chronological timeline traversals, and multi-dimensional spatial queries.
+                </p>
+            </div>
+
+            <!-- Comparison Matrix Table -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm text-slate-300">
+                        <thead class="bg-slate-950 text-slate-400 uppercase font-mono text-xs border-b border-slate-800">
+                            <tr>
+                                <th class="p-4">Feature / Property</th>
+                                <th class="p-4 text-blue-400 bg-blue-950/20 border-l border-slate-800">B-Tree</th>
+                                <th class="p-4 text-emerald-400 bg-emerald-950/20 border-l border-slate-800">B+-Tree</th>
+                                <th class="p-4 text-amber-400 bg-amber-950/20 border-l border-slate-800">R-Tree</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/80">
+                            <tr>
+                                <td class="p-4 font-semibold text-white">Data Key Storage</td>
+                                <td class="p-4 bg-blue-950/10 border-l border-slate-800">Stored in <strong>both</strong> internal and leaf nodes</td>
+                                <td class="p-4 bg-emerald-950/10 border-l border-slate-800">Stored <strong>only in leaf nodes</strong>; internal nodes store routing keys</td>
+                                <td class="p-4 bg-amber-950/10 border-l border-slate-800">Leaf nodes contain spatial objects/MBRs; internal nodes contain bounding regions</td>
+                            </tr>
+                            <tr>
+                                <td class="p-4 font-semibold text-white">Leaf Node Structure</td>
+                                <td class="p-4 bg-blue-950/10 border-l border-slate-800">Independent leaf pages with data/pointers</td>
+                                <td class="p-4 bg-emerald-950/10 border-l border-slate-800">Linked sequentially as a <strong>Doubly Linked List</strong></td>
+                                <td class="p-4 bg-amber-950/10 border-l border-slate-800">Contains Minimum Bounding Rectangles (MBRs) and entry pointers</td>
+                            </tr>
+                            <tr>
+                                <td class="p-4 font-semibold text-white">Range Search Efficiency</td>
+                                <td class="p-4 bg-blue-950/10 border-l border-slate-800">Slow ($O(k \log N)$) requiring in-order tree traversal</td>
+                                <td class="p-4 bg-emerald-950/10 border-l border-slate-800"><strong>Optimal ($O(\log N + k)$)</strong>; traverse to leaf then walk linked list</td>
+                                <td class="p-4 bg-amber-950/10 border-l border-slate-800">N/A for linear keys; designed for 2D/3D bounding box range intersection</td>
+                            </tr>
+                            <tr>
+                                <td class="p-4 font-semibold text-white">Disk / Page Fanout</td>
+                                <td class="p-4 bg-blue-950/10 border-l border-slate-800">Moderate fanout; data values reduce number of keys per disk page</td>
+                                <td class="p-4 bg-emerald-950/10 border-l border-slate-800"><strong>Maximum fanout</strong>; internal pages hold only compact keys</td>
+                                <td class="p-4 bg-amber-950/10 border-l border-slate-800">Variable; depends on spatial bounding box dimensions and overlap heuristics</td>
+                            </tr>
+                            <tr>
+                                <td class="p-4 font-semibold text-white">Search Time Complexity</td>
+                                <td class="p-4 bg-blue-950/10 border-l border-slate-800">$O(\log N)$ average/worst</td>
+                                <td class="p-4 bg-emerald-950/10 border-l border-slate-800">$O(\log N)$ deterministic (all leaf depth identical)</td>
+                                <td class="p-4 bg-amber-950/10 border-l border-slate-800">$O(\log N)$ average, $O(N)$ worst case if bounding boxes heavily overlap</td>
+                            </tr>
+                            <tr>
+                                <td class="p-4 font-semibold text-white">Document System Role</td>
+                                <td class="p-4 bg-blue-950/10 border-l border-slate-800"><strong>Primary Key Index:</strong> Instant lookup for Note ID, User UUID, and tag key hashes.</td>
+                                <td class="p-4 bg-emerald-950/10 border-l border-slate-800"><strong>Timeline & Feed Index:</strong> Fast pagination, date ranges ("Notes created in July"), and sorted text searches.</td>
+                                <td class="p-4 bg-amber-950/10 border-l border-slate-800"><strong>Spatial Canvas Workspace:</strong> Infinite canvas note placements, viewport clipping, and lasso region queries.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <script>
+        let currentMainTab = 'visualizer';
+        let currentTreeType = 'btree'; // 'btree' | 'bplustree' | 'rtree'
+        let currentDegree = 3;
+
+        /* =========================================================================
+           1. B-TREE DATA STRUCTURE (Configurable Order M)
+           ========================================================================= */
+        class BTreeNode {
+            constructor(isLeaf = true) {
+                this.keys = [];
+                this.children = [];
+                this.isLeaf = isLeaf;
+                this.id = 'node_' + Math.random().toString(36).substr(2, 6);
+            }
+        }
+
+        class BTree {
+            constructor(m = 3) {
+                this.m = Math.max(3, m);
+                this.root = new BTreeNode(true);
+            }
+
+            search(k) {
+                let curr = this.root;
+                const path = [];
+                while (curr) {
+                    path.push(curr);
+                    let i = 0;
+                    while (i < curr.keys.length && k > curr.keys[i]) i++;
+                    if (i < curr.keys.length && curr.keys[i] === k) {
+                        return { found: true, targetNode: curr, keyIndex: i, path };
+                    }
+                    if (curr.isLeaf) break;
+                    curr = curr.children[i];
+                }
+                return { found: false, targetNode: curr, path };
+            }
+
+            insert(k) {
+                if (this.search(k).found) {
+                    return { success: false, reason: `Key ${k} already exists in the B-Tree!` };
+                }
+
+                this._insertRecursive(this.root, k);
+                return { success: true };
+            }
+
+            _insertRecursive(node, k) {
+                if (node.isLeaf) {
+                    let idx = 0;
+                    while (idx < node.keys.length && node.keys[idx] < k) idx++;
+                    node.keys.splice(idx, 0, k);
+                } else {
+                    let idx = 0;
+                    while (idx < node.keys.length && node.keys[idx] < k) idx++;
+                    const child = node.children[idx];
+                    this._insertRecursive(child, k);
+
+                    if (child.keys.length >= this.m) {
+                        this._splitChild(node, idx, child);
+                    }
+                }
+
+                if (node === this.root && this.root.keys.length >= this.m) {
+                    const newRoot = new BTreeNode(false);
+                    newRoot.children.push(this.root);
+                    this._splitChild(newRoot, 0, this.root);
+                    this.root = newRoot;
+                }
+            }
+
+            _splitChild(parent, i, child) {
+                const midIndex = Math.floor(child.keys.length / 2);
+                const promotedKey = child.keys[midIndex];
+
+                const rightNode = new BTreeNode(child.isLeaf);
+                rightNode.keys = child.keys.slice(midIndex + 1);
+                child.keys = child.keys.slice(0, midIndex);
+
+                if (!child.isLeaf) {
+                    rightNode.children = child.children.slice(midIndex + 1);
+                    child.children = child.children.slice(0, midIndex + 1);
+                }
+
+                parent.keys.splice(i, 0, promotedKey);
+                parent.children.splice(i + 1, 0, rightNode);
+            }
+
+            clear() {
+                this.root = new BTreeNode(true);
+            }
+        }
+
+        /* =========================================================================
+           2. B+-TREE DATA STRUCTURE (Linked Leaf Chain)
+           ========================================================================= */
+        class BPlusNode {
+            constructor(isLeaf = true) {
+                this.keys = [];
+                this.children = [];
+                this.values = [];
+                this.isLeaf = isLeaf;
+                this.next = null;
+                this.prev = null;
+                this.id = 'bpnode_' + Math.random().toString(36).substr(2, 6);
+            }
+        }
+
+        class BPlusTree {
+            constructor(m = 3) {
+                this.m = Math.max(3, m);
+                this.root = new BPlusNode(true);
+            }
+
+            search(k) {
+                let curr = this.root;
+                const path = [];
+                while (curr) {
+                    path.push(curr);
+                    if (curr.isLeaf) {
+                        const idx = curr.keys.indexOf(k);
+                        return { found: idx !== -1, targetNode: curr, keyIndex: idx, path };
+                    }
+                    let i = 0;
+                    while (i < curr.keys.length && k >= curr.keys[i]) i++;
+                    curr = curr.children[i];
+                }
+                return { found: false, targetNode: null, path };
+            }
+
+            rangeSearch(minKey, maxKey) {
+                let curr = this.root;
+                const path = [];
+                while (curr && !curr.isLeaf) {
+                    path.push(curr);
+                    let i = 0;
+                    while (i < curr.keys.length && minKey >= curr.keys[i]) i++;
+                    curr = curr.children[i];
+                }
+
+                const results = [];
+                const visitedLeaves = [];
+                let leaf = curr;
+
+                while (leaf) {
+                    visitedLeaves.push(leaf);
+                    for (let j = 0; j < leaf.keys.length; j++) {
+                        if (leaf.keys[j] >= minKey && leaf.keys[j] <= maxKey) {
+                            results.push({ key: leaf.keys[j], val: leaf.values[j], node: leaf });
+                        }
+                    }
+                    if (leaf.keys.length > 0 && leaf.keys[leaf.keys.length - 1] > maxKey) break;
+                    leaf = leaf.next;
+                }
+
+                return { results, visitedLeaves, path };
+            }
+
+            insert(k, val = k) {
+                if (this.search(k).found) {
+                    return { success: false, reason: `Key ${k} already exists in the B+-Tree!` };
+                }
+
+                this._insertRecursive(this.root, k, val);
+                return { success: true };
+            }
+
+            _insertRecursive(node, k, val) {
+                if (node.isLeaf) {
+                    let idx = 0;
+                    while (idx < node.keys.length && node.keys[idx] < k) idx++;
+                    node.keys.splice(idx, 0, k);
+                    node.values.splice(idx, 0, val);
+                } else {
+                    let idx = 0;
+                    while (idx < node.keys.length && k >= node.keys[idx]) idx++;
+                    const child = node.children[idx];
+                    this._insertRecursive(child, k, val);
+
+                    if (child.keys.length >= this.m) {
+                        this._splitChild(node, idx, child);
+                    }
+                }
+
+                if (node === this.root && this.root.keys.length >= this.m) {
+                    const newRoot = new BPlusNode(false);
+                    newRoot.children.push(this.root);
+                    this._splitChild(newRoot, 0, this.root);
+                    this.root = newRoot;
+                }
+            }
+
+            _splitChild(parent, i, child) {
+                const rightNode = new BPlusNode(child.isLeaf);
+
+                if (child.isLeaf) {
+                    const midIndex = Math.floor(child.keys.length / 2);
+                    
+                    rightNode.keys = child.keys.slice(midIndex);
+                    rightNode.values = child.values.slice(midIndex);
+                    child.keys = child.keys.slice(0, midIndex);
+                    child.values = child.values.slice(0, midIndex);
+
+                    rightNode.next = child.next;
+                    if (rightNode.next) rightNode.next.prev = rightNode;
+                    child.next = rightNode;
+                    rightNode.prev = child;
+
+                    const promotedKey = rightNode.keys[0];
+                    parent.keys.splice(i, 0, promotedKey);
+                    parent.children.splice(i + 1, 0, rightNode);
+                } else {
+                    const midIndex = Math.floor(child.keys.length / 2);
+                    const promotedKey = child.keys[midIndex];
+
+                    rightNode.keys = child.keys.slice(midIndex + 1);
+                    child.keys = child.keys.slice(0, midIndex);
+
+                    rightNode.children = child.children.slice(midIndex + 1);
+                    child.children = child.children.slice(0, midIndex + 1);
+
+                    parent.keys.splice(i, 0, promotedKey);
+                    parent.children.splice(i + 1, 0, rightNode);
+                }
+            }
+
+            clear() {
+                this.root = new BPlusNode(true);
+            }
+        }
+
+        /* =========================================================================
+           3. R-TREE SPATIAL DATA STRUCTURE (2D Bounding Box MBRs)
+           ========================================================================= */
+        class RRect {
+            constructor(x, y, w, h, id = '', label = '') {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+                this.id = id;
+                this.label = label;
+            }
+
+            static combine(r1, r2) {
+                const x1 = Math.min(r1.x, r2.x);
+                const y1 = Math.min(r1.y, r2.y);
+                const x2 = Math.max(r1.x + r1.w, r2.x + r2.w);
+                const y2 = Math.max(r1.y + r1.h, r2.y + r2.h);
+                return new RRect(x1, y1, x2 - x1, y2 - y1);
+            }
+
+            area() {
+                return this.w * this.h;
+            }
+
+            intersects(r) {
+                return !(r.x > this.x + this.w ||
+                         r.x + r.w < this.x ||
+                         r.y > this.y + this.h ||
+                         r.y + r.h < this.y);
+            }
+
+            containsPoint(px, py) {
+                return px >= this.x && px <= this.x + this.w && py >= this.y && py <= this.y + this.h;
+            }
+        }
+
+        class RTreeNode {
+            constructor(isLeaf = true, maxEntries = 3) {
+                this.isLeaf = isLeaf;
+                this.maxEntries = maxEntries;
+                this.entries = []; // { mbr: RRect, child: Node | data }
+                this.mbr = null;
+                this.id = 'rtnode_' + Math.random().toString(36).substr(2, 6);
+            }
+
+            updateMBR() {
+                if (this.entries.length === 0) {
+                    this.mbr = null;
+                    return;
+                }
+                let rect = this.entries[0].mbr;
+                for (let i = 1; i < this.entries.length; i++) {
+                    rect = RRect.combine(rect, this.entries[i].mbr);
+                }
+                this.mbr = rect;
+            }
+        }
+
+        class RTree {
+            constructor(maxEntries = 3) {
+                this.maxEntries = Math.max(3, maxEntries);
+                this.root = new RTreeNode(true, this.maxEntries);
+            }
+
+            insert(itemRect, data) {
+                const leaf = this.chooseLeaf(this.root, itemRect);
+                leaf.entries.push({ mbr: itemRect, data });
+                leaf.updateMBR();
+
+                if (leaf.entries.length > this.maxEntries) {
+                    const splitNode = this.splitNode(leaf);
+                    this.adjustTree(leaf, splitNode);
+                } else {
+                    this.updatePathMBRs(leaf);
+                }
+            }
+
+            chooseLeaf(node, rect) {
+                if (node.isLeaf) return node;
+
+                let bestChild = null;
+                let minEnlargement = Infinity;
+                let minArea = Infinity;
+
+                for (let entry of node.entries) {
+                    const combined = RRect.combine(entry.mbr, rect);
+                    const enlargement = combined.area() - entry.mbr.area();
+                    if (enlargement < minEnlargement) {
+                        minEnlargement = enlargement;
+                        minArea = entry.mbr.area();
+                        bestChild = entry.child;
+                    } else if (enlargement === minEnlargement && entry.mbr.area() < minArea) {
+                        minArea = entry.mbr.area();
+                        bestChild = entry.child;
+                    }
+                }
+                return this.chooseLeaf(bestChild, rect);
+            }
+
+            splitNode(node) {
+                const newNode = new RTreeNode(node.isLeaf, this.maxEntries);
+                const entries = node.entries.splice(0);
+                const mid = Math.floor(entries.length / 2);
+
+                node.entries = entries.slice(0, mid);
+                newNode.entries = entries.slice(mid);
+
+                node.updateMBR();
+                newNode.updateMBR();
+
+                return newNode;
+            }
+
+            adjustTree(node, splitNode) {
+                if (node === this.root) {
+                    const newRoot = new RTreeNode(false, this.maxEntries);
+                    newRoot.entries.push({ mbr: node.mbr, child: node });
+                    newRoot.entries.push({ mbr: splitNode.mbr, child: splitNode });
+                    newRoot.updateMBR();
+                    this.root = newRoot;
+                    return;
+                }
+
+                const parent = this.findParent(this.root, node);
+                if (parent) {
+                    const parentEntry = parent.entries.find(e => e.child === node);
+                    if (parentEntry) parentEntry.mbr = node.mbr;
+
+                    parent.entries.push({ mbr: splitNode.mbr, child: splitNode });
+                    parent.updateMBR();
+
+                    if (parent.entries.length > this.maxEntries) {
+                        const parentSplit = this.splitNode(parent);
+                        this.adjustTree(parent, parentSplit);
+                    } else {
+                        this.updatePathMBRs(parent);
+                    }
+                }
+            }
+
+            findParent(current, target) {
+                if (current.isLeaf) return null;
+                for (let entry of current.entries) {
+                    if (entry.child === target) return current;
+                    const p = this.findParent(entry.child, target);
+                    if (p) return p;
+                }
+                return null;
+            }
+
+            updatePathMBRs(node) {
+                let curr = node;
+                while (curr) {
+                    curr.updateMBR();
+                    curr = this.findParent(this.root, curr);
+                }
+            }
+
+            searchRange(queryRect, node = this.root, results = [], visitedNodes = []) {
+                if (!node || !node.mbr) return { results, visitedNodes };
+                visitedNodes.push(node);
+
+                if (!node.mbr.intersects(queryRect)) {
+                    return { results, visitedNodes };
+                }
+
+                if (node.isLeaf) {
+                    for (let entry of node.entries) {
+                        if (entry.mbr.intersects(queryRect)) {
+                            results.push(entry);
+                        }
+                    }
+                } else {
+                    for (let entry of node.entries) {
+                        this.searchRange(queryRect, entry.child, results, visitedNodes);
+                    }
+                }
+
+                return { results, visitedNodes };
+            }
+
+            recalculateAllMBRs(node = this.root) {
+                if (!node) return;
+                if (!node.isLeaf) {
+                    node.entries.forEach(e => {
+                        this.recalculateAllMBRs(e.child);
+                        e.mbr = e.child.mbr;
+                    });
+                }
+                node.updateMBR();
+            }
+
+            clear() {
+                this.root = new RTreeNode(true, this.maxEntries);
+            }
+        }
+
+        /* =========================================================================
+           4. GLOBAL INSTANTIATION & INITIAL SEEDING
+           ========================================================================= */
+        let globalBTree = new BTree(currentDegree);
+        let globalBPlusTree = new BPlusTree(currentDegree);
+        let globalRTree = new RTree(currentDegree);
+
+        function seedDefaultTrees() {
+            globalBTree = new BTree(currentDegree);
+            globalBPlusTree = new BPlusTree(currentDegree);
+            globalRTree = new RTree(currentDegree);
+
+            [10, 20, 5, 15, 25, 30, 8, 18, 35, 40, 2].forEach(k => {
+                globalBTree.insert(k);
+                globalBPlusTree.insert(k, `Note ${k}`);
+            });
+
+            // Initial Spatial Notes for R-Tree
+            const initRects = [
+                new RRect(40, 50, 120, 75, '101', 'Project Planning'),
+                new RRect(200, 60, 130, 80, '102', 'Architecture Sketch'),
+                new RRect(60, 170, 110, 70, '103', 'Meeting Notes'),
+                new RRect(360, 90, 130, 90, '104', 'Canvas Wireframe'),
+                new RRect(230, 200, 120, 75, '105', 'Code Snippet')
+            ];
+            initRects.forEach(r => globalRTree.insert(r, { title: r.label, id: r.id }));
+        }
+
+        seedDefaultTrees();
+
+        /* =========================================================================
+           5. R-TREE INTERACTIVE CANVAS & RIGHT-CLICK DRAG-AND-DROP RELOCATION
+           ========================================================================= */
+        let rtreeCanvas = null;
+        let rtreeCtx = null;
+        
+        // Interaction State
+        let isSelectingRegion = false;
+        let isRightDraggingNote = false;
+        let draggedEntry = null;
+        let dragOffset = { x: 0, y: 0 };
+        let startPoint = { x: 0, y: 0 };
+        let currentRegion = null;
+        let highlightedItems = [];
+
+        function initRTreeCanvas() {
+            rtreeCanvas = document.getElementById('rtree-canvas');
+            if (!rtreeCanvas) return;
+            const container = rtreeCanvas.parentElement;
+
+            rtreeCanvas.width = container.clientWidth || 800;
+            rtreeCanvas.height = container.clientHeight || 500;
+            rtreeCtx = rtreeCanvas.getContext('2d');
+
+            // Disable Context Menu so Right-Click Dragging feels natural
+            rtreeCanvas.oncontextmenu = (e) => e.preventDefault();
+
+            // Mouse Down Handler
+            rtreeCanvas.onmousedown = (e) => {
+                const rect = rtreeCanvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                if (e.button === 2) {
+                    // Right Click: Check if clicking on an existing Note Box to Drag & Relocate it!
+                    const hitEntry = findRTreeEntryAt(globalRTree.root, mouseX, mouseY);
+                    if (hitEntry) {
+                        isRightDraggingNote = true;
+                        draggedEntry = hitEntry;
+                        dragOffset = { x: mouseX - hitEntry.mbr.x, y: mouseY - hitEntry.mbr.y };
+                        highlightedItems = [hitEntry];
+                        setLog(`Picked up Spatial Note [ID: ${hitEntry.data.id}]. Drag mouse to relocate...`);
+                    }
+                } else if (e.button === 0) {
+                    // Left Click: Region Drag Query Selection
+                    startPoint = { x: mouseX, y: mouseY };
+                    isSelectingRegion = true;
+                }
+            };
+
+            // Mouse Move Handler
+            rtreeCanvas.onmousemove = (e) => {
+                const rect = rtreeCanvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                if (isRightDraggingNote && draggedEntry) {
+                    // Drag note box around
+                    draggedEntry.mbr.x = Math.max(10, Math.min(rtreeCanvas.width - draggedEntry.mbr.w - 10, mouseX - dragOffset.x));
+                    draggedEntry.mbr.y = Math.max(10, Math.min(rtreeCanvas.height - draggedEntry.mbr.h - 10, mouseY - dragOffset.y));
+                    
+                    // Recalculate parent MBR boundaries in R-Tree
+                    globalRTree.recalculateAllMBRs();
+                    drawRTreeCanvas();
+                } else if (isSelectingRegion) {
+                    // Left click box drag query
+                    const rx = Math.min(startPoint.x, mouseX);
+                    const ry = Math.min(startPoint.y, mouseY);
+                    const rw = Math.abs(mouseX - startPoint.x);
+                    const rh = Math.abs(mouseY - startPoint.y);
+
+                    currentRegion = new RRect(rx, ry, rw, rh);
+                    drawRTreeCanvas();
+                }
+            };
+
+            // Mouse Up Handler
+            rtreeCanvas.onmouseup = (e) => {
+                if (isRightDraggingNote && draggedEntry) {
+                    globalRTree.recalculateAllMBRs();
+                    setLog(`Relocated Note [ID: ${draggedEntry.data.id}] to (${Math.round(draggedEntry.mbr.x)}, ${Math.round(draggedEntry.mbr.y)}). Parent MBRs updated!`);
+                    document.getElementById('step-description').innerText = `R-Tree Spatial Relocation: Moved note block #${draggedEntry.data.id} to new 2D canvas coordinates. Minimum Bounding Rectangles dynamically re-fitted.`;
+                    isRightDraggingNote = false;
+                    draggedEntry = null;
+                    drawRTreeCanvas();
+                } else if (isSelectingRegion && currentRegion && currentRegion.w > 6 && currentRegion.h > 6) {
+                    const { results, visitedNodes } = globalRTree.searchRange(currentRegion);
+                    highlightedItems = results;
+                    setLog(`R-Tree Spatial Range Scan: Intersected ${visitedNodes.length} node MBRs, found ${results.length} canvas note blocks.`);
+                    document.getElementById('step-description').innerText = `R-Tree Intersection Query: Search Box [X:${Math.round(currentRegion.x)}, Y:${Math.round(currentRegion.y)}, W:${Math.round(currentRegion.w)}, H:${Math.round(currentRegion.h)}] overlapped ${results.length} note items.`;
+                    isSelectingRegion = false;
+                    drawRTreeCanvas();
+                } else {
+                    isSelectingRegion = false;
+                }
+            };
+
+            // Double Click Handler: Create New Note Box cleanly!
+            rtreeCanvas.ondblclick = (e) => {
+                const rect = rtreeCanvas.getBoundingClientRect();
+                const clickX = Math.round(e.clientX - rect.left);
+                const clickY = Math.round(e.clientY - rect.top);
+
+                const newW = 120;
+                const newH = 75;
+                const noteId = Math.floor(Math.random() * 800 + 100).toString();
+                const noteTitle = `Canvas Note ${noteId}`;
+
+                const newRRect = new RRect(
+                    Math.max(10, clickX - newW / 2),
+                    Math.max(10, clickY - newH / 2),
+                    newW,
+                    newH,
+                    noteId,
+                    noteTitle
+                );
+
+                globalRTree.insert(newRRect, { title: noteTitle, id: noteId });
+                highlightedItems = [{ mbr: newRRect, data: { title: noteTitle, id: noteId } }];
+                drawRTreeCanvas();
+                setLog(`Created new Spatial Note [ID: ${noteId}] at (${clickX}, ${clickY}).`);
+                document.getElementById('step-description').innerText = `Inserted new note box into R-Tree canvas at (${clickX}, ${clickY}). Parent Minimum Bounding Rectangle (MBR) expanded.`;
+            };
+
+            drawRTreeCanvas();
+        }
+
+        function findRTreeEntryAt(node, x, y) {
+            if (!node) return null;
+            if (node.isLeaf) {
+                for (let entry of node.entries) {
+                    if (entry.mbr.containsPoint(x, y)) {
+                        return entry;
+                    }
+                }
+            } else {
+                for (let entry of node.entries) {
+                    if (entry.mbr.containsPoint(x, y)) {
+                        const hit = findRTreeEntryAt(entry.child, x, y);
+                        if (hit) return hit;
+                    }
+                }
+            }
+            return null;
+        }
+
+        function drawRTreeCanvas() {
+            if (!rtreeCtx) return;
+            rtreeCtx.clearRect(0, 0, rtreeCanvas.width, rtreeCanvas.height);
+
+            const showMBR = document.getElementById('chk-show-mbr') ? document.getElementById('chk-show-mbr').checked : true;
+
+            // Canvas Grid Background Pattern
+            rtreeCtx.strokeStyle = '#1e293b';
+            rtreeCtx.lineWidth = 1;
+            for (let x = 0; x < rtreeCanvas.width; x += 40) {
+                rtreeCtx.beginPath();
+                rtreeCtx.moveTo(x, 0);
+                rtreeCtx.lineTo(x, rtreeCanvas.height);
+                rtreeCtx.stroke();
+            }
+            for (let y = 0; y < rtreeCanvas.height; y += 40) {
+                rtreeCtx.beginPath();
+                rtreeCtx.moveTo(0, y);
+                rtreeCtx.lineTo(rtreeCanvas.width, y);
+                rtreeCtx.stroke();
+            }
+
+            // Draw MBR Hierarchy Recursively
+            function drawMBRNode(node, depth = 0) {
+                if (!node || !node.mbr) return;
+
+                if (showMBR) {
+                    const colors = ['#f59e0b', '#ec4899', '#8b5cf6'];
+                    const color = colors[depth % colors.length];
+
+                    rtreeCtx.strokeStyle = color;
+                    rtreeCtx.lineWidth = depth === 0 ? 2 : 1.5;
+                    rtreeCtx.setLineDash(node.isLeaf ? [4, 4] : []);
+                    rtreeCtx.strokeRect(node.mbr.x, node.mbr.y, node.mbr.w, node.mbr.h);
+
+                    rtreeCtx.fillStyle = color;
+                    rtreeCtx.font = '10px monospace';
+                    rtreeCtx.fillText(`Parent MBR L${depth}`, node.mbr.x + 4, node.mbr.y + 12);
+                }
+
+                if (node.isLeaf) {
+                    node.entries.forEach(entry => {
+                        const r = entry.mbr;
+                        const isMatch = highlightedItems.some(hi => hi.mbr === r);
+
+                        // Note Card Fill
+                        rtreeCtx.fillStyle = isMatch ? '#065f46' : '#0f172a';
+                        rtreeCtx.fillRect(r.x, r.y, r.w, r.h);
+
+                        // Card Border
+                        rtreeCtx.strokeStyle = isMatch ? '#34d399' : '#3b82f6';
+                        rtreeCtx.lineWidth = isMatch ? 2.5 : 1.2;
+                        rtreeCtx.setLineDash([]);
+                        rtreeCtx.strokeRect(r.x, r.y, r.w, r.h);
+
+                        // Card Title & ID
+                        rtreeCtx.fillStyle = '#f8fafc';
+                        rtreeCtx.font = '600 11px Inter, sans-serif';
+                        rtreeCtx.fillText(entry.data.title || `Note #${entry.data.id}`, r.x + 8, r.y + 22);
+
+                        rtreeCtx.fillStyle = '#94a3b8';
+                        rtreeCtx.font = '10px monospace';
+                        rtreeCtx.fillText(`ID: ${entry.data.id}`, r.x + 8, r.y + 38);
+
+                        // Right-Click Drag Indicator Hint
+                        rtreeCtx.fillStyle = '#64748b';
+                        rtreeCtx.font = '9px Inter, sans-serif';
+                        rtreeCtx.fillText(':: right-drag', r.x + 8, r.y + 58);
+                    });
+                } else {
+                    node.entries.forEach(e => drawMBRNode(e.child, depth + 1));
+                }
+            }
+
+            drawMBRNode(globalRTree.root, 0);
+
+            // Draw Query Drag Box
+            if (currentRegion) {
+                rtreeCtx.strokeStyle = '#38bdf8';
+                rtreeCtx.lineWidth = 2;
+                rtreeCtx.setLineDash([6, 3]);
+                rtreeCtx.strokeRect(currentRegion.x, currentRegion.y, currentRegion.w, currentRegion.h);
+                rtreeCtx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+                rtreeCtx.fillRect(currentRegion.x, currentRegion.y, currentRegion.w, currentRegion.h);
+            }
+        }
+
+        /* =========================================================================
+           6. SVG RENDER ENGINE (Responsive ViewBox & Clean Alignment)
+           ========================================================================= */
+        function renderBTreeSVG(tree, svg, highlightState = null) {
+            svg.innerHTML = '';
+            if (!tree || !tree.root) return;
+
+            let totalNodes = 0;
+            let maxRight = 0;
+            let maxDepth = 0;
+            const levelGap = 85;
+
+            function assignPositions(node, depth = 0, leftBound = 0) {
+                if (!node) return leftBound;
+                totalNodes++;
+                node._depth = depth;
+                if (depth > maxDepth) maxDepth = depth;
+
+                node.keys = node.keys.filter(k => k !== undefined && k !== null);
+                const nodeWidth = Math.max(90, node.keys.length * 32 + 24);
+
+                if (node.isLeaf || node.children.length === 0) {
+                    node._x = leftBound + nodeWidth / 2;
+                    node._width = nodeWidth;
+                    const right = leftBound + nodeWidth + 35;
+                    if (right > maxRight) maxRight = right;
+                    return right;
+                }
+
+                let currentLeft = leftBound;
+                node.children.forEach(child => {
+                    currentLeft = assignPositions(child, depth + 1, currentLeft);
+                });
+
+                const firstChild = node.children[0];
+                const lastChild = node.children[node.children.length - 1];
+                node._x = (firstChild._x + lastChild._x) / 2;
+                node._width = nodeWidth;
+                return currentLeft;
+            }
+
+            assignPositions(tree.root, 0, 40);
+            setNodeCount(totalNodes);
+
+            // Dynamic SVG ViewBox Adjustment so trees never clip!
+            const viewBoxW = Math.max(750, maxRight + 60);
+            const viewBoxH = Math.max(420, (maxDepth + 1) * levelGap + 80);
+            svg.setAttribute('viewBox', `0 0 ${viewBoxW} ${viewBoxH}`);
+
+            // Draw Parent-Child Links
+            function drawLinks(node) {
+                if (node.isLeaf) return;
+                node.children.forEach(child => {
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', node._x);
+                    line.setAttribute('y1', node._depth * levelGap + 50 + 40);
+                    line.setAttribute('x2', child._x);
+                    line.setAttribute('y2', child._depth * levelGap + 50);
+                    line.setAttribute('stroke', '#334155');
+                    line.setAttribute('stroke-width', '2');
+                    svg.appendChild(line);
+                    drawLinks(child);
+                });
+            }
+            drawLinks(tree.root);
+
+            // Draw B-Tree Nodes
+            function drawNodes(node) {
+                if (!node.keys || node.keys.length === 0) return;
+
+                const isOnPath = highlightState && highlightState.path && highlightState.path.includes(node);
+                const isTarget = highlightState && highlightState.targetNode === node;
+                const isFound = isTarget && highlightState.found;
+
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                const y = node._depth * levelGap + 50;
+                const width = node._width;
+                const x = node._x - width / 2;
+
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', x);
+                rect.setAttribute('y', y);
+                rect.setAttribute('width', width);
+                rect.setAttribute('height', '40');
+                rect.setAttribute('rx', '8');
+
+                if (isFound) {
+                    rect.setAttribute('fill', '#1e3a8a');
+                    rect.setAttribute('stroke', '#60a5fa');
+                    rect.setAttribute('stroke-width', '3');
+                    rect.setAttribute('class', 'search-glow');
+                } else if (isOnPath) {
+                    rect.setAttribute('fill', '#312e81');
+                    rect.setAttribute('stroke', '#818cf8');
+                    rect.setAttribute('stroke-width', '2.5');
+                } else {
+                    rect.setAttribute('fill', '#0f172a');
+                    rect.setAttribute('stroke', '#3b82f6');
+                    rect.setAttribute('stroke-width', '1.5');
+                }
+                g.appendChild(rect);
+
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', node._x);
+                text.setAttribute('y', y + 24);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('fill', '#f8fafc');
+                text.setAttribute('font-size', '13');
+                text.setAttribute('font-weight', '600');
+                text.setAttribute('font-family', 'monospace');
+                text.textContent = node.keys.join(' | ');
+                g.appendChild(text);
+
+                svg.appendChild(g);
+
+                if (!node.isLeaf) {
+                    node.children.forEach(c => drawNodes(c));
+                }
+            }
+            drawNodes(tree.root);
+        }
+
+        function renderBPlusTreeSVG(tree, svg, highlightState = null) {
+            svg.innerHTML = '';
+            if (!tree || !tree.root) return;
+
+            let totalNodes = 0;
+            let maxRight = 0;
+            let maxDepth = 0;
+            const levelGap = 85;
+            const leafList = [];
+
+            function assignPositions(node, depth = 0, leftBound = 0) {
+                if (!node) return leftBound;
+                totalNodes++;
+                node._depth = depth;
+                if (depth > maxDepth) maxDepth = depth;
+
+                node.keys = node.keys.filter(k => k !== undefined && k !== null);
+                const nodeWidth = Math.max(90, node.keys.length * 30 + 20);
+
+                if (node.isLeaf || node.children.length === 0) {
+                    node._x = leftBound + nodeWidth / 2;
+                    node._width = nodeWidth;
+                    leafList.push(node);
+                    const right = leftBound + nodeWidth + 35;
+                    if (right > maxRight) maxRight = right;
+                    return right;
+                }
+
+                let currentLeft = leftBound;
+                node.children.forEach(child => {
+                    currentLeft = assignPositions(child, depth + 1, currentLeft);
+                });
+
+                const firstChild = node.children[0];
+                const lastChild = node.children[node.children.length - 1];
+                node._x = (firstChild._x + lastChild._x) / 2;
+                node._width = nodeWidth;
+                return currentLeft;
+            }
+
+            assignPositions(tree.root, 0, 40);
+            setNodeCount(totalNodes);
+
+            const viewBoxW = Math.max(750, maxRight + 60);
+            const viewBoxH = Math.max(420, (maxDepth + 1) * levelGap + 80);
+            svg.setAttribute('viewBox', `0 0 ${viewBoxW} ${viewBoxH}`);
+
+            // Parent-Child Lines
+            function drawLinks(node) {
+                if (node.isLeaf) return;
+                node.children.forEach(child => {
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', node._x);
+                    line.setAttribute('y1', node._depth * levelGap + 50 + 40);
+                    line.setAttribute('x2', child._x);
+                    line.setAttribute('y2', child._depth * levelGap + 50);
+                    line.setAttribute('stroke', '#334155');
+                    line.setAttribute('stroke-width', '2');
+                    svg.appendChild(line);
+                    drawLinks(child);
+                });
+            }
+            drawLinks(tree.root);
+
+            // Leaf Doubly Linked List Horizontal Connectors
+            for (let i = 0; i < leafList.length - 1; i++) {
+                const curr = leafList[i];
+                const next = leafList[i + 1];
+
+                const y = curr._depth * levelGap + 50 + 20;
+                const x1 = curr._x + curr._width / 2 + 2;
+                const x2 = next._x - next._width / 2 - 6;
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${x1} ${y} L ${x2} ${y}`);
+                path.setAttribute('stroke', '#10b981');
+                path.setAttribute('stroke-width', '2.5');
+                path.setAttribute('stroke-dasharray', '4');
+                path.setAttribute('marker-end', 'url(#arrow)');
+                svg.appendChild(path);
+            }
+
+            // Arrow Marker Def
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs.innerHTML = `
+                <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#10b981" />
+                </marker>
+            `;
+            svg.appendChild(defs);
+
+            // Draw B+-Tree Nodes
+            function drawNodes(node) {
+                if (!node.keys || node.keys.length === 0) return;
+
+                const isOnPath = highlightState && highlightState.path && highlightState.path.includes(node);
+                const isVisitedLeaf = highlightState && highlightState.visitedLeaves && highlightState.visitedLeaves.includes(node);
+                const isTarget = highlightState && highlightState.targetNode === node;
+                const isFound = isTarget && highlightState.found;
+
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                const y = node._depth * levelGap + 50;
+                const width = node._width;
+                const x = node._x - width / 2;
+
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', x);
+                rect.setAttribute('y', y);
+                rect.setAttribute('width', width);
+                rect.setAttribute('height', '40');
+                rect.setAttribute('rx', node.isLeaf ? '6' : '10');
+
+                if (isFound || isVisitedLeaf) {
+                    rect.setAttribute('fill', '#064e3b');
+                    rect.setAttribute('stroke', '#34d399');
+                    rect.setAttribute('stroke-width', '3');
+                    rect.setAttribute('class', 'bplus-glow');
+                } else if (isOnPath) {
+                    rect.setAttribute('fill', '#0284c7');
+                    rect.setAttribute('stroke', '#38bdf8');
+                    rect.setAttribute('stroke-width', '2.5');
+                } else {
+                    rect.setAttribute('fill', node.isLeaf ? '#022c22' : '#0f172a');
+                    rect.setAttribute('stroke', node.isLeaf ? '#10b981' : '#64748b');
+                    rect.setAttribute('stroke-width', '1.5');
+                }
+
+                g.appendChild(rect);
+
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', node._x);
+                text.setAttribute('y', y + 24);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('fill', '#f8fafc');
+                text.setAttribute('font-size', '12');
+                text.setAttribute('font-weight', '600');
+                text.setAttribute('font-family', 'monospace');
+                text.textContent = node.keys.join(' | ');
+                g.appendChild(text);
+
+                svg.appendChild(g);
+
+                if (!node.isLeaf) {
+                    node.children.forEach(c => drawNodes(c));
+                }
+            }
+            drawNodes(tree.root);
+        }
+
+        /* =========================================================================
+           7. TAB SWITCHING & UI LOGIC
+           ========================================================================= */
+        function switchMainTab(tab) {
+            currentMainTab = tab;
+            ['visualizer', 'comparison', 'matrix'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                const nav = document.getElementById(`nav-${t}`);
+                if (t === tab) {
+                    el.classList.remove('hidden');
+                    el.classList.add('flex');
+                    nav.classList.add('bg-brand-600', 'text-white', 'shadow-sm');
+                    nav.classList.remove('text-slate-400');
+                } else {
+                    el.classList.add('hidden');
+                    el.classList.remove('flex');
+                    nav.classList.remove('bg-brand-600', 'text-white', 'shadow-sm');
+                    nav.classList.add('text-slate-400');
+                }
+            });
+
+            if (tab === 'visualizer') {
+                renderCurrentTree();
+            }
+        }
+
+        function switchTreeType(treeType) {
+            currentTreeType = treeType;
+            ['btree', 'bplustree', 'rtree'].forEach(t => {
+                const sub = document.getElementById(`tree-sub-${t}`);
+                if (t === treeType) {
+                    sub.className = "flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600/20 text-indigo-400 border border-indigo-500/30";
+                } else {
+                    sub.className = "flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white";
+                }
+            });
+
+            updateControlInputs();
+            updateBannerInfo();
+            renderCurrentTree();
+        }
+
+        function handleDegreeChange(val) {
+            currentDegree = parseInt(val);
+            document.getElementById('degree-val-display').innerText = val;
+            seedDefaultTrees();
+            renderCurrentTree();
+            setLog(`Changed Node Degree Order M to ${val}. Rebuilt trees.`);
+        }
+
+        function updateControlInputs() {
+            const container = document.getElementById('tree-controls');
+            if (currentTreeType === 'btree') {
+                container.innerHTML = `
+                    <input type="number" id="btree-input-val" placeholder="Key (e.g. 12)" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white w-28 focus:outline-none focus:border-indigo-500">
+                    <button onclick="handleBTreeInsert()" class="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-md shadow-blue-600/20">Insert Key</button>
+                    <button onclick="handleBTreeSearch()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-1.5 rounded-lg text-xs font-medium border border-slate-700">Search Key</button>
+                    <button onclick="handleBTreeClear()" class="bg-red-950/40 border border-red-800/60 text-red-300 hover:bg-red-900/60 px-3 py-1.5 rounded-lg text-xs font-medium">Clear</button>
+                `;
+            } else if (currentTreeType === 'bplustree') {
+                container.innerHTML = `
+                    <input type="number" id="bplus-input-val" placeholder="Key" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white w-20 focus:outline-none focus:border-indigo-500">
+                    <button onclick="handleBPlusInsert()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md shadow-emerald-600/20">Insert</button>
+                    <div class="h-4 w-px bg-slate-800 mx-1"></div>
+                    <input type="number" id="bplus-range-min" placeholder="Min" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white w-16">
+                    <span class="text-slate-500 text-xs">to</span>
+                    <input type="number" id="bplus-range-max" placeholder="Max" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white w-16">
+                    <button onclick="handleBPlusRangeSearch()" class="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium">Range Scan</button>
+                    <button onclick="handleBPlusClear()" class="bg-red-950/40 border border-red-800/60 text-red-300 hover:bg-red-900/60 px-3 py-1.5 rounded-lg text-xs font-medium">Clear</button>
+                `;
+            } else if (currentTreeType === 'rtree') {
+                container.innerHTML = `
+                    <button onclick="handleRTreeAddRandom()" class="bg-amber-600 hover:bg-amber-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow-md shadow-amber-600/20">+ Random Canvas Note</button>
+                    <button onclick="handleRTreeClear()" class="bg-red-950/40 border border-red-800/60 text-red-300 hover:bg-red-900/60 px-3 py-1.5 rounded-lg text-xs font-medium">Clear Canvas</button>
+                `;
+            }
+        }
+
+        function updateBannerInfo() {
+            const banner = document.getElementById('tree-info-banner');
+            if (currentTreeType === 'btree') {
+                banner.className = "bg-slate-900/90 border-l-4 border-blue-500 p-3.5 rounded-xl border-y border-r border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm text-slate-300";
+                banner.innerHTML = `
+                    <div>
+                        <span class="font-semibold text-blue-400">B-Tree Primary Index:</span>
+                        <span>Keys exist at all node levels. Exact point lookups terminate as soon as key is matched ($O(\\log N)$).</span>
+                    </div>
+                    <span class="text-xs font-mono bg-blue-950 text-blue-300 border border-blue-800/80 px-2.5 py-1 rounded-md">Usage: Primary Note ID Lookups</span>
+                `;
+            } else if (currentTreeType === 'bplustree') {
+                banner.className = "bg-slate-900/90 border-l-4 border-emerald-500 p-3.5 rounded-xl border-y border-r border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm text-slate-300";
+                banner.innerHTML = `
+                    <div>
+                        <span class="font-semibold text-emerald-400">B+-Tree Range Index:</span>
+                        <span>Internal nodes act strictly as routing keys. All values exist in linked leaf nodes for fast range scans.</span>
+                    </div>
+                    <span class="text-xs font-mono bg-emerald-950 text-emerald-300 border border-emerald-800/80 px-2.5 py-1 rounded-md">Usage: Timeline Feeds & Date Ranges</span>
+                `;
+            } else if (currentTreeType === 'rtree') {
+                banner.className = "bg-slate-900/90 border-l-4 border-amber-500 p-3.5 rounded-xl border-y border-r border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm text-slate-300";
+                banner.innerHTML = `
+                    <div>
+                        <span class="font-semibold text-amber-400">R-Tree Spatial Index:</span>
+                        <span>Encloses 2D objects in Minimum Bounding Rectangles (MBRs) to rapidly eliminate non-overlapping branches.</span>
+                    </div>
+                    <span class="text-xs font-mono bg-amber-950 text-amber-300 border border-amber-800/80 px-2.5 py-1 rounded-md">Usage: Spatial Canvas Layout</span>
+                `;
+            }
+        }
+
+        function setLog(msg) {
+            document.getElementById('log-message').innerText = msg;
+        }
+
+        function setNodeCount(count) {
+            document.getElementById('tree-node-count').innerText = `Nodes: ${count}`;
+        }
+
+        function renderCurrentTree() {
+            const svg = document.getElementById('svg-tree-canvas');
+            const rtreeContainer = document.getElementById('rtree-container');
+            const hint = document.getElementById('rtree-overlay-hint');
+
+            if (currentTreeType === 'rtree') {
+                svg.classList.add('hidden');
+                rtreeContainer.classList.remove('hidden');
+                hint.classList.remove('hidden');
+                initRTreeCanvas();
+            } else {
+                svg.classList.remove('hidden');
+                rtreeContainer.classList.add('hidden');
+                hint.classList.add('hidden');
+
+                if (currentTreeType === 'btree') {
+                    renderBTreeSVG(globalBTree, svg);
+                } else if (currentTreeType === 'bplustree') {
+                    renderBPlusTreeSVG(globalBPlusTree, svg);
+                }
+            }
+        }
+
+        /* =========================================================================
+           8. ACTION BUTTON HANDLERS
+           ========================================================================= */
+        function handleBTreeInsert() {
+            const input = document.getElementById('btree-input-val');
+            const val = parseInt(input.value);
+            if (isNaN(val)) return;
+
+            const res = globalBTree.insert(val);
+            if (!res.success) {
+                setLog(`Insert Rejected: ${res.reason}`);
+                document.getElementById('step-description').innerText = res.reason;
+                return;
+            }
+
+            input.value = '';
+            renderBTreeSVG(globalBTree, document.getElementById('svg-tree-canvas'));
+            setLog(`Inserted key [${val}] into B-Tree.`);
+            document.getElementById('step-description').innerText = `Inserted key ${val} into B-Tree node. Node split triggered if capacity exceeded Order M (${currentDegree}).`;
+        }
+
+        function handleBTreeSearch() {
+            const val = parseInt(document.getElementById('btree-input-val').value);
+            if (isNaN(val)) return;
+
+            const res = globalBTree.search(val);
+            renderBTreeSVG(globalBTree, document.getElementById('svg-tree-canvas'), res);
+
+            if (res.found) {
+                setLog(`Found key ${val} in B-Tree node! Traversed ${res.path.length} levels.`);
+                document.getElementById('step-description').innerText = `Point lookup succeeded: Key ${val} matched in B-Tree node. Traversal path highlighted in blue.`;
+            } else {
+                setLog(`Key ${val} not found in B-Tree.`);
+                document.getElementById('step-description').innerText = `Point lookup failed: Key ${val} is not present in the B-Tree index. Traversed down path to leaf node.`;
+            }
+        }
+
+        function handleBTreeClear() {
+            globalBTree.clear();
+            renderBTreeSVG(globalBTree, document.getElementById('svg-tree-canvas'));
+            setLog(`B-Tree cleared.`);
+        }
+
+        function handleBPlusInsert() {
+            const input = document.getElementById('bplus-input-val');
+            const val = parseInt(input.value);
+            if (isNaN(val)) return;
+
+            const res = globalBPlusTree.insert(val, `Note #${val}`);
+            if (!res.success) {
+                setLog(`Insert Rejected: ${res.reason}`);
+                document.getElementById('step-description').innerText = res.reason;
+                return;
+            }
+
+            input.value = '';
+            renderBPlusTreeSVG(globalBPlusTree, document.getElementById('svg-tree-canvas'));
+            setLog(`Inserted key [${val}] into B+-Tree leaf node.`);
+            document.getElementById('step-description').innerText = `Key ${val} inserted into B+-Tree leaf node. Doubly linked leaf list updated sequentially.`;
+        }
+
+        function handleBPlusRangeSearch() {
+            const min = parseInt(document.getElementById('bplus-range-min').value) || 0;
+            const max = parseInt(document.getElementById('bplus-range-max').value) || 100;
+
+            const res = globalBPlusTree.rangeSearch(min, max);
+            renderBPlusTreeSVG(globalBPlusTree, document.getElementById('svg-tree-canvas'), res);
+
+            setLog(`Range Scan [${min} to ${max}]: Matched ${res.results.length} keys across ${res.visitedLeaves.length} linked leaf nodes.`);
+            document.getElementById('step-description').innerText = `B+-Tree Range Scan: Traversed down index path, then followed doubly linked leaf pointers across ${res.visitedLeaves.length} leaf pages to collect range matches [${min}..${max}].`;
+        }
+
+        function handleBPlusClear() {
+            globalBPlusTree.clear();
+            renderBPlusTreeSVG(globalBPlusTree, document.getElementById('svg-tree-canvas'));
+            setLog(`B+-Tree cleared.`);
+        }
+
+        function handleRTreeAddRandom() {
+            if (!rtreeCanvas) return;
+            const rx = Math.floor(Math.random() * (rtreeCanvas.width - 160)) + 20;
+            const ry = Math.floor(Math.random() * (rtreeCanvas.height - 120)) + 20;
+            const id = Math.floor(Math.random() * 800 + 100).toString();
+
+            const r = new RRect(rx, ry, 120, 75, id, `Canvas Note ${id}`);
+            globalRTree.insert(r, { title: r.label, id: r.id });
+            highlightedItems = [{ mbr: r, data: { title: r.label, id: r.id } }];
+            drawRTreeCanvas();
+            setLog(`Added random note [ID: ${id}] at (${rx}, ${ry}).`);
+            document.getElementById('step-description').innerText = `Inserted new spatial note block at (${rx}, ${ry}). Parent Minimum Bounding Rectangle (MBR) dynamically updated.`;
+        }
+
+        function handleRTreeClear() {
+            globalRTree.clear();
+            highlightedItems = [];
+            currentRegion = null;
+            drawRTreeCanvas();
+            setLog(`R-Tree Canvas cleared.`);
+        }
+
+        /* =========================================================================
+           9. SIDE-BY-SIDE TREE COMPARISON RUNNER
+           ========================================================================= */
+        function runSideBySideComparison() {
+            const keyInput = document.getElementById('cmp-key-input');
+            const targetKey = parseInt(keyInput.value);
+            if (isNaN(targetKey)) return;
+
+            const btreeRes = globalBTree.search(targetKey);
+            const bplusRes = globalBPlusTree.search(targetKey);
+
+            renderBTreeSVG(globalBTree, document.getElementById('svg-cmp-btree'), btreeRes);
+            renderBPlusTreeSVG(globalBPlusTree, document.getElementById('svg-cmp-bplus'), bplusRes);
+
+            document.getElementById('cmp-btree-stats').innerText = `Steps: ${btreeRes.path.length}`;
+            document.getElementById('cmp-bplus-stats').innerText = `Steps: ${bplusRes.path.length}`;
+
+            document.getElementById('cmp-btree-log').innerText = btreeRes.found
+                ? `Matched Key ${targetKey} at depth ${btreeRes.path.length}! (B-Trees can terminate early in internal nodes).`
+                : `Key ${targetKey} not found in B-Tree after ${btreeRes.path.length} level inspections.`;
+
+            document.getElementById('cmp-bplus-log').innerText = bplusRes.found
+                ? `Matched Key ${targetKey} in leaf node at depth ${bplusRes.path.length}! (B+-Trees always search down to leaf level).`
+                : `Key ${targetKey} not found in B+-Tree after ${bplusRes.path.length} level inspections.`;
+        }
+
+        /* =========================================================================
+           10. WINDOW INITIALIZATION
+           ========================================================================= */
+        window.onload = function() {
+            updateControlInputs();
+            updateBannerInfo();
+            renderCurrentTree();
+        };
+
+        window.onresize = function() {
+            if (currentTreeType === 'rtree') {
+                initRTreeCanvas();
+            }
+        };
+    </script>
+</body>
+</html>
