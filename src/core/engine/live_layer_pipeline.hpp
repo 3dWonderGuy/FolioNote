@@ -60,6 +60,9 @@ public:
     ink::stroke_model::Vec2 previousGoogleResultPos;
     std::vector<Segment1D> googlePredictedSegments;
     float currentSmoothedWidth = -1.0f;
+    float currentZoomScale = 1.0f;
+    float currentTiltX = 0.0f;
+    float currentTiltY = 0.0f;
 
     LiveLayerPipeline() {
         googleModeler = std::make_unique<ink::stroke_model::StrokeModeler>();
@@ -68,10 +71,13 @@ public:
     // -------------------------------------------------------------
     // INKING LIFECYCLE (All coordinates in mm)
     // -------------------------------------------------------------
-    void BeginStroke(double worldXMm, double worldYMm, float pressure, double timeSec, const PenTool& tool) {
+    void BeginStroke(double worldXMm, double worldYMm, float pressure, double timeSec, const PenTool& tool, float zoomScale = 1.0f, float tiltX = 0.0f, float tiltY = 0.0f) {
         activeType = LiveLayerType::Inking;
         isStrokeActive = true;
         activePenTool = tool;
+        currentZoomScale = zoomScale;
+        currentTiltX = tiltX;
+        currentTiltY = tiltY;
 
         activeStrokePoints.clear();
         fullSmoothedSegments.clear();
@@ -82,7 +88,7 @@ public:
         hasPreviousGooglePoint = false;
         currentSmoothedWidth = -1.0f;
 
-        Point2D startPt{ worldXMm, worldYMm, pressure, timeSec };
+        Point2D startPt{ worldXMm, worldYMm, pressure, timeSec, tiltX, tiltY };
         activeStrokePoints.push_back(startPt);
 
         ink::stroke_model::StrokeModelParams params;
@@ -113,10 +119,13 @@ public:
         }
     }
 
-    void AddStrokePoint(double worldXMm, double worldYMm, float pressure, double timeSec) {
+    void AddStrokePoint(double worldXMm, double worldYMm, float pressure, double timeSec, float zoomScale = 1.0f, float tiltX = 0.0f, float tiltY = 0.0f) {
         if (!isStrokeActive || activeStrokePoints.empty()) return;
+        currentZoomScale = zoomScale;
+        currentTiltX = tiltX;
+        currentTiltY = tiltY;
 
-        Point2D currentPt{ worldXMm, worldYMm, pressure, timeSec };
+        Point2D currentPt{ worldXMm, worldYMm, pressure, timeSec, tiltX, tiltY };
         const Point2D& prevPt = activeStrokePoints.back();
 
         double dx = currentPt.x - prevPt.x;
@@ -192,6 +201,8 @@ public:
         googlePredictedSegments.clear();
         hasPreviousGooglePoint = false;
         currentSmoothedWidth = -1.0f;
+        currentTiltX = 0.0f;
+        currentTiltY = 0.0f;
         isStrokeActive = false;
         activeType = LiveLayerType::None;
         return data;
@@ -206,6 +217,8 @@ public:
         googlePredictedSegments.clear();
         hasPreviousGooglePoint = false;
         currentSmoothedWidth = -1.0f;
+        currentTiltX = 0.0f;
+        currentTiltY = 0.0f;
         isStrokeActive = false;
         activeType = LiveLayerType::None;
     }
@@ -245,7 +258,7 @@ private:
         // ---------------------------------------------------------------
         float velocityThinFactor = 1.0f;
         if (g_InkingConfig.google_use_velocity) {
-            float speed = std::hypot(res.velocity.x, res.velocity.y);
+            float speed = std::hypot(res.velocity.x, res.velocity.y) * currentZoomScale;
             float normalizedSpeed = std::clamp(
                 speed / g_InkingConfig.google_velocity_thinning_max_speed, 0.0f, 1.0f);
             // At speed=0 → factor=1.0 (full width). At speed=max → factor=minThickness fraction.
@@ -273,7 +286,8 @@ private:
                 fullSmoothedSegments.push_back(seg);
             }
 
-            liveModeledPoints.push_back({ res.position.x, res.position.y, currentSmoothedWidth });
+            float speed = std::hypot(res.velocity.x, res.velocity.y);
+            liveModeledPoints.push_back({ res.position.x, res.position.y, currentSmoothedWidth, res.pressure, speed, currentTiltX, currentTiltY });
 
             previousGoogleResultPos = res.position;
             hasPreviousGooglePoint = true;
@@ -314,7 +328,8 @@ private:
                 googlePredictedSegments.push_back(seg);
                 prev = seg.p1;
 
-                predPoints.push_back({ res.position.x, res.position.y, predictionSmoothedWidth });
+                float speed = std::hypot(res.velocity.x, res.velocity.y);
+                predPoints.push_back({ res.position.x, res.position.y, predictionSmoothedWidth, res.pressure, speed, currentTiltX, currentTiltY });
             }
 
             if (predPoints.size() >= 2) {

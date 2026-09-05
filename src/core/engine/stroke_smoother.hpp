@@ -7,6 +7,8 @@ struct Point2D {
     double y = 0.0;           // mm
     float pressure = 1.0f;
     double timeSeconds = 0.0;
+    float tiltX = 0.0f;
+    float tiltY = 0.0f;
 };
 
 struct Segment1D {
