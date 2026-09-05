@@ -4,7 +4,7 @@ title: Home
 
 # FolioNote
 
-**FolioNote** is a cross-platform, infinite-canvas note-taking engine and document workspace built in C++20. Engineered from the ground up for low-latency active stylus input, fluid infinite navigation, and rich spatial organization, it bridges the tactile immediacy of physical paper with the boundless flexibility of a digital whiteboard.
+**FolioNote** is a cross-platform, infinite-canvas note-taking engine and document workspace built in C++20. Engineered from the ground up for low-latency active stylus input, fluid infinite navigation, and rich spatial organization. Perfect tool for anyone wanting to take digital notes of any kind.
 
 ---
 
