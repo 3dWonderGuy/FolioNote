@@ -3,3 +3,16 @@ build/
 bin/
 dist/
 dist-installer/
+
+# Android Studio & Gradle
+android-project/.gradle/
+android-project/build/
+android-project/*/build/
+android-project/**/.cxx/
+android-project/local.properties
+android-project/.idea/
+android-project/*.iml
+android-project/*/*.iml
+android-project/**/captures/
+android-project/**/*.apk
+android-project/**/*.aab
