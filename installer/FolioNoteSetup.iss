@@ -36,6 +36,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; Main Executable
 Source: "..\dist\FolioNote\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
+; Runtime DLLs (SDL3.dll, blend2d.dll, etc.)
+Source: "..\dist\FolioNote\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+
 ; Optional asset and config directories
 Source: "..\dist\FolioNote\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Permissions: users-readexec
 Source: "..\dist\FolioNote\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
