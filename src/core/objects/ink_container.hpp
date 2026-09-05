@@ -228,10 +228,9 @@ public:
             // 4. MATERIAL SIMULATION (HIGHLIGHTER VS PEN)
             // Configure blend mode & color
             if (isHighlighter) {
-                // Highlighters use SRC_OVER with translucent alpha (~33% opacity or 0x55).
-                // This simulates real highlighter ink letting the underlying text/drawings show through.
-                ctx.set_comp_op(BL_COMP_OP_SRC_OVER);
-                ctx.set_fill_style(BLRgba32(stroke.color.r(), stroke.color.g(), stroke.color.b(), 0x55));
+                // Highlighters use MULTIPLY blend mode so dark ink/text underneath is preserved.
+                ctx.set_comp_op(BL_COMP_OP_MULTIPLY);
+                ctx.set_fill_style(BLRgba32(stroke.color.r(), stroke.color.g(), stroke.color.b(), 0xFF));
             } else {
                 // Regular pens use their opaque base color and cover everything beneath them.
                 ctx.set_comp_op(BL_COMP_OP_SRC_OVER);

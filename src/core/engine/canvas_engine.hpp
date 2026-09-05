@@ -141,19 +141,19 @@ public:
     // LIVE INGESTION HOOKS (Screen Px -> World mm)
     // -------------------------------------------------------------
 
-    void OnPointerDown(float screenX, float screenY, float pressure, double timeSec, const PenTool& tool) {
+    void OnPointerDown(float screenX, float screenY, float pressure, double timeSec, const PenTool& tool, float tiltX = 0.0f, float tiltY = 0.0f) {
         BLContext liveClear(liveInkingLayer);
         liveClear.clear_all();
         liveClear.end();
 
         Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
-        liveLayer.BeginStroke(worldMm.x, worldMm.y, pressure, timeSec, tool);
+        liveLayer.BeginStroke(worldMm.x, worldMm.y, pressure, timeSec, tool, static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
         isDirty = true;
     }
 
-    void OnPointerMove(float screenX, float screenY, float pressure, double timeSec) {
+    void OnPointerMove(float screenX, float screenY, float pressure, double timeSec, float tiltX = 0.0f, float tiltY = 0.0f) {
         Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
-        liveLayer.AddStrokePoint(worldMm.x, worldMm.y, pressure, timeSec);
+        liveLayer.AddStrokePoint(worldMm.x, worldMm.y, pressure, timeSec, static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
         isDirty = true;
     }
 

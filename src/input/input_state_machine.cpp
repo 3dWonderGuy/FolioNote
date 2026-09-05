@@ -136,9 +136,9 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
     switch (currentAction) {
         case InteractionState::Inking: {
             if (justDown) {
-                canvas.OnPointerDown(canvasLocalX, canvasLocalY, pen.pressure, latestEventTimeSec, palette.GetActivePen());
+                canvas.OnPointerDown(canvasLocalX, canvasLocalY, pen.pressure, latestEventTimeSec, palette.GetActivePen(), pen.tiltX, pen.tiltY);
             } else if (isMoving) {
-                canvas.OnPointerMove(canvasLocalX, canvasLocalY, pen.pressure, latestEventTimeSec);
+                canvas.OnPointerMove(canvasLocalX, canvasLocalY, pen.pressure, latestEventTimeSec, pen.tiltX, pen.tiltY);
             } else if (justUp) {
                 // Canvas talks directly to DocumentSession — State Machine is not involved in the data handoff
                 canvas.OnPointerUp(session, palette.GetActivePen());
@@ -195,9 +195,9 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
 
     if (currentAction == InteractionState::Inking) {
         if (justDown) {
-            canvas.OnPointerDown(canvasLocalX, canvasLocalY, 1.0f, latestEventTimeSec, palette.GetActivePen());
+            canvas.OnPointerDown(canvasLocalX, canvasLocalY, 1.0f, latestEventTimeSec, palette.GetActivePen(), 0.0f, 0.0f);
         } else if (isMoving) {
-            canvas.OnPointerMove(canvasLocalX, canvasLocalY, 1.0f, latestEventTimeSec);
+            canvas.OnPointerMove(canvasLocalX, canvasLocalY, 1.0f, latestEventTimeSec, 0.0f, 0.0f);
         } else if (justUp) {
             // Canvas talks directly to DocumentSession — State Machine is not involved in the data handoff
             canvas.OnPointerUp(session, palette.GetActivePen());
