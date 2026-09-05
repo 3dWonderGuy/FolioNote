@@ -1,0 +1,76 @@
+name: Windows Release & Installer Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-package:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Extract Tag Version
+        id: get_version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          VERSION="${VERSION#v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        uses: seanmcbreen/setup-ninja@v1.3
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_CXX_STANDARD=20
+
+      - name: Build Executable
+        run: |
+          cmake --build build --config Release -j 4
+
+      - name: Stage Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/FolioNote
+          Copy-Item "build/bin/FolioNote.exe" -Destination "dist/FolioNote/"
+          if (Test-Path "assets") { Copy-Item -Recurse "assets" -Destination "dist/FolioNote/assets" }
+          if (Test-Path "config") { Copy-Item -Recurse "config" -Destination "dist/FolioNote/config" }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination "dist/FolioNote/" }
+
+          # Also create a portable zip archive
+          Compress-Archive -Path "dist/FolioNote/*" -DestinationPath "FolioNote-Windows-Portable.zip"
+
+      - name: Compile Inno Setup Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
+        with:
+          path: installer/FolioNoteSetup.iss
+          options: /DMyAppVersion=${{ steps.get_version.outputs.VERSION }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist-installer/*.exe
+            FolioNote-Windows-Portable.zip
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
