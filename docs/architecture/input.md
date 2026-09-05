@@ -19,8 +19,8 @@ flowchart TD
     C --> F[Lock Inking Pipeline]
     C --> G[Suppress Multi-Touch Events]
     
-    D -- Yes --> H[Drop Event (Palm Rejection)]
-    D -- No --> I[Route to TouchGestureRecognizer]
+    D -->|Yes| H[Drop Event<br/>Palm Rejection]
+    D -->|No| I[Route to TouchGestureRecognizer]
     
     I --> J[Pinch-to-Zoom & Two-Finger Pan]
     E --> K[UI Interaction & Window Navigation]
