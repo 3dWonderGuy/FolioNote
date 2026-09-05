@@ -1,0 +1,118 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"third_party/lunasvg/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 94,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 99,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 106,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 112,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 148,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include/lunasvg",
+			"paths" : 
+			[
+				"third_party/lunasvg/include/lunasvg.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"lib/liblunasvg.a"
+			],
+			"targetId" : "lunasvg::@f9db7a9eac5f8b174c1a",
+			"targetIndex" : 114,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/lunasvg",
+			"exportName" : "lunasvgTargets",
+			"exportTargets" : 
+			[
+				{
+					"id" : "lunasvg::@f9db7a9eac5f8b174c1a",
+					"index" : 114
+				}
+			],
+			"paths" : 
+			[
+				"lsvg/CMakeFiles/Export/964a36b3564edcd8a3bb47a2b3cb6484/lunasvgTargets.cmake"
+			],
+			"type" : "export"
+		},
+		{
+			"backtrace" : 4,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/lunasvg",
+			"paths" : 
+			[
+				"src/android-project/app/.cxx/Debug/4t543f5t/arm64-v8a/lsvg/lunasvgConfig.cmake",
+				"src/android-project/app/.cxx/Debug/4t543f5t/arm64-v8a/lsvg/lunasvgConfigVersion.cmake"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 5,
+			"component" : "Unspecified",
+			"destination" : "lib/pkgconfig",
+			"paths" : 
+			[
+				"src/android-project/app/.cxx/Debug/4t543f5t/arm64-v8a/lsvg/lunasvg.pc"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "lsvg",
+		"source" : "third_party/lunasvg"
+	}
+}

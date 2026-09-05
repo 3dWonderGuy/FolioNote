@@ -1,0 +1,1 @@
+C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\build\intermediates\cxx\Debug\4t543f5t\obj\arm64-v8a

@@ -1,0 +1,60 @@
+{
+	"backtrace" : 2,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"ink_cc_library"
+		],
+		"files" : 
+		[
+			"third_party/ink-stroke-modeler/cmake/InkBazelEquivalents.cmake",
+			"third_party/ink-stroke-modeler/ink_stroke_modeler/internal/prediction/kalman_filter/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 1
+			},
+			{
+				"command" : 1,
+				"file" : 1,
+				"line" : 38,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 33,
+				"parent" : 1
+			}
+		]
+	},
+	"id" : "ink_stroke_modeler_matrix::@49632fa0d4f7292f4e30",
+	"name" : "ink_stroke_modeler_matrix",
+	"paths" : 
+	{
+		"build" : "ink_sm/ink_stroke_modeler/internal/prediction/kalman_filter",
+		"source" : "third_party/ink-stroke-modeler/ink_stroke_modeler/internal/prediction/kalman_filter"
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "Header Files",
+			"sourceIndexes" : 
+			[
+				0
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 2,
+			"path" : "third_party/ink-stroke-modeler/ink_stroke_modeler/internal/prediction/kalman_filter/matrix.h",
+			"sourceGroupIndex" : 0
+		}
+	],
+	"type" : "INTERFACE_LIBRARY"
+}
