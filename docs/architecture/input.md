@@ -13,7 +13,7 @@ Input events from SDL3 are routed through an **Input State Machine** adhering to
 3. **Mouse / Trackpad (Fallback):** Standard desktop cursor interactions and wheel zooms.
 
 ---
-
+```
               ┌──────────────────────┐
               │    SDL3 Event Ingest │
               └──────────┬───────────┘
@@ -30,7 +30,7 @@ Input events from SDL3 are routed through an **Input State Machine** adhering to
  │ Inking Tail │  │ Pan / Zoom  │  │ Tool Click  │
  │  Live Layer │  │ Decoders    │  │ UI Actions  │
  └─────────────┘  └─────────────┘  └─────────────┘
-
+```
  ---
 
 ## ⏱️ Decoupled Sampling Rates
