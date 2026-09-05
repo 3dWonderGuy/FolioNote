@@ -1,50 +1,80 @@
-#define MyAppName "FolioNote"
-#ifndef MyAppVersion
-  #define MyAppVersion "0.1.0-alpha"
-#endif
-#define MyAppPublisher "3dwonderguy"
-#define MyAppURL "https://github.com/3dwonderguy/FolioNote"
-#define MyAppExeName "FolioNote.exe"
+name: Windows Release & Installer Build
 
-[Setup]
-; Unique AppId guarantees that new versions overwrite and upgrade in-place
-AppId={{C8D49E22-5B90-4824-B831-75A0E63198AE}
-AppName={#MyAppName}
-AppVersion={#MyAppVersion}
-AppVerName={#MyAppName} {#MyAppVersion}
-AppPublisher={#MyAppPublisher}
-AppPublisherURL={#MyAppURL}
-AppSupportURL={#MyAppURL}/issues
-AppUpdatesURL={#MyAppURL}/releases
-DefaultDirName={autopf}\{#MyAppName}
-DisableProgramGroupPage=yes
-; Support both per-user and all-users installation
-PrivilegesRequiredOverridesAllowed=commandline dialog
-OutputDir=..\dist-installer
-OutputBaseFilename=FolioNote-Setup-{#MyAppVersion}
-Compression=lzma2/ultra64
-SolidCompression=yes
-WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64compatible
-UninstallDisplayIcon={app}\{#MyAppExeName}
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
-[Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+permissions:
+  contents: write
 
-[Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+jobs:
+  build-and-package:
+    runs-on: windows-2022
 
-[Files]
-; Main Executable
-Source: "..\dist\FolioNote\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-; Assets and Configuration folders
-Source: "..\dist\FolioNote\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-readexec
-Source: "..\dist\FolioNote\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\dist\FolioNote\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
-[Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+      - name: Extract Tag Version
+        id: get_version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="0.1.0-alpha"
+          fi
+          # Strip any illegal characters for Windows filenames
+          VERSION=$(echo "$VERSION" | tr '/' '-' | tr -cd '[:alnum:].-_')
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
-[Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_CXX_STANDARD=20
+
+      - name: Build Executable
+        run: |
+          cmake --build build --config Release -j 4
+
+      - name: Stage Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/FolioNote
+          Copy-Item "build/bin/FolioNote.exe" -Destination "dist/FolioNote/"
+          if (Test-Path "assets") { Copy-Item -Recurse "assets" -Destination "dist/FolioNote/assets" }
+          if (Test-Path "config") { Copy-Item -Recurse "config" -Destination "dist/FolioNote/config" }
+          if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination "dist/FolioNote/" }
+
+          Compress-Archive -Path "dist/FolioNote/*" -DestinationPath "FolioNote-Windows-Portable.zip"
+
+      - name: Compile Inno Setup Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
+        with:
+          path: installer/FolioNoteSetup.iss
+          options: '/DMyAppVersion="${{ steps.get_version.outputs.VERSION }}"'
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        with:
+          files: |
+            dist-installer/*.exe
+            FolioNote-Windows-Portable.zip
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
