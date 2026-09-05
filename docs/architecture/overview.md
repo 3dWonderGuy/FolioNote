@@ -16,30 +16,35 @@ FolioNote is engineered as a decoupled, multi-pass spatial engine designed for u
 ## 🧩 Subsystem Decomposition
 
 FolioNote is split into five core subsystems across the codebase:
+
+```mermaid
+flowchart TD
+    subgraph AppLayer ["Application Layer"]
+        App["Window Management | DPI Handling | Theme Palette"]
+    end
+
+    subgraph Frontends ["Frontends & Ingestion"]
+        Input["Input Pipeline<br/>(State Machine & Stylus)"]
+        UI["Dear ImGui Frontend<br/>(Toolbars, Hub & HUDs)"]
+    end
+
+    subgraph CoreDomain ["Document Session (Source of Truth)"]
+        Session["Workspace ──> Notebooks ──> Sections ──> Pages"]
+    end
+
+    subgraph Backends ["Execution & Persistence"]
+        Canvas["Canvas Engine<br/>(Blend2D + R-Tree Cull)"]
+        Storage["Storage Subsystem<br/>(SQLite3 + Binary .ink)"]
+    end
+
+    App --> Input
+    App --> UI
+    Input --> Session
+    UI --> Session
+    Session --> Canvas
+    Session --> Storage
 ```
-┌────────────────────────────────────────────────────────┐
-│                   Application Layer                    │
-│   Window Management | DPI Handling | Theme Palette     │
-└───────────┬────────────────────────────────┬───────────┘
-│                                │
-▼                                ▼
-┌────────────────────────┐      ┌────────────────────────┐
-│     Input Pipeline     │      │   Dear ImGui Frontend  │
-│  State Machine & Stylus│      │  Toolbars, Hub & HUDs  │
-└───────────┬────────────┘      └────────────┬───────────┘
-│                                │
-▼                                ▼
-┌────────────────────────────────────────────────────────┐
-│               Document Session (Source of Truth)       │
-│    Workspace ──> Notebooks ──> Sections ──> Pages      │
-└───────────┬────────────────────────────────┬───────────┘
-│                                │
-▼                                ▼
-┌────────────────────────┐      ┌────────────────────────┐
-│     Canvas Engine      │      │   Storage Subsystem    │
-│  Blend2D + R-Tree Cull │      │  SQLite3 + Binary .ink │
-└────────────────────────┘      └────────────────────────┘
-```
+
 ---
 
 ## 📁 Source Code Organization
@@ -62,4 +67,4 @@ FolioNote is split into five core subsystems across the codebase:
 * 📊 **[Runtime Component Graph](component-graph.md)** — Detailed class hierarchy, memory ownership, and lifetime models.
 * 🔄 **[Data Flow & Pipelines](data-flow.md)** — Sequence diagrams for live inking, stroke commits, and render loops.
 * 🖊️ **[Input Pipeline & Arbitration](input.md)** — Stylus priority arbitration, touch gesture decoding, and digitizer smoothing.
-* 💾 **[Storage Model & Persistence](storage.md)** — `.notebook` bundle directory structure, SQLite relational schema, and compressed `.ink` binary streams
+* 💾 **[Storage Model & Persistence](storage.md)** — `.notebook` bundle directory structure, SQLite relational schema, and compressed `.ink` binary streams.
