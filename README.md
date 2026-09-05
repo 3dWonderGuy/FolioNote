@@ -1,7 +1,59 @@
-# FolioNote
+# About FolioNote
 
-FolioNote is a high-performance, low-latency infinite-canvas note-taking application written in C++20. Designed for sustained 120+ FPS rendering and responsive stylus inking, it combines continuous geometric smoothing, dynamic spatial bounding acceleration, and an encapsulated document package model across desktop platforms and Android.
+FolioNote is a high-performance, infinite-canvas digital notebook engineered from the ground up in native C++20 for responsive, low-latency stylus inking. Built as an open-source, local-first alternative to mainstream note-taking software (such as Microsoft OneNote or Goodnotes), FolioNote focuses on fluid handwriting, spatial organization, and direct hardware control across desktop and mobile devices.
 
+---
+
+## ⚠️ Early Development & Alpha Status Warning
+
+> **Use at Your Own Risk:** FolioNote is currently in an active **Alpha** development phase. The core architecture, database schemas, and on-disk file formats are evolving rapidly.
+>
+> * **Data Safety:** **Do not use FolioNote as your sole storage for critical, unbacked-up data.** While the storage engine uses atomic SQLite transactions and compressed vector streams, breaking schema migrations or bugs may occur during early iterations.
+> * Always keep external backups of your `.notebook` bundle folders.
+
+---
+
+## 🎓 Built for Students & Visual Thinkers
+
+FolioNote is designed specifically for STEM students, researchers, and engineers who need:
+* **Unbounded Space:** An infinite continuous canvas for working through long math derivations, circuit diagrams, physics proofs, and large system flowcharts without rigid page boundaries.
+* **Pen-First Precision:** Low-latency inking physics tuned to feel like real ink on paper rather than a delayed software brush.
+* **Hierarchical Organization:** Multi-tier organization (Notebooks $\to$ Section Groups $\to$ Sections $\to$ Canvas Pages) to manage full semesters of coursework in single portable packages.
+
+---
+
+## 💡 Feature Requests & Community Feedback
+
+While the public GitHub repository is being structured for formal issue tracking and pull requests, we are collecting feedback, bug reports, and roadmap requests directly via Google Forms and live community tracking sheets:
+
+* 📝 **[Submit a Feature Request / Bug Report (Google Form)](#)** *(Replace with your Google Form URL)*
+* 📊 **[View the Public Roadmap & Request Tracker (Google Sheet)](#)** *(Replace with your Google Sheet URL)*
+
+---
+
+## ✨ Core Features & Technical Highlights
+
+### 🖊️ Handwriting & Inking Engine
+* **High-Frequency Telemetry:** Ingests hardware digitizer events at 240–480 Hz with sub-frame presentation.
+* **Physics-Based Smoothing:** Powered by Google Ink Stroke Modeler spring-damper dynamics, Centripetal Catmull-Rom spline fitting, and Ramer-Douglas-Peucker (RDP) point decimation.
+* **Vector Contour Meshing:** Real-time generation of closed 2D polygon ribbons rendered with Blend2D's JIT-accelerated vector rasterizer.
+
+### 🔍 Global Instant Search
+* **Embedded SQLite FTS5 Engine:** Full-text search index built directly into the `.notebook` package bundle.
+* **BM25 Relevance Scoring:** Instant search across typed text boxes, titles, tags, and spatial metadata.
+* **Spatial Coordinate Navigation:** Selecting a search result automatically animates the camera viewport directly to the object's exact world-space $(x, y)$ coordinates.
+
+### ⚡ Spatial Acceleration & Frustum Culling
+* **Dynamic 2D R-Tree:** $O(\log N)$ spatial indexing that culls off-screen primitives, ensuring a sustained 120+ FPS framerate even across massive canvases with tens of thousands of strokes.
+* **Sub-Pixel Anchor Zooming:** Pin-point cursor anchor zooming and momentum panning.
+
+### 🛡️ Hardware Priority Arbitration & Palm Rejection
+* **Deterministic Priority Routing:** Strict hardware arbitration (Stylus $\to$ Touch $\to$ Mouse) with an 80ms noise hysteresis cooldown to eliminate accidental palm touches.
+* **UI Focus Locks:** Dear ImGui interaction locks prevent drawing or canvas movement when interacting with toolbars, ribbons, or modals.
+
+### 📦 Local-First `.notebook` Package Architecture
+* **Self-Contained Bundles:** Every notebook is an open directory containing `structure.db` (SQLite relational schema + WAL journal) and `pages/{GUID}.ink` (zlib-compressed vector streams).
+* **Zero Cloud Lock-In:** Complete file privacy with fast, local disk I/O and easy folder backups.
 ---
 
 ## ⚡ Key Capabilities
