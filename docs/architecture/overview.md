@@ -16,6 +16,7 @@ FolioNote is engineered as a decoupled, multi-pass spatial engine designed for u
 ## 🧩 Subsystem Decomposition
 
 FolioNote is split into five core subsystems across the codebase:
+```
 ┌────────────────────────────────────────────────────────┐
 │                   Application Layer                    │
 │   Window Management | DPI Handling | Theme Palette     │
@@ -38,7 +39,7 @@ FolioNote is split into five core subsystems across the codebase:
 │     Canvas Engine      │      │   Storage Subsystem    │
 │  Blend2D + R-Tree Cull │      │  SQLite3 + Binary .ink │
 └────────────────────────┘      └────────────────────────┘
-
+```
 ---
 
 ## 📁 Source Code Organization
