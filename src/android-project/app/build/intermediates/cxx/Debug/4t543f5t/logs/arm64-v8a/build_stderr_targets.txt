@@ -1,1 +1,0 @@
-ninja: error: mkdir(ink_sm/ink_stroke_modeler/internal/CMakeFiles/ink_stroke_modeler_loop_contraction_mitigation_modeler.dir): No such file or directory

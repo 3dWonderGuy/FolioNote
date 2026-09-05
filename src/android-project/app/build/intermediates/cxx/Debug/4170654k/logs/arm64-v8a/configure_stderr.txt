@@ -1,7 +1,0 @@
-   BLEND2D_LIBS=c;$<BUILD_INTERFACE:asmjit::asmjit>
-   BLEND2D_CFLAGS=-DBL_STATIC
-   BLEND2D_WARNING_CFLAGS=-Wall;-Wextra;-Wconversion;-Wdouble-promotion;-Wlogical-not-parentheses
-   BLEND2D_PRIVATE_CFLAGS=-fno-math-errno;-fno-threadsafe-statics;-fno-exceptions;-fno-rtti;-fno-semantic-interposition;-fno-trapping-math;-fno-finite-math-only;-mllvm;--disable-loop-idiom-all;-DBL_BUILD_OPT_ASIMD_CRYPTO;-Wall;-Wextra;-Wconversion;-Wdouble-promotion;-Wlogical-not-parentheses;-DASMJIT_NO_FOREIGN;-DASMJIT_NO_STDCXX;-DASMJIT_ABI_NAMESPACE=abi_bl
-   BLEND2D_PRIVATE_CFLAGS_REL=-O2;-fmerge-all-constants;-ftree-vectorize
-   BLEND2D_PRIVATE_CFLAGS_ASIMD_CRYPTO=-march=armv8-a+aes+crc+crypto;-DBL_TARGET_OPT_ASIMD_CRYPTO
-libpng NOT found

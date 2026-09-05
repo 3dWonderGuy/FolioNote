@@ -1,3 +1,0 @@
-ninja: Entering directory `C:\b\fn\Debug\1w1x4f2g\arm64-v8a'
-[0/2] Re-checking globbed directories...
-ninja: no work to do.
