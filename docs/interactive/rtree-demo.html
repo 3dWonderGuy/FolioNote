@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stroke Geometry Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1e1e24; color: #e5e5e5; font-family: 'Inter', sans-serif; }
+        #canvas-container { position: relative; width: 100vw; height: 100vh; cursor: crosshair; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+        #ui-panel {
+            position: absolute; top: 20px; right: 20px; width: 340px;
+            background: rgba(40, 42, 54, 0.95); padding: 20px; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #44475a;
+            backdrop-filter: blur(10px); z-index: 10;
+        }
+        .control-group { margin-bottom: 15px; }
+        label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 5px; color: #b9b9b9; }
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: #6272a4; }
+        .checkbox-label { display: flex; align-items: center; justify-content: flex-start; gap: 10px; cursor: pointer; font-size: 0.9rem; margin-bottom: 8px;}
+        input[type="checkbox"] { width: 16px; height: 16px; accent-color: #bd93f9; cursor: pointer;}
+        button {
+            width: 100%; padding: 10px; background-color: #bd93f9; color: #282a36;
+            border: none; border-radius: 6px; font-weight: bold; cursor: pointer;
+            transition: background 0.2s; margin-top: 10px;
+        }
+        button:hover { background-color: #caa9fa; }
+        .legend { margin-top: 15px; font-size: 0.8rem; border-top: 1px solid #44475a; padding-top: 10px;}
+        .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .color-box { width: 12px; height: 12px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container">
+    <canvas id="mainCanvas"></canvas>
+    
+    <div id="ui-panel">
+        <h2 class="text-lg font-bold text-white mb-4">Geometry Visualizer</h2>
+        <p class="text-xs text-gray-400 mb-4">Draw on the screen. Draw SLOWLY to see the math break down, then increase the spatial filter to fix it.</p>
+        
+        <div class="control-group">
+            <label><span>Stroke Width</span> <span id="widthVal">40px</span></label>
+            <input type="range" id="strokeWidth" min="5" max="100" value="40">
+        </div>
+        
+        <div class="control-group">
+            <label>
+                <span class="font-bold text-red-400">Spatial Filter (Min Distance)</span> 
+                <span id="filterVal">0px</span>
+            </label>
+            <input type="range" id="spatialFilter" min="0" max="20" step="0.5" value="0">
+            <p class="text-[10px] text-gray-500 mt-1">0px = Raw tablet data (causes zig-zags on slow strokes). Higher = smooths geometry.</p>
+        </div>
+
+        <div class="control-group mt-6">
+            <label class="checkbox-label">
+                <input type="checkbox" id="showPolygon" checked> Show Final Filled Polygon
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="showCenterline" checked> Show Centerline & Points
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="showNormals" checked> Show Normals & Bisectors
+            </label>
+        </div>
+
+        <button id="clearBtn">Clear Canvas</button>
+
+        <div class="legend">
+            <div class="legend-item"><div class="color-box" style="background: rgba(255, 255, 255, 0.5);"></div> Raw Input Points</div>
+            <div class="legend-item"><div class="color-box" style="background: #ff5555;"></div> Tangent Normals (Direction)</div>
+            <div class="legend-item"><div class="color-box" style="background: #50fa7b;"></div> Offset Bisectors (The "Arms")</div>
+            <div class="legend-item"><div class="color-box" style="background: #8be9fd;"></div> Left / Right Polygon Vertices</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let rawPoints = [];
+    let isDrawing = false;
+
+    // UI Elements
+    const strokeWidthSlider = document.getElementById('strokeWidth');
+    const spatialFilterSlider = document.getElementById('spatialFilter');
+    const widthVal = document.getElementById('widthVal');
+    const filterVal = document.getElementById('filterVal');
+    
+    const showPolygon = document.getElementById('showPolygon');
+    const showCenterline = document.getElementById('showCenterline');
+    const showNormals = document.getElementById('showNormals');
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        draw();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Event Listeners
+    strokeWidthSlider.addEventListener('input', (e) => { widthVal.textContent = e.target.value + 'px'; draw(); });
+    spatialFilterSlider.addEventListener('input', (e) => { filterVal.textContent = e.target.value + 'px'; draw(); });
+    
+    showPolygon.addEventListener('change', draw);
+    showCenterline.addEventListener('change', draw);
+    showNormals.addEventListener('change', draw);
+    document.getElementById('clearBtn').addEventListener('click', () => { rawPoints = []; draw(); });
+
+    // Input Handling (Simulating tablet data)
+    function getPointerPos(e) {
+        return { x: e.clientX || e.touches?.[0].clientX, y: e.clientY || e.touches?.[0].clientY };
+    }
+
+    canvas.addEventListener('mousedown', (e) => { isDrawing = true; rawPoints = [getPointerPos(e)]; draw(); });
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isDrawing) return;
+        // Introduce artificial tiny jitter to simulate slow-drawing hardware noise
+        const pos = getPointerPos(e);
+        const jitterX = (Math.random() - 0.5) * 1.5; 
+        const jitterY = (Math.random() - 0.5) * 1.5;
+        rawPoints.push({ x: pos.x + jitterX, y: pos.y + jitterY });
+        draw();
+    });
+    window.addEventListener('mouseup', () => { isDrawing = false; });
+    
+    canvas.addEventListener('touchstart', (e) => { isDrawing = true; rawPoints = [getPointerPos(e)]; draw(); });
+    canvas.addEventListener('touchmove', (e) => {
+        if (!isDrawing) return;
+        const pos = getPointerPos(e);
+        rawPoints.push({ x: pos.x, y: pos.y });
+        draw();
+    });
+    window.addEventListener('touchend', () => { isDrawing = false; });
+
+    // Math & Geometry Engine
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (rawPoints.length === 0) return;
+
+        const width = parseFloat(strokeWidthSlider.value);
+        const minDist = parseFloat(spatialFilterSlider.value);
+        const halfWidth = width / 2;
+
+        // 1. SPATIAL FILTERING (The most important fix)
+        let filteredPoints = [];
+        for (const p of rawPoints) {
+            if (filteredPoints.length === 0) {
+                filteredPoints.push(p);
+            } else {
+                const lastP = filteredPoints[filteredPoints.length - 1];
+                const dx = p.x - lastP.x;
+                const dy = p.y - lastP.y;
+                const distSq = dx*dx + dy*dy;
+                // Only keep point if it moved further than the slider threshold
+                if (distSq >= minDist * minDist) {
+                    filteredPoints.push(p);
+                }
+            }
+        }
+
+        if (filteredPoints.length < 2) return;
+        const N = filteredPoints.length;
+
+        // 2. TANGENTS & NORMALS
+        let normals = [];
+        let tangents = [];
+        for (let i = 0; i < N - 1; i++) {
+            const p0 = filteredPoints[i];
+            const p1 = filteredPoints[i+1];
+            let dx = p1.x - p0.x;
+            let dy = p1.y - p0.y;
+            let len = Math.hypot(dx, dy);
+            
+            if (len === 0) { dx = 1; dy = 0; len = 1; }
+            const tx = dx / len;
+            const ty = dy / len;
+            tangents.push({ x: tx, y: ty });
+            normals.push({ x: -ty, y: tx }); // 90 degrees CCW
+        }
+        // Duplicate last normal for the final point
+        normals.push(normals[normals.length - 1]);
+        tangents.push(tangents[tangents.length - 1]);
+
+        // 3. OFFSET MESH GENERATION (Bisectors)
+        let leftEdge = [];
+        let rightEdge = [];
+        let debugBisectors = [];
+
+        for (let i = 0; i < N; i++) {
+            const pt = filteredPoints[i];
+            let nx, ny;
+
+            if (i === 0) {
+                nx = normals[0].x; ny = normals[0].y;
+                debugBisectors.push({x: nx, y: ny});
+            } else if (i === N - 1) {
+                nx = normals[i].x; ny = normals[i].y;
+                debugBisectors.push({x: nx, y: ny});
+            } else {
+                // Bisector: average of previous and next normal
+                const nPrev = normals[i-1];
+                const nNext = normals[i];
+                let mx = nPrev.x + nNext.x;
+                let my = nPrev.y + nNext.y;
+                let mLen = Math.hypot(mx, my);
+
+                if (mLen < 0.0001) {
+                    // 180 degree hairpin fold, use previous normal
+                    nx = nPrev.x; ny = nPrev.y;
+                } else {
+                    nx = mx / mLen; ny = my / mLen;
+                    // Miter limit adjustment
+                    let dot = nx * nNext.x + ny * nNext.y;
+                    let miter = dot > 0.1 ? 1.0 / dot : 2.0; 
+                    // Clamping to prevent spikes!
+                    miter = Math.min(miter, 2.5);
+                    nx *= miter; ny *= miter;
+                }
+                debugBisectors.push({x: nx, y: ny});
+            }
+
+            // Generate polygon vertices
+            leftEdge.push({ x: pt.x + nx * halfWidth, y: pt.y + ny * halfWidth });
+            rightEdge.push({ x: pt.x - nx * halfWidth, y: pt.y - ny * halfWidth });
+        }
+
+        // --- RENDERING ---
+
+        // Draw Final Filled Polygon
+        if (showPolygon.checked) {
+            ctx.fillStyle = "rgba(189, 147, 249, 0.8)";
+            ctx.beginPath();
+            ctx.moveTo(leftEdge[0].x, leftEdge[0].y);
+            for (let i = 1; i < N; i++) ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
+            // Cap
+            ctx.lineTo(rightEdge[N-1].x, rightEdge[N-1].y);
+            for (let i = N - 2; i >= 0; i--) ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Draw Normals & Bisectors
+        if (showNormals.checked) {
+            for (let i = 0; i < N; i++) {
+                const pt = filteredPoints[i];
+                
+                // Draw perpendicular normal
+                if (i < N - 1) {
+                    ctx.strokeStyle = "#ff5555"; // Red for normals
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(pt.x, pt.y);
+                    ctx.lineTo(pt.x + normals[i].x * 30, pt.y + normals[i].y * 30);
+                    ctx.stroke();
+                }
+
+                // Draw bisector offset (The Arms)
+                ctx.strokeStyle = "#50fa7b"; // Green for bisectors
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(pt.x, pt.y);
+                ctx.lineTo(leftEdge[i].x, leftEdge[i].y);
+                ctx.moveTo(pt.x, pt.y);
+                ctx.lineTo(rightEdge[i].x, rightEdge[i].y);
+                ctx.stroke();
+
+                // Draw the resulting Left/Right vertices
+                ctx.fillStyle = "#8be9fd";
+                ctx.fillRect(leftEdge[i].x - 2, leftEdge[i].y - 2, 4, 4);
+                ctx.fillRect(rightEdge[i].x - 2, rightEdge[i].y - 2, 4, 4);
+            }
+        }
+
+        // Draw Centerline
+        if (showCenterline.checked) {
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(filteredPoints[0].x, filteredPoints[0].y);
+            for (let i = 1; i < N; i++) ctx.lineTo(filteredPoints[i].x, filteredPoints[i].y);
+            ctx.stroke();
+
+            // Draw filtered points
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            for (const p of filteredPoints) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+</script>
+</body>
+</html>
