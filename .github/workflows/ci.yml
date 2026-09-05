@@ -1,0 +1,29 @@
+name: CI Build Check
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_CXX_STANDARD=20
+
+      - name: Build Executable
+        run: |
+          cmake --build build --config Release -j 4
