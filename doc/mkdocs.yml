@@ -1,14 +1,16 @@
-site_name: FolioNote Engine Docs
+site_name: FolioNote Documentation
 site_url: https://3dwonderguy.github.io/FolioNote/
+site_description: High-performance infinite canvas engine documentation.
 theme:
   name: material
   palette:
-    scheme: slate # dark mode
-    primary: indigo
-    accent: cyan
+    - scheme: slate
+      primary: indigo
+      accent: cyan
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.top
     - search.suggest
     - search.highlight
     - content.code.copy
@@ -16,7 +18,10 @@ theme:
 markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
-  - pymdownx.highlight
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -25,9 +30,10 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - admonition
+  - tables
+  - attr_list
 
 extra_javascript:
-  - javascripts/mathjax.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
@@ -35,16 +41,12 @@ nav:
   - Home: index.md
   - Architecture:
       - System Overview: architecture/overview.md
-      - Component Graph: architecture/component-graph.md
-      - Data Flow: architecture/data-flow.md
-      - Input Pipeline: architecture/input.md
-      - Storage & DB: architecture/storage.md
-  - Math & Science:
-      - Overview: math/overview.md
+      - Data Flow Pipelines: architecture/data-flow.md
+      - Storage & Persistence: architecture/storage.md
+  - Math & Engine Foundations:
       - Stroke Polygon Math: math/stroke-polygon.md
-      - R-Tree Spatial Index: math/rtree.md
       - Spline Interpolation: math/splines.md
-      - Curve Decimation: math/rdp-decimation.md
+      - R-Tree Spatial Indexing: math/rtree.md
   - Development:
       - Build Guide: dev/build.md
-      - Contributing: dev/contributing.md
+      - Contributing Guidelines: dev/contributing.md
