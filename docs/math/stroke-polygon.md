@@ -51,7 +51,7 @@ Try drawing on the interactive canvas below. Adjust the **Spatial Filter** and *
 
 <div style="position: relative; width: 100%; height: 560px; border-radius: 12px; overflow: hidden; border: 1px solid #334155; margin: 20px 0;">
   <iframe 
-    src="../interactive/stroke-demo.html" 
+    src="docs/interactive/stroke-demo.html" 
     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
     loading="lazy"
     title="Interactive Stroke Geometry Demo">
