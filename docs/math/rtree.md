@@ -1,0 +1,38 @@
+# R-Tree Spatial Indexing
+
+To support unbounded, infinite canvases containing tens of thousands of vector strokes and objects, FolioNote uses a 2D **R-Tree** spatial bounding box index for fast viewport culling.
+
+---
+
+## 📦 Bounding Box Representation
+
+All spatial primitives on the canvas are defined by an Axis-Aligned Bounding Box ($\text{AABB}$) in world millimeters ($mm$):
+
+$$\text{AABB} = [x_{\min}, y_{\min}, x_{\max}, y_{\max}]$$
+
+### Fast Intersection Test
+
+Two bounding boxes $A$ and $B$ intersect if and only if their 1D projection intervals overlap along both axes:
+
+$$\text{Intersects}(A, B) \iff (A.x_{\min} \le B.x_{\max}) \land (A.x_{\max} \ge B.x_{\min}) \land (A.y_{\min} \le B.y_{\max}) \land (A.y_{\max} \ge B.y_{\min})$$
+
+---
+
+## 🔍 Viewport Culling Pipeline
+
+```mermaid
+flowchart TD
+    Cam[Current Camera State<br/>Pan X, Pan Y, Zoom] --> VP[Compute Viewport AABB in mm]
+    VP --> Query[R-Tree Spatial Query<br/>Average O log N]
+    Query --> UIDs[List of Visible Object UIDs]
+    UIDs --> Fetch[ObjectRegistry Fetch<br/>O 1 Direct Lookup]
+    Fetch --> Render[Blend2D Vector Rasterizer]
+```
+
+---
+
+## ⚡ Performance Characteristics
+
+* **Decoupled Keys:** The R-Tree stores only lightweight key pairs (`AABB` + `uint32_t UID`).
+* **Cache Efficiency:** Viewport traversal iterates tightly packed bounding boxes in CPU cache lines without loading heavy stroke coordinate arrays into memory.
+* **Query Complexity:** Spatial search scales at $O(\log N)$ on average, keeping frame render loops at 120+ FPS regardless of total canvas scale.
