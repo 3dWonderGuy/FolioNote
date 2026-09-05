@@ -21,33 +21,45 @@ Traditional note-taking tools force your thoughts into rigid constraints: fixed 
 
 ---
 
-## ✨ Why It’s Unique
+## ✨ What Makes FolioNote Special
 
 <div class="grid cards" markdown>
 
--   :material-feather: **Ultra-Low Latency Inking**
+-   :material-pen: **Paper-Like Inking**
     
     ---
     
-    A dedicated live-inking tail renders in-flight stylus inputs ahead of the main scene baking pass, giving immediate, tactile feedback with zero perceptible lag.
+    Writing feels natural, instant, and fluid. The pen engine responds to your stylus with zero noticeable delay and smooths out jitters so handwriting always looks crisp and clean.
 
--   :material-vector-polyline: **Fluid Geometric Smoothing**
+-   :material-folder-multiple: **Effortless Organization**
     
     ---
     
-    Raw digitizer telemetry is processed through real-time noise decimation and centripetal Catmull-Rom splines, creating crisp, natural vector strokes that look sharp at any zoom level.
+    Keep your thoughts structured without losing flexibility. Group related ideas into clear **Notebooks**, **Sections**, and **Pages**, making even massive projects easy to navigate.
 
--   :material-lightning-bolt: **R-Tree Spatial Indexing**
+-   :material-magnify: **Notebook-Wide Search**
     
     ---
     
-    Canvases scale indefinitely without frame drops. Viewport queries run in $O(\log N)$ time, selectively drawing only what is on-screen even on massive documents with tens of thousands of strokes.
+    Find what you need in seconds. Search across all your notebooks and pages instantly, whether you're looking for typed text, headings, or organized topics.
 
--   :material-cellphone-link: **True Cross-Platform Engine**
+-   :material-file-document-outline: **Flexible Import & Export**
     
     ---
     
-    A unified C++ core driving desktop environments via SDL3/OpenGL and mobile tablet devices via the Android NDK, ensuring identical rendering fidelity everywhere.
+    Your notes aren't trapped. Import existing PDF documents to annotate directly on the canvas, or export your work cleanly to Markdown and PDF to share with anyone.
+
+-   :material-infinity: **Truly Infinite Canvas**
+    
+    ---
+    
+    Never run out of room or get forced onto the next page mid-thought. Pan and zoom infinitely in any direction with stutter-free navigation, no matter how much you write or draw.
+
+-   :material-shield-lock-outline: **Private & Local-First**
+    
+    ---
+    
+    Your data stays on your device. Everything saves locally in open, portable formats without mandatory logins, subscriptions, or cloud lock-in.
 
 </div>
 
