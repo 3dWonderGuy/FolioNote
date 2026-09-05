@@ -49,11 +49,9 @@ flowchart TD
 
 Try drawing on the interactive canvas below. Adjust the **Spatial Filter** and **Stroke Width** in real time to see how the engine generates normal vectors, clamps miter joins, and constructs the polygon mesh:
 
-<div style="position: relative; width: 100%; height: 560px; border-radius: 12px; overflow: hidden; border: 1px solid #334155; margin: 20px 0;">
-  <iframe 
-    src="/FolioNote/docs/interactive/stroke-demo.html" 
-    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
-    loading="lazy"
-    title="Interactive Stroke Geometry Demo">
-  </iframe>
-</div>
+<!-- Inside docs/math/stroke-polygon.md -->
+<iframe 
+  src="../assets/stroke-demo.html" 
+  style="width: 100%; height: 560px; border: 1px solid #334155; border-radius: 12px;"
+  title="Interactive Stroke Geometry Demo">
+</iframe>
