@@ -28,7 +28,6 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
           VERSION="${VERSION#v}"
-          # Fallback for manual trigger if no tag exists
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
             VERSION="0.1.0-alpha"
           fi
@@ -36,9 +35,6 @@ jobs:
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Set up Ninja
-        uses: ninja-build/setup-ninja@v5
 
       - name: Configure CMake
         run: |
