@@ -1,0 +1,124 @@
+ninja: Entering directory `C:\b\fn\Debug\4170654k\arm64-v8a'
+[0/2] Re-checking globbed directories...
+[1/5] Building CXX object CMakeFiles/main.dir/src/core/spatial/r_tree.cpp.o
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.cpp:1:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+1 warning generated.
+[2/5] Building CXX object CMakeFiles/main.dir/src/input/input_state_machine.cpp.o
+FAILED: CMakeFiles/main.dir/src/input/input_state_machine.cpp.o 
+C:\Android\android-ndk-r27d\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=aarch64-none-linux-android28 --sysroot=C:/Android/android-ndk-r27d/toolchains/llvm/prebuilt/windows-x86_64/sysroot -DIMGUI_IMPL_OPENGL_ES3 -DLUNASVG_BUILD_STATIC -Dmain_EXPORTS -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/include -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/SDL/include -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/blend2d/blend2d -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/ink-stroke-modeler -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/abseil-cpp -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/sqlite3 -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/imgui -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/imgui/backends -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/blend2d -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/lunasvg/include -IC:/b/fn/Debug/4170654k/arm64-v8a/sdl/include-revision -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -std=c++20 -fPIC -fvisibility=default -DBL_STATIC -pthread -MD -MT CMakeFiles/main.dir/src/input/input_state_machine.cpp.o -MF CMakeFiles\main.dir\src\input\input_state_machine.cpp.o.d -o CMakeFiles/main.dir/src/input/input_state_machine.cpp.o -c C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_state_machine.cpp
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_state_machine.cpp:2:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/notebook.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/section.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/canvas_page.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_state_machine.cpp:2:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/page_repository.hpp:11:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/binary_serializer.hpp:15:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/text_box.hpp:56:13: error: no member named 'transform' in 'BLContext'
+   56 |         ctx.transform(transform);
+      |         ~~~ ^
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_state_machine.cpp:2:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/page_repository.hpp:11:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/binary_serializer.hpp:16:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/image_object.hpp:65:13: error: no member named 'transform' in 'BLContext'
+   65 |         ctx.transform(transform);
+      |         ~~~ ^
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/image_object.hpp:67:40: error: no member named 'empty' in 'BLImage'
+   67 |         if (isLoaded && !cachedBlImage.empty()) {
+      |                          ~~~~~~~~~~~~~ ^
+1 warning and 3 errors generated.
+[3/5] Building CXX object CMakeFiles/main.dir/src/input/input_manager.cpp.o
+FAILED: CMakeFiles/main.dir/src/input/input_manager.cpp.o 
+C:\Android\android-ndk-r27d\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=aarch64-none-linux-android28 --sysroot=C:/Android/android-ndk-r27d/toolchains/llvm/prebuilt/windows-x86_64/sysroot -DIMGUI_IMPL_OPENGL_ES3 -DLUNASVG_BUILD_STATIC -Dmain_EXPORTS -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/include -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/SDL/include -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/blend2d/blend2d -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/ink-stroke-modeler -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/abseil-cpp -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/sqlite3 -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/imgui -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/imgui/backends -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/blend2d -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/lunasvg/include -IC:/b/fn/Debug/4170654k/arm64-v8a/sdl/include-revision -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -std=c++20 -fPIC -fvisibility=default -DBL_STATIC -pthread -MD -MT CMakeFiles/main.dir/src/input/input_manager.cpp.o -MF CMakeFiles\main.dir\src\input\input_manager.cpp.o.d -o CMakeFiles/main.dir/src/input/input_manager.cpp.o -c C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.cpp
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.cpp:3:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.hpp:4:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/notebook.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/section.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/canvas_page.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.cpp:3:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.hpp:4:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/page_repository.hpp:11:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/binary_serializer.hpp:15:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/text_box.hpp:56:13: error: no member named 'transform' in 'BLContext'
+   56 |         ctx.transform(transform);
+      |         ~~~ ^
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.cpp:3:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.hpp:4:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/page_repository.hpp:11:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/binary_serializer.hpp:16:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/image_object.hpp:65:13: error: no member named 'transform' in 'BLContext'
+   65 |         ctx.transform(transform);
+      |         ~~~ ^
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/image_object.hpp:67:40: error: no member named 'empty' in 'BLImage'
+   67 |         if (isLoaded && !cachedBlImage.empty()) {
+      |                          ~~~~~~~~~~~~~ ^
+1 warning and 3 errors generated.
+[4/5] Building CXX object CMakeFiles/main.dir/src/main.cpp.o
+FAILED: CMakeFiles/main.dir/src/main.cpp.o 
+C:\Android\android-ndk-r27d\toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe --target=aarch64-none-linux-android28 --sysroot=C:/Android/android-ndk-r27d/toolchains/llvm/prebuilt/windows-x86_64/sysroot -DIMGUI_IMPL_OPENGL_ES3 -DLUNASVG_BUILD_STATIC -Dmain_EXPORTS -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/include -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/SDL/include -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/blend2d/blend2d -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/ink-stroke-modeler -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/abseil-cpp -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/sqlite3 -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/imgui -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/imgui/backends -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/blend2d -IC:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/third_party/lunasvg/include -IC:/b/fn/Debug/4170654k/arm64-v8a/sdl/include-revision -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -std=c++20 -fPIC -fvisibility=default -DBL_STATIC -pthread -MD -MT CMakeFiles/main.dir/src/main.cpp.o -MF CMakeFiles\main.dir\src\main.cpp.o.d -o CMakeFiles/main.dir/src/main.cpp.o -c C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/main.cpp
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/main.cpp:1:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/app/app.hpp:17:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/notebook.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/section.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/canvas_page.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/main.cpp:1:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/app/app.hpp:17:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/page_repository.hpp:11:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/binary_serializer.hpp:15:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/text_box.hpp:56:13: error: no member named 'transform' in 'BLContext'
+   56 |         ctx.transform(transform);
+      |         ~~~ ^
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/main.cpp:1:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/app/app.hpp:17:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:18:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/page_repository.hpp:11:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/storage/binary_serializer.hpp:16:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/image_object.hpp:65:13: error: no member named 'transform' in 'BLContext'
+   65 |         ctx.transform(transform);
+      |         ~~~ ^
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/objects/image_object.hpp:67:40: error: no member named 'empty' in 'BLImage'
+   67 |         if (isLoaded && !cachedBlImage.empty()) {
+      |                          ~~~~~~~~~~~~~ ^
+1 warning and 3 errors generated.
+ninja: build stopped: subcommand failed.

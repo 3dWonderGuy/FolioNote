@@ -1,0 +1,113 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:2:1-108:12
+INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:2:1-108:12
+INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:2:1-108:12
+INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:2:1-108:12
+	package
+		INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml
+	android:versionName
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:4:5-30
+		INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml
+	xmlns:android
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:2:11-69
+	android:versionCode
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:3:5-28
+		INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml
+	android:installLocation
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:5:5-35
+uses-feature#0x00020000
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:8:5-54
+	android:glEsVersion
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:8:19-51
+uses-feature#android.hardware.touchscreen
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:11:5-13:36
+	android:required
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:13:9-33
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:12:9-52
+uses-feature#android.hardware.bluetooth
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:16:5-18:36
+	android:required
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:18:9-33
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:17:9-50
+uses-feature#android.hardware.gamepad
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:19:5-21:36
+	android:required
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:21:9-33
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:20:9-48
+uses-feature#android.hardware.usb.host
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:22:5-24:36
+	android:required
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:24:9-33
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:23:9-49
+uses-feature#android.hardware.type.pc
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:27:5-29:36
+	android:required
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:29:9-33
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:28:9-48
+uses-permission#android.permission.VIBRATE
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:54:5-66
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:54:22-63
+application
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:70:5-106:19
+INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:70:5-106:19
+	android:extractNativeLibs
+		INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml
+	android:label
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:70:18-50
+	android:hardwareAccelerated
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:75:9-43
+	android:icon
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:71:9-43
+	android:allowBackup
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:72:9-35
+	android:theme
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:73:9-40
+	android:enableOnBackInvokedCallback
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:74:9-51
+activity#org.libsdl.app.SDLActivity
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:81:9-105:20
+	android:label
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:82:13-45
+	android:launchMode
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:84:13-43
+	android:exported
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:87:13-36
+	android:configChanges
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:85:13-205
+	android:alwaysRetainTaskState
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:83:13-49
+	android:preferMinimalPostProcessing
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:86:13-55
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:81:19-45
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:89:13-92:29
+action#android.intent.action.MAIN
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:90:17-69
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:90:25-66
+category#android.intent.category.LAUNCHER
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:91:17-77
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:91:27-74
+intent-filter#action:name:android.hardware.usb.action.USB_DEVICE_ATTACHED
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:94:13-96:29
+action#android.hardware.usb.action.USB_DEVICE_ATTACHED
+ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:95:17-90
+	android:name
+		ADDED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml:95:25-87
+uses-sdk
+INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml
+INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\src\main\AndroidManifest.xml

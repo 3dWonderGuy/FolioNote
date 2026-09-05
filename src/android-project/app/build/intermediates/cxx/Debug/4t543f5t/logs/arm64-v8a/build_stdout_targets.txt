@@ -1,0 +1,197 @@
+ninja: Entering directory `C:\SoftwareDevelopment\UADE-Universal-Application-Development-Enviroment\UniversalFrameworkapplication\src\android-project\app\.cxx\Debug\4t543f5t\arm64-v8a'
+[0/2] Re-checking globbed directories...
+[1/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_tracing_internal.dir/internal/tracing.cc.o
+[2/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_base.dir/internal/unscaledcycleclock.cc.o
+[3/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_utf8_for_code_point.dir/internal/utf8_for_code_point.cc.o
+[4/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_leak_check.dir/leak_check.cc.o
+[5/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_debugging_internal.dir/internal/address_is_readable.cc.o
+[6/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_demangle_rust.dir/internal/demangle_rust.cc.o
+[7/651] Linking CXX static library lib\libabsl_leak_check.a
+[8/651] Linking CXX static library lib\libabsl_utf8_for_code_point.a
+[9/651] Building CXX object CMakeFiles/TestApp.dir/third_party/imgui/imgui_draw.cpp.o
+[10/651] Building CXX object CMakeFiles/TestApp.dir/third_party/imgui/imgui.cpp.o
+[11/651] Building CXX object CMakeFiles/TestApp.dir/third_party/imgui/imgui_widgets.cpp.o
+[12/651] Building CXX object CMakeFiles/TestApp.dir/third_party/imgui/imgui_tables.cpp.o
+[13/651] Building CXX object CMakeFiles/TestApp.dir/third_party/imgui/backends/imgui_impl_sdl3.cpp.o
+[14/651] Building CXX object CMakeFiles/TestApp.dir/third_party/imgui/backends/imgui_impl_opengl3.cpp.o
+[15/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_symbolize.dir/symbolize.cc.o
+[16/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_stacktrace.dir/stacktrace.cc.o
+[17/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_strerror.dir/internal/strerror.cc.o
+[18/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_hardening.dir/internal/hardening.cc.o
+[19/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_demangle_internal.dir/internal/demangle.cc.o
+[20/651] Linking CXX static library lib\libabsl_strerror.a
+[21/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_spinlock_wait.dir/internal/spinlock_wait.cc.o
+[22/651] Linking CXX static library lib\libabsl_hardening.a
+[23/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_base_cpu_detect.dir/internal/cpu_detect.cc.o
+[24/651] Linking CXX static library lib\libabsl_spinlock_wait.a
+[25/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_debugging_internal.dir/internal/vdso_support.cc.o
+[26/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_debugging_internal.dir/internal/elf_mem_image.cc.o
+[27/651] Building CXX object _deps/abseil-cpp-build/absl/debugging/CMakeFiles/absl_decode_rust_punycode.dir/internal/decode_rust_punycode.cc.o
+[28/651] Building CXX object _deps/abseil-cpp-build/absl/hash/CMakeFiles/absl_city.dir/internal/city.cc.o
+[29/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_throw_delegate.dir/throw_delegate.cc.o
+[30/651] Building CXX object _deps/abseil-cpp-build/absl/crc/CMakeFiles/absl_crc_internal.dir/internal/crc_x86_arm_combined.cc.o
+[31/651] Building CXX object _deps/abseil-cpp-build/absl/crc/CMakeFiles/absl_crc_internal.dir/internal/crc.cc.o
+[32/651] Building C object CMakeFiles/sqlite3.dir/third_party/sqlite3/sqlite3.c.o
+[33/651] Linking C static library lib\libsqlite3.a
+[34/651] Building CXX object _deps/abseil-cpp-build/absl/hash/CMakeFiles/absl_hash.dir/internal/hash.cc.o
+[35/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_base.dir/internal/thread_identity.cc.o
+[36/651] Building CXX object _deps/abseil-cpp-build/absl/crc/CMakeFiles/absl_crc32c.dir/crc32c.cc.o
+[37/651] Building CXX object _deps/abseil-cpp-build/absl/crc/CMakeFiles/absl_crc32c.dir/internal/crc_memcpy_fallback.cc.o
+[38/651] Building CXX object _deps/abseil-cpp-build/absl/crc/CMakeFiles/absl_crc32c.dir/internal/crc_memcpy_x86_arm_combined.cc.o
+[39/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_raw_logging_internal.dir/internal/raw_logging.cc.o
+[40/651] Building CXX object _deps/abseil-cpp-build/absl/profiling/CMakeFiles/absl_exponential_biased.dir/internal/exponential_biased.cc.o
+[41/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_log_severity.dir/log_severity.cc.o
+[42/651] Building CXX object _deps/abseil-cpp-build/absl/crc/CMakeFiles/absl_crc32c.dir/internal/crc_non_temporal_memcpy.cc.o
+[43/651] Building CXX object CMakeFiles/TestApp.dir/src/core/spatial/r_tree.cpp.o
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.cpp:1:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+1 warning generated.
+[44/651] Building CXX object _deps/abseil-cpp-build/absl/crc/CMakeFiles/absl_crc_cord_state.dir/internal/crc_cord_state.cc.o
+[45/651] Linking CXX static library lib\libabsl_log_severity.a
+[46/651] Linking CXX static library lib\libabsl_exponential_biased.a
+[47/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_base.dir/internal/spinlock.cc.o
+[48/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_base.dir/casts.cc.o
+[49/651] Linking CXX static library lib\libabsl_raw_logging_internal.a
+[50/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_base.dir/internal/cycleclock.cc.o
+[51/651] Linking CXX static library lib\libabsl_throw_delegate.a
+[52/651] Linking CXX static library lib\libabsl_debugging_internal.a
+[53/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_malloc_internal.dir/internal/low_level_alloc.cc.o
+[54/651] Building CXX object _deps/abseil-cpp-build/absl/base/CMakeFiles/absl_base.dir/internal/sysinfo.cc.o
+[55/651] Building CXX object _deps/abseil-cpp-build/absl/numeric/CMakeFiles/absl_int128.dir/int128.cc.o
+[56/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/ascii.cc.o
+[57/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/internal/memutil.cc.o
+[58/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/internal/charconv_parse.cc.o
+[59/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings_internal.dir/internal/utf8.cc.o
+[60/651] Linking CXX static library lib\libabsl_base.a
+[61/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/charconv.cc.o
+[62/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/internal/charconv_bigint.cc.o
+[63/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/internal/stringify_sink.cc.o
+[64/651] Building CXX object _deps/abseil-cpp-build/absl/status/CMakeFiles/absl_statusor.dir/statusor.cc.o
+[65/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/match.cc.o
+[66/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/internal/damerau_levenshtein_distance.cc.o
+[67/651] Building CXX object _deps/abseil-cpp-build/absl/status/CMakeFiles/absl_status.dir/status.cc.o
+[68/651] Linking CXX static library lib\libabsl_decode_rust_punycode.a
+[69/651] Linking CXX static library lib\libabsl_tracing_internal.a
+[70/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/escaping.cc.o
+[71/651] Linking CXX static library lib\libabsl_base_cpu_detect.a
+[72/651] Linking CXX static library lib\libabsl_int128.a
+[73/651] Linking CXX static library lib\libabsl_city.a
+[74/651] Building CXX object _deps/abseil-cpp-build/absl/status/CMakeFiles/absl_status.dir/internal/status_internal.cc.o
+[75/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/str_split.cc.o
+[76/651] Linking CXX static library lib\libabsl_malloc_internal.a
+[77/651] Building CXX object _deps/abseil-cpp-build/absl/status/CMakeFiles/absl_status.dir/status_payload_printer.cc.o
+[78/651] Linking CXX static library lib\libabsl_demangle_rust.a
+[79/651] Linking CXX static library lib\libabsl_crc_internal.a
+[80/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/substitute.cc.o
+[81/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/numbers.cc.o
+[82/651] Linking CXX static library lib\libabsl_stacktrace.a
+[83/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings_internal.dir/internal/ostringstream.cc.o
+[84/651] Linking CXX static library lib\libabsl_demangle_internal.a
+[85/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/str_cat.cc.o
+[86/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings.dir/str_replace.cc.o
+[87/651] Building CXX object _deps/abseil-cpp-build/absl/types/CMakeFiles/absl_source_location.dir/source_location.cc.o
+[88/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_strings_internal.dir/internal/escaping.cc.o
+[89/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_str_format_internal.dir/internal/str_format/extension.cc.o
+[90/651] Building CXX object CMakeFiles/TestApp.dir/src/input/input_manager.cpp.o
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.cpp:3:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.hpp:4:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/live_layer_pipeline.hpp:96:13: warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
+   96 |             googleModeler->Reset(params);
+      |             ^~~~~~~~~~~~~~~~~~~~ ~~~~~~
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.cpp:3:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_manager.hpp:4:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:8:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/notebook.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/section.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/canvas_page.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+2 warnings generated.
+[91/651] Linking CXX static library lib\libabsl_source_location.a
+[92/651] Linking CXX static library lib\libabsl_strings_internal.a
+[93/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_str_format_internal.dir/internal/str_format/arg.cc.o
+[94/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_str_format_internal.dir/internal/str_format/bind.cc.o
+[95/651] Linking CXX static library lib\libabsl_strings.a
+[96/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_str_format_internal.dir/internal/str_format/output.cc.o
+[97/651] Linking CXX static library lib\libabsl_symbolize.a
+[98/651] Linking CXX static library lib\libabsl_hash.a
+[99/651] Building CXX object CMakeFiles/TestApp.dir/src/input/input_state_machine.cpp.o
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_state_machine.cpp:2:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/live_layer_pipeline.hpp:96:13: warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
+   96 |             googleModeler->Reset(params);
+      |             ^~~~~~~~~~~~~~~~~~~~ ~~~~~~
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/input/input_state_machine.cpp:2:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:8:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/notebook.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/section.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/canvas_page.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+2 warnings generated.
+[100/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_str_format_internal.dir/internal/str_format/parser.cc.o
+[101/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/win32_waiter.cc.o
+[102/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cordz_functions.dir/internal/cordz_functions.cc.o
+[103/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord_internal.dir/internal/cord_rep_btree_reader.cc.o
+[104/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord_internal.dir/internal/cord_rep_btree_navigator.cc.o
+[105/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cordz_handle.dir/internal/cordz_handle.cc.o
+[106/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_str_format_internal.dir/internal/str_format/float_conversion.cc.o
+[107/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord_internal.dir/internal/cord_rep_crc.cc.o
+[108/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_kernel_timeout_internal.dir/internal/kernel_timeout.cc.o
+[109/651] Linking CXX static library lib\libabsl_cordz_functions.a
+[110/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord_internal.dir/internal/cord_internal.cc.o
+[111/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord_internal.dir/internal/cord_rep_consume.cc.o
+[112/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_graphcycles_internal.dir/internal/graphcycles.cc.o
+[113/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord_internal.dir/internal/cord_rep_btree.cc.o
+[114/651] Linking CXX static library lib\libabsl_str_format_internal.a
+[115/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/blocking_counter.cc.o
+[116/651] Linking CXX static library lib\libabsl_graphcycles_internal.a
+[117/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cordz_info.dir/internal/cordz_info.cc.o
+[118/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord.dir/cord_analysis.cc.o
+[119/651] Linking CXX static library lib\libabsl_crc32c.a
+[120/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/barrier.cc.o
+[121/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/pthread_waiter.cc.o
+[122/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/per_thread_sem.cc.o
+[123/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/futex_waiter.cc.o
+[124/651] Linking CXX static library lib\libabsl_crc_cord_state.a
+[125/651] Building CXX object CMakeFiles/TestApp.dir/src/main.cpp.o
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/main.cpp:1:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/app/app.hpp:10:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/live_layer_pipeline.hpp:96:13: warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
+   96 |             googleModeler->Reset(params);
+      |             ^~~~~~~~~~~~~~~~~~~~ ~~~~~~
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/main.cpp:1:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/app/app.hpp:10:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/engine/canvas_engine.hpp:8:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/document_session.hpp:5:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/workspace.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/notebook.hpp:7:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/section.hpp:6:
+In file included from C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/document/canvas_page.hpp:7:
+C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/src/core/spatial/r_tree.hpp:6:10: warning: non-portable path to file '"utils/logger.hpp"'; specified path differs in case from file name on disk [-Wnonportable-include-path]
+    6 | #include "utils/Logger.hpp"
+      |          ^~~~~~~~~~~~~~~~~~
+      |          "utils/logger.hpp"
+2 warnings generated.
+[126/651] Linking CXX static library lib\libabsl_cord_internal.a
+[127/651] Building CXX object _deps/abseil-cpp-build/absl/strings/CMakeFiles/absl_cord.dir/cord.cc.o
+[128/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/notification.cc.o
+[129/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/create_thread_identity.cc.o
+[130/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/sem_waiter.cc.o
+[131/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/stdcpp_waiter.cc.o
+[132/651] Building CXX object _deps/abseil-cpp-build/absl/synchronization/CMakeFiles/absl_synchronization.dir/internal/waiter_base.cc.o
+[133/651] Building CXX object _deps/abseil-cpp-build/absl/time/CMakeFiles/absl_time_zone.dir/internal/cctz/src/time_zone_posix.cc.o
+ninja: build stopped: .
