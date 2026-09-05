@@ -69,17 +69,17 @@ nav:
   - Home: index.md
   - Architecture:
       - Overview: architecture/overview.md
-      - Runtime Component Graph: architecture/component-graph.md
-      - Data Flow & Execution: architecture/data-flow.md
-      - Input Pipeline & Arbitration: architecture/input.md
-      - Storage & Persistence: architecture/storage.md
-  - Math & Geometry:
-      - Foundations Overview: math/overview.md
-      - Stroke Polygon Math: math/stroke-polygon.md
-      - R-Tree Spatial Index: math/rtree.md
-      - Spline Interpolation: math/splines.md
-      - Curve Decimation (RDP): math/rdp-decimation.md
-      - Coordinate Transformations: math/coordinates.md
-- Development:
-      - Build & Compilation: dev/build.md
-      - Architectural Decisions: dev/code-structure.md
+      - "Codebase Structure": architecture/components.md
+      - "Data Flow": architecture/data-flow.md
+      - "Input Pipeline": architecture/input.md
+      - "Storage Engine": architecture/storage.md
+  - "Math & Geometry":
+      - Overview: math/overview.md
+      - "Stroke Polygon Math": math/stroke-polygon.md
+      - "R-Tree Spatial Index": math/rtree.md
+      - "Spline Interpolation": math/splines.md
+      - "Curve Decimation (RDP)": math/rdp-decimation.md
+      - "Coordinate Transforms": math/coordinates.md
+  - Development:
+      - "Build System": dev/build.md
+      - "Architectural Decisions": dev/code-structure.md
