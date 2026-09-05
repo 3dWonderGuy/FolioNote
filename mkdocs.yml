@@ -80,7 +80,9 @@ nav:
       - Spline Interpolation: math/splines.md
       - Curve Decimation (RDP): math/rdp-decimation.md
       - Coordinate Transformations: math/coordinates.md
-  - Development:
-      - Build Guide: dev/build.md
-      - Branching & PRs: dev/contributing.md
-      - CI/CD Pipelines: dev/ci-pipeline.md
+- Development:
+      - Build & Compilation: dev/build.md
+      - Contributing: dev/contributing.md
+      - CI/CD Pipeline: dev/ci-pipeline.md
+      - Debugging & Profiling: dev/debugging.md
+      - Architectural Decisions: dev/architecture-adr.md
