@@ -5,16 +5,17 @@ site_description: High-performance infinite canvas engine documentation.
 theme:
   name: material
   palette:
-    # Default to Dark Mode (Slate) with toggle to Light Mode
+    # Dark Mode (Default) with Orange accents
     - scheme: slate
-      primary: indigo
-      accent: cyan
+      primary: deep orange
+      accent: amber
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    # Light Mode with Orange accents
     - scheme: default
-      primary: indigo
-      accent: cyan
+      primary: deep orange
+      accent: amber
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
