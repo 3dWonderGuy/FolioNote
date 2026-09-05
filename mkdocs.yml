@@ -83,3 +83,4 @@ nav:
   - Development:
       - "Build System": dev/build.md
       - "Architectural Decisions": dev/code-structure.md
+      - "Input-StateMachine": dev/input-state-machine.md
