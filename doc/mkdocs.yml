@@ -1,25 +1,45 @@
+
 site_name: FolioNote Documentation
 site_url: https://3dwonderguy.github.io/FolioNote/
 site_description: High-performance infinite canvas engine documentation.
 theme:
   name: material
   palette:
+    # Default to Dark Mode (Slate) with toggle to Light Mode
     - scheme: slate
       primary: indigo
       accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  font:
+    text: Roboto
+    code: Roboto Mono
   features:
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
+    - navigation.expand
     - navigation.top
+    - navigation.indexes
     - search.suggest
     - search.highlight
     - content.code.copy
+    - content.code.annotate
 
 markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
   - pymdownx.highlight:
       anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.superfences:
@@ -29,24 +49,33 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.details
   - admonition
   - tables
   - attr_list
 
 extra_javascript:
+  - javascripts/mathjax.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
+# Navigation Hierarchy (Sidebar & Tabs)
 nav:
   - Home: index.md
   - Architecture:
-      - System Overview: architecture/overview.md
-      - Data Flow Pipelines: architecture/data-flow.md
+      - Overview: architecture/overview.md
+      - Runtime Component Graph: architecture/component-graph.md
+      - Data Flow & Execution: architecture/data-flow.md
+      - Input Pipeline & Arbitration: architecture/input.md
       - Storage & Persistence: architecture/storage.md
-  - Math & Engine Foundations:
+  - Math & Geometry:
+      - Foundations Overview: math/overview.md
       - Stroke Polygon Math: math/stroke-polygon.md
+      - R-Tree Spatial Index: math/rtree.md
       - Spline Interpolation: math/splines.md
-      - R-Tree Spatial Indexing: math/rtree.md
+      - Curve Decimation (RDP): math/rdp-decimation.md
+      - Coordinate Transformations: math/coordinates.md
   - Development:
       - Build Guide: dev/build.md
-      - Contributing Guidelines: dev/contributing.md
+      - Branching & PRs: dev/contributing.md
+      - CI/CD Pipelines: dev/ci-pipeline.md
