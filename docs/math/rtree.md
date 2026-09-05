@@ -44,7 +44,7 @@ flowchart TD
 Interact directly with the spatial indexing engine below. Double-click to create note bounding boxes, left-click drag to run viewport range intersection queries, or right-click drag to relocate notes:
 <div style="position: relative; width: 100%; height: 600px; border-radius: 12px; overflow: hidden; border: 1px solid #334155; margin: 20px 0;">
   <iframe 
-    src="../interactive/rtree-demo.html" 
+    src="docs/interactive/rtree-demo.html" 
     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
     loading="lazy"
     title="Interactive R-Tree Indexing Demo">
