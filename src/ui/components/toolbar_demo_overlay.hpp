@@ -92,10 +92,7 @@ public:
         ImGui::SetNextWindowPos(ImVec2(100, 70), ImGuiCond_FirstUseEver);
 
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, 18));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, theme.colorPanel);
-        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+        OverlayThemeScope overlayScope(theme);
 
         if (ImGui::Begin("Ribbon Customizer & Layout Editor [F6]##RibbonEditor", &isVisible, flags)) {
             // Header
@@ -150,10 +147,12 @@ public:
             // 2. TWO-COLUMN CUSTOMIZATION WORKBENCH
             // =========================================================
             float contentAvailW = ImGui::GetContentRegionAvail().x;
-            float colW = (contentAvailW - 60.0f) * 0.5f;
+            float centerBtnW = 80.0f;
+            float centerGap = 12.0f;
+            float colW = (contentAvailW - centerBtnW - 2.0f * centerGap) * 0.5f;
 
             // --- LEFT COLUMN: GLOBAL AVAILABLE OPTIONS CATALOG ---
-            ImGui::BeginChild("##GlobalCatalogCol", ImVec2(colW, 340.0f), true);
+            ImGui::BeginChild("##GlobalCatalogCol", ImVec2(colW, 350.0f), true);
             ImGui::PushFont(FolioTheme::FontBold ? FolioTheme::FontBold : FolioTheme::FontRegular);
             ImGui::TextColored(theme.colorPrimary, "Global Available Commands & Tools");
             ImGui::PopFont();
@@ -163,7 +162,7 @@ public:
             ImGui::InputTextWithHint("##FilterGlobal", "Filter options...", globalFilter, sizeof(globalFilter));
             ImGui::Spacing();
 
-            if (ImGui::BeginListBox("##GlobalCommandsList", ImVec2(colW - 20.0f, 240.0f))) {
+            if (ImGui::BeginListBox("##GlobalCommandsList", ImVec2(colW - 20.0f, 250.0f))) {
                 for (size_t i = 0; i < globalCatalog.size(); ++i) {
                     const auto& cmd = globalCatalog[i];
                     if (globalFilter[0] != '\0') {
@@ -187,12 +186,12 @@ public:
             }
             ImGui::EndChild();
 
-            ImGui::SameLine(0, 10.0f);
+            ImGui::SameLine(0, centerGap);
 
             // --- CENTER ACTION BUTTONS ---
             ImGui::BeginGroup();
             ImGui::Dummy(ImVec2(0, 120.0f));
-            if (ImGui::Button("Add ->", ImVec2(44, 34))) {
+            if (ImGui::Button("Add ->", ImVec2(centerBtnW, 34.0f))) {
                 if (selectedSectionIdx >= 0 && selectedSectionIdx < (int)sections.size() &&
                     selectedGlobalCmdIdx >= 0 && selectedGlobalCmdIdx < (int)globalCatalog.size()) {
                     sections[selectedSectionIdx].buttons.push_back(globalCatalog[selectedGlobalCmdIdx].name);
@@ -200,7 +199,8 @@ public:
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add selected command to active category");
 
-            if (ImGui::Button("<- Remove", ImVec2(44, 34))) {
+            ImGui::Spacing();
+            if (ImGui::Button("<- Remove", ImVec2(centerBtnW, 34.0f))) {
                 if (selectedSectionIdx >= 0 && selectedSectionIdx < (int)sections.size()) {
                     auto& btns = sections[selectedSectionIdx].buttons;
                     if (!btns.empty()) btns.pop_back();
@@ -209,10 +209,10 @@ public:
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove last button from active category");
             ImGui::EndGroup();
 
-            ImGui::SameLine(0, 10.0f);
+            ImGui::SameLine(0, centerGap);
 
             // --- RIGHT COLUMN: ACTIVE RIBBON STRUCTURE & REORDERING ---
-            ImGui::BeginChild("##ActiveRibbonCol", ImVec2(colW, 340.0f), true);
+            ImGui::BeginChild("##ActiveRibbonCol", ImVec2(colW, 350.0f), true);
             ImGui::PushFont(FolioTheme::FontBold ? FolioTheme::FontBold : FolioTheme::FontRegular);
             ImGui::TextColored(theme.colorPrimary, "Active Ribbon Categories & Layout");
             ImGui::PopFont();
@@ -299,15 +299,23 @@ public:
                 selectedSectionIdx = 0;
             }
 
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120.0f);
-            if (ImGui::Button("Apply & Close", ImVec2(120, 34))) {
+            float rightX = ImGui::GetWindowWidth() - 130.0f - ImGui::GetStyle().WindowPadding.x;
+            if (rightX > ImGui::GetCursorPosX() + 10.0f) {
+                ImGui::SameLine(rightX);
+            } else {
+                ImGui::SameLine(0, 10.0f);
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(theme.colorPrimary.x * 1.15f, theme.colorPrimary.y * 1.15f, theme.colorPrimary.z * 1.15f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(theme.colorPrimary.x * 0.85f, theme.colorPrimary.y * 0.85f, theme.colorPrimary.z * 0.85f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+            if (ImGui::Button("Apply & Close", ImVec2(130, 34))) {
                 isVisible = false;
             }
+            ImGui::PopStyleColor(4);
         }
         ImGui::End();
-
-        ImGui::PopStyleColor(2);
-        ImGui::PopStyleVar(2);
     }
 };
 

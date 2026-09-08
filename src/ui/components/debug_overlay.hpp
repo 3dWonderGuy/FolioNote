@@ -3,6 +3,7 @@
 #include "core/engine/canvas_engine.hpp"
 #include "input/input_state_machine.hpp"
 #include "app/window_state_manager.hpp"
+#include "app/theme_manager.hpp"
 #include "utils/file_logger.hpp"
 #include <deque>
 #include <string>
@@ -130,13 +131,13 @@ public:
         }
     }
 
-    void Render(CanvasEngine& canvas, const InputStateMachine& inputState, const WindowStateManager& windowState, float canvasScreenX, float canvasScreenY) {
+    void Render(CanvasEngine& canvas, const InputStateMachine& inputState, const WindowStateManager& windowState, float canvasScreenX, float canvasScreenY, const ThemeManager& theme) {
         if (!isVisible) return;
 
-        ImGui::SetNextWindowSize(ImVec2(560, 540), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(580, 560), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(ImVec2(20, 160), ImGuiCond_FirstUseEver);
 
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.10f, 0.95f));
+        OverlayThemeScope overlayScope(theme);
         ImGui::Begin("Developer Diagnostics [F3]", &isVisible);
 
         if (ImGui::BeginTabBar("DevDiagnosticsTabs", ImGuiTabBarFlags_None)) {
@@ -153,14 +154,14 @@ public:
                 ImGui::PlotLines("##FrameGraph", frameTimeHistory, 120, frameTimeOffset, "Frame Latency (ms)", 0.0f, 33.0f, ImVec2(0, 50));
                 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "PCIe / GPU MEMORY BANDWIDTH (20%% LOAD EXPLANATION)");
+                ImGui::TextColored(theme.colorPrimary, "PCIe / GPU MEMORY BANDWIDTH (20%% LOAD EXPLANATION)");
                 double frameBytesMB = (canvas.viewportW * canvas.viewportH * 4.0) / (1024.0 * 1024.0);
                 double bandwidthMBps = frameBytesMB * currentFps;
                 ImGui::Text("1:1 Render Target  : %dx%d (%.2f MB PRGB32 Buffer)", canvas.viewportW, canvas.viewportH, frameBytesMB);
                 ImGui::Text("PCIe Bus Transfer  : %.1f MB/sec (Full Texture Upload)", bandwidthMBps);
 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "WINDOW LIFECYCLE STATE MACHINE");
+                ImGui::TextColored(theme.colorPrimary, "WINDOW LIFECYCLE STATE MACHINE");
                 ImGui::Text("Active State       : %s", windowState.GetStateName());
                 ImGui::Text("Transition Freeze  : %s (Remaining: %d frames)", 
                             windowState.ShouldFreezeCanvasRender() ? "ACTIVE (VRAM Protected)" : "IDLE", 
@@ -171,7 +172,7 @@ public:
                             windowState.isMaximized ? "YES" : "NO");
 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "MEMORY ALLOCATION");
+                ImGui::TextColored(theme.colorPrimary, "MEMORY ALLOCATION");
 #if defined(_WIN32)
                 PROCESS_MEMORY_COUNTERS memCounters;
                 if (GetProcessMemoryInfo(GetCurrentProcess(), &memCounters, sizeof(memCounters))) {
@@ -191,18 +192,18 @@ public:
                 int tIdx = std::clamp(static_cast<int>(inputState.currentAction), 0, 5);
                 int dIdx = std::clamp(static_cast<int>(inputState.ActiveDevice), 0, 3);
 
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "HARDWARE SAMPLING FREQUENCY");
+                ImGui::TextColored(theme.colorPrimary, "HARDWARE SAMPLING FREQUENCY");
                 ImGui::Text("Digitizer Polling Rate : %u Hz (Packets/sec)", currentInputSamplingHz);
                 ImGui::Text("Hardware Packet Delta  : %.2f ms", currentInputIntervalMs);
 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "INPUT STATE MACHINE");
+                ImGui::TextColored(theme.colorPrimary, "INPUT STATE MACHINE");
                 ImGui::Text("Active Device      : %s", deviceNames[dIdx]);
                 ImGui::Text("Stylus Contact     : %s", stylusStateNames[sIdx]);
                 ImGui::Text("Stylus Action Tool : %s", toolNames[tIdx]);
 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "DIGITIZER SENSORS");
+                ImGui::TextColored(theme.colorPrimary, "DIGITIZER SENSORS");
                 ImGui::Text("Pen Screen Pos     : (%.1f, %.1f) px", inputState.pen.x, inputState.pen.y);
                 ImGui::Text("Active Pen Pressure: %.4f (ADC: %.0f / 4096)", inputState.pen.pressure, inputState.pen.pressure * 4096.0f);
                 ImGui::ProgressBar(inputState.pen.pressure, ImVec2(-FLT_MIN, 0));
@@ -213,7 +214,7 @@ public:
                 ImGui::Text("Eraser Tail Tip    : %s", inputState.pen.eraserTip ? "INVERTED (Active)" : "Normal");
 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "MULTI-TOUCH & MOUSE");
+                ImGui::TextColored(theme.colorPrimary, "MULTI-TOUCH & MOUSE");
                 size_t activeFingerCount = std::count_if(inputState.activeFingers.begin(), inputState.activeFingers.end(), 
                                                          [](const auto& slot) { return slot.fingerID != -1; });
                 ImGui::Text("Active Fingers     : %zu", activeFingerCount);
@@ -231,14 +232,14 @@ public:
                 double canvasLocalY = rawMouse.y - canvasScreenY;
                 Point2D worldPt = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
 
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "COORDINATE MAPPING (1:1 PIXEL SPACE)");
+                ImGui::TextColored(theme.colorPrimary, "COORDINATE MAPPING (1:1 PIXEL SPACE)");
                 ImGui::Text("Window Absolute Pos: (%.1f, %.1f) px", rawMouse.x, rawMouse.y);
                 ImGui::Text("Canvas Viewport Pos: (%.1f, %.1f) px", canvasLocalX, canvasLocalY);
                 ImGui::Text("Canvas World Space : (%.1f, %.1f) units", worldPt.x, worldPt.y);
                 ImGui::Text("View Transform     : Pan(%.1f, %.1f mm) | Zoom: %.2fx", canvas.transform.panXMm, canvas.transform.panYMm, canvas.transform.zoom);
 
                 ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "OBJECT GRAPH & RASTER STATE");
+                ImGui::TextColored(theme.colorPrimary, "OBJECT GRAPH & RASTER STATE");
                 ImGui::Text("Total Objects (History) : N/A");
                 ImGui::Text("Active In-Flight Points : %zu", canvas.liveLayer.activeStrokePoints.size());
                 ImGui::Text("Static Layer Full Rebake: %s", canvas.needsFullRebake ? "PENDING (O(N) trigger)" : "CLEAN (O(1) composite)");
@@ -315,6 +316,5 @@ public:
         }
 
         ImGui::End();
-        ImGui::PopStyleColor();
     }
 };

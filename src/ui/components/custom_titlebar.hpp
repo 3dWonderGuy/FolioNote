@@ -257,7 +257,7 @@ public:
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 0.95f));
 
             bool anyOverlayActive = outDevTelemetryVisible || outThemeModalVisible || outTuningStudioVisible || outToolbarDemoVisible;
-            const char* overlaysLabel = anyOverlayActive ? "* Overlays [ON] v" : "Overlays v";
+            const char* overlaysLabel = anyOverlayActive ? "Overlays [Active] \xe2\x96\xbe" : "Overlays \xe2\x96\xbe";
 
             if (ImGui::Button(overlaysLabel, ImVec2(buttonW, buttonH))) {
                 ImGui::OpenPopup("##OverlaysDropdownPopup");
@@ -270,14 +270,15 @@ public:
             ImGui::PopStyleVar(2);
 
             // Overlays Popover Dropdown Menu
-            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 8.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 12.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 8.0f));
             ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorShelf);
             ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
 
             if (ImGui::BeginPopup("##OverlaysDropdownPopup")) {
                 ImGui::PushFont(FolioTheme::FontBold ? FolioTheme::FontBold : FolioTheme::FontRegular);
-                ImGui::TextUnformatted("Diagnostic & Studio Overlays");
+                ImGui::TextColored(theme.colorPrimary, "Diagnostic & Studio Overlays");
                 ImGui::PopFont();
                 ImGui::Separator();
 
@@ -311,7 +312,7 @@ public:
                 ImGui::EndPopup();
             }
             ImGui::PopStyleColor(2);
-            ImGui::PopStyleVar(2);
+            ImGui::PopStyleVar(3);
 
             // 3. RIGHT: Window Caption Buttons (Minimize, Maximize/Restore, Close)
             // Completely square, full bleed to the top and right boundaries (46x48px each)

@@ -48,6 +48,7 @@ public:
     std::vector<std::shared_ptr<Notebook>> notebooks;   ///< All currently open notebooks in this workspace
     size_t activeNotebookIndex = 0;                      ///< Index of the currently active/viewed notebook
     mutable Folio::PageRepository repository;            ///< SQLite storage repository and async queue
+    std::string workspaceDirectory;                      ///< Root directory containing notebooks (e.g. Documents/FolioNote)
 
     // -------------------------------------------------------------------------
     // Workspace Loading & Initialization
@@ -60,6 +61,12 @@ public:
     void LoadWorkspace(const std::string& directoryPath) {
         notebooks.clear();
         bool foundAny = false;
+
+        std::filesystem::path dir(directoryPath);
+        while (!dir.empty() && (dir.extension() == ".notebook" || dir.filename().string().find(".notebook") != std::string::npos)) {
+            dir = dir.parent_path();
+        }
+        workspaceDirectory = dir.empty() ? directoryPath : dir.string();
 
         std::error_code ec;
         if (std::filesystem::exists(directoryPath, ec) && std::filesystem::is_directory(directoryPath, ec)) {
