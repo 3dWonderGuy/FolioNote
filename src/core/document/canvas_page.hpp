@@ -60,7 +60,7 @@ public:
     // Identification & Metadata
     // -------------------------------------------------------------------------
     std::string guid;                   ///< Unique persistent UUID v4 identifier
-    std::string title = "Untitled page";///< User-visible title displayed in tab and sidebar
+    std::string title = "New Untitled";///< User-visible title displayed in tab and sidebar
     std::string createdDateStr;         ///< Formatted creation date (e.g., "September 5, 2026")
     std::string createdTimeStr;         ///< Formatted creation time (e.g., "1:50 AM")
     
@@ -93,7 +93,7 @@ public:
     /**
      * @brief Constructs a new CanvasPage with an optional title, parent page, and nesting level.
      */
-    CanvasPage(std::string pageTitle = "Untitled page", std::string parentGuid = "", int32_t level = 0)
+    CanvasPage(std::string pageTitle = "New Untitled", std::string parentGuid = "", int32_t level = 0)
         : guid(GUIDGenerator::GenerateV4()), 
           title(std::move(pageTitle)), 
           parentPageGuid(std::move(parentGuid)), 
@@ -106,6 +106,20 @@ public:
      */
     void Touch() noexcept {
         lastAccessTimeMs = SDL_GetTicks();
+    }
+
+    /**
+     * @brief Creates a duplicate clone of this page with a new GUID and copied properties.
+     */
+    [[nodiscard]] std::shared_ptr<CanvasPage> Clone() const {
+        auto clone = std::make_shared<CanvasPage>(title + " (Copy)", parentPageGuid, nestingLevel);
+        clone->createdDateStr = createdDateStr;
+        clone->createdTimeStr = createdTimeStr;
+        clone->objects = this->objects;
+        clone->spatialIndex = this->spatialIndex;
+        clone->isLoaded = true;
+        clone->isModified = true;
+        return clone;
     }
 
     /**

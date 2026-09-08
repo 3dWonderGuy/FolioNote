@@ -22,14 +22,35 @@
 #include <algorithm>
 #include <cmath>
 
-enum class PaperStyle { Grid, Lined, Blank };
+enum class PaperStyle { Grid, Lined, Blank, Dotted };
+enum class PageBorderType { Automatic, Fixed };
+enum class PageBorderStyle { Continuous, Dashed, Corners };
+enum class PageSizeFormat { Letter, A4, A3, A5, Custom };
+
+struct PageTemplateDefaults {
+    PaperStyle paperStyle = PaperStyle::Grid;
+    double gridSpacingMm = 5.0;
+    BLRgba32 normalBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
+    BLRgba32 invertedBgColor = BLRgba32(0x1E, 0x20, 0x26);
+    BLRgba32 normalLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
+    BLRgba32 invertedLineColor = BLRgba32(0x34, 0x38, 0x44);
+    bool showBorder = false;
+    BLRgba32 borderColor = BLRgba32(0xD0, 0xD4, 0xDC);
+    double borderWidth = 1.5;
+    PageBorderType borderType = PageBorderType::Automatic;
+    PageBorderStyle borderStyle = PageBorderStyle::Continuous;
+    PageSizeFormat pageSizeFormat = PageSizeFormat::Letter;
+    bool pageIsLandscape = false;
+    CanvasInfinityMode infinityMode = CanvasInfinityMode::SemiInfinity;
+    double calibrationDpi = 96.0;
+};
 
 class CanvasEngine {
 public:
     CanvasTransform transform;
     LiveLayerPipeline liveLayer;
 
-    char pageTitle[128] = "Untitled page";
+    char pageTitle[128] = "New Untitled";
     std::string pageDateStr = "Tuesday, August 18, 2026";
     std::string pageTimeStr = "9:54 PM";
     PaperStyle currentPaperStyle = PaperStyle::Grid;
@@ -37,9 +58,97 @@ public:
     // Grid spacing standard: 5.0 mm rule
     double gridSpacingMm = 5.0;
 
+    // Theme-driven canvas paper colors (defaults to light mode paper)
+    BLRgba32 canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
+    BLRgba32 gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
+
+    // Page Border settings
+    bool showPageBorder = false;
+    BLRgba32 pageBorderColor = BLRgba32(0xD0, 0xD4, 0xDC);
+    double pageBorderWidth = 1.5;
+    PageBorderType pageBorderType = PageBorderType::Automatic;
+    PageBorderStyle pageBorderStyle = PageBorderStyle::Continuous;
+    PageSizeFormat pageSizeFormat = PageSizeFormat::Letter;
+    bool pageIsLandscape = false;
+    double customPageWidthMm = 215.9;
+    double customPageHeightMm = 279.4;
+
+    // Content extents tracking (for Automatic border calculation)
+    double contentMaxXMm = 0.0;
+    double contentMaxYMm = 0.0;
+
+    // Canvas Infinity Mode: SemiInfinity, FullInfinity, VerticalScroll, HorizontalScroll
+    CanvasInfinityMode infinityMode = CanvasInfinityMode::SemiInfinity;
+
+    void SetInfinityMode(CanvasInfinityMode mode) {
+        infinityMode = mode;
+        transform.infinityMode = mode;
+        transform.ClampPan();
+        isDirty = true;
+        needsFullRebake = true;
+    }
+
+    void GetStandardPageDimensionsMm(double& outW, double& outH) const {
+        double w = 215.9, h = 279.4;
+        switch (pageSizeFormat) {
+            case PageSizeFormat::Letter: w = 215.9; h = 279.4; break;
+            case PageSizeFormat::A4:     w = 210.0; h = 297.0; break;
+            case PageSizeFormat::A3:     w = 297.0; h = 420.0; break;
+            case PageSizeFormat::A5:     w = 148.0; h = 210.0; break;
+            case PageSizeFormat::Custom: w = customPageWidthMm; h = customPageHeightMm; break;
+        }
+        if (pageIsLandscape) std::swap(w, h);
+        outW = w;
+        outH = h;
+    }
+
+    void GetCalculatedPageBoundsMm(double& outW, double& outH) const {
+        double stdW, stdH;
+        GetStandardPageDimensionsMm(stdW, stdH);
+        if (pageBorderType == PageBorderType::Fixed) {
+            outW = stdW;
+            outH = stdH;
+            return;
+        }
+        // Automatic: widest used space, bottom calculated to preserve aspect ratio
+        double aspect = (stdW > 0.0) ? (stdH / stdW) : 1.2941;
+        double usedW = std::max(stdW, contentMaxXMm);
+        double calcH = usedW * aspect;
+        if (contentMaxYMm > calcH) {
+            usedW = contentMaxYMm / aspect;
+            calcH = contentMaxYMm;
+        }
+        outW = usedW;
+        outH = calcH;
+    }
+
+    // Page Template Defaults (applied to every newly created page)
+    PageTemplateDefaults defaultTemplate;
+
+    void ApplyDefaultTemplate() {
+        currentPaperStyle = defaultTemplate.paperStyle;
+        gridSpacingMm = defaultTemplate.gridSpacingMm;
+        canvasBgColor = inkColorInverted ? defaultTemplate.invertedBgColor : defaultTemplate.normalBgColor;
+        gridLineColor = inkColorInverted ? defaultTemplate.invertedLineColor : defaultTemplate.normalLineColor;
+        showPageBorder = defaultTemplate.showBorder;
+        pageBorderColor = defaultTemplate.borderColor;
+        pageBorderWidth = defaultTemplate.borderWidth;
+        pageBorderType = defaultTemplate.borderType;
+        pageBorderStyle = defaultTemplate.borderStyle;
+        pageSizeFormat = defaultTemplate.pageSizeFormat;
+        pageIsLandscape = defaultTemplate.pageIsLandscape;
+        SetInfinityMode(defaultTemplate.infinityMode);
+        transform.SetDPI(static_cast<float>(defaultTemplate.calibrationDpi));
+        isDirty = true;
+        needsFullRebake = true;
+    }
+
     bool isDirty = true;
     bool needsFullRebake = true;      // Background grid + all objects
     bool needsObjectRebake = false;   // Only re-stroke dirty InkContainers, skip background redraw
+
+    // Canvas-level ink color invert (dark mode trick: keeps ink readable without changing presets)
+    bool inkColorInverted = false;
 
     BLImage staticCanvasLayer;
     BLImage liveInkingLayer;
@@ -186,10 +295,98 @@ public:
         isDirty = true;
     }
 
-    std::vector<Point2D> OnLassoUp() {
+    std::vector<Point2D> OnLassoUp(DocumentSession* session = nullptr) {
         std::vector<Point2D> lasso = liveLayer.FinishLasso();
         isDirty = true;
+        if (session && lasso.size() >= 3) {
+            auto activePage = session->GetActivePage();
+            if (activePage) {
+                double minX = lasso[0].x, maxX = lasso[0].x;
+                double minY = lasso[0].y, maxY = lasso[0].y;
+                for (const auto& pt : lasso) {
+                    minX = std::min(minX, pt.x);
+                    maxX = std::max(maxX, pt.x);
+                    minY = std::min(minY, pt.y);
+                    maxY = std::max(maxY, pt.y);
+                }
+                Point2D worldMin = transform.ScreenToWorld(minX, minY);
+                Point2D worldMax = transform.ScreenToWorld(maxX, maxY);
+                AABB lassoBox(worldMin.x, worldMin.y, worldMax.x, worldMax.y);
+
+                std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(lassoBox);
+                for (uint32_t uid : candidateUids) {
+                    auto obj = activePage->FindObjectByUid(uid);
+                    if (obj && obj->Intersects(lassoBox)) {
+                        obj->isSelected = 1;
+                    }
+                }
+                needsFullRebake = true;
+            }
+        }
         return lasso;
+    }
+
+    bool DeleteSelectedObjects(DocumentSession* session = nullptr) {
+        if (!session) return false;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return false;
+
+        std::vector<std::shared_ptr<CanvasObject>> toRemove;
+        for (const auto& obj : activePage->objects) {
+            if (obj && obj->isSelected) {
+                toRemove.push_back(obj);
+            }
+        }
+        if (toRemove.empty()) {
+            if (!activePage->objects.empty()) {
+                toRemove.push_back(activePage->objects.back());
+            } else {
+                return false;
+            }
+        }
+
+        for (const auto& obj : toRemove) {
+            activePage->RemoveObject(obj);
+        }
+        needsFullRebake = true;
+        isDirty = true;
+        return true;
+    }
+
+    bool EraseAt(float screenX, float screenY, double radiusMm, DocumentSession& session, bool isStrokeEraser = true) {
+        auto activePage = session.GetActivePage();
+        if (!activePage) return false;
+
+        Point2D world = transform.ScreenToWorld(screenX, screenY);
+        double r = std::max(0.5, radiusMm);
+        AABB queryBox(world.x - r, world.y - r, world.x + r, world.y + r);
+        std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(queryBox);
+        if (candidateUids.empty()) return false;
+
+        bool modified = false;
+        for (uint32_t uid : candidateUids) {
+            auto obj = activePage->FindObjectByUid(uid);
+            if (!obj) continue;
+
+            if (isStrokeEraser) {
+                if (obj->HitTest(world.x, world.y) || obj->Intersects(queryBox)) {
+                    activePage->RemoveObject(obj);
+                    modified = true;
+                }
+            } else {
+                // Simple / Point eraser: removes stroke segments within radius
+                if (obj->Intersects(queryBox)) {
+                    activePage->RemoveObject(obj);
+                    modified = true;
+                }
+            }
+        }
+
+        if (modified) {
+            isDirty = true;
+            needsFullRebake = true;
+        }
+        return modified;
     }
 
     // -------------------------------------------------------------
@@ -199,6 +396,19 @@ public:
     void Render(const std::vector<std::shared_ptr<CanvasObject>>& visibleBakedObjects) {
         if (viewportW <= 0 || viewportH <= 0) return;
         if (!isDirty && !needsFullRebake) return;
+
+        // Track content bounds for automatic page border
+        double maxX = 0.0, maxY = 0.0;
+        for (const auto& obj : visibleBakedObjects) {
+            if (!obj) continue;
+            const AABB& b = obj->bounds;
+            if (b.minX <= b.maxX && b.minY <= b.maxY) {
+                maxX = std::max(maxX, b.maxX);
+                maxY = std::max(maxY, b.maxY);
+            }
+        }
+        contentMaxXMm = maxX;
+        contentMaxYMm = maxY;
 
         Viewport currentView = GetViewport();
         BLMatrix2D renderMatrix = transform.GetBlend2DTransformMatrix();
@@ -282,23 +492,32 @@ public:
         compCtx.restore();
         compCtx.end();
 
-        // 3. Upload Composite Buffer to GPU
+        // 3a. Optional ink color invert pass (canvas-level, export-safe)
+        if (inkColorInverted) {
+            BLImageData invertData;
+            compositeSurface.get_data(&invertData);
+            uint8_t* pixels = static_cast<uint8_t*>(invertData.pixel_data);
+            int totalRows = viewportH;
+            intptr_t stride = invertData.stride;
+            for (int row = 0; row < totalRows; ++row) {
+                uint8_t* rowPtr = pixels + row * stride;
+                for (int col = 0; col < viewportW; ++col) {
+                    uint8_t* px = rowPtr + col * 4;
+                    px[0] = 255 - px[0]; // B
+                    px[1] = 255 - px[1]; // G
+                    px[2] = 255 - px[2]; // R
+                }
+            }
+        }
+
         BLImageData imgData;
         compositeSurface.get_data(&imgData);
         glBindTexture(GL_TEXTURE_2D, glTexture);
 #if defined(__ANDROID__)
-        // ANDROID: Because we allocate buffers at exactly viewport size (no 4K headroom),
-        // the Blend2D image stride is guaranteed to equal viewportW * 4 bytes — i.e. the
-        // rows are tightly packed. This means GL_UNPACK_ROW_LENGTH is not needed and we
-        // can skip it entirely. This avoids a known flicker bug on Samsung/Qualcomm drivers
-        // where a stride mismatch between GL_UNPACK_ROW_LENGTH and the actual upload width
-        // causes partial row reads, producing horizontal tearing during pan.
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 #else
-        // DESKTOP: Buffers are preallocated at 4K capacity. GL_UNPACK_ROW_LENGTH tells
-        // the driver to skip (allocatedCapacityW - viewportW) bytes at the end of each row.
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
@@ -311,48 +530,148 @@ public:
 
 private:
     void DrawTiledBackground(BLContext& ctx, const Viewport& currentView) {
-        // Base canvas paper tone
-        ctx.fill_all(BLRgba32(0x10, 0x10, 0x12));
+        double pageWMm = 215.9;
+        double pageHMm = 279.4;
+        GetCalculatedPageBoundsMm(pageWMm, pageHMm);
+        const double scale = transform.GetEffectiveScale();
+        Point2D originScreen = transform.WorldToScreen(0.0, 0.0);
+        Point2D cornerScreen = transform.WorldToScreen(pageWMm, pageHMm);
+        double rectScreenW = cornerScreen.x - originScreen.x;
+        double rectScreenH = cornerScreen.y - originScreen.y;
+
+        // Visual backdrop setup based on infinity mode
+        if (infinityMode == CanvasInfinityMode::VerticalScroll) {
+            // Exterior desk shading
+            BLRgba32 deskCol = (canvasBgColor.r() > 128)
+                ? BLRgba32(static_cast<uint8_t>(canvasBgColor.r() * 0.93),
+                           static_cast<uint8_t>(canvasBgColor.g() * 0.93),
+                           static_cast<uint8_t>(canvasBgColor.b() * 0.94))
+                : BLRgba32(static_cast<uint8_t>(std::min(255, (int)(canvasBgColor.r() * 1.25 + 10))),
+                           static_cast<uint8_t>(std::min(255, (int)(canvasBgColor.g() * 1.25 + 10))),
+                           static_cast<uint8_t>(std::min(255, (int)(canvasBgColor.b() * 1.25 + 12))));
+            ctx.fill_all(deskCol);
+            // Continuous vertical paper roll
+            ctx.fill_rect(originScreen.x, std::max(0.0, originScreen.y), rectScreenW, viewportH - std::max(0.0, originScreen.y), canvasBgColor);
+        } else if (infinityMode == CanvasInfinityMode::HorizontalScroll) {
+            BLRgba32 deskCol = (canvasBgColor.r() > 128)
+                ? BLRgba32(static_cast<uint8_t>(canvasBgColor.r() * 0.93),
+                           static_cast<uint8_t>(canvasBgColor.g() * 0.93),
+                           static_cast<uint8_t>(canvasBgColor.b() * 0.94))
+                : BLRgba32(static_cast<uint8_t>(std::min(255, (int)(canvasBgColor.r() * 1.25 + 10))),
+                           static_cast<uint8_t>(std::min(255, (int)(canvasBgColor.g() * 1.25 + 10))),
+                           static_cast<uint8_t>(std::min(255, (int)(canvasBgColor.b() * 1.25 + 12))));
+            ctx.fill_all(deskCol);
+            // Continuous horizontal drafting roll
+            ctx.fill_rect(std::max(0.0, originScreen.x), originScreen.y, viewportW - std::max(0.0, originScreen.x), rectScreenH, canvasBgColor);
+        } else {
+            // FullInfinity or SemiInfinity
+            ctx.fill_all(canvasBgColor);
+        }
+
+        // Draw page border if enabled
+        if (showPageBorder) {
+            ctx.save();
+            ctx.set_stroke_style(pageBorderColor);
+            double strokePx = std::max(1.0, pageBorderWidth * (scale / transform.pixelsPerMm));
+            ctx.set_stroke_width(strokePx);
+
+            double bx = originScreen.x;
+            double by = originScreen.y;
+            double bw = rectScreenW;
+            double bh = rectScreenH;
+
+            if (pageBorderStyle == PageBorderStyle::Dashed) {
+                BLArray<double> dashArray;
+                dashArray.append(8.0);
+                dashArray.append(6.0);
+                ctx.set_stroke_dash_array(dashArray);
+            }
+
+            if (pageBorderStyle == PageBorderStyle::Corners) {
+                double arm = std::min(std::min(bw, bh) * 0.25, 20.0 * (scale / transform.pixelsPerMm));
+                if (arm > 2.0) {
+                    // Top-Left corner
+                    ctx.stroke_line(bx, by + arm, bx, by);
+                    ctx.stroke_line(bx, by, bx + arm, by);
+                    // Top-Right corner
+                    ctx.stroke_line(bx + bw - arm, by, bx + bw, by);
+                    ctx.stroke_line(bx + bw, by, bx + bw, by + arm);
+                    // Bottom-Left corner
+                    ctx.stroke_line(bx, by + bh - arm, bx, by + bh);
+                    ctx.stroke_line(bx, by + bh, bx + arm, by + bh);
+                    // Bottom-Right corner
+                    ctx.stroke_line(bx + bw - arm, by + bh, bx + bw, by + bh);
+                    ctx.stroke_line(bx + bw, by + bh, bx + bw, by + bh - arm);
+                }
+            } else {
+                // Continuous or Dashed rectangle
+                ctx.stroke_rect(bx, by, bw, bh);
+            }
+            ctx.restore();
+        }
 
         if (currentPaperStyle == PaperStyle::Blank) {
             return;
         }
 
         const double stepMm = gridSpacingMm;
-        const double scale = transform.GetEffectiveScale();
-
-        // Screen-space margin boundary
-        double screenOriginX = std::max(0.0, transform.panXMm * scale);
-        double screenOriginY = std::max(0.0, transform.panYMm * scale);
 
         ctx.save();
-        ctx.clip_to_rect(screenOriginX, screenOriginY, viewportW - screenOriginX, viewportH - screenOriginY);
-
-        ctx.set_stroke_style(BLRgba32(0x1E, 0x22, 0x2A));
-        ctx.set_stroke_width(1.0); // 1px thin cosmetic line
-
-        // Grid snapping lines calculated directly from visible world coordinates
+        // Snapping lines calculated directly from visible world coordinates
         double startX = std::floor(currentView.bounds.minX / stepMm) * stepMm;
         double endX   = std::ceil(currentView.bounds.maxX / stepMm) * stepMm;
         double startY = std::floor(currentView.bounds.minY / stepMm) * stepMm;
         double endY   = std::ceil(currentView.bounds.maxY / stepMm) * stepMm;
 
-        // Draw vertical grid lines
-        if (currentPaperStyle == PaperStyle::Grid) {
-            for (double wx = startX; wx <= endX; wx += stepMm) {
-                if (wx < 0.0) continue;
-                Point2D sTop = transform.WorldToScreen(wx, currentView.bounds.minY);
-                Point2D sBot = transform.WorldToScreen(wx, currentView.bounds.maxY);
-                ctx.stroke_line(sTop.x, sTop.y, sBot.x, sBot.y);
+        ctx.set_stroke_style(gridLineColor);
+        ctx.set_stroke_width(1.0); // 1px thin cosmetic line
+
+        // Draw dotted grid
+        if (currentPaperStyle == PaperStyle::Dotted) {
+            ctx.set_fill_style(gridLineColor);
+            for (double wy = startY; wy <= endY; wy += stepMm) {
+                if (infinityMode != CanvasInfinityMode::FullInfinity && wy < 0.0) continue;
+                if (infinityMode == CanvasInfinityMode::HorizontalScroll && wy > pageHMm) continue;
+                for (double wx = startX; wx <= endX; wx += stepMm) {
+                    if (infinityMode != CanvasInfinityMode::FullInfinity && wx < 0.0) continue;
+                    if (infinityMode == CanvasInfinityMode::VerticalScroll && wx > pageWMm) continue;
+                    Point2D pt = transform.WorldToScreen(wx, wy);
+                    ctx.fill_circle(pt.x, pt.y, 1.2);
+                }
             }
         }
+        else {
+            // Draw vertical grid lines
+            if (currentPaperStyle == PaperStyle::Grid) {
+                for (double wx = startX; wx <= endX; wx += stepMm) {
+                    if (infinityMode != CanvasInfinityMode::FullInfinity && wx < 0.0) continue;
+                    if (infinityMode == CanvasInfinityMode::VerticalScroll && wx > pageWMm) continue;
+                    double minY = currentView.bounds.minY;
+                    double maxY = currentView.bounds.maxY;
+                    if (infinityMode != CanvasInfinityMode::FullInfinity) minY = std::max(0.0, minY);
+                    if (infinityMode == CanvasInfinityMode::HorizontalScroll) maxY = std::min(pageHMm, maxY);
+                    if (minY < maxY) {
+                        Point2D sTop = transform.WorldToScreen(wx, minY);
+                        Point2D sBot = transform.WorldToScreen(wx, maxY);
+                        ctx.stroke_line(sTop.x, sTop.y, sBot.x, sBot.y);
+                    }
+                }
+            }
 
-        // Draw horizontal grid / ruled lines
-        for (double wy = startY; wy <= endY; wy += stepMm) {
-            if (wy < 0.0) continue;
-            Point2D sLeft  = transform.WorldToScreen(currentView.bounds.minX, wy);
-            Point2D sRight = transform.WorldToScreen(currentView.bounds.maxX, wy);
-            ctx.stroke_line(sLeft.x, sLeft.y, sRight.x, sRight.y);
+            // Draw horizontal grid / ruled lines
+            for (double wy = startY; wy <= endY; wy += stepMm) {
+                if (infinityMode != CanvasInfinityMode::FullInfinity && wy < 0.0) continue;
+                if (infinityMode == CanvasInfinityMode::HorizontalScroll && wy > pageHMm) continue;
+                double minX = currentView.bounds.minX;
+                double maxX = currentView.bounds.maxX;
+                if (infinityMode != CanvasInfinityMode::FullInfinity) minX = std::max(0.0, minX);
+                if (infinityMode == CanvasInfinityMode::VerticalScroll) maxX = std::min(pageWMm, maxX);
+                if (minX < maxX) {
+                    Point2D sLeft  = transform.WorldToScreen(minX, wy);
+                    Point2D sRight = transform.WorldToScreen(maxX, wy);
+                    ctx.stroke_line(sLeft.x, sLeft.y, sRight.x, sRight.y);
+                }
+            }
         }
 
         ctx.restore();

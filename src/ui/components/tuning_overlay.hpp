@@ -79,7 +79,7 @@ inline InkingTuningConfig g_InkingConfig;
 
 class InkingTuningOverlay {
 public:
-  bool isVisible = true;
+  bool isVisible = false;
 
   void Render() {
     if (!isVisible)

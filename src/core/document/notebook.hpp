@@ -8,6 +8,9 @@
 #include "core/document/section.hpp"
 #include "core/document/section_group.hpp"
 #include "utils/guid_generator.hpp"
+#include <SDL3/SDL.h>
+#include <filesystem>
+#include <fstream>
 
 /**
  * =========================================================================================
@@ -77,6 +80,7 @@ public:
     std::vector<std::shared_ptr<Section>> sections;                     ///< Root-level sections
     std::vector<std::shared_ptr<SectionGroup>> sectionGroups;           ///< Root-level section groups
     size_t activeSectionIndex = 0;                                      ///< Index of active root section
+    std::string activeSectionGuid;                                      ///< Persistent GUID of active section (root or group)
 
     // -------------------------------------------------------------------------
     // Construction & Lifecycle
@@ -97,7 +101,53 @@ public:
             iconFile = GetRandomNotebookIcon();
         }
         // Guarantee at least one section exists
-        sections.push_back(std::make_shared<Section>("New Section 1"));
+        auto defaultSec = std::make_shared<Section>("New Section 1");
+        activeSectionGuid = defaultSec->guid;
+        sections.push_back(defaultSec);
+        sessionStartTimestamp = SDL_GetTicks();
+    }
+
+    // -------------------------------------------------------------------------
+    // Time Tracking Telemetry (Session & Lifetime)
+    // -------------------------------------------------------------------------
+    uint64_t lifetimeTimeSpentSeconds = 0;                              ///< Cumulative all-time editing time in seconds
+    uint64_t sessionStartTimestamp = 0;                                 ///< SDL_GetTicks() timestamp when notebook was mounted
+
+    void InitSessionTimer() {
+        sessionStartTimestamp = SDL_GetTicks();
+        LoadTimeMetadata();
+    }
+
+    void LoadTimeMetadata() {
+        if (filePath.empty()) return;
+        std::error_code ec;
+        std::filesystem::path timeFile = std::filesystem::path(filePath) / "time.meta";
+        if (std::filesystem::exists(timeFile, ec)) {
+            std::ifstream in(timeFile);
+            if (in >> lifetimeTimeSpentSeconds) {
+                // loaded successfully
+            }
+        }
+    }
+
+    void SaveTimeMetadata() {
+        if (filePath.empty()) return;
+        std::error_code ec;
+        std::filesystem::path timeFile = std::filesystem::path(filePath) / "time.meta";
+        std::ofstream out(timeFile);
+        if (out) {
+            out << GetTotalLifetimeSeconds();
+        }
+    }
+
+    [[nodiscard]] uint64_t GetSessionSeconds() const {
+        if (sessionStartTimestamp == 0) return 0;
+        uint64_t now = SDL_GetTicks();
+        return (now >= sessionStartTimestamp) ? ((now - sessionStartTimestamp) / 1000) : 0;
+    }
+
+    [[nodiscard]] uint64_t GetTotalLifetimeSeconds() const {
+        return lifetimeTimeSpentSeconds + GetSessionSeconds();
     }
 
     // -------------------------------------------------------------------------
@@ -105,11 +155,38 @@ public:
     // -------------------------------------------------------------------------
 
     /**
-     * @brief Returns the currently active Section at the root level, or nullptr.
+     * @brief Sets the active section, keeping activeSectionGuid and activeSectionIndex in sync.
+     */
+    void SetActiveSection(const std::shared_ptr<Section>& sec) {
+        if (!sec) return;
+        activeSectionGuid = sec->guid;
+        for (size_t i = 0; i < sections.size(); ++i) {
+            if (sections[i] && sections[i]->guid == sec->guid) {
+                activeSectionIndex = i;
+                return;
+            }
+        }
+    }
+
+    /**
+     * @brief Returns the currently active Section (from root or any SectionGroup), or nullptr.
      */
     [[nodiscard]] std::shared_ptr<Section> GetActiveSection() const {
-        if (activeSectionIndex < sections.size()) {
+        if (!activeSectionGuid.empty()) {
+            if (auto found = FindSectionByGuid(activeSectionGuid)) {
+                return found;
+            }
+        }
+        if (activeSectionIndex < sections.size() && sections[activeSectionIndex]) {
             return sections[activeSectionIndex];
+        }
+        if (!sections.empty() && sections.front()) {
+            return sections.front();
+        }
+        for (const auto& grp : sectionGroups) {
+            if (grp && !grp->sections.empty()) {
+                return grp->sections.front();
+            }
         }
         return nullptr;
     }
@@ -132,6 +209,7 @@ public:
     void AddSection(std::shared_ptr<Section> section) {
         if (!section) return;
         section->sortOrder = static_cast<int32_t>(sections.size());
+        section->groupGuid.clear();
         sections.push_back(std::move(section));
     }
 
@@ -143,6 +221,118 @@ public:
         group->notebookGuid = this->guid;
         group->sortOrder = static_cast<int32_t>(sectionGroups.size());
         sectionGroups.push_back(std::move(group));
+    }
+
+    /**
+     * @brief Moves a root section from one index to another.
+     */
+    bool MoveSection(size_t fromIdx, size_t toIdx) {
+        if (fromIdx >= sections.size() || toIdx >= sections.size() || fromIdx == toIdx) {
+            return false;
+        }
+        auto movedSec = sections[fromIdx];
+        sections.erase(sections.begin() + fromIdx);
+        sections.insert(sections.begin() + toIdx, movedSec);
+
+        if (activeSectionIndex == fromIdx) {
+            activeSectionIndex = toIdx;
+        } else if (fromIdx < activeSectionIndex && toIdx >= activeSectionIndex) {
+            activeSectionIndex--;
+        } else if (fromIdx > activeSectionIndex && toIdx <= activeSectionIndex) {
+            activeSectionIndex++;
+        }
+
+        for (size_t i = 0; i < sections.size(); ++i) {
+            if (sections[i]) sections[i]->sortOrder = static_cast<int32_t>(i);
+        }
+        return true;
+    }
+
+    /**
+     * @brief Moves a section group from one index to another.
+     */
+    bool MoveSectionGroup(size_t fromIdx, size_t toIdx) {
+        if (fromIdx >= sectionGroups.size() || toIdx >= sectionGroups.size() || fromIdx == toIdx) {
+            return false;
+        }
+        auto movedGrp = sectionGroups[fromIdx];
+        sectionGroups.erase(sectionGroups.begin() + fromIdx);
+        sectionGroups.insert(sectionGroups.begin() + toIdx, movedGrp);
+
+        for (size_t i = 0; i < sectionGroups.size(); ++i) {
+            if (sectionGroups[i]) sectionGroups[i]->sortOrder = static_cast<int32_t>(i);
+        }
+        return true;
+    }
+
+    /**
+     * @brief Moves a section (from root or another group) into a target SectionGroup.
+     */
+    bool MoveSectionToGroup(const std::string& secGuid, const std::string& targetGroupGuid) {
+        auto targetGrp = FindSectionGroupByGuid(targetGroupGuid);
+        if (!targetGrp) return false;
+
+        std::shared_ptr<Section> targetSec = nullptr;
+
+        // Try remove from root sections
+        auto rootIt = std::find_if(sections.begin(), sections.end(), [&](const std::shared_ptr<Section>& s) {
+            return s && s->guid == secGuid;
+        });
+        if (rootIt != sections.end()) {
+            targetSec = *rootIt;
+            sections.erase(rootIt);
+        } else {
+            // Try remove from other section groups
+            for (auto& grp : sectionGroups) {
+                if (!grp) continue;
+                auto it = std::find_if(grp->sections.begin(), grp->sections.end(), [&](const std::shared_ptr<Section>& s) {
+                    return s && s->guid == secGuid;
+                });
+                if (it != grp->sections.end()) {
+                    targetSec = *it;
+                    grp->sections.erase(it);
+                    break;
+                }
+            }
+        }
+
+        if (targetSec) {
+            targetGrp->AddSection(targetSec);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @brief Moves a section from a SectionGroup back to the notebook root sections list.
+     */
+    bool MoveSectionToRoot(const std::string& secGuid, size_t targetIdx = -1) {
+        std::shared_ptr<Section> targetSec = nullptr;
+        for (auto& grp : sectionGroups) {
+            if (!grp) continue;
+            auto it = std::find_if(grp->sections.begin(), grp->sections.end(), [&](const std::shared_ptr<Section>& s) {
+                return s && s->guid == secGuid;
+            });
+            if (it != grp->sections.end()) {
+                targetSec = *it;
+                grp->sections.erase(it);
+                break;
+            }
+        }
+
+        if (targetSec) {
+            targetSec->groupGuid.clear();
+            if (targetIdx < sections.size()) {
+                sections.insert(sections.begin() + targetIdx, targetSec);
+            } else {
+                sections.push_back(targetSec);
+            }
+            for (size_t i = 0; i < sections.size(); ++i) {
+                if (sections[i]) sections[i]->sortOrder = static_cast<int32_t>(i);
+            }
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -161,6 +351,10 @@ public:
                 activeSectionIndex = 0;
             } else if (activeSectionIndex >= sections.size() || activeSectionIndex == removedIndex) {
                 activeSectionIndex = (sections.size() > 0) ? std::min(removedIndex, sections.size() - 1) : 0;
+            }
+            if (activeSectionGuid == secGuid) {
+                auto newActive = GetActiveSection();
+                activeSectionGuid = newActive ? newActive->guid : "";
             }
             return true;
         }

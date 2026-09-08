@@ -43,7 +43,7 @@ struct PenTool {
     float     minSizeFactor     = 0.2f;
     float     maxSizeFactor     = 1.8f;
     
-    BLRgba32  color             = BLRgba32(0xFF, 0xFF, 0xFF, 0xFF);
+    BLRgba32  color             = BLRgba32(0x18, 0x1A, 0x20, 0xFF);
     float     opacity           = 1.0f;
     float     smoothing         = 0.5f;
     bool      isPressureEnabled = true;
@@ -63,21 +63,28 @@ public:
     void InitializeDefaults() {
         pens.clear();
 
-        // 0: High-Contrast White 0.5mm Pen
-        PenTool whitePen;
-        whitePen.penType = PenType::Pen;
-        whitePen.baseSize = 0.5f; // 0.5 mm
-        whitePen.color = BLRgba32(0xFF, 0xFF, 0xFF, 0xFF);
-        pens.push_back(whitePen);
+        // 0: High-Precision Black 0.5mm Pen (Default ink on light paper)
+        PenTool blackPen;
+        blackPen.penType = PenType::Pen;
+        blackPen.baseSize = 0.5f; // 0.5 mm
+        blackPen.color = BLRgba32(0x18, 0x1A, 0x20, 0xFF);
+        pens.push_back(blackPen);
 
         // 1: Vibrant Blue 0.5mm Gel Pen
         PenTool bluePen;
         bluePen.penType = PenType::Pen;
         bluePen.baseSize = 0.5f; // 0.5 mm
-        bluePen.color = BLRgba32(0x33, 0x99, 0xFF, 0xFF);
+        bluePen.color = BLRgba32(0x1A, 0x56, 0xDB, 0xFF);
         pens.push_back(bluePen);
 
-        // 2: Yellow Chisel 4.5mm Highlighter
+        // 2: Red Annotation 0.5mm Pen
+        PenTool redPen;
+        redPen.penType = PenType::Pen;
+        redPen.baseSize = 0.5f; // 0.5 mm
+        redPen.color = BLRgba32(0xDC, 0x26, 0x26, 0xFF);
+        pens.push_back(redPen);
+
+        // 3: Yellow Chisel 4.5mm Highlighter
         PenTool highlighter;
         highlighter.penType = PenType::Highlighter;
         highlighter.capType = CapType::Chisel;

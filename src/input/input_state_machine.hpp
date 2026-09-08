@@ -42,10 +42,13 @@ public:
     DeviceType ActiveDevice = DeviceType::Mouse;
     
     // Explicit tool and contact telemetry states
+    InteractionState activeTool      = InteractionState::Inking;
     InteractionState currentAction   = InteractionState::Inking;
     StylusState currentStylusState   = StylusState::OutOfRange;
     StylusState oldStylusState       = StylusState::OutOfRange;
     StylusButtonState stylusButtons  = StylusButtonState::None;
+    bool isStrokeEraser              = true;
+    float eraserRadiusMm             = 3.0f;
 
     // Trackers
     PenState pen;
@@ -59,6 +62,7 @@ public:
     // Canvas screen origin offset (e.g. sidebar width, ribbon height)
     float canvasOriginX = 0.0f;
     float canvasOriginY = 0.0f;
+    bool isCanvasHovered = false;
 
     // Timestamps
     uint64_t lastPenTimestampMs   = 0;

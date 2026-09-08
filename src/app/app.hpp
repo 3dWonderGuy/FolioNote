@@ -12,6 +12,7 @@
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "ui/components/tuning_overlay.hpp"
+#include "ui/components/toolbar_demo_overlay.hpp"
 #include "app/theme_manager.hpp"
 #include "app/window_state_manager.hpp"
 #include "core/engine/canvas_engine.hpp"
@@ -21,8 +22,11 @@
 #include "ui/components/modern_nav_panel.hpp"
 #include "ui/components/debug_overlay.hpp"
 #include "ui/components/dialogs.hpp"
+#include "ui/components/custom_titlebar.hpp"
 #include "ui/views/notebook_hub.hpp"
 #include "input/input_manager.hpp"
+#include "utils/file_loader.hpp"
+#include <lunasvg.h>
 #include <chrono>
 #include <thread>
 #include <string>
@@ -40,12 +44,14 @@ public:
     ThemeManager themeManager;
     DocumentSession session;
 
+    CustomTitleBar customTitleBar;
     RibbonBar ribbon;
     ModernNavPanel modernNav;
     NotebookHubView hubView;
     DebugOverlay devTelemetry;
     ThemeCustomizerModal themeModal;
     InkingTuningOverlay tuningStudio;
+    ToolbarDemoOverlay toolbarDemo;
 
     AppViewMode currentView = AppViewMode::CanvasWorkspace;
 
@@ -69,10 +75,61 @@ public:
 #endif
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-        window = SDL_CreateWindow(title, initialW, initialH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+        window = SDL_CreateWindow(title, initialW, initialH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS);
         if (!window) {
             SDL_Quit();
             return false;
+        }
+
+        // Enable native window dragging & edge resizing for custom software titlebar
+        SDL_SetWindowHitTest(window, CustomTitleBar::HitTestCallback, &customTitleBar);
+        customTitleBar.AttachWindow(window);
+
+#if defined(_WIN32)
+        // Set Win32 Taskbar and Window Icon directly on the HWND from compiled resource
+        SDL_PropertiesID winProps = SDL_GetWindowProperties(window);
+        HWND hwnd = (HWND)SDL_GetPointerProperty(winProps, SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+        if (hwnd) {
+            HINSTANCE hInst = GetModuleHandle(NULL);
+            HICON hIconBig = (HICON)LoadImage(hInst, MAKEINTRESOURCE(1), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
+            if (!hIconBig) {
+                hIconBig = (HICON)LoadImage(hInst, MAKEINTRESOURCE(1), IMAGE_ICON, 32, 32, LR_DEFAULTCOLOR);
+            }
+            HICON hIconSmall = (HICON)LoadImage(hInst, MAKEINTRESOURCE(1), IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
+            if (hIconBig) SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconBig);
+            if (hIconSmall) SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+        }
+#endif
+
+        // Set OS Window Icon from logo SVG across candidate search paths
+        std::vector<std::string> iconCandidates = {
+            "assets/icons/logo.svg",
+            "icons/logo.svg",
+            "../assets/icons/logo.svg",
+            "../../assets/icons/logo.svg",
+            "build/bin/assets/icons/logo.svg"
+        };
+        std::vector<uint8_t> logoSvgBytes;
+        for (const auto& path : iconCandidates) {
+            if (FileLoader::Exists(path) && FileLoader::ReadToBuffer(path, logoSvgBytes)) {
+                auto doc = lunasvg::Document::loadFromData(reinterpret_cast<const char*>(logoSvgBytes.data()), logoSvgBytes.size());
+                if (doc) {
+                    lunasvg::Bitmap bm = doc->renderToBitmap(128, 128);
+                    if (bm.valid()) {
+                        SDL_Surface* iconSurf = SDL_CreateSurfaceFrom(
+                            bm.width(), bm.height(),
+                            SDL_PIXELFORMAT_ARGB8888,
+                            bm.data(),
+                            bm.stride()
+                        );
+                        if (iconSurf) {
+                            SDL_SetWindowIcon(window, iconSurf);
+                            SDL_DestroySurface(iconSurf);
+                        }
+                    }
+                }
+                break;
+            }
         }
 
         glContext = SDL_GL_CreateContext(window);
@@ -90,8 +147,11 @@ public:
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
         FolioTheme::LoadModernFonts(io);
-        themeManager.ApplyTheme(ThemePreset::FolioDark);
+        themeManager.ApplyTheme(ThemePreset::FolioColor);
         themeManager.LoadFromJson("config/theme_custom.json");
+        themeManager.UpdateOSWindowFrame(window);
+        canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
+        canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
 
         ImGui_ImplSDL3_InitForOpenGL(window, glContext);
 #if defined(__ANDROID__)
@@ -283,6 +343,8 @@ public:
                     if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
                     else if (event.key.key == SDLK_F4) themeModal.isVisible = !themeModal.isVisible;
                     else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
+                    else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
+                    else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
                 }
 
                 inputManager.ProcessEvent(event, canvas, session, windowSM);
@@ -315,6 +377,8 @@ public:
                             if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
                             else if (event.key.key == SDLK_F4) themeModal.isVisible = !themeModal.isVisible;
                             else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
+                            else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
+                            else if (event.key.key == SDLK_F1 && (SDL_GetModState() & SDL_KMOD_CTRL)) ribbon.CycleDisplayMode();
                         }
 
                         inputManager.ProcessEvent(event, canvas, session, windowSM);
@@ -349,32 +413,88 @@ public:
             float screenW = static_cast<float>(windowW);
             float screenH = static_cast<float>(windowH);
 
-            if (currentView == AppViewMode::NotebookHub) {
-                hubView.Render(0.0f, 0.0f, screenW, screenH, currentView);
-            } else {
-                // 1. TOP RIBBON BAR
-                float ribbonH = ribbon.GetCurrentHeight();
-                ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
-                ImGui::SetNextWindowSize(ImVec2(screenW, ribbonH));
-                ImGuiWindowFlags ribbonFlags = ImGuiWindowFlags_NoTitleBar | 
-                                               ImGuiWindowFlags_NoResize | 
-                                               ImGuiWindowFlags_NoMove | 
-                                               ImGuiWindowFlags_NoCollapse | 
-                                               ImGuiWindowFlags_NoBringToFrontOnFocus;
+            Uint32 winFlags = SDL_GetWindowFlags(window);
+            bool isFullscreen = (winFlags & SDL_WINDOW_FULLSCREEN) != 0;
+            float titleBarH = (customTitleBar.isVisible && !isFullscreen) ? CustomTitleBar::TITLEBAR_HEIGHT : 0.0f;
 
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 6));
-                ImGui::PushStyleColor(ImGuiCol_WindowBg, themeManager.colorBg);
-                ImGui::Begin("##RibbonPanel", nullptr, ribbonFlags);
-                ribbon.Render(screenW, currentView, canvas, inputManager.stateMachine, themeManager);
-                ImGui::End();
-                ImGui::PopStyleColor();
-                ImGui::PopStyleVar();
+            // 0. CUSTOM SOFTWARE TITLE BAR (Borderless Window Frame)
+            if (titleBarH > 0.0f) {
+                std::string nbTitle = "DemoBook";
+                if (auto nb = session.workspace.GetActiveNotebook()) {
+                    nbTitle = nb->name;
+                }
+                customTitleBar.Render(
+                    window,
+                    screenW,
+                    running,
+                    devTelemetry.isVisible,
+                    themeModal.isVisible,
+                    tuningStudio.isVisible,
+                    toolbarDemo.isVisible,
+                    themeManager,
+                    nbTitle
+                );
+            }
+
+            if (currentView == AppViewMode::NotebookHub) {
+                hubView.Render(0.0f, titleBarH, screenW, screenH - titleBarH, currentView, themeManager, session, canvas, window);
+            } else {
+                // 1. TOP RIBBON BAR (Smooth Animated 4-State Ribbon)
+                float ribbonH = ribbon.GetAnimatedHeight();
+                if (ribbonH > 0.5f) {
+                    ImGui::SetNextWindowPos(ImVec2(0.0f, titleBarH));
+                    ImGui::SetNextWindowSize(ImVec2(screenW, ribbonH));
+                    ImGuiWindowFlags ribbonFlags = ImGuiWindowFlags_NoTitleBar | 
+                                                   ImGuiWindowFlags_NoResize | 
+                                                   ImGuiWindowFlags_NoMove | 
+                                                   ImGuiWindowFlags_NoCollapse | 
+                                                   ImGuiWindowFlags_NoScrollbar |
+                                                   ImGuiWindowFlags_NoScrollWithMouse |
+                                                   ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+                    ImGui::PushStyleColor(ImGuiCol_WindowBg, themeManager.colorBg);
+                    float ribbonRounding = (ribbon.displayMode == RibbonDisplayMode::Collapsed) ? 10.0f : 0.0f;
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, ribbonRounding);
+                    ImGui::Begin("##RibbonPanel", nullptr, ribbonFlags);
+                    ribbon.Render(screenW, currentView, canvas, inputManager.stateMachine, themeManager, &session);
+                    ImGui::End();
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor();
+                    ImGui::PopStyleVar();
+                } else {
+                    // Advance animation clock even when fully hidden
+                    ribbon.Render(screenW, currentView, canvas, inputManager.stateMachine, themeManager, &session);
+                }
+
+                // Floating Pull Tab when ribbon is collapsed/hidden into canvas fullscreen
+                if (ribbonH <= 8.0f) {
+                    ImGui::SetNextWindowPos(ImVec2((screenW - 130.0f) * 0.5f, titleBarH + 4.0f));
+                    ImGui::SetNextWindowSize(ImVec2(130.0f, 32.0f));
+                    ImGuiWindowFlags pullTabFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+                                                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | 
+                                                    ImGuiWindowFlags_NoBackground;
+                    ImGui::Begin("##RibbonPullTab", nullptr, pullTabFlags);
+                    ImGui::PushStyleColor(ImGuiCol_Button, themeManager.colorBg);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, themeManager.colorPrimaryHover);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 0.95f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 16.0f);
+                    if (ImGui::Button("v  Show Ribbon", ImVec2(130.0f, 28.0f))) {
+                        ribbon.SetDisplayMode(ribbon.previousActiveMode);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Restore Ribbon Bar (Ctrl+F1)");
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(3);
+                    ImGui::End();
+                }
 
                 // 2. MODERN NAVIGATION SIDEBAR
-                float contentY = ribbonH;
-                float contentH = screenH - ribbonH;
+                float contentY = titleBarH + ribbonH;
+                float contentH = screenH - contentY;
 
-                modernNav.Render(0.0f, contentY, contentH, session, canvas, themeManager);
+                modernNav.Render(0.0f, contentY, contentH, session, canvas, themeManager, &currentView);
 
                 // 3. CANVAS WORKSPACE (FILLS EXACT REMAINDER)
                 float navW = modernNav.GetTotalWidth();
@@ -410,7 +530,7 @@ public:
                         // triggering a full Blend2D canvas rebake (~60x per second) which is the
                         // source of the jitter. The existing texture is displayed scaled by ImGui's
                         // Image call for the ~80ms of animation — completely invisible in practice.
-                        if (!modernNav.IsAnimating()) {
+                        if (!modernNav.IsAnimating() && !ribbon.IsAnimating()) {
                             canvas.Resize(static_cast<int>(canvasSize.x), static_cast<int>(canvasSize.y));
                         }
                         std::vector<std::shared_ptr<CanvasObject>> visibleObjects = session.QueryVisible(canvas.GetViewport());
@@ -425,47 +545,90 @@ public:
                         }
                         ImGui::Image((ImTextureID)(intptr_t)canvas.glTexture, canvasSize, ImVec2(0, 0), uv1);
                         inputManager.wasCanvasImageHovered = ImGui::IsItemHovered();
+                        inputManager.stateMachine.isCanvasHovered = inputManager.wasCanvasImageHovered;
                     } else {
                         inputManager.wasCanvasImageHovered = false;
+                        inputManager.stateMachine.isCanvasHovered = false;
                     }
 
                     Point2D titleScreen = canvas.transform.WorldToScreen(80.0, 50.0);
                     float currentZoom = static_cast<float>(canvas.transform.zoom);
-                    if (titleScreen.x > -600.0 && titleScreen.y > -200.0) {
-                        ImGui::SetCursorPos(ImVec2(static_cast<float>(titleScreen.x), static_cast<float>(titleScreen.y)));
-                        ImGui::PushFont(FolioTheme::FontRibbonBoldLarge);
-                        ImGui::PushItemWidth(500.0f * currentZoom);
-                        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-                        ImGui::PushStyleColor(ImGuiCol_Text, themeManager.colorText);
-                        if (ImGui::InputText("##PageTitleInput", canvas.pageTitle, sizeof(canvas.pageTitle))) {
-                            canvas.isDirty = true;
-                        }
-                        ImGui::PopStyleColor(2);
-                        ImGui::PopItemWidth();
+                    if (titleScreen.x > -800.0 && titleScreen.y > -300.0) {
+                        ImVec2 winPos = ImGui::GetWindowPos();
+                        ImVec2 boxScreenPos(winPos.x + static_cast<float>(titleScreen.x), winPos.y + static_cast<float>(titleScreen.y));
+
+                        // 1. Dynamic width & height calculation
+                        const char* displayTitle = (canvas.pageTitle[0] != '\0') ? canvas.pageTitle : "New Untitled";
+                        ImFont* titleFont = FolioTheme::FontRibbonBoldLarge ? FolioTheme::FontRibbonBoldLarge : FolioTheme::FontRegular;
+                        ImGui::PushFont(titleFont);
+                        ImVec2 titleSize = ImGui::CalcTextSize(displayTitle);
                         ImGui::PopFont();
 
-                        ImDrawList* drawList = ImGui::GetWindowDrawList();
-                        float lineStartY = canvasOrigin.y + static_cast<float>(titleScreen.y) + (44.0f * currentZoom);
-                        ImVec2 lineStart(canvasOrigin.x + static_cast<float>(titleScreen.x), lineStartY);
-                        ImVec2 lineEnd(lineStart.x + (600.0f * currentZoom), lineStartY);
-                        drawList->AddLine(lineStart, lineEnd, ImGui::ColorConvertFloat4ToU32(themeManager.colorBorder), 1.5f * currentZoom);
+                        std::string dateTimeStr = canvas.pageDateStr + "   |   " + canvas.pageTimeStr;
+                        ImVec2 dateSize = ImGui::CalcTextSize(dateTimeStr.c_str());
 
-                        ImGui::SetCursorPos(ImVec2(static_cast<float>(titleScreen.x), static_cast<float>(titleScreen.y) + (48.0f * currentZoom)));
-                        ImGui::PushStyleColor(ImGuiCol_Text, themeManager.colorTextMuted);
-                        ImGui::Text("%s      %s", canvas.pageDateStr.c_str(), canvas.pageTimeStr.c_str());
-                        ImGui::PopStyleColor();
+                        float maxContentW = std::max(titleSize.x, dateSize.x);
+                        float padX = 14.0f;
+                        float padY = 10.0f;
+                        float gapY = 5.0f;
+                        float titleH = titleSize.y > 0 ? titleSize.y : 24.0f;
+                        float dateH = dateSize.y > 0 ? dateSize.y : 15.0f;
+
+                        float minBoxW = 200.0f * currentZoom;
+                        float boxW = std::max(minBoxW, maxContentW + padX * 2.0f);
+                        float boxH = padY * 2.0f + titleH + gapY + dateH;
+
+                        // 2. Non-selectable translucent box outline with slightly rounded corners
+                        ImDrawList* drawList = ImGui::GetWindowDrawList();
+                        ImVec2 boxMin = boxScreenPos;
+                        ImVec2 boxMax = ImVec2(boxScreenPos.x + boxW, boxScreenPos.y + boxH);
+                        float rounding = 6.0f; // slightly rounded corners
+
+                        bool isDark = (themeManager.colorBg.x < 0.5f);
+                        // Translucent background
+                        ImU32 bgCol = isDark ? IM_COL32(25, 28, 36, 115) : IM_COL32(248, 250, 253, 125);
+                        // Clean outline border
+                        ImU32 borderCol = isDark ? IM_COL32(110, 118, 135, 140) : IM_COL32(175, 182, 195, 150);
+
+                        drawList->AddRectFilled(boxMin, boxMax, bgCol, rounding);
+                        drawList->AddRect(boxMin, boxMax, borderCol, rounding, 0, 1.0f);
+
+                        // 3. Clean non-selectable text rendering
+                        ImU32 titleTextCol = isDark ? IM_COL32(235, 238, 245, 245) : IM_COL32(25, 28, 35, 255);
+                        ImU32 dateTextCol = isDark ? IM_COL32(150, 158, 172, 210) : IM_COL32(115, 122, 134, 210);
+
+                        ImGui::PushFont(titleFont);
+                        drawList->AddText(ImVec2(boxMin.x + padX, boxMin.y + padY), titleTextCol, displayTitle);
+                        ImGui::PopFont();
+
+                        drawList->AddText(ImVec2(boxMin.x + padX, boxMin.y + padY + titleH + gapY), dateTextCol, dateTimeStr.c_str());
                     }
                 }
                 ImGui::End();
                 ImGui::PopStyleVar();
+
+                // 4. ADVANCED DOCUMENT OPTIONS SLIDING PANEL
+                // Floats over canvas from right side when View tab -> Adv. Options is toggled.
+                ribbon.RenderAdvancedOptionsPanel(screenW, screenH, titleBarH, ribbonH, canvas, themeManager);
+
+                // 5. FLOATING COLLAPSED RIBBON OVERLAY
+                // When ribbon is in collapsed mode and a tab is selected, this floats over canvas
+                // without shifting/moving canvas, with pure shelf background (no orange), and auto-hides on canvas input.
+                ribbon.RenderCollapsedPopup(screenW, titleBarH, canvas, inputManager.stateMachine, themeManager, &session);
+
             }
 
             // =========================================================
             // DIAGNOSTICS & MODAL OVERLAYS
             // =========================================================
             devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY);
-            themeModal.Render(themeManager);
+            themeModal.Render(themeManager, &canvas, window);
             tuningStudio.Render();
+            if (ribbon.showDemoOverlay) {
+                toolbarDemo.isVisible = true;
+                ribbon.showDemoOverlay = false;
+            }
+            toolbarDemo.Render(themeManager);
 
             ImGui::Render();
             glViewport(0, 0, windowW, windowH);

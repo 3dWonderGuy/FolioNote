@@ -76,6 +76,13 @@ public:
     size_t activePageIndex = 0;                      ///< Index of the currently selected page
 
     // -------------------------------------------------------------------------
+    // Security & Protection
+    // -------------------------------------------------------------------------
+    bool isPasswordProtected = false;                ///< Whether section is password protected
+    bool isLocked = false;                           ///< Whether section is currently locked
+    std::string password;                            ///< Password hash or passcode
+
+    // -------------------------------------------------------------------------
     // Construction & Lifecycle
     // -------------------------------------------------------------------------
 
@@ -93,6 +100,21 @@ public:
         }
         // Guarantee at least one blank page exists
         pages.push_back(std::make_shared<CanvasPage>("Untitled page"));
+    }
+
+    /**
+     * @brief Creates a duplicate clone of this section with a new GUID and cloned pages.
+     */
+    [[nodiscard]] std::shared_ptr<Section> Clone() const {
+        auto clone = std::make_shared<Section>(name + " (Copy)", iconFile, groupGuid);
+        clone->pages.clear();
+        for (const auto& p : pages) {
+            if (p) clone->pages.push_back(p->Clone());
+        }
+        clone->isPasswordProtected = isPasswordProtected;
+        clone->password = password;
+        clone->isLocked = false;
+        return clone;
     }
 
     // -------------------------------------------------------------------------
@@ -152,6 +174,51 @@ public:
             return true;
         }
         return false;
+    }
+
+    /**
+     * @brief Moves a page from one index to another, keeping activePageIndex accurate.
+     */
+    bool MovePage(size_t fromIdx, size_t toIdx) {
+        if (fromIdx >= pages.size() || toIdx >= pages.size() || fromIdx == toIdx) {
+            return false;
+        }
+        auto movedPage = pages[fromIdx];
+        pages.erase(pages.begin() + fromIdx);
+        pages.insert(pages.begin() + toIdx, movedPage);
+
+        // Update active page index if affected
+        if (activePageIndex == fromIdx) {
+            activePageIndex = toIdx;
+        } else if (fromIdx < activePageIndex && toIdx >= activePageIndex) {
+            activePageIndex--;
+        } else if (fromIdx > activePageIndex && toIdx <= activePageIndex) {
+            activePageIndex++;
+        }
+
+        // Re-index sortOrder
+        for (size_t i = 0; i < pages.size(); ++i) {
+            if (pages[i]) pages[i]->sortOrder = static_cast<int32_t>(i);
+        }
+        return true;
+    }
+
+    /**
+     * @brief Promotes a page up the hierarchy (decreases nestingLevel, min 0).
+     */
+    void PromotePage(size_t pageIdx) {
+        if (pageIdx < pages.size() && pages[pageIdx]) {
+            pages[pageIdx]->nestingLevel = std::max(0, pages[pageIdx]->nestingLevel - 1);
+        }
+    }
+
+    /**
+     * @brief Demotes a page down the hierarchy into a sub-page (increases nestingLevel, max 2).
+     */
+    void DemotePage(size_t pageIdx) {
+        if (pageIdx < pages.size() && pages[pageIdx]) {
+            pages[pageIdx]->nestingLevel = std::min(2, pages[pageIdx]->nestingLevel + 1);
+        }
     }
 
     /**
