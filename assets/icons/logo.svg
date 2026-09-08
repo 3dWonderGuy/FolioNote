@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="128 170 144 144">
+  <rect x="159.889" y="178.048" width="80.166" height="128.886" style="fill: rgb(255, 176, 0); stroke: rgb(3, 1, 1);"/>
+  <rect x="174.505" y="202.408" width="48.277" height="26.131" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);"/>
+  <rect x="172.291" y="253.343" width="0.886" height="42.519" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);"/>
+  <rect x="172.291" y="253.785" width="12.401" height="0.664" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);"/>
+  <rect x="171.848" y="273.716" width="15.502" height="0.664" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);"/>
+  <rect x="197.093" y="252.9" width="0.664" height="41.19" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);"/>
+  <rect x="223.668" y="252.457" width="0.443" height="39.862" style="fill: rgb(216, 216, 216); stroke: rgb(0, 0, 0);"/>
+  <path style="fill: none; stroke: rgb(0, 0, 0);" d="M 223.225 292.761 L 197.093 253.785"/>
+</svg>

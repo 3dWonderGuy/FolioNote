@@ -1,6 +1,8 @@
 #pragma once
 #include "imgui.h"
 #include "app/theme_manager.hpp"
+#include "core/engine/canvas_engine.hpp"
+#include "ui/icon_manager.hpp"
 #include <string>
 
 class ThemeCustomizerModal {
@@ -9,21 +11,45 @@ public:
     char configPath[128] = "config/theme_custom.json";
     std::string statusMessage = "";
 
-    void Render(ThemeManager& theme) {
+    void Render(ThemeManager& theme, CanvasEngine* canvas = nullptr, SDL_Window* window = nullptr) {
         if (!isVisible) return;
 
         ImGui::SetNextWindowSize(ImVec2(520, 580), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(ImVec2(100, 100), ImGuiCond_FirstUseEver);
 
         if (ImGui::Begin("Appearance & Theme Studio [F4]", &isVisible, ImGuiWindowFlags_NoCollapse)) {
+            // Brand Logo Header
+            GLuint modalLogoTex = g_IconManager.LoadOrGetSVG("app_logo", "assets/icons/logo.svg", 128);
+            if (modalLogoTex != 0) {
+                ImGui::Image((ImTextureID)(intptr_t)modalLogoTex, ImVec2(36.0f, 36.0f));
+                ImGui::SameLine(0, 12.0f);
+                ImGui::BeginGroup();
+                ImGui::TextUnformatted("FolioNote Studio");
+                ImGui::TextColored(theme.colorTextMuted, "Visual Customizer & Design Tokens");
+                ImGui::EndGroup();
+                ImGui::Separator();
+            }
+
             // 1. Preset Selector
             ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "PRESET THEMES");
-            const char* presets[] = { "Fluent Dark", "Fluent Light", "Nord Dark", "Custom" };
+            const char* presets[] = { "Folio Dark", "Folio Light", "Folio Color (Default)", "Custom" };
             int selected = static_cast<int>(theme.currentPreset);
 
             if (ImGui::Combo("Theme Preset", &selected, presets, IM_ARRAYSIZE(presets))) {
                 theme.ApplyTheme(static_cast<ThemePreset>(selected));
+                theme.UpdateOSWindowFrame(window);
                 statusMessage = std::string("Loaded preset: ") + presets[selected];
+                if (canvas) {
+                    if (theme.currentPreset == ThemePreset::FolioDark) {
+                        canvas->canvasBgColor = BLRgba32(0x10, 0x10, 0x12);
+                        canvas->gridLineColor = BLRgba32(0x1E, 0x22, 0x2A);
+                    } else {
+                        canvas->canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
+                        canvas->gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
+                    }
+                    canvas->isDirty = true;
+                    canvas->needsFullRebake = true;
+                }
             }
 
             ImGui::Separator();
@@ -50,6 +76,7 @@ public:
             if (changed) {
                 theme.currentPreset = ThemePreset::Custom;
                 theme.ApplyToImGui();
+                theme.UpdateOSWindowFrame(window);
             }
 
             ImGui::Separator();
@@ -68,6 +95,7 @@ public:
             ImGui::SameLine();
             if (ImGui::Button("Load from JSON", ImVec2(140, 28))) {
                 if (theme.LoadFromJson(configPath)) {
+                    theme.UpdateOSWindowFrame(window);
                     statusMessage = "Theme successfully loaded from " + std::string(configPath);
                 } else {
                     statusMessage = "Error reading file: " + std::string(configPath);

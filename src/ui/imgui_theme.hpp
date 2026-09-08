@@ -5,6 +5,8 @@
 namespace FolioTheme {
     inline ImFont* FontRegular          = nullptr; // Standard UI size (20px)
     inline ImFont* FontBold             = nullptr; // Standard UI Bold size (20px)
+    inline ImFont* FontRibbonSection    = nullptr; // Ribbon section & toolbar button size (15px = 0.75x)
+    inline ImFont* FontRibbonSectionBold= nullptr; // Ribbon section Bold size (15px = 0.75x)
     inline ImFont* FontNavLarge         = nullptr; // Large Nav UI size (26px)
     inline ImFont* FontNavBoldLarge     = nullptr; // Large Nav Bold size (26px)
     inline ImFont* FontRibbonLarge      = nullptr; // 3x Large Regular for all ribbon tabs (32px)
@@ -23,12 +25,14 @@ namespace FolioTheme {
         // bundle a .ttf file in the project's assets/ folder and load it like:
         //   FontRegular = io.Fonts->AddFontFromFileTTF("fonts/Inter-Regular.ttf", 20.0f, &cfg);
         // SDL_IOFromFile will resolve the path from the APK's assets/ bundle automatically.
-        FontRegular         = io.Fonts->AddFontDefault(&cfg);
-        FontNavLarge        = FontRegular;
-        FontRibbonLarge     = FontRegular;
-        FontBold            = FontRegular;
-        FontNavBoldLarge    = FontRegular;
-        FontRibbonBoldLarge = FontRegular;
+        FontRegular           = io.Fonts->AddFontDefault(&cfg);
+        FontRibbonSection     = FontRegular;
+        FontRibbonSectionBold = FontRegular;
+        FontNavLarge          = FontRegular;
+        FontRibbonLarge       = FontRegular;
+        FontBold              = FontRegular;
+        FontNavBoldLarge      = FontRegular;
+        FontRibbonBoldLarge   = FontRegular;
 #else
         const char* regularPath = "C:\\Windows\\Fonts\\segoeui.ttf";
         const char* boldPath    = "C:\\Windows\\Fonts\\segoeuib.ttf";
@@ -38,24 +42,28 @@ namespace FolioTheme {
 
         // 1. Standard regular UI font
         if (std::filesystem::exists(regularPath, ec) && !ec) {
-            FontRegular     = io.Fonts->AddFontFromFileTTF(regularPath, 20.0f, &cfg);
-            FontNavLarge    = io.Fonts->AddFontFromFileTTF(regularPath, 23.0f, &cfg);
-            FontRibbonLarge = io.Fonts->AddFontFromFileTTF(regularPath, 32.0f, &cfg);
+            FontRegular       = io.Fonts->AddFontFromFileTTF(regularPath, 20.0f, &cfg);
+            FontRibbonSection = io.Fonts->AddFontFromFileTTF(regularPath, 15.0f, &cfg); // 0.75x of 20px
+            FontNavLarge      = io.Fonts->AddFontFromFileTTF(regularPath, 23.0f, &cfg);
+            FontRibbonLarge   = io.Fonts->AddFontFromFileTTF(regularPath, 32.0f, &cfg);
         } else {
-            FontRegular     = io.Fonts->AddFontDefault(&cfg);
-            FontNavLarge    = FontRegular;
-            FontRibbonLarge = FontRegular;
+            FontRegular       = io.Fonts->AddFontDefault(&cfg);
+            FontRibbonSection = FontRegular;
+            FontNavLarge      = FontRegular;
+            FontRibbonLarge   = FontRegular;
         }
 
         // 2. Bold fonts
         if (std::filesystem::exists(boldPath, ec) && !ec) {
-            FontBold            = io.Fonts->AddFontFromFileTTF(boldPath, 20.0f, &cfg);
-            FontNavBoldLarge    = io.Fonts->AddFontFromFileTTF(boldPath, 23.0f, &cfg);
-            FontRibbonBoldLarge = io.Fonts->AddFontFromFileTTF(boldPath, 32.0f, &cfg);
+            FontBold              = io.Fonts->AddFontFromFileTTF(boldPath, 20.0f, &cfg);
+            FontRibbonSectionBold = io.Fonts->AddFontFromFileTTF(boldPath, 15.0f, &cfg); // 0.75x of 20px
+            FontNavBoldLarge      = io.Fonts->AddFontFromFileTTF(boldPath, 23.0f, &cfg);
+            FontRibbonBoldLarge   = io.Fonts->AddFontFromFileTTF(boldPath, 32.0f, &cfg);
         } else {
-            FontBold            = FontRegular;
-            FontNavBoldLarge    = FontNavLarge;
-            FontRibbonBoldLarge = FontRibbonLarge;
+            FontBold              = FontRegular;
+            FontRibbonSectionBold = FontBold;
+            FontNavBoldLarge      = FontNavLarge;
+            FontRibbonBoldLarge   = FontRibbonLarge;
         }
 #endif
 

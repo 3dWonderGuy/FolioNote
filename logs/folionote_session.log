@@ -1,0 +1,8 @@
+=================================================
+           FolioNote Session Started             
+=================================================
+[01:47:00.278] [INFO] [SearchIndex] Search FTS5 and catalog schema initialized successfully.
+[01:47:00.281] [INFO] [DBManager] Successfully opened notebook database (WAL mode): C:\Users\odyss\OneDrive\Odysseus\Documents\FolioNote\DemoBook.notebook\structure.db
+[01:47:00.289] [INFO] [BinarySerializer] Successfully deserialized page 'Untitled page' (8e818c52-03f5-4512-95a4-ddb9f80bd4a4) -> Objects: 54 | Strokes: 54 | Segments: 25004 | Raw: 309683 B | Compressed: 144896 B | CRC32: 0xD52056CE | Ratio: 53.2%
+[01:47:00.289] [INFO] [PageRepository] Successfully loaded .ink page from disk: Untitled page (8e818c52-03f5-4512-95a4-ddb9f80bd4a4)
+[01:47:00.290] [INFO] [General] FolioNote initialized.

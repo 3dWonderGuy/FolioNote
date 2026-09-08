@@ -97,9 +97,13 @@ if(ANDROID)
     set(APP_TARGET main)
 else()
     # Desktop build produces FolioNote executable
+    if(WIN32)
+        set(WIN32_RESOURCES src/folionote.rc)
+    endif()
     add_executable(FolioNote
         ${APP_SOURCES}
         ${IMGUI_SOURCES}
+        ${WIN32_RESOURCES}
     )
     set(APP_TARGET FolioNote)
 endif()
@@ -145,6 +149,9 @@ else()
         SDL3::SDL3
         OpenGL::GL
     )
+    if(WIN32)
+        target_link_libraries(FolioNote PRIVATE dwmapi)
+    endif()
 endif()
 
 # 8. Post-Build Asset Deployment

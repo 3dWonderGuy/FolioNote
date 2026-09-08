@@ -32,7 +32,7 @@ class DebugOverlay {
 public:
 
 
-    bool isVisible = true;
+    bool isVisible = false;
 
     // Filter controls
     int selectedCategoryFilter = 0; // 0 = All, 1 = System, 2 = Window, 3 = Input, 4 = Engine

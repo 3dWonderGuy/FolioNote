@@ -65,7 +65,7 @@ void InputStateMachine::UpdateHardwareState(uint64_t nowMs) {
         }
 
         // Determine tool intent based on barrel buttons or eraser tip
-        // By default we assume the user wants to draw (Inking).
+        // By default we use the active tool selected by the user (activeTool).
         if (pen.barrel1 || pen.eraserTip) {
             stylusButtons = StylusButtonState::BarrelPressed;
             currentAction = InteractionState::Eraser; 
@@ -74,7 +74,7 @@ void InputStateMachine::UpdateHardwareState(uint64_t nowMs) {
             currentAction = InteractionState::Selecting; // E.g., Lasso selection tool
         } else {
             stylusButtons = StylusButtonState::None;
-            currentAction = InteractionState::Inking; // Regular drawing
+            currentAction = activeTool;
         }
     } else {
         // If the stylus is not the active device, reset its state to prevent sticky behavior
@@ -148,11 +148,13 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
         case InteractionState::Selecting: {
             if (justDown)      canvas.OnLassoDown(canvasLocalX, canvasLocalY);
             else if (isMoving) canvas.OnLassoMove(canvasLocalX, canvasLocalY);
-            else if (justUp)   canvas.OnLassoUp();
+            else if (justUp)   canvas.OnLassoUp(&session);
             break;
         }
         case InteractionState::Eraser: {
-            // Future eraser hook
+            if (justDown || isMoving) {
+                canvas.EraseAt(canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+            }
             break;
         }
         default: break;
@@ -168,11 +170,13 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     if (mouse.middleButton || keyboard.space) {
         currentAction = InteractionState::Panning;
     } else {
-        currentAction = InteractionState::Inking;
+        currentAction = activeTool;
     }
 
     if (oldAction != currentAction) {
         std::string actionName = (currentAction == InteractionState::Inking) ? "Inking" :
+                                 (currentAction == InteractionState::Eraser) ? "Eraser" :
+                                 (currentAction == InteractionState::Selecting) ? "Selecting" :
                                  (currentAction == InteractionState::Panning) ? "Panning" : "Idle";
         LOG_INFO(InputStateMachine, "Mouse interaction state changed to: " + actionName);
     }
@@ -203,12 +207,24 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             canvas.OnPointerUp(session, palette.GetActivePen());
         }
     } 
+    else if (currentAction == InteractionState::Eraser) {
+        if (justDown || isMoving) {
+            canvas.EraseAt(canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+        }
+    }
+    else if (currentAction == InteractionState::Selecting) {
+        if (justDown)      canvas.OnLassoDown(canvasLocalX, canvasLocalY);
+        else if (isMoving) canvas.OnLassoMove(canvasLocalX, canvasLocalY);
+        else if (justUp)   canvas.OnLassoUp(&session);
+    }
     else if (currentAction == InteractionState::Panning && isMoving) {
         canvas.Pan(mouse.dx, mouse.dy);
     }
 
     if (mouse.wheelY != 0.0f) {
-        canvas.ZoomAt(canvasLocalX, canvasLocalY, mouse.wheelY > 0 ? 1.15 : 0.85);
+        if (isCanvasHovered && !imguiWantsInput) {
+            canvas.ZoomAt(canvasLocalX, canvasLocalY, mouse.wheelY > 0 ? 1.15 : 0.85);
+        }
         mouse.wheelX = 0.0f;
         mouse.wheelY = 0.0f;
     }

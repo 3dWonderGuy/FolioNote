@@ -6,12 +6,20 @@
 #include "core/engine/stroke_smoother.hpp"
 #include "core/spatial/aabb.hpp"
 
+enum class CanvasInfinityMode {
+    SemiInfinity,      // OneNote style: origin (0, 0), extends right and down
+    FullInfinity,      // Unbounded 2D infinity in all directions
+    VerticalScroll,    // Bounded page width, infinite vertical scroll
+    HorizontalScroll   // Bounded page height, infinite horizontal scroll
+};
+
 class CanvasTransform {
 public:
     // Physical state in millimeters (mm)
     double panXMm = 0.0;
     double panYMm = 0.0;
     double zoom = 1.0;
+    CanvasInfinityMode infinityMode = CanvasInfinityMode::SemiInfinity;
 
     // Display DPI metrics
     // Standard desktop fallback: 96 DPI -> 96.0 / 25.4 ~= 3.779527559 pixels/mm
@@ -90,8 +98,23 @@ public:
     }
 
     void ClampPan() noexcept {
-        if (panXMm > 0.0) panXMm = 0.0;
-        if (panYMm > 0.0) panYMm = 0.0;
+        if (infinityMode == CanvasInfinityMode::FullInfinity) {
+            // Unbounded pan in all directions
+            return;
+        }
+        if (infinityMode == CanvasInfinityMode::SemiInfinity) {
+            if (panXMm > 0.0) panXMm = 0.0;
+            if (panYMm > 0.0) panYMm = 0.0;
+            return;
+        }
+        if (infinityMode == CanvasInfinityMode::VerticalScroll) {
+            if (panYMm > 0.0) panYMm = 0.0;
+            return;
+        }
+        if (infinityMode == CanvasInfinityMode::HorizontalScroll) {
+            if (panXMm > 0.0) panXMm = 0.0;
+            return;
+        }
     }
 
     [[nodiscard]] Viewport GetVisibleViewportMm(int viewportPixelW, int viewportPixelH) const noexcept {
