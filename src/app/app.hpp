@@ -621,9 +621,9 @@ public:
             // =========================================================
             // DIAGNOSTICS & MODAL OVERLAYS
             // =========================================================
-            devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY);
+            devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY, themeManager);
             themeModal.Render(themeManager, &canvas, window);
-            tuningStudio.Render();
+            tuningStudio.Render(themeManager);
             if (ribbon.showDemoOverlay) {
                 toolbarDemo.isVisible = true;
                 ribbon.showDemoOverlay = false;

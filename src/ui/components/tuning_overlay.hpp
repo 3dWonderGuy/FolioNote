@@ -1,6 +1,7 @@
 #pragma once
 
 #include "imgui.h"
+#include "app/theme_manager.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -81,21 +82,21 @@ class InkingTuningOverlay {
 public:
   bool isVisible = false;
 
-  void Render() {
+  void Render(const ThemeManager& theme) {
     if (!isVisible)
       return;
 
     ImGui::SetNextWindowSize(ImVec2(740, 700), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(500, 100), ImGuiCond_FirstUseEver);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg,
-                          ImVec4(0.08f, 0.09f, 0.11f, 0.98f));
+
+    OverlayThemeScope overlayScope(theme);
     ImGui::Begin("Handwriting Pipeline Studio (Millimeters) [F5]", &isVisible);
 
     if (ImGui::BeginTabBar("InkingPipelineStagesTabs",
                            ImGuiTabBarFlags_Reorderable)) {
       // TAB: GOOGLE INK STROKE MODELER
       if (ImGui::BeginTabItem("Google Ink Model")) {
-        ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f),
+        ImGui::TextColored(theme.colorPrimary,
                            "GOOGLE INK STROKE MODELER (PHYSICS ENGINE)");
         ImGui::Separator();
 
@@ -151,7 +152,7 @@ public:
                            10.0f, 2000.0f, "%.1f mm/s");
         ImGui::EndDisabled();
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "PHYSICS PRESETS");
+        ImGui::TextColored(theme.colorPrimary, "PHYSICS PRESETS");
         if (ImGui::Button("1. Fast & Snappy (Less Lag)")) {
           g_InkingConfig.google_spring_mass_constant = 0.005f; // Tighter spring
           g_InkingConfig.google_drag_constant = 40.0f;         // Less friction
@@ -187,6 +188,5 @@ public:
       ImGui::EndTabBar();
     }
     ImGui::End();
-    ImGui::PopStyleColor();
   }
 };

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <SDL3/SDL.h>
 #include "core/document/notebook.hpp"
 #include "core/storage/page_repository.hpp"
 #include "utils/logger.hpp"
@@ -23,8 +24,25 @@ public:
     std::vector<std::string> standaloneNotebookPaths;
     std::string defaultLibraryPath;
 
+    // Helper to sanitize any path so it is never pointing to or inside a .notebook folder
+    static std::string SanitizeLibraryRoot(const std::string& inputPath) {
+        std::filesystem::path root(inputPath);
+        while (!root.empty() && (root.extension() == ".notebook" || root.filename().string().find(".notebook") != std::string::npos)) {
+            root = root.parent_path();
+        }
+        if (root.empty() || root == ".") {
+            const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
+            if (docs) {
+                root = std::filesystem::path(docs) / "FolioNote";
+            } else {
+                root = "FolioNote";
+            }
+        }
+        return root.string();
+    }
+
     void Init(const std::string& defaultRootPath) {
-        defaultLibraryPath = defaultRootPath;
+        defaultLibraryPath = SanitizeLibraryRoot(defaultRootPath);
         libraries.clear();
         standaloneNotebookPaths.clear();
 
@@ -32,7 +50,7 @@ public:
         LibraryInfo defaultLib;
         defaultLib.id = "default_main";
         defaultLib.name = "Main Library";
-        defaultLib.rootPath = defaultRootPath;
+        defaultLib.rootPath = defaultLibraryPath;
         defaultLib.isDefault = true;
         ScanLibraryNotebooks(defaultLib);
         libraries.push_back(defaultLib);
@@ -92,7 +110,8 @@ public:
         const std::string& icon = ""
     ) {
         std::error_code ec;
-        std::filesystem::path dir = targetDirectory.empty() ? std::filesystem::path(defaultLibraryPath) : std::filesystem::path(targetDirectory);
+        std::string cleanDir = SanitizeLibraryRoot(targetDirectory.empty() ? defaultLibraryPath : targetDirectory);
+        std::filesystem::path dir(cleanDir);
         if (!std::filesystem::exists(dir, ec)) {
             std::filesystem::create_directories(dir, ec);
         }
@@ -126,7 +145,8 @@ public:
     ) {
         if (!sourceNb) return nullptr;
         std::error_code ec;
-        std::filesystem::path dir = targetDirectory.empty() ? std::filesystem::path(defaultLibraryPath) : std::filesystem::path(targetDirectory);
+        std::string cleanDir = SanitizeLibraryRoot(targetDirectory.empty() ? defaultLibraryPath : targetDirectory);
+        std::filesystem::path dir(cleanDir);
         if (!std::filesystem::exists(dir, ec)) {
             std::filesystem::create_directories(dir, ec);
         }

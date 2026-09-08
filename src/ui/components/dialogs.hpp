@@ -14,9 +14,10 @@ public:
     void Render(ThemeManager& theme, CanvasEngine* canvas = nullptr, SDL_Window* window = nullptr) {
         if (!isVisible) return;
 
-        ImGui::SetNextWindowSize(ImVec2(520, 580), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(540, 600), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowPos(ImVec2(100, 100), ImGuiCond_FirstUseEver);
 
+        OverlayThemeScope overlayScope(theme);
         if (ImGui::Begin("Appearance & Theme Studio [F4]", &isVisible, ImGuiWindowFlags_NoCollapse)) {
             // Brand Logo Header
             GLuint modalLogoTex = g_IconManager.LoadOrGetSVG("app_logo", "assets/icons/logo.svg", 128);
@@ -31,7 +32,7 @@ public:
             }
 
             // 1. Preset Selector
-            ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "PRESET THEMES");
+            ImGui::TextColored(theme.colorPrimary, "PRESET THEMES");
             const char* presets[] = { "Folio Dark", "Folio Light", "Folio Color (Default)", "Custom" };
             int selected = static_cast<int>(theme.currentPreset);
 
@@ -55,7 +56,7 @@ public:
             ImGui::Separator();
 
             // 2. Live Color Palette
-            ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "COLOR PALETTE (LIVE PREVIEW)");
+            ImGui::TextColored(theme.colorPrimary, "COLOR PALETTE (LIVE PREVIEW)");
             bool changed = false;
 
             changed |= ImGui::ColorEdit4("Workspace Background", (float*)&theme.colorBg, ImGuiColorEditFlags_AlphaBar);
@@ -67,7 +68,7 @@ public:
             ImGui::Separator();
 
             // 3. UI Geometry & Rounding
-            ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "GEOMETRY & ROUNDING");
+            ImGui::TextColored(theme.colorPrimary, "GEOMETRY & ROUNDING");
             changed |= ImGui::SliderFloat("Window Rounding", &theme.windowRounding, 0.0f, 16.0f, "%.1f px");
             changed |= ImGui::SliderFloat("Button/Frame Rounding", &theme.frameRounding, 0.0f, 12.0f, "%.1f px");
             changed |= ImGui::SliderFloat("Popup Rounding", &theme.popupRounding, 0.0f, 12.0f, "%.1f px");
@@ -82,18 +83,21 @@ public:
             ImGui::Separator();
 
             // 4. JSON Config File Export / Import
-            ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "JSON CONFIGURATION");
-            ImGui::InputText("Config Path", configPath, sizeof(configPath));
+            ImGui::TextColored(theme.colorPrimary, "JSON CONFIGURATION");
+            float availW = ImGui::GetContentRegionAvail().x;
+            ImGui::SetNextItemWidth(availW);
+            ImGui::InputText("##ConfigPath", configPath, sizeof(configPath));
+            ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
-            if (ImGui::Button("Save to JSON", ImVec2(140, 28))) {
+            if (ImGui::Button("Save to JSON", ImVec2(150, 32))) {
                 if (theme.SaveToJson(configPath)) {
                     statusMessage = "Theme successfully exported to " + std::string(configPath);
                 } else {
                     statusMessage = "Error saving file to " + std::string(configPath);
                 }
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Load from JSON", ImVec2(140, 28))) {
+            ImGui::SameLine(0.0f, 10.0f);
+            if (ImGui::Button("Load from JSON", ImVec2(150, 32))) {
                 if (theme.LoadFromJson(configPath)) {
                     theme.UpdateOSWindowFrame(window);
                     statusMessage = "Theme successfully loaded from " + std::string(configPath);

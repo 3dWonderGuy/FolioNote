@@ -40,8 +40,8 @@ namespace ModernNavConfig {
     constexpr float ROW_ITEM_HEIGHT      = 38.0f;  // Height of each notebook, section, and page item row (1.5x base)
     constexpr float FLYOUT_HEIGHT        = 210.0f; // Maximum height of the Notebook selection dropdown flyout
     constexpr float SCROLLBAR_WIDTH      = 15.0f;  // Thickness of hover-aware modern scrollbars
-    constexpr float SCROLLBAR_ROUNDING   = 3.0f;   // Corner rounding of modern scrollbar thumbs
-    constexpr float CORNER_ROUNDING      = 3.0f;   // Corner rounding applied to cards, buttons, and flyouts
+    constexpr float SCROLLBAR_ROUNDING   = 0.0f;   // Square modern scrollbar thumbs
+    constexpr float CORNER_ROUNDING      = 6.0f;   // Moderate rounded corners (6.0f)
 }
 
 // ============================================================================
@@ -74,6 +74,43 @@ public:
     int renameTargetType = 0; // 1 = Section, 2 = Group, 3 = Page
     char renameBuffer[256] = "";
     bool openRenamePopup = false;
+
+    // Section Settings Modal state
+    bool openSectionSettingsModal = false;
+    std::string sectionSettingsTargetGuid;
+    char sectionSettingsName[256] = "";
+    std::string sectionSettingsIcon;
+    bool sectionSettingsPasswordProtected = false;
+    char sectionSettingsPassword[128] = "";
+
+    // Page Settings Modal state
+    bool openPageSettingsModal = false;
+    std::string pageSettingsTargetGuid;
+    char pageSettingsTitle[256] = "";
+    int pageSettingsNestingLevel = 0;
+    PaperStyle pageSettingsPaperStyle = PaperStyle::Blank;
+
+    void OpenSectionSettings(const std::shared_ptr<Section>& sec) {
+        if (!sec) return;
+        sectionSettingsTargetGuid = sec->guid;
+        strncpy(sectionSettingsName, sec->name.c_str(), sizeof(sectionSettingsName) - 1);
+        sectionSettingsName[sizeof(sectionSettingsName) - 1] = '\0';
+        sectionSettingsIcon = sec->iconFile;
+        sectionSettingsPasswordProtected = sec->isPasswordProtected;
+        strncpy(sectionSettingsPassword, sec->password.c_str(), sizeof(sectionSettingsPassword) - 1);
+        sectionSettingsPassword[sizeof(sectionSettingsPassword) - 1] = '\0';
+        openSectionSettingsModal = true;
+    }
+
+    void OpenPageSettings(const std::shared_ptr<CanvasPage>& page, CanvasEngine& canvas) {
+        if (!page) return;
+        pageSettingsTargetGuid = page->guid;
+        strncpy(pageSettingsTitle, page->title.c_str(), sizeof(pageSettingsTitle) - 1);
+        pageSettingsTitle[sizeof(pageSettingsTitle) - 1] = '\0';
+        pageSettingsNestingLevel = page->nestingLevel;
+        pageSettingsPaperStyle = canvas.currentPaperStyle;
+        openPageSettingsModal = true;
+    }
 
     // Clipboard state
     std::shared_ptr<CanvasPage> copiedPage = nullptr;
@@ -209,8 +246,10 @@ public:
             RenderPagesOnlyLayout(height, session, canvas, theme);
         }
 
-        RenderRenameModal(activeNb, canvas);
-        RenderPasswordModal(activeNb, canvas);
+        RenderRenameModal(activeNb, canvas, theme);
+        RenderPasswordModal(activeNb, canvas, theme);
+        RenderSectionSettingsModal(activeNb, canvas, theme);
+        RenderPageSettingsModal(activeNb, canvas, theme);
 
         ImGui::End();
         ImGui::PopStyleVar(8);
@@ -223,116 +262,519 @@ private:
     // 4. ATOMIC SUB-COMPONENTS
     // ========================================================================
 
-    void RenderRenameModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas) {
+    void RenderRenameModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas, const ThemeManager& theme) {
         if (openRenamePopup) {
             ImGui::OpenPopup("RenameModal##Nav");
             openRenamePopup = false;
         }
-        if (ImGui::BeginPopupModal("RenameModal##Nav", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            const char* targetTypeName = (renameTargetType == 1 ? "Section" : (renameTargetType == 2 ? "Section Group" : "Page"));
-            ImGui::Text("Rename %s:", targetTypeName);
-            ImGui::SetNextItemWidth(240.0f);
-            if (ImGui::IsWindowAppearing()) {
-                ImGui::SetKeyboardFocusHere();
-            }
-            bool enterPressed = ImGui::InputText("##RenameInput", renameBuffer, sizeof(renameBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::Dummy(ImVec2(0.0f, 6.0f));
-            if (ImGui::Button("OK", ImVec2(100.0f, 0.0f)) || enterPressed) {
-                if (strlen(renameBuffer) > 0 && activeNb) {
-                    if (renameTargetType == 1) {
-                        if (auto s = activeNb->FindSectionByGuid(renameTargetGuid)) {
-                            s->name = renameBuffer;
-                        }
-                    } else if (renameTargetType == 2) {
-                        if (auto g = activeNb->FindSectionGroupByGuid(renameTargetGuid)) {
-                            g->name = renameBuffer;
-                        }
-                    } else if (renameTargetType == 3) {
-                        auto sec = activeNb->GetActiveSection();
-                        if (sec) {
-                            if (auto p = sec->FindPageByGuid(renameTargetGuid)) {
-                                p->title = renameBuffer;
+        ImGui::SetNextWindowSize(ImVec2(380.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("RenameModal##Nav", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+                const char* targetTypeName = (renameTargetType == 1 ? "Section" : (renameTargetType == 2 ? "Section Group" : "Page"));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Rename %s", targetTypeName);
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                ImGui::TextColored(theme.colorText, "Title / Name:");
+                ImGui::SetNextItemWidth(availW);
+                if (ImGui::IsWindowAppearing()) {
+                    ImGui::SetKeyboardFocusHere();
+                }
+                bool enterPressed = ImGui::InputText("##RenameInput", renameBuffer, sizeof(renameBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                float okBtnW = 90.0f;
+                float cancelBtnW = 86.0f;
+                float btnGap = 10.0f;
+                float rightAlignX = ImGui::GetCursorPosX() + availW - (okBtnW + cancelBtnW + btnGap);
+                if (rightAlignX > ImGui::GetCursorPosX()) {
+                    ImGui::SetCursorPosX(rightAlignX);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                bool okClicked = ImGui::Button("OK", ImVec2(okBtnW, 32.0f));
+                ImGui::PopStyleColor(3);
+
+                if (okClicked || enterPressed) {
+                    if (strlen(renameBuffer) > 0 && activeNb) {
+                        if (renameTargetType == 1) {
+                            if (auto s = activeNb->FindSectionByGuid(renameTargetGuid)) {
+                                s->name = renameBuffer;
+                            }
+                        } else if (renameTargetType == 2) {
+                            if (auto g = activeNb->FindSectionGroupByGuid(renameTargetGuid)) {
+                                g->name = renameBuffer;
+                            }
+                        } else if (renameTargetType == 3) {
+                            auto sec = activeNb->GetActiveSection();
+                            if (sec) {
+                                if (auto p = sec->FindPageByGuid(renameTargetGuid)) {
+                                    p->title = renameBuffer;
+                                }
                             }
                         }
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
                     }
-                    canvas.needsFullRebake = true;
-                    canvas.isDirty = true;
+                    ImGui::CloseCurrentPopup();
                 }
-                ImGui::CloseCurrentPopup();
+                ImGui::SameLine(0.0f, btnGap);
+                if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 32.0f))) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
             }
-            ImGui::SameLine(0.0f, 10.0f);
-            if (ImGui::Button("Cancel", ImVec2(100.0f, 0.0f))) {
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
         }
     }
 
-    void RenderPasswordModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas) {
+    void RenderPasswordModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas, const ThemeManager& theme) {
         if (openPasswordModal) {
             ImGui::OpenPopup("PasswordModal##Nav");
             openPasswordModal = false;
         }
-        if (ImGui::BeginPopupModal("PasswordModal##Nav", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            auto sec = activeNb ? activeNb->FindSectionByGuid(passwordTargetSecGuid) : nullptr;
-            if (!sec) {
-                ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-                return;
-            }
+        ImGui::SetNextWindowSize(ImVec2(380.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("PasswordModal##Nav", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+                auto sec = activeNb ? activeNb->FindSectionByGuid(passwordTargetSecGuid) : nullptr;
+                if (!sec) {
+                    ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                    return;
+                }
 
-            if (passwordModalMode == 1) { // Set Password
-                ImGui::Text("Set Password for: %s", sec->name.c_str());
-                ImGui::TextColored(ImVec4(0.85f, 0.45f, 0.20f, 1.0f), "Warning: Protected sections require this password to unlock.");
-                ImGui::SetNextItemWidth(240.0f);
-                if (ImGui::IsWindowAppearing()) {
-                    ImGui::SetKeyboardFocusHere();
-                }
-                bool enterPressed = ImGui::InputText("##NewSecPassword", passwordBuffer, sizeof(passwordBuffer), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
-                ImGui::Dummy(ImVec2(0.0f, 6.0f));
-                if (ImGui::Button("Set Password", ImVec2(120.0f, 0.0f)) || enterPressed) {
-                    if (strlen(passwordBuffer) > 0) {
-                        sec->isPasswordProtected = true;
-                        sec->password = passwordBuffer;
-                        sec->isLocked = false;
-                        canvas.needsFullRebake = true;
-                        canvas.isDirty = true;
+                if (passwordModalMode == 1) { // Set Password
+                    ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                    ImGui::TextColored(theme.colorText, "Set Password");
+                    ImGui::PopFont();
+                    ImGui::TextColored(theme.colorTextMuted, "Section: %s", sec->name.c_str());
+                    ImGui::TextColored(ImVec4(0.85f, 0.45f, 0.20f, 1.0f), "Protected sections require this password to unlock.");
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                    ImGui::SetNextItemWidth(availW);
+                    if (ImGui::IsWindowAppearing()) {
+                        ImGui::SetKeyboardFocusHere();
                     }
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::SameLine(0.0f, 10.0f);
-                if (ImGui::Button("Cancel", ImVec2(90.0f, 0.0f))) {
-                    ImGui::CloseCurrentPopup();
-                }
-            } else if (passwordModalMode == 2) { // Unlock Section
-                ImGui::Text("Unlock Section: %s", sec->name.c_str());
-                if (passwordError) {
-                    ImGui::TextColored(ImVec4(0.9f, 0.25f, 0.25f, 1.0f), "Incorrect password. Please try again.");
-                }
-                ImGui::SetNextItemWidth(240.0f);
-                if (ImGui::IsWindowAppearing()) {
-                    ImGui::SetKeyboardFocusHere();
-                }
-                bool enterPressed = ImGui::InputText("##UnlockSecPassword", passwordBuffer, sizeof(passwordBuffer), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
-                ImGui::Dummy(ImVec2(0.0f, 6.0f));
-                if (ImGui::Button("Unlock", ImVec2(100.0f, 0.0f)) || enterPressed) {
-                    if (std::string(passwordBuffer) == sec->password) {
-                        sec->isLocked = false;
-                        activeNb->SetActiveSection(sec);
-                        sec->activePageIndex = 0;
-                        canvas.needsFullRebake = true;
-                        canvas.isDirty = true;
+                    bool enterPressed = ImGui::InputText("##NewSecPassword", passwordBuffer, sizeof(passwordBuffer), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                    float setBtnW = 120.0f;
+                    float cancelBtnW = 86.0f;
+                    float btnGap = 10.0f;
+                    float rightAlignX = ImGui::GetCursorPosX() + availW - (setBtnW + cancelBtnW + btnGap);
+                    if (rightAlignX > ImGui::GetCursorPosX()) {
+                        ImGui::SetCursorPosX(rightAlignX);
+                    }
+
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    bool setClicked = ImGui::Button("Set Password", ImVec2(setBtnW, 32.0f));
+                    ImGui::PopStyleColor(3);
+
+                    if (setClicked || enterPressed) {
+                        if (strlen(passwordBuffer) > 0) {
+                            sec->isPasswordProtected = true;
+                            sec->password = passwordBuffer;
+                            sec->isLocked = false;
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                        }
                         ImGui::CloseCurrentPopup();
-                    } else {
-                        passwordError = true;
+                    }
+                    ImGui::SameLine(0.0f, btnGap);
+                    if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 32.0f))) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                } else if (passwordModalMode == 2) { // Unlock Section
+                    ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                    ImGui::TextColored(theme.colorText, "Unlock Section");
+                    ImGui::PopFont();
+                    ImGui::TextColored(theme.colorTextMuted, "Section: %s", sec->name.c_str());
+                    if (passwordError) {
+                        ImGui::TextColored(ImVec4(0.9f, 0.25f, 0.25f, 1.0f), "Incorrect password. Please try again.");
+                    }
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                    ImGui::SetNextItemWidth(availW);
+                    if (ImGui::IsWindowAppearing()) {
+                        ImGui::SetKeyboardFocusHere();
+                    }
+                    bool enterPressed = ImGui::InputText("##UnlockSecPassword", passwordBuffer, sizeof(passwordBuffer), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+                    ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                    float unlockBtnW = 100.0f;
+                    float cancelBtnW = 86.0f;
+                    float btnGap = 10.0f;
+                    float rightAlignX = ImGui::GetCursorPosX() + availW - (unlockBtnW + cancelBtnW + btnGap);
+                    if (rightAlignX > ImGui::GetCursorPosX()) {
+                        ImGui::SetCursorPosX(rightAlignX);
+                    }
+
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    bool unlockClicked = ImGui::Button("Unlock", ImVec2(unlockBtnW, 32.0f));
+                    ImGui::PopStyleColor(3);
+
+                    if (unlockClicked || enterPressed) {
+                        if (std::string(passwordBuffer) == sec->password) {
+                            sec->isLocked = false;
+                            activeNb->SetActiveSection(sec);
+                            sec->activePageIndex = 0;
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                            ImGui::CloseCurrentPopup();
+                        } else {
+                            passwordError = true;
+                        }
+                    }
+                    ImGui::SameLine(0.0f, btnGap);
+                    if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 32.0f))) {
+                        ImGui::CloseCurrentPopup();
                     }
                 }
-                ImGui::SameLine(0.0f, 10.0f);
-                if (ImGui::Button("Cancel", ImVec2(90.0f, 0.0f))) {
+                ImGui::EndPopup();
+            }
+        }
+    }
+
+    void RenderSectionSettingsModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas, const ThemeManager& theme) {
+        if (openSectionSettingsModal) {
+            ImGui::OpenPopup("SectionSettingsModal##Nav");
+            openSectionSettingsModal = false;
+        }
+        ImGui::SetNextWindowSize(ImVec2(500.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("SectionSettingsModal##Nav", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+                auto sec = activeNb ? activeNb->FindSectionByGuid(sectionSettingsTargetGuid) : nullptr;
+                if (!sec) {
+                    ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                    return;
+                }
+
+                // Header
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorPrimary, "SECTION SETTINGS & PROPERTIES");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Configure section display name, accent color theme, and protection.");
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                // 1. Name
+                ImGui::TextColored(theme.colorText, "Section Name:");
+                ImGui::SetNextItemWidth(availW);
+                if (ImGui::IsWindowAppearing()) {
+                    ImGui::SetKeyboardFocusHere();
+                }
+                bool enterPressed = ImGui::InputText("##SecSettingsNameInput", sectionSettingsName, sizeof(sectionSettingsName), ImGuiInputTextFlags_EnterReturnsTrue);
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                // 2. Color Swatches
+                ImGui::TextColored(theme.colorText, "Section Color Theme:");
+                ImGui::TextDisabled("Select an accent color for section tabs and visual hierarchy:");
+                ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+                static const struct SecColorDef {
+                    const char* name;
+                    const char* svg;
+                    ImVec4 color;
+                } secColors[] = {
+                    { "Blue",        "blue-section-simple.svg",        ImVec4(0.17f, 0.45f, 0.73f, 1.0f) },
+                    { "Green",       "green-section-simple.svg",       ImVec4(0.18f, 0.55f, 0.34f, 1.0f) },
+                    { "Magenta",     "magenta-section-simple.svg",     ImVec4(0.73f, 0.17f, 0.55f, 1.0f) },
+                    { "Orange",      "orange-section-simple.svg",      ImVec4(0.90f, 0.42f, 0.17f, 1.0f) },
+                    { "Pink",        "pink-section-simple.svg",        ImVec4(0.88f, 0.41f, 0.63f, 1.0f) },
+                    { "Red",         "red-section-simple.svg",         ImVec4(0.85f, 0.21f, 0.21f, 1.0f) },
+                    { "Salad Green", "saladgreen-section-simple.svg",  ImVec4(0.43f, 0.71f, 0.24f, 1.0f) },
+                    { "Sky Blue",    "skyblue-section-simple.svg",     ImVec4(0.20f, 0.63f, 0.86f, 1.0f) },
+                    { "Yellow",      "yellow-section-simple.svg",      ImVec4(0.90f, 0.71f, 0.12f, 1.0f) }
+                };
+
+                float swatchW = 46.0f;
+                float swatchH = 28.0f;
+                float swatchGap = 6.0f;
+                for (size_t i = 0; i < IM_ARRAYSIZE(secColors); ++i) {
+                    const auto& cDef = secColors[i];
+                    bool isSelected = (sectionSettingsIcon == cDef.svg);
+
+                    ImGui::PushID(static_cast<int>(i));
+                    ImGui::PushStyleColor(ImGuiCol_Button, cDef.color);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(cDef.color.x * 1.15f, cDef.color.y * 1.15f, cDef.color.z * 1.15f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(cDef.color.x * 0.85f, cDef.color.y * 0.85f, cDef.color.z * 0.85f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+
+                    const char* btnLabel = isSelected ? "\xe2\x9c\x93" : " ";
+                    if (ImGui::Button(btnLabel, ImVec2(swatchW, swatchH))) {
+                        sectionSettingsIcon = cDef.svg;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s Color Theme", cDef.name);
+                    }
+
+                    if (isSelected) {
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+                        dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(255, 255, 255, 255), 6.0f, 0, 2.0f);
+                    }
+
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(4);
+                    ImGui::PopID();
+
+                    if ((i + 1) % 5 != 0 && (i + 1) < IM_ARRAYSIZE(secColors)) {
+                        ImGui::SameLine(0.0f, swatchGap);
+                    }
+                }
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                // 3. Security & Password Protection
+                ImGui::Separator();
+                ImGui::TextColored(theme.colorText, "Security & Protection:");
+                ImGui::Checkbox("Enable Password Protection for this Section", &sectionSettingsPasswordProtected);
+                if (sectionSettingsPasswordProtected) {
+                    ImGui::Indent(16.0f);
+                    ImGui::TextDisabled("Enter password to secure this section:");
+                    ImGui::SetNextItemWidth(availW - 32.0f);
+                    ImGui::InputText("##SecSettingsPasswordInput", sectionSettingsPassword, sizeof(sectionSettingsPassword), ImGuiInputTextFlags_Password);
+                    ImGui::Unindent(16.0f);
+                }
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                // 4. Telemetry / Metadata
+                ImGui::Separator();
+                ImGui::TextColored(theme.colorTextMuted, "Telemetry: %zu pages | Section GUID: %s", sec->pages.size(), sec->guid.c_str());
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                // Footer Actions
+                float saveBtnW = 120.0f;
+                float cancelBtnW = 86.0f;
+                float btnGap = 10.0f;
+                float rightAlignX = ImGui::GetCursorPosX() + availW - (saveBtnW + cancelBtnW + btnGap);
+                if (rightAlignX > ImGui::GetCursorPosX()) {
+                    ImGui::SetCursorPosX(rightAlignX);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                bool saveClicked = ImGui::Button("Save & Apply", ImVec2(saveBtnW, 34.0f));
+                ImGui::PopStyleColor(3);
+
+                if (saveClicked || enterPressed) {
+                    if (strlen(sectionSettingsName) > 0) {
+                        sec->name = sectionSettingsName;
+                    }
+                    sec->iconFile = sectionSettingsIcon;
+                    sec->isPasswordProtected = sectionSettingsPasswordProtected;
+                    if (sectionSettingsPasswordProtected && strlen(sectionSettingsPassword) > 0) {
+                        sec->password = sectionSettingsPassword;
+                        sec->isLocked = false;
+                    } else if (!sectionSettingsPasswordProtected) {
+                        sec->password.clear();
+                        sec->isLocked = false;
+                    }
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
                     ImGui::CloseCurrentPopup();
                 }
+
+                ImGui::SameLine(0.0f, btnGap);
+                if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 34.0f))) {
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
             }
-            ImGui::EndPopup();
+        }
+    }
+
+    void RenderPageSettingsModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas, const ThemeManager& theme) {
+        if (openPageSettingsModal) {
+            ImGui::OpenPopup("PageSettingsModal##Nav");
+            openPageSettingsModal = false;
+        }
+        ImGui::SetNextWindowSize(ImVec2(500.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("PageSettingsModal##Nav", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+                auto activeSec = activeNb ? activeNb->GetActiveSection() : nullptr;
+                auto page = activeSec ? activeSec->FindPageByGuid(pageSettingsTargetGuid) : nullptr;
+                if (!page && activeNb) {
+                    for (const auto& s : activeNb->sections) {
+                        if (s) {
+                            page = s->FindPageByGuid(pageSettingsTargetGuid);
+                            if (page) { activeSec = s; break; }
+                        }
+                    }
+                    if (!page) {
+                        for (const auto& g : activeNb->sectionGroups) {
+                            if (g) {
+                                for (const auto& s : g->sections) {
+                                    if (s) {
+                                        page = s->FindPageByGuid(pageSettingsTargetGuid);
+                                        if (page) { activeSec = s; break; }
+                                    }
+                                }
+                                if (page) break;
+                            }
+                        }
+                    }
+                }
+
+                if (!page) {
+                    ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                    return;
+                }
+
+                // Header
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorPrimary, "PAGE SETTINGS & PROPERTIES");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Configure page title, hierarchy indentation, and canvas paper template.");
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                // 1. Title
+                ImGui::TextColored(theme.colorText, "Page Title:");
+                ImGui::SetNextItemWidth(availW);
+                if (ImGui::IsWindowAppearing()) {
+                    ImGui::SetKeyboardFocusHere();
+                }
+                bool enterPressed = ImGui::InputText("##PageSettingsTitleInput", pageSettingsTitle, sizeof(pageSettingsTitle), ImGuiInputTextFlags_EnterReturnsTrue);
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                // 2. Hierarchy / Nesting Level
+                ImGui::TextColored(theme.colorText, "Page Hierarchy Level:");
+                ImGui::TextDisabled("Set indentation depth in navigation tree:");
+                ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+                const char* levels[] = { "Main Page", "Subpage (Level 1)", "Subpage (Level 2)" };
+                float pillW = (availW - 16.0f) / 3.0f;
+                for (int l = 0; l < 3; ++l) {
+                    bool isSelected = (pageSettingsNestingLevel == l);
+                    ImVec4 btnBg = isSelected ? theme.colorItemSelected : theme.colorSectionBg;
+                    ImVec4 textCol = isSelected ? ImVec4(0.0f, 0.0f, 0.0f, 1.0f) : theme.colorText;
+
+                    ImGui::PushID(l);
+                    ImGui::PushStyleColor(ImGuiCol_Button, btnBg);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, isSelected ? theme.colorItemSelected : theme.colorItemHover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, theme.colorItemSelected);
+                    ImGui::PushStyleColor(ImGuiCol_Text, textCol);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+
+                    if (ImGui::Button(levels[l], ImVec2(pillW, 32.0f))) {
+                        pageSettingsNestingLevel = l;
+                    }
+
+                    if (isSelected) {
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+                        dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(30, 30, 30, 240), 6.0f, 0, 1.5f);
+                    }
+
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(4);
+                    ImGui::PopID();
+
+                    if (l < 2) ImGui::SameLine(0.0f, 8.0f);
+                }
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                // 3. Canvas Paper Template Style
+                ImGui::Separator();
+                ImGui::TextColored(theme.colorText, "Canvas Paper Style:");
+                ImGui::TextDisabled("Choose paper rule lines for handwriting & sketching on this page:");
+                ImGui::Dummy(ImVec2(0.0f, 2.0f));
+
+                struct PaperDef { const char* name; PaperStyle style; };
+                PaperDef paperStyles[] = {
+                    { "Blank",  PaperStyle::Blank },
+                    { "Ruled",  PaperStyle::Lined },
+                    { "Grid",   PaperStyle::Grid },
+                    { "Dotted", PaperStyle::Dotted }
+                };
+                float paperPillW = (availW - 24.0f) / 4.0f;
+                for (int ps = 0; ps < 4; ++ps) {
+                    bool isSelected = (pageSettingsPaperStyle == paperStyles[ps].style);
+                    ImVec4 btnBg = isSelected ? theme.colorItemSelected : theme.colorSectionBg;
+                    ImVec4 textCol = isSelected ? ImVec4(0.0f, 0.0f, 0.0f, 1.0f) : theme.colorText;
+
+                    ImGui::PushID(100 + ps);
+                    ImGui::PushStyleColor(ImGuiCol_Button, btnBg);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, isSelected ? theme.colorItemSelected : theme.colorItemHover);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, theme.colorItemSelected);
+                    ImGui::PushStyleColor(ImGuiCol_Text, textCol);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+
+                    if (ImGui::Button(paperStyles[ps].name, ImVec2(paperPillW, 32.0f))) {
+                        pageSettingsPaperStyle = paperStyles[ps].style;
+                    }
+
+                    if (isSelected) {
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+                        dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(30, 30, 30, 240), 6.0f, 0, 1.5f);
+                    }
+
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(4);
+                    ImGui::PopID();
+
+                    if (ps < 3) ImGui::SameLine(0.0f, 8.0f);
+                }
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                // 4. Telemetry / Metadata
+                ImGui::Separator();
+                std::string dateInfo = page->createdDateStr.empty() ? "Recent" : page->createdDateStr;
+                if (!page->createdTimeStr.empty()) dateInfo += " " + page->createdTimeStr;
+                ImGui::TextColored(theme.colorTextMuted, "Created: %s | Objects: %zu | Page GUID: %s", 
+                    dateInfo.c_str(), page->objects.size(), page->guid.c_str());
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                // Footer Actions
+                float saveBtnW = 120.0f;
+                float cancelBtnW = 86.0f;
+                float btnGap = 10.0f;
+                float rightAlignX = ImGui::GetCursorPosX() + availW - (saveBtnW + cancelBtnW + btnGap);
+                if (rightAlignX > ImGui::GetCursorPosX()) {
+                    ImGui::SetCursorPosX(rightAlignX);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                bool saveClicked = ImGui::Button("Save & Apply", ImVec2(saveBtnW, 34.0f));
+                ImGui::PopStyleColor(3);
+
+                if (saveClicked || enterPressed) {
+                    if (strlen(pageSettingsTitle) > 0) {
+                        page->title = pageSettingsTitle;
+                    }
+                    page->nestingLevel = pageSettingsNestingLevel;
+                    canvas.currentPaperStyle = pageSettingsPaperStyle;
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::SameLine(0.0f, btnGap);
+                if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 34.0f))) {
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
         }
     }
 
@@ -373,9 +815,13 @@ private:
         if (isSelected) {
             ImU32 col = ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected);
             drawList->AddRectFilled(pMin, pMax, col, ModernNavConfig::CORNER_ROUNDING);
+            drawList->AddRect(pMin, pMax, IM_COL32(30, 30, 30, 230), ModernNavConfig::CORNER_ROUNDING, 0, 1.2f);
         } else if (isHovered) {
             ImU32 col = ImGui::ColorConvertFloat4ToU32(theme.colorItemHover);
             drawList->AddRectFilled(pMin, pMax, col, ModernNavConfig::CORNER_ROUNDING);
+        }
+        if (ImGui::IsItemActive()) {
+            drawList->AddRect(pMin, pMax, IM_COL32(20, 20, 20, 255), ModernNavConfig::CORNER_ROUNDING, 0, 1.5f);
         }
 
         float curX = pMin.x + 6.0f;
@@ -462,9 +908,13 @@ private:
         if (isSelected) {
             ImU32 col = ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected);
             drawList->AddRectFilled(pMin, pMax, col, ModernNavConfig::CORNER_ROUNDING);
+            drawList->AddRect(pMin, pMax, IM_COL32(30, 30, 30, 230), ModernNavConfig::CORNER_ROUNDING, 0, 1.2f);
         } else if (isHovered) {
             ImU32 col = ImGui::ColorConvertFloat4ToU32(theme.colorItemHover);
             drawList->AddRectFilled(pMin, pMax, col, ModernNavConfig::CORNER_ROUNDING);
+        }
+        if (ImGui::IsItemActive()) {
+            drawList->AddRect(pMin, pMax, IM_COL32(20, 20, 20, 255), ModernNavConfig::CORNER_ROUNDING, 0, 1.5f);
         }
 
         // 2. Render Icon (if present) & Vertically centered text
@@ -821,7 +1271,14 @@ private:
             }
 
             // Context menu on group
+            ContextMenuThemeScope ctxScope(theme);
             if (ImGui::BeginPopupContextItem(("##GroupCtx_" + group->guid).c_str())) {
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorPrimary, "%s", group->name.c_str());
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Section Group • %zu sections", group->sections.size());
+                ImGui::Separator();
+
                 if (ImGui::MenuItem("New Section in Group")) {
                     auto newSec = std::make_shared<Section>("New Section");
                     group->AddSection(newSec);
@@ -830,7 +1287,7 @@ private:
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                 }
-                if (ImGui::MenuItem("Rename Group")) {
+                if (ImGui::MenuItem("Rename Group", "F2")) {
                     renameTargetType = 2;
                     renameTargetGuid = group->guid;
                     strncpy(renameBuffer, group->name.c_str(), sizeof(renameBuffer) - 1);
@@ -894,13 +1351,9 @@ private:
                         }
                     }
 
-                    // Double Click to Rename Section
+                    // Double Click to Open Section Settings & Properties
                     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        renameTargetType = 1;
-                        renameTargetGuid = sec->guid;
-                        strncpy(renameBuffer, sec->name.c_str(), sizeof(renameBuffer) - 1);
-                        renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                        openRenamePopup = true;
+                        OpenSectionSettings(sec);
                     }
 
                     // Drag source for child section
@@ -954,13 +1407,19 @@ private:
                     }
 
                     // Context menu on child section
+                    ContextMenuThemeScope ctxScope(theme);
                     if (ImGui::BeginPopupContextItem(("##SecCtx_" + sec->guid).c_str())) {
-                        if (ImGui::MenuItem("Rename Section")) {
-                            renameTargetType = 1;
-                            renameTargetGuid = sec->guid;
-                            strncpy(renameBuffer, sec->name.c_str(), sizeof(renameBuffer) - 1);
-                            renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                            openRenamePopup = true;
+                        ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                        ImGui::TextColored(theme.colorPrimary, "%s", sec->name.c_str());
+                        ImGui::PopFont();
+                        ImGui::TextColored(theme.colorTextMuted, "Section • %zu pages", sec->pages.size());
+                        ImGui::Separator();
+
+                        if (ImGui::MenuItem("Section Settings...")) {
+                            OpenSectionSettings(sec);
+                        }
+                        if (ImGui::MenuItem("Rename Section", "F2")) {
+                            OpenSectionSettings(sec);
                         }
                         if (group->sections.size() > 1 || !activeNb->sections.empty()) {
                             if (ImGui::MenuItem("Delete Section")) {
@@ -1095,13 +1554,9 @@ private:
                 }
             }
 
-            // Double Click to Rename Section
+            // Double Click to Open Section Settings & Properties
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                renameTargetType = 1;
-                renameTargetGuid = sec->guid;
-                strncpy(renameBuffer, sec->name.c_str(), sizeof(renameBuffer) - 1);
-                renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                openRenamePopup = true;
+                OpenSectionSettings(sec);
             }
 
             // Drag source
@@ -1154,13 +1609,19 @@ private:
             }
 
             // Context menu
+            ContextMenuThemeScope ctxScope(theme);
             if (ImGui::BeginPopupContextItem(("##RootSecCtx_" + sec->guid).c_str())) {
-                if (ImGui::MenuItem("Rename Section")) {
-                    renameTargetType = 1;
-                    renameTargetGuid = sec->guid;
-                    strncpy(renameBuffer, sec->name.c_str(), sizeof(renameBuffer) - 1);
-                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                    openRenamePopup = true;
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorPrimary, "%s", sec->name.c_str());
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Section • %zu pages", sec->pages.size());
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Section Settings...")) {
+                    OpenSectionSettings(sec);
+                }
+                if (ImGui::MenuItem("Rename Section", "F2")) {
+                    OpenSectionSettings(sec);
                 }
                 if (activeNb->sections.size() > 1 || !activeNb->sectionGroups.empty()) {
                     if (ImGui::MenuItem("Delete Section")) {
@@ -1361,13 +1822,9 @@ private:
                     }
                 }
 
-                // Double Click to Rename Page
+                // Double Click to Open Page Settings & Properties
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                    renameTargetType = 3;
-                    renameTargetGuid = page->guid;
-                    strncpy(renameBuffer, page->title.c_str(), sizeof(renameBuffer) - 1);
-                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                    openRenamePopup = true;
+                    OpenPageSettings(page, canvas);
                 }
 
                 // Drag Source (Click-hold and drag to reorder)
@@ -1406,13 +1863,19 @@ private:
                 }
 
                 // Context Menu on Page Item
+                ContextMenuThemeScope ctxScope(theme);
                 if (ImGui::BeginPopupContextItem(("##PageCtx_" + page->guid).c_str())) {
-                    if (ImGui::MenuItem("Rename")) {
-                        renameTargetType = 3;
-                        renameTargetGuid = page->guid;
-                        strncpy(renameBuffer, page->title.c_str(), sizeof(renameBuffer) - 1);
-                        renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                        openRenamePopup = true;
+                    ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                    ImGui::TextColored(theme.colorPrimary, "%s", page->title.c_str());
+                    ImGui::PopFont();
+                    ImGui::TextColored(theme.colorTextMuted, "Page %zu of %zu", p + 1, activeSec->pages.size());
+                    ImGui::Separator();
+
+                    if (ImGui::MenuItem("Page Settings...")) {
+                        OpenPageSettings(page, canvas);
+                    }
+                    if (ImGui::MenuItem("Rename Page", "F2")) {
+                        OpenPageSettings(page, canvas);
                     }
                     if (activeSec->pages.size() > 1) {
                         if (ImGui::MenuItem("Delete Page")) {
@@ -1425,6 +1888,20 @@ private:
                         }
                     }
                     ImGui::Separator();
+                    if (ImGui::MenuItem("Add Subpage Below")) {
+                        auto newSub = std::make_shared<CanvasPage>("New Untitled");
+                        newSub->nestingLevel = std::min(2, page->nestingLevel + 1);
+                        activeSec->pages.insert(activeSec->pages.begin() + p + 1, newSub);
+                        activeSec->activePageIndex = p + 1;
+                        canvas.ApplyDefaultTemplate();
+                    }
+                    if (ImGui::MenuItem("Make Subpage (Indent)", nullptr, false, page->nestingLevel < 2)) {
+                        activeSec->DemotePage(p);
+                    }
+                    if (ImGui::MenuItem("Promote Page (Outdent)", nullptr, false, page->nestingLevel > 0)) {
+                        activeSec->PromotePage(p);
+                    }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Move Up", nullptr, false, p > 0)) {
                         activeSec->MovePage(p, p - 1);
                         canvas.needsFullRebake = true;
@@ -1434,19 +1911,6 @@ private:
                         activeSec->MovePage(p, p + 1);
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
-                    }
-                    if (ImGui::MenuItem("Make Subpage", nullptr, false, page->nestingLevel < 2)) {
-                        activeSec->DemotePage(p);
-                    }
-                    if (ImGui::MenuItem("Promote Page", nullptr, false, page->nestingLevel > 0)) {
-                        activeSec->PromotePage(p);
-                    }
-                    if (ImGui::MenuItem("Add Subpage Below")) {
-                        auto newSub = std::make_shared<CanvasPage>("New Untitled");
-                        newSub->nestingLevel = std::min(2, page->nestingLevel + 1);
-                        activeSec->pages.insert(activeSec->pages.begin() + p + 1, newSub);
-                        activeSec->activePageIndex = p + 1;
-                        canvas.ApplyDefaultTemplate();
                     }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Copy Page")) {

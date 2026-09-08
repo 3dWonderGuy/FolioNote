@@ -46,7 +46,7 @@ public:
     ImVec4 colorItemHover        = ImVec4(0.86f, 0.87f, 0.92f, 1.00f); // Subtle hover
     ImVec4 colorItemSelected     = ImVec4(0.80f, 0.82f, 0.88f, 1.00f); // Selected neutral slate-tint tone
     ImVec4 colorItemText         = ImVec4(0.14f, 0.15f, 0.18f, 1.00f); // Item text
-    ImVec4 colorItemSelectedText = ImVec4(0.06f, 0.07f, 0.10f, 1.00f); // Selected item text
+    ImVec4 colorItemSelectedText = ImVec4(0.00f, 0.00f, 0.00f, 1.00f); // Selected item text (strictly black)
     ImVec4 colorActionBtn        = ImVec4(0.89f, 0.90f, 0.93f, 1.00f); // Action buttons (<, ==, nb, + Sec, + Page)
     ImVec4 colorActionBtnHover   = ImVec4(0.83f, 0.84f, 0.88f, 1.00f); // Action button hover
     ImVec4 colorActionBtnActive  = ImVec4(0.77f, 0.78f, 0.83f, 1.00f); // Action button active/click
@@ -124,7 +124,7 @@ public:
                 colorItemHover        = ImVec4(0.86f, 0.86f, 0.89f, 1.00f);
                 colorItemSelected     = ImVec4(0.79f, 0.79f, 0.83f, 1.00f);
                 colorItemText         = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
-                colorItemSelectedText = ImVec4(0.05f, 0.05f, 0.08f, 1.00f);
+                colorItemSelectedText = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
                 colorActionBtn        = ImVec4(0.89f, 0.89f, 0.92f, 1.00f);
                 colorActionBtnHover   = ImVec4(0.83f, 0.83f, 0.86f, 1.00f);
                 colorActionBtnActive  = ImVec4(0.78f, 0.78f, 0.82f, 1.00f);
@@ -158,7 +158,7 @@ public:
                 colorItemHover        = ImVec4(0.86f, 0.87f, 0.92f, 1.00f);
                 colorItemSelected     = ImVec4(0.80f, 0.82f, 0.88f, 1.00f); // Refined selection highlight
                 colorItemText         = ImVec4(0.14f, 0.15f, 0.18f, 1.00f);
-                colorItemSelectedText = ImVec4(0.06f, 0.07f, 0.10f, 1.00f);
+                colorItemSelectedText = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
                 colorActionBtn        = ImVec4(0.89f, 0.90f, 0.93f, 1.00f);
                 colorActionBtnHover   = ImVec4(0.83f, 0.84f, 0.88f, 1.00f);
                 colorActionBtnActive  = ImVec4(0.77f, 0.78f, 0.83f, 1.00f);
@@ -346,5 +346,92 @@ public:
         currentPreset = ThemePreset::Custom;
         ApplyToImGui();
         return true;
+    }
+};
+
+// RAII Helper to bind active ThemeManager colors and geometry rounding to modal popups
+struct ModalThemeScope {
+    ModalThemeScope(const ThemeManager& theme) {
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, theme.colorSectionBg);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, theme.colorItemHover);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, theme.colorItemSelected);
+        ImGui::PushStyleColor(ImGuiCol_Button, theme.colorActionBtn);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorActionBtnHover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, theme.colorActionBtnActive);
+        ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, theme.colorNavBg);
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, theme.colorNavBg);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 20.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 14.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    }
+    ~ModalThemeScope() {
+        ImGui::PopStyleVar(7);
+        ImGui::PopStyleColor(11);
+    }
+};
+
+// RAII Helper to bind active ThemeManager colors, geometry rounding, and padding to floating overlay/tool windows
+struct OverlayThemeScope {
+    OverlayThemeScope(const ThemeManager& theme) {
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, theme.colorPanel);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, theme.colorSectionBg);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, theme.colorItemHover);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, theme.colorItemSelected);
+        ImGui::PushStyleColor(ImGuiCol_Button, theme.colorActionBtn);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorActionBtnHover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, theme.colorActionBtnActive);
+        ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, theme.colorNavBg);
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, theme.colorPrimary);
+        ImGui::PushStyleColor(ImGuiCol_Header, theme.colorShelf);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, theme.colorItemHover);
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, theme.colorItemSelected);
+        ImGui::PushStyleColor(ImGuiCol_Tab, theme.colorNavBg);
+        ImGui::PushStyleColor(ImGuiCol_TabHovered, theme.colorItemHover);
+        ImGui::PushStyleColor(ImGuiCol_TabSelected, theme.colorPanel);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20.0f, 18.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 12.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    }
+    ~OverlayThemeScope() {
+        ImGui::PopStyleVar(8);
+        ImGui::PopStyleColor(17);
+    }
+};
+
+// RAII Helper to bind active ThemeManager colors, geometry rounding, and padding to context menus and popovers
+struct ContextMenuThemeScope {
+    ContextMenuThemeScope(const ThemeManager& theme) {
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorShelf);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+        ImGui::PushStyleColor(ImGuiCol_Header, theme.colorItemSelected);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, theme.colorItemHover);
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, theme.colorItemSelected);
+        ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+        ImGui::PushStyleColor(ImGuiCol_Separator, theme.colorBorder);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 10.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 6.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+    }
+    ~ContextMenuThemeScope() {
+        ImGui::PopStyleVar(4);
+        ImGui::PopStyleColor(7);
     }
 };

@@ -150,7 +150,7 @@ else()
         OpenGL::GL
     )
     if(WIN32)
-        target_link_libraries(FolioNote PRIVATE dwmapi)
+        target_link_libraries(FolioNote PRIVATE dwmapi ole32 shell32)
     endif()
 endif()
 
