@@ -1,0 +1,72 @@
+name: Nightly Build & Pre-Release
+
+on:
+  schedule:
+    # Runs at 02:00 UTC every day
+    - cron: '0 2 * * *'
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Nightly (MSVC / Ninja)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout develop branch
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          submodules: recursive
+
+      - name: Set up Ninja
+        uses: ashutosh-007/action-setup-ninja@v1
+        with:
+          version: 1.11.1
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DFOLIONOTE_BUILD_TESTS=OFF
+
+      - name: Build FolioNote
+        run: |
+          cmake --build build --config Release
+
+      - name: Package Windows Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/FolioNote-Windows
+          Copy-Item -Path build/FolioNote.exe -Destination dist/FolioNote-Windows/
+          if (Test-Path assets) {
+            Copy-Item -Path assets -Destination dist/FolioNote-Windows/ -Recurse
+          }
+          Compress-Archive -Path dist/FolioNote-Windows/* -DestinationPath dist/FolioNote-nightly-windows-x64.zip
+
+      - name: Publish Nightly Pre-Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "FolioNote Nightly Build (Develop)"
+          body: |
+            ## Automated Nightly Pre-Release
+            - **Branch:** `develop`
+            - **Commit:** ${{ github.sha }}
+            - **Run Date:** ${{ github.event.repository.updated_at }}
+
+            *This is an automated bleeding-edge build compiled directly from the `develop` branch. Features, file formats, and database schemas may be experimental.*
+          prerelease: true
+          make_latest: false
+          files: |
+            dist/FolioNote-nightly-windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
