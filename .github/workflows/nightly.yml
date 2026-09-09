@@ -25,9 +25,7 @@ jobs:
           submodules: recursive
 
       - name: Set up Ninja
-        uses: ashutosh-007/action-setup-ninja@v1
-        with:
-          version: 1.11.1
+        uses: ninja-build/action-setup-ninja@v3
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
