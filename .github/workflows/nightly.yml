@@ -2,7 +2,7 @@ name: Nightly Build & Pre-Release
 
 on:
   schedule:
-    # Runs at 02:00 UTC every day
+    # Runs at 02:00 UTC daily
     - cron: '0 2 * * *'
   push:
     branches:
@@ -14,21 +14,20 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows Nightly (MSVC / Ninja)
+    name: Build Windows Nightly
     runs-on: windows-latest
 
     steps:
-      - name: Checkout develop branch
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: develop
           submodules: recursive
-
-      - name: Set up Ninja
-        uses: ninja-build/action-setup-ninja@v3
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up CMake and Ninja
+        uses: lukka/get-cmake@latest
 
       - name: Configure CMake
         run: |
@@ -54,14 +53,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
-          name: "FolioNote Nightly Build (Develop)"
+          name: "FolioNote Nightly Build"
           body: |
             ## Automated Nightly Pre-Release
             - **Branch:** `develop`
             - **Commit:** ${{ github.sha }}
-            - **Run Date:** ${{ github.event.repository.updated_at }}
-
-            *This is an automated bleeding-edge build compiled directly from the `develop` branch. Features, file formats, and database schemas may be experimental.*
           prerelease: true
           make_latest: false
           files: |
