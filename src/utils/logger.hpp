@@ -33,7 +33,8 @@ namespace Folio {
         CanvasObject,
         Window,
         Notebook,
-        NavPanel
+        NavPanel,
+        SettingsManager
     };
 
     // Helper to convert LogSource enum values into strings
@@ -54,6 +55,7 @@ namespace Folio {
             case LogSource::Window:            return "Window";
             case LogSource::Notebook:          return "Notebook";
             case LogSource::NavPanel:          return "NavPanel";
+            case LogSource::SettingsManager:   return "SettingsManager";
             default:                           return "General";
         }
     }

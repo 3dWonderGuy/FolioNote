@@ -1,0 +1,235 @@
+{
+  "appearance": {
+    "isCanvasInverted": false,
+    "isDarkMode": true
+  },
+  "inking": {
+    "activePresetId": "pen_black",
+    "autoShapesEnabled": false,
+    "drawWithTouch": false,
+    "eraserSizeMm": 6.0,
+    "isStrokeEraser": true,
+    "presets": [
+      {
+        "color": [
+          0.09000000357627869,
+          0.10000000149011612,
+          0.12999999523162842,
+          1.0
+        ],
+        "id": "pen_black",
+        "isCustomPreset": false,
+        "name": "Black Pen",
+        "opacity": 1.0,
+        "strokePattern": "Solid",
+        "thicknessMm": 0.5,
+        "type": "Pen"
+      },
+      {
+        "color": [
+          0.10000000149011612,
+          0.3400000035762787,
+          0.8600000143051147,
+          1.0
+        ],
+        "id": "pen_blue",
+        "isCustomPreset": false,
+        "name": "Blue Pen",
+        "opacity": 1.0,
+        "strokePattern": "Solid",
+        "thicknessMm": 0.5,
+        "type": "Pen"
+      },
+      {
+        "color": [
+          0.8600000143051147,
+          0.15000000596046448,
+          0.15000000596046448,
+          1.0
+        ],
+        "id": "pen_red",
+        "isCustomPreset": false,
+        "name": "Red Pen",
+        "opacity": 1.0,
+        "strokePattern": "Solid",
+        "thicknessMm": 0.5,
+        "type": "Pen"
+      },
+      {
+        "color": [
+          0.23999999463558197,
+          0.25,
+          0.28999999165534973,
+          1.0
+        ],
+        "id": "pencil_2b",
+        "isCustomPreset": false,
+        "name": "2B Pencil",
+        "opacity": 0.8999999761581421,
+        "strokePattern": "TexturedPencil",
+        "thicknessMm": 0.699999988079071,
+        "type": "Pencil"
+      },
+      {
+        "color": [
+          0.10000000149011612,
+          0.10000000149011612,
+          0.11999999731779099,
+          1.0
+        ],
+        "id": "cal_fountain",
+        "isCustomPreset": false,
+        "name": "Fountain Pen",
+        "opacity": 1.0,
+        "strokePattern": "Solid",
+        "thicknessMm": 1.5,
+        "type": "Fountain"
+      },
+      {
+        "color": [
+          0.49000000953674316,
+          0.23000000417232513,
+          0.9300000071525574,
+          1.0
+        ],
+        "id": "brush_purple",
+        "isCustomPreset": false,
+        "name": "Watercolor Brush",
+        "opacity": 0.8500000238418579,
+        "strokePattern": "Solid",
+        "thicknessMm": 2.5,
+        "type": "Brush"
+      },
+      {
+        "color": [
+          1.0,
+          0.8999999761581421,
+          0.0,
+          1.0
+        ],
+        "id": "high_yellow",
+        "isCustomPreset": false,
+        "name": "Yellow Highlighter",
+        "opacity": 0.550000011920929,
+        "strokePattern": "Solid",
+        "thicknessMm": 4.5,
+        "type": "Highlighter"
+      },
+      {
+        "color": [
+          0.05999999865889549,
+          0.7300000190734863,
+          0.5099999904632568,
+          1.0
+        ],
+        "id": "high_green",
+        "isCustomPreset": false,
+        "name": "Mint Highlighter",
+        "opacity": 0.550000011920929,
+        "strokePattern": "Solid",
+        "thicknessMm": 4.5,
+        "type": "Highlighter"
+      },
+      {
+        "color": [
+          1.0,
+          0.15000000596046448,
+          0.25,
+          1.0
+        ],
+        "id": "laser_pointer",
+        "isCustomPreset": false,
+        "name": "Laser Pointer",
+        "opacity": 0.949999988079071,
+        "strokePattern": "Solid",
+        "thicknessMm": 3.0,
+        "type": "LaserPointer"
+      }
+    ],
+    "rulerEnabled": false
+  },
+  "ribbon": {
+    "activeTab": "Draw",
+    "displayMode": "FullRibbon",
+    "sections": [
+      {
+        "buttons": [
+          "Undo",
+          "Redo"
+        ],
+        "id": "sec_history",
+        "isVisible": true,
+        "title": "History"
+      },
+      {
+        "buttons": [
+          "Select",
+          "Lasso"
+        ],
+        "id": "sec_selection",
+        "isVisible": true,
+        "title": "Selection"
+      },
+      {
+        "buttons": [
+          "Eraser",
+          "Pens & Nibs",
+          "+ Add"
+        ],
+        "id": "sec_tools",
+        "isVisible": true,
+        "title": "Drawing Tools"
+      },
+      {
+        "buttons": [
+          "Draw with Touch"
+        ],
+        "id": "sec_input",
+        "isVisible": true,
+        "title": "Input Mode"
+      },
+      {
+        "buttons": [
+          "Ruler"
+        ],
+        "id": "sec_stencils",
+        "isVisible": true,
+        "title": "Stencils"
+      },
+      {
+        "buttons": [
+          "Insert Space"
+        ],
+        "id": "sec_edit",
+        "isVisible": true,
+        "title": "Edit"
+      },
+      {
+        "buttons": [
+          "Shapes Picker",
+          "Automatic Shapes"
+        ],
+        "id": "sec_shapes",
+        "isVisible": true,
+        "title": "Shapes"
+      },
+      {
+        "buttons": [
+          "Ink to Math"
+        ],
+        "id": "sec_math",
+        "isVisible": true,
+        "title": "Math"
+      },
+      {
+        "buttons": [
+          "Full Page View"
+        ],
+        "id": "sec_mode",
+        "isVisible": true,
+        "title": "Mode"
+      }
+    ]
+  },
+  "version": 1
+}

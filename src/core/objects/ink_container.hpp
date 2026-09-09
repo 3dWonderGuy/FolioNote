@@ -21,6 +21,7 @@ struct Stroke {
     BLPath outlinePath;               ///< Closed 2D vector polygon contour for rasterization
     BLRgba32 color{0xFFFFFFFF};       ///< 32-bit RGBA color
     double baseWidth = 3.0;           ///< Nominal baseline width in world millimeters (mm)
+    StrokePattern pattern = StrokePattern::Solid; ///< Line pattern (Solid, Dashed, Dotted, Textured)
 };
 
 /**

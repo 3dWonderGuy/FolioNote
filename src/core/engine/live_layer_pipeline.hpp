@@ -274,7 +274,7 @@ FinishedStrokeData FinishStroke() {
     data.rawPoints = std::move(activeStrokePoints);
     data.liveSegments = std::move(fullSmoothedSegments);
     data.modeledPoints = liveModeledPoints;
-    data.outlinePath = StrokeOutlineBuilder::BuildOutline(liveModeledPoints, activePenTool.capType);
+    data.outlinePath = StrokeOutlineBuilder::BuildOutline(liveModeledPoints, activePenTool.capType, activePenTool.strokePattern);
     
     // -------------------------------------------------------------------------
     // STAGE 4: STATE RESET & CLEANUP
@@ -412,7 +412,7 @@ void ProcessGoogleResults(const std::vector<ink::stroke_model::Result>& results)
 
     // Rebuild the unified 2D vector ribbon path for live frame rendering
     if (!liveModeledPoints.empty()) {
-        liveStrokeOutline = StrokeOutlineBuilder::BuildOutline(liveModeledPoints, activePenTool.capType);
+        liveStrokeOutline = StrokeOutlineBuilder::BuildOutline(liveModeledPoints, activePenTool.capType, activePenTool.strokePattern);
     }
 }
 
@@ -468,7 +468,7 @@ void UpdateGooglePrediction() {
 
         // Build the transient predicted polygon contour
         if (predPoints.size() >= 2) {
-            predictedStrokeOutline = StrokeOutlineBuilder::BuildOutline(predPoints, activePenTool.capType);
+            predictedStrokeOutline = StrokeOutlineBuilder::BuildOutline(predPoints, activePenTool.capType, activePenTool.strokePattern);
         }
     }
 }

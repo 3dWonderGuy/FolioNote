@@ -792,9 +792,10 @@ public:
                 auto& activePen = inputSM.palette.GetActivePen();
 
                 // -------------------------------------------------------------
+                // -------------------------------------------------------------
                 // SECTION 1: Undo / History (Horizontal Side-by-Side: Left to Right)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_history")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_history", "History", theme, isMini);
                     sec.AddLargeButton("undo_draw", redoIcon, "Undo", "Undo last stroke (Ctrl+Z)", false,
                         [&]() { /* Undo action */ }, false /* flipH = false: points LEFT */, ImVec2(46.0f, 58.0f));
@@ -804,12 +805,15 @@ public:
                 }
 
                 // -------------------------------------------------------------
-                // SECTION 2: Selection (Delete + Object Select & Lasso Select)
+                // SECTION 2: Selection + Navigation (Delete / Select / Lasso / Pan)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_selection")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_selection", "Selection", theme, isMini);
-                    bool isLasso = (inputSM.currentAction == InteractionState::Selecting);
-                    bool isPointer = (!isLasso && inputSM.currentAction != InteractionState::Inking && inputSM.currentAction != InteractionState::Eraser);
+                    bool isLasso   = (inputSM.currentAction == InteractionState::Selecting);
+                    bool isPanning = (inputSM.currentAction == InteractionState::Panning);
+                    bool isPointer = (!isLasso && !isPanning &&
+                                     inputSM.currentAction != InteractionState::Inking &&
+                                     inputSM.currentAction != InteractionState::Eraser);
 
                     // Square Delete button right before Select
                     sec.AddLargeButton("delete_draw", deleteIcon, "Delete", "Delete Selection: Delete selected strokes or objects (Del)", false,
@@ -821,14 +825,31 @@ public:
 
                     sec.AddLargeButton("select_draw", selectIcon, "Select", "Object Selection & Transform (Pointer)", isPointer,
                         [&]() {
-                            inputSM.activeTool = InteractionState::Idle;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Idle);
                             inputSM.currentAction = InteractionState::Idle;
                         }, false, ImVec2(48.0f, 58.0f));
 
                     sec.AddLargeButton("lasso_draw", iconLasso, "Lasso", "Freehand Lasso Selection", isLasso,
                         [&]() {
-                            inputSM.activeTool = InteractionState::Selecting;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Selecting);
                             inputSM.currentAction = InteractionState::Selecting;
+                        }, false, ImVec2(48.0f, 58.0f));
+
+                    // Pan sits here alongside the other navigation tools.
+                    // For touch this is the default mode (finger gestures pan/zoom).
+                    // For stylus/mouse it can also be used as an explicit pan tool.
+                    sec.AddLargeButton("pan_draw", 0, "Pan",
+                        "Pan: Navigate the canvas by dragging. Default touch mode.",
+                        isPanning,
+                        [&]() {
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Panning);
+                            inputSM.currentAction = InteractionState::Panning;
+                            // If the active device is touch, sync the drawWithTouch toggle off
+                            if (inputSM.ActiveDevice == DeviceType::Touch) {
+                                drawWithTouch = false;
+                                SettingsManager::Instance().drawWithTouch = false;
+                                SettingsManager::Instance().Save();
+                            }
                         }, false, ImVec2(48.0f, 58.0f));
 
                     sec.Render();
@@ -837,7 +858,7 @@ public:
                 // -------------------------------------------------------------
                 // SECTION 3: Drawing Tools (Eraser Split + Pen Presets + Add Tool)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_tools")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_tools", "Drawing Tools", theme, isMini);
 
                     // 1. Eraser Split Dropdown
@@ -847,7 +868,7 @@ public:
 
                     sec.AddSplitButton("eraser", iconEraser, eraserLabel, eraserTooltip, isEraser,
                         [&]() { 
-                            inputSM.activeTool = InteractionState::Eraser;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Eraser);
                             inputSM.currentAction = InteractionState::Eraser;
                             inputSM.isStrokeEraser = isStrokeEraser;
                             inputSM.eraserRadiusMm = eraserSizeMm * 0.5f;
@@ -856,16 +877,20 @@ public:
                             menu.AddHeader("Eraser Mode");
                             menu.AddItem("Stroke Eraser", iconEraser, "", [&]() {
                                 isStrokeEraser = true;
-                                inputSM.activeTool = InteractionState::Eraser;
+                                inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Eraser);
                                 inputSM.currentAction = InteractionState::Eraser;
                                 inputSM.isStrokeEraser = true;
+                                SettingsManager::Instance().isStrokeEraser = true;
+                                SettingsManager::Instance().Save();
                             }, isStrokeEraser);
                             menu.AddItem("Simple Eraser (Point)", 0, "", [&]() {
                                 isStrokeEraser = false;
-                                inputSM.activeTool = InteractionState::Eraser;
+                                inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Eraser);
                                 inputSM.currentAction = InteractionState::Eraser;
                                 inputSM.isStrokeEraser = false;
                                 inputSM.eraserRadiusMm = eraserSizeMm * 0.5f;
+                                SettingsManager::Instance().isStrokeEraser = false;
+                                SettingsManager::Instance().Save();
                             }, !isStrokeEraser);
 
                             if (!isStrokeEraser) {
@@ -874,18 +899,26 @@ public:
                                 menu.AddItem("Small (2.0 mm)", 0, "", [&]() {
                                     eraserSizeMm = 2.0f;
                                     inputSM.eraserRadiusMm = 1.0f;
+                                    SettingsManager::Instance().eraserSizeMm = 2.0f;
+                                    SettingsManager::Instance().Save();
                                 }, std::abs(eraserSizeMm - 2.0f) < 0.5f);
                                 menu.AddItem("Medium (6.0 mm)", 0, "", [&]() {
                                     eraserSizeMm = 6.0f;
                                     inputSM.eraserRadiusMm = 3.0f;
+                                    SettingsManager::Instance().eraserSizeMm = 6.0f;
+                                    SettingsManager::Instance().Save();
                                 }, std::abs(eraserSizeMm - 6.0f) < 0.5f);
                                 menu.AddItem("Large (12.0 mm)", 0, "", [&]() {
                                     eraserSizeMm = 12.0f;
                                     inputSM.eraserRadiusMm = 6.0f;
+                                    SettingsManager::Instance().eraserSizeMm = 12.0f;
+                                    SettingsManager::Instance().Save();
                                 }, std::abs(eraserSizeMm - 12.0f) < 0.5f);
                                 menu.AddItem("Extra Large (20.0 mm)", 0, "", [&]() {
                                     eraserSizeMm = 20.0f;
                                     inputSM.eraserRadiusMm = 10.0f;
+                                    SettingsManager::Instance().eraserSizeMm = 20.0f;
+                                    SettingsManager::Instance().Save();
                                 }, std::abs(eraserSizeMm - 20.0f) < 0.5f);
                             }
                         }, false, ImVec2(80.0f, 58.0f)
@@ -906,7 +939,7 @@ public:
                                 auto* p = presetManager.FindPreset(id);
                                 if (p) {
                                     presetManager.ApplyPreset(*p, activePen);
-                                    inputSM.activeTool = InteractionState::Inking;
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                     inputSM.currentAction = InteractionState::Inking;
                                 }
                             },
@@ -940,7 +973,7 @@ public:
                             auto* p = presetManager.FindPreset(newId);
                             if (p) {
                                 presetManager.ApplyPreset(*p, activePen);
-                                inputSM.activeTool = InteractionState::Inking;
+                                inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                 inputSM.currentAction = InteractionState::Inking;
                             }
                         },
@@ -951,7 +984,7 @@ public:
                                 auto* p = presetManager.FindPreset(newId);
                                 if (p) {
                                     presetManager.ApplyPreset(*p, activePen);
-                                    inputSM.activeTool = InteractionState::Inking;
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                     inputSM.currentAction = InteractionState::Inking;
                                 }
                             });
@@ -960,7 +993,7 @@ public:
                                 auto* p = presetManager.FindPreset(newId);
                                 if (p) {
                                     presetManager.ApplyPreset(*p, activePen);
-                                    inputSM.activeTool = InteractionState::Inking;
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                     inputSM.currentAction = InteractionState::Inking;
                                 }
                             });
@@ -969,7 +1002,7 @@ public:
                                 auto* p = presetManager.FindPreset(newId);
                                 if (p) {
                                     presetManager.ApplyPreset(*p, activePen);
-                                    inputSM.activeTool = InteractionState::Inking;
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                     inputSM.currentAction = InteractionState::Inking;
                                 }
                             });
@@ -978,7 +1011,7 @@ public:
                                 auto* p = presetManager.FindPreset(newId);
                                 if (p) {
                                     presetManager.ApplyPreset(*p, activePen);
-                                    inputSM.activeTool = InteractionState::Inking;
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                     inputSM.currentAction = InteractionState::Inking;
                                 }
                             });
@@ -987,7 +1020,7 @@ public:
                                 auto* p = presetManager.FindPreset(newId);
                                 if (p) {
                                     presetManager.ApplyPreset(*p, activePen);
-                                    inputSM.activeTool = InteractionState::Inking;
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                     inputSM.currentAction = InteractionState::Inking;
                                 }
                             });
@@ -996,7 +1029,7 @@ public:
                                 auto* p = presetManager.FindPreset(newId);
                                 if (p) {
                                     presetManager.ApplyPreset(*p, activePen);
-                                    inputSM.activeTool = InteractionState::Inking;
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
                                     inputSM.currentAction = InteractionState::Inking;
                                 }
                             });
@@ -1141,38 +1174,331 @@ public:
                             ImGui::PopStyleColor(5);
                             ImGui::PopStyleVar(3);
 
+                            // 3. Line Style Selector Button (Right of sliders)
+                            float styleBtnX = sliderX + sliderW + 8.0f;
+                            float styleBtnW = isMini ? 36.0f : 50.0f;
+                            float styleBtnH = isMini ? 28.0f : 52.0f;
+                            float styleBtnY = startPos.y + (isMini ? 2.0f : (58.0f - styleBtnH) * 0.5f);
+                            ImVec2 styleBtnPos(styleBtnX, styleBtnY);
+
+                            ImGui::SetCursorScreenPos(styleBtnPos);
+                            std::string lineStylePopupId = "##line_style_picker_popup";
+                            bool styleBtnClicked = ImGui::InvisibleButton("##line_style_btn", ImVec2(styleBtnW, styleBtnH));
+                            bool styleBtnHovered = ImGui::IsItemHovered();
+                            bool styleBtnPressed = ImGui::IsItemActive();
+
+                            // Button background pill
+                            ImVec2 sbMin = styleBtnPos;
+                            ImVec2 sbMax(styleBtnPos.x + styleBtnW, styleBtnPos.y + styleBtnH);
+                            float sbRound = 6.0f;
+
+                            if (styleBtnPressed) {
+                                drawList->AddRectFilled(sbMin, sbMax, ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected), sbRound);
+                                drawList->AddRect(sbMin, sbMax, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), sbRound, 0, 1.5f);
+                            } else if (styleBtnHovered) {
+                                drawList->AddRectFilled(sbMin, sbMax, ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), sbRound);
+                                drawList->AddRect(sbMin, sbMax, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), sbRound, 0, 1.0f);
+                            } else {
+                                drawList->AddRectFilled(sbMin, sbMax, ImGui::ColorConvertFloat4ToU32(theme.colorPanel), sbRound);
+                                drawList->AddRect(sbMin, sbMax, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), sbRound, 0, 1.0f);
+                            }
+
+                            // Graphic preview of current line style
+                            ImU32 inkU32 = ImGui::ColorConvertFloat4ToU32(activePreset->color);
+                            float previewY = isMini ? (styleBtnPos.y + styleBtnH * 0.5f) : (styleBtnPos.y + 16.0f);
+                            float px1 = styleBtnPos.x + 8.0f;
+                            float px2 = styleBtnPos.x + styleBtnW - 8.0f;
+                            float pThick = std::clamp(activePreset->thicknessMm * 1.5f, 2.0f, 4.0f);
+
+                            if (activePreset->strokePattern == StrokePattern::Solid) {
+                                drawList->AddLine(ImVec2(px1, previewY), ImVec2(px2, previewY), inkU32, pThick);
+                            } else if (activePreset->strokePattern == StrokePattern::Dashed) {
+                                float seg = 10.0f, gap = 5.0f;
+                                drawList->AddLine(ImVec2(px1, previewY), ImVec2(px1 + seg, previewY), inkU32, pThick);
+                                drawList->AddLine(ImVec2(px1 + seg + gap, previewY), ImVec2(px2, previewY), inkU32, pThick);
+                            } else if (activePreset->strokePattern == StrokePattern::Dotted) {
+                                float dotR = std::clamp(pThick * 0.55f, 1.6f, 2.8f);
+                                float span = px2 - px1;
+                                for (int d = 0; d <= 3; d++) {
+                                    drawList->AddCircleFilled(ImVec2(px1 + d * (span / 3.0f), previewY), dotR, inkU32);
+                                }
+                            } else {
+                                // Textured
+                                float dotR = 1.6f;
+                                float span = px2 - px1;
+                                for (int d = 0; d <= 5; d++) {
+                                    float jy = ((d % 2 == 0) ? -0.8f : 0.8f);
+                                    drawList->AddCircleFilled(ImVec2(px1 + d * (span / 5.0f), previewY + jy), dotR, inkU32);
+                                }
+                            }
+
+                            // Label text below preview (in full mode)
+                            if (!isMini) {
+                                const char* sLabel = "Solid";
+                                if (activePreset->strokePattern == StrokePattern::Solid) sLabel = "Solid";
+                                else if (activePreset->strokePattern == StrokePattern::Dashed) sLabel = "Dashed";
+                                else if (activePreset->strokePattern == StrokePattern::Dotted) sLabel = "Dotted";
+                                else if (activePreset->strokePattern == StrokePattern::TexturedPencil) sLabel = "Texture";
+
+                                ImGui::PushFont(FolioTheme::FontRibbonSection ? FolioTheme::FontRibbonSection : FolioTheme::FontRegular);
+                                ImVec2 txtSz = ImGui::CalcTextSize(sLabel);
+                                float txtX = styleBtnPos.x + (styleBtnW - txtSz.x) * 0.5f;
+                                float txtY = styleBtnPos.y + styleBtnH - txtSz.y - 4.0f;
+                                drawList->AddText(ImVec2(txtX, txtY), ImGui::ColorConvertFloat4ToU32(theme.colorText), sLabel);
+                                ImGui::PopFont();
+                            }
+
+                            if (styleBtnHovered && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                                ImGui::BeginTooltip();
+                                const char* patDesc = (activePreset->strokePattern == StrokePattern::Dotted) ? "Dotted Line" :
+                                                      (activePreset->strokePattern == StrokePattern::Dashed) ? "Dashed Line" :
+                                                      (activePreset->strokePattern == StrokePattern::TexturedPencil) ? "Textured Line" : "Continuous (Solid) Line";
+                                ImGui::Text("Line Style: %s", patDesc);
+                                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
+                                ImGui::TextUnformatted("Click to choose Continuous, Dashed, or Dotted style");
+                                ImGui::PopStyleColor();
+                                ImGui::EndTooltip();
+                            }
+
+                            if (styleBtnClicked) {
+                                ImGui::OpenPopup(lineStylePopupId.c_str());
+                            }
+
+                            // Popup Menu for Line Style Selection
+                            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
+                            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+                            ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
+                            ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+
+                            if (ImGui::BeginPopup(lineStylePopupId.c_str())) {
+                                ImGui::TextUnformatted("Select Line Style");
+                                ImGui::Separator();
+                                ImGui::Spacing();
+
+                                struct StyleItem {
+                                    const char* name;
+                                    StrokePattern pattern;
+                                    const char* desc;
+                                };
+                                static const StyleItem s_Items[] = {
+                                    { "Continuous", StrokePattern::Solid,          "Solid unbroken stroke" },
+                                    { "Dashed",     StrokePattern::Dashed,         "Evenly spaced line dashes" },
+                                    { "Dotted",     StrokePattern::Dotted,         "Crisp round dots trace" },
+                                    { "Textured",   StrokePattern::TexturedPencil, "Pencil textured grain" }
+                                };
+
+                                bool styleChanged = false;
+                                for (int i = 0; i < 4; i++) {
+                                    bool isSelected = (activePreset->strokePattern == s_Items[i].pattern);
+                                    ImGui::PushID(i);
+
+                                    ImVec2 itemPos = ImGui::GetCursorScreenPos();
+                                    float itemW = 190.0f;
+                                    float itemH = 34.0f;
+                                    bool itemClicked = ImGui::InvisibleButton("##style_row", ImVec2(itemW, itemH));
+                                    bool itemHovered = ImGui::IsItemHovered();
+
+                                    ImDrawList* popDl = ImGui::GetWindowDrawList();
+                                    if (isSelected) {
+                                        popDl->AddRectFilled(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                                            ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected), 6.0f);
+                                        popDl->AddRect(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                                            ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.2f);
+                                    } else if (itemHovered) {
+                                        popDl->AddRectFilled(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                                            ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), 6.0f);
+                                    }
+
+                                    // Graphical sample line on the left
+                                    float sampleY = itemPos.y + itemH * 0.5f;
+                                    float sx1 = itemPos.x + 10.0f;
+                                    float sx2 = itemPos.x + 50.0f;
+                                    ImU32 sCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                                            : ImGui::ColorConvertFloat4ToU32(activePreset->color);
+
+                                    if (s_Items[i].pattern == StrokePattern::Solid) {
+                                        popDl->AddLine(ImVec2(sx1, sampleY), ImVec2(sx2, sampleY), sCol, 3.0f);
+                                    } else if (s_Items[i].pattern == StrokePattern::Dashed) {
+                                        float dW = 10.0f, gW = 5.0f;
+                                        popDl->AddLine(ImVec2(sx1, sampleY), ImVec2(sx1 + dW, sampleY), sCol, 3.0f);
+                                        popDl->AddLine(ImVec2(sx1 + dW + gW, sampleY), ImVec2(sx2, sampleY), sCol, 3.0f);
+                                    } else if (s_Items[i].pattern == StrokePattern::Dotted) {
+                                        for (int d = 0; d < 4; d++) {
+                                            popDl->AddCircleFilled(ImVec2(sx1 + d * 13.0f, sampleY), 2.2f, sCol);
+                                        }
+                                    } else {
+                                        for (int d = 0; d < 6; d++) {
+                                            float jy = ((d % 2 == 0) ? -1.0f : 1.0f);
+                                            popDl->AddCircleFilled(ImVec2(sx1 + d * 8.0f, sampleY + jy), 1.8f, sCol);
+                                        }
+                                    }
+
+                                    // Label text
+                                    ImU32 textCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                                               : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+                                    popDl->AddText(ImVec2(itemPos.x + 60.0f, itemPos.y + 4.0f), textCol, s_Items[i].name);
+
+                                    ImU32 descCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                                               : ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted);
+                                    popDl->AddText(ImVec2(itemPos.x + 60.0f, itemPos.y + 18.0f), descCol, s_Items[i].desc);
+
+                                    if (itemClicked) {
+                                        activePreset->strokePattern = s_Items[i].pattern;
+                                        styleChanged = true;
+                                        ImGui::CloseCurrentPopup();
+                                    }
+
+                                    ImGui::PopID();
+                                }
+
+                                if (styleChanged) {
+                                    presetManager.ApplyPreset(*activePreset, activePen);
+                                }
+
+                                ImGui::EndPopup();
+                            }
+                            ImGui::PopStyleColor(2);
+                            ImGui::PopStyleVar(2);
+
                             // Advance cursor so section sizing accurately wraps these controls
-                            ImGui::SetCursorScreenPos(ImVec2(sliderX + sliderW, startPos.y));
+                            ImGui::SetCursorScreenPos(ImVec2(styleBtnX + styleBtnW, startPos.y));
                         }, 6.0f);
                     }
 
                     sec.Render();
-                }
+                } // End sec_tools
 
                 // -------------------------------------------------------------
-                // SECTION 4: Input Mode (Draw with Touch)
+                // SECTION 4: Input Mode (Touch Inking toggle)
                 // -------------------------------------------------------------
-                {
+                // "Inking" button toggles whether a single finger draws or navigates.
+                // A custom widget draws a modern green-filled circle indicator badge
+                // in the button's icon area so the user can tell at a glance whether
+                // touch-inking is on, separate from the button highlight tint.
+                //
+                // When activated, the last active pen preset is also restored so the
+                // pen carousel immediately highlights the tool that will be used.
+                //
+                // NOTE: Pan lives in the Selection section alongside Select/Lasso.
+                // -------------------------------------------------------------
+                if (SettingsManager::Instance().IsSectionVisible("sec_input")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_input", "Input", theme, isMini);
-                    sec.AddLargeButton("draw_touch", 0, "Touch", "Draw with Touch: Toggle finger inking vs canvas pan/zoom (palm rejection)", drawWithTouch,
-                        [&]() { drawWithTouch = !drawWithTouch; }, false, ImVec2(50.0f, 58.0f));
+
+                    // Reflects the ACTIVE device's tool — not just touch.
+                    // Green whenever the current device (mouse/stylus/touch) is inking.
+                    bool activeDeviceIsInking = (inputSM.GetActiveDeviceTool() == InteractionState::Inking);
+
+                    // Custom widget: Inking toggle button with green circle badge
+                    sec.AddWidget([&]() {
+                        ImDrawList* dl   = ImGui::GetWindowDrawList();
+                        ImVec2 startPos  = ImGui::GetCursorScreenPos();
+                        const float btnW = 62.0f;
+                        const float btnH = isMini ? 30.0f : 58.0f;
+
+                        // Invisible interaction zone
+                        bool clicked = ImGui::InvisibleButton("##inking_touch_btn", ImVec2(btnW, btnH));
+                        bool hovered = ImGui::IsItemHovered();
+                        bool pressed = ImGui::IsItemActive();
+
+                        // Background fill
+                        ImU32 bgFill = activeDeviceIsInking
+                            ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected)
+                            : (pressed  ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected)
+                            : (hovered  ? ImGui::ColorConvertFloat4ToU32(theme.colorItemHover)
+                                        : IM_COL32(0, 0, 0, 0)));
+                        if (bgFill != IM_COL32(0, 0, 0, 0)) {
+                            dl->AddRectFilled(startPos,
+                                ImVec2(startPos.x + btnW, startPos.y + btnH),
+                                bgFill, 6.0f);
+                        }
+
+                        // Circle indicator — green filled when active, outlined when inactive
+                        ImVec2 circleCenter(startPos.x + btnW * 0.5f,
+                                            startPos.y + (isMini ? btnH * 0.5f : btnH * 0.38f));
+                        const float circleR = isMini ? 6.0f : 10.0f;
+
+                        if (activeDeviceIsInking) {
+                            // Glowing green filled circle
+                            dl->AddCircleFilled(circleCenter, circleR + 2.5f,
+                                IM_COL32(50, 210, 110, 55));  // soft outer glow
+                            dl->AddCircleFilled(circleCenter, circleR,
+                                IM_COL32(55, 210, 115, 255)); // solid green fill
+                            dl->AddCircle(circleCenter, circleR,
+                                IM_COL32(180, 255, 200, 120), 0, 1.2f); // rim highlight
+                        } else {
+                            // Muted outlined circle
+                            dl->AddCircle(circleCenter, circleR,
+                                ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted), 0, 1.5f);
+                        }
+
+                        // Label "Inking" centred at bottom
+                        if (!isMini) {
+                            const char* label = "Inking";
+                            float textW = ImGui::CalcTextSize(label).x;
+                            ImVec2 textPos(startPos.x + (btnW - textW) * 0.5f,
+                                           startPos.y + btnH - 16.0f);
+                            dl->AddText(textPos,
+                                ImGui::ColorConvertFloat4ToU32(theme.colorText), label);
+                        }
+
+                        // Tooltip
+                        if (hovered && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                            ImGui::BeginTooltip();
+                            if (activeDeviceIsInking) {
+                                ImGui::TextUnformatted("Inking: Active. Click to switch to Pan/Navigate mode.");
+                            } else {
+                                ImGui::TextUnformatted("Inking: Click to switch to drawing mode with the active pen.");
+                            }
+                            ImGui::EndTooltip();
+                        }
+
+                        // Toggle on click — targets the ACTIVE device, not hard-coded to Touch
+                        if (clicked) {
+                            InteractionState next = activeDeviceIsInking
+                                ? InteractionState::Panning
+                                : InteractionState::Inking;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, next);
+
+                            // Sync the drawWithTouch convenience flag only when touch is active
+                            if (inputSM.ActiveDevice == DeviceType::Touch) {
+                                drawWithTouch = (next == InteractionState::Inking);
+                                SettingsManager::Instance().drawWithTouch = drawWithTouch;
+                                SettingsManager::Instance().Save();
+                            }
+
+                            // Restore the last active pen preset so the pen carousel
+                            // immediately highlights the tool that will be drawn with.
+                            if (next == InteractionState::Inking) {
+                                auto* p = presetManager.GetActivePreset();
+                                if (p) presetManager.ApplyPreset(*p, activePen);
+                            }
+                        }
+
+                        // Advance the section cursor past the custom widget
+                        ImGui::SetCursorScreenPos(ImVec2(startPos.x + btnW, startPos.y));
+                    }, 6.0f);
+
                     sec.Render();
                 }
 
                 // -------------------------------------------------------------
                 // SECTION 5: Stencils (Ruler)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_stencils")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_stencils", "Stencils", theme, isMini);
                     sec.AddLargeButton("stencil_ruler", 0, "Ruler", "Ruler: Toggle digital straightedge ruler overlay", rulerEnabled,
-                        [&]() { rulerEnabled = !rulerEnabled; }, false, ImVec2(48.0f, 58.0f));
+                        [&]() {
+                            rulerEnabled = !rulerEnabled;
+                            SettingsManager::Instance().rulerEnabled = rulerEnabled;
+                            SettingsManager::Instance().Save();
+                        }, false, ImVec2(48.0f, 58.0f));
                     sec.Render();
                 }
 
                 // -------------------------------------------------------------
                 // SECTION 6: Edit (Insert Space)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_edit")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_edit", "Edit", theme, isMini);
 
                     sec.AddLargeButton("insert_space", 0, "Insert Space", "Insert Space: Insert vertical space between notes", isInsertSpaceActive,
@@ -1184,7 +1510,7 @@ public:
                 // -------------------------------------------------------------
                 // SECTION 7: Shapes (Shapes Split Dropdown + Automatic Shapes Toggle)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_shapes")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_shapes", "Shapes", theme, isMini);
 
                     sec.AddSplitButton("shapes_picker", 0, "Shapes", "Insert geometric vector shape", false,
@@ -1202,7 +1528,11 @@ public:
                     );
 
                     sec.AddLargeButton("auto_shapes", 0, "Auto", "Automatic Shapes: Snaps freehand geometric sketches into clean vector shapes", autoShapesEnabled,
-                        [&]() { autoShapesEnabled = !autoShapesEnabled; }, false, ImVec2(48.0f, 58.0f));
+                        [&]() {
+                            autoShapesEnabled = !autoShapesEnabled;
+                            SettingsManager::Instance().autoShapesEnabled = autoShapesEnabled;
+                            SettingsManager::Instance().Save();
+                        }, false, ImVec2(48.0f, 58.0f));
 
                     sec.Render();
                 }
@@ -1210,7 +1540,7 @@ public:
                 // -------------------------------------------------------------
                 // SECTION 8: Math (Ink to Math)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_math")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_math", "Math", theme, isMini);
                     sec.AddLargeButton("ink_to_math", 0, "Math", "Ink to Math: Convert handwritten mathematical expressions to LaTeX / MathML", false,
                         [&]() {}, false, ImVec2(48.0f, 58.0f));
@@ -1220,7 +1550,7 @@ public:
                 // -------------------------------------------------------------
                 // SECTION 9: Mode (Full Page View)
                 // -------------------------------------------------------------
-                {
+                if (SettingsManager::Instance().IsSectionVisible("sec_mode")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_mode", "Mode", theme, isMini);
                     bool isFullPage = (displayMode == RibbonDisplayMode::FullyHidden);
                     sec.AddLargeButton("full_page_view", 0, "Full Page", "Full Page View: Toggle distraction-free canvas mode", isFullPage,
@@ -1228,6 +1558,22 @@ public:
                             SetDisplayMode(displayMode == RibbonDisplayMode::FullyHidden ? RibbonDisplayMode::FullRibbon : RibbonDisplayMode::FullyHidden);
                         }, false, ImVec2(64.0f, 58.0f));
                     sec.Render();
+                }
+
+                // -------------------------------------------------------------
+                // SECTION 10: Custom User Sections from Ribbon Editor
+                // -------------------------------------------------------------
+                for (const auto& secDef : SettingsManager::Instance().ribbonSections) {
+                    if (secDef.id.rfind("sec_custom_", 0) == 0 && secDef.isVisible) {
+                        FolioUI::ToolbarSectionBuilder sec(secDef.id.c_str(), secDef.title.c_str(), theme, isMini);
+                        for (size_t bIdx = 0; bIdx < secDef.buttons.size(); ++bIdx) {
+                            const auto& btnName = secDef.buttons[bIdx];
+                            std::string btnId = secDef.id + "_btn_" + std::to_string(bIdx);
+                            sec.AddLargeButton(btnId.c_str(), 0, btnName.c_str(), btnName.c_str(), false,
+                                []() {}, false, ImVec2(52.0f, 58.0f));
+                        }
+                        sec.Render();
+                    }
                 }
             }
             else if (activeTab == RibbonTab::View) {
