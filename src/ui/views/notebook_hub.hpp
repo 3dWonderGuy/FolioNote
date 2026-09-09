@@ -15,6 +15,7 @@
 #include "core/import/import_manager.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "app/app_view_mode.hpp"
+#include "utils/usage_tracker.hpp"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -99,7 +100,8 @@ enum class SettingsSubCategory {
     Inking = 2,
     Storage = 3,
     Addons = 4,
-    About = 5
+    Usage = 5,
+    About = 6
 };
 
 // ============================================================================
@@ -190,6 +192,10 @@ struct NotebookHubView {
     bool addonOcrIndexer = false;
     bool addonCloudSync = false;
     bool addonDevMode = false;
+
+    // Usage Tracking state in Settings
+    std::string usageStatusMessage;
+    double usageStatusTimestamp = 0.0;
 
     size_t selectedLibraryIndex = 0; // 0 = All Open / Standalone, 1+ = specific library
     int newNbLocationType = 0;       // 0 = Add to Library, 1 = Standalone Notebook
@@ -323,6 +329,7 @@ struct NotebookHubView {
 
         if (ImGui::Button("Open##NbCardOpen", ImVec2(68.0f, 26.0f))) {
             ws.activeNotebookIndex = item.workspaceIndex;
+            ::Folio::UsageTracker::Instance().RecordNotebookSwitch();
             canvas.needsFullRebake = true;
             canvas.isDirty = true;
             outViewMode = AppViewMode::CanvasWorkspace;
@@ -655,6 +662,7 @@ private:
                 RenderSubRailTab("Inking & Stylus", activeSettingsSubCategory == SettingsSubCategory::Inking, [&](){ activeSettingsSubCategory = SettingsSubCategory::Inking; }, "icon_s_ink", "assets/icons/Tools/brush.svg");
                 RenderSubRailTab("Storage & Database", activeSettingsSubCategory == SettingsSubCategory::Storage, [&](){ activeSettingsSubCategory = SettingsSubCategory::Storage; }, "icon_s_sto", "assets/icons/Sections_Notebooks/blue-notebook.svg");
                 RenderSubRailTab("Add-ons & Plugins", activeSettingsSubCategory == SettingsSubCategory::Addons, [&](){ activeSettingsSubCategory = SettingsSubCategory::Addons; }, "icon_s_add", "assets/icons/Navigation/add.svg");
+                RenderSubRailTab("Canvas & UI Usage", activeSettingsSubCategory == SettingsSubCategory::Usage, [&](){ activeSettingsSubCategory = SettingsSubCategory::Usage; }, "icon_s_usg", "assets/icons/Ribbon/tag.svg");
                 RenderSubRailTab("About & Updates", activeSettingsSubCategory == SettingsSubCategory::About, [&](){ activeSettingsSubCategory = SettingsSubCategory::About; }, "icon_s_abo", "assets/icons/logo.svg");
                 break;
         }
@@ -1907,6 +1915,216 @@ private:
                     // Add-on installer dialog
                 }
                 ImGui::PopStyleVar(2);
+                break;
+            }
+
+            case SettingsSubCategory::Usage: {
+                auto canvasData = ::Folio::UsageTracker::Instance().GetCanvasData();
+                auto uiData = ::Folio::UsageTracker::Instance().GetUIData();
+                bool isEnabled = ::Folio::UsageTracker::Instance().isTrackingEnabled;
+
+                // --- Master Switch & Actions ---
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Analytics & Engagement Tracking");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Aggregates canvas drawing telemetry, inking distance, tool usage, and interface navigation time");
+
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                if (ImGui::Checkbox("Enable Real-Time Usage & Telemetry Collection", &isEnabled)) {
+                    ::Folio::UsageTracker::Instance().isTrackingEnabled = isEnabled;
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 10.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14.0f, 8.0f));
+
+                if (ImGui::Button("Export Usage Report (.json)")) {
+                    std::string outPath;
+                    if (::Folio::UsageTracker::Instance().ExportSummaryToFile("", outPath)) {
+                        usageStatusMessage = "Exported report to: " + outPath;
+                    } else {
+                        usageStatusMessage = "Failed to export report.";
+                    }
+                    usageStatusTimestamp = ImGui::GetTime();
+                }
+                ImGui::SameLine(0.0f, 10.0f);
+                if (ImGui::Button("Copy Summary to Clipboard")) {
+                    std::string summary = ::Folio::UsageTracker::Instance().ExportSummaryToString();
+                    SDL_SetClipboardText(summary.c_str());
+                    usageStatusMessage = "Usage summary copied to clipboard!";
+                    usageStatusTimestamp = ImGui::GetTime();
+                }
+                ImGui::SameLine(0.0f, 10.0f);
+                if (ImGui::Button("Reset All Usage Metrics")) {
+                    ::Folio::UsageTracker::Instance().ResetStats();
+                    usageStatusMessage = "Usage metrics have been reset to zero.";
+                    usageStatusTimestamp = ImGui::GetTime();
+                }
+
+                ImGui::PopStyleVar(2);
+
+                if (!usageStatusMessage.empty() && (ImGui::GetTime() - usageStatusTimestamp < 6.0)) {
+                    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.45f, 1.0f), "%s", usageStatusMessage.c_str());
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 16.0f));
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 14.0f));
+
+                // =========================================================
+                // 1. CANVAS USAGE & INKING TELEMETRY
+                // =========================================================
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorPrimary, "CANVAS INKING & DRAWING PRODUCTIVITY");
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                float availW = ImGui::GetContentRegionAvail().x;
+                float cardSpacing = 14.0f;
+                float cardW = (availW - (cardSpacing * 3.0f)) / 4.0f;
+                if (cardW < 160.0f) cardW = 160.0f;
+                float cardH = 95.0f;
+
+                auto renderMetricCard = [&](const char* childId, const char* label, const std::string& mainVal, const std::string& subVal) {
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme.colorPanel);
+                    ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 12.0f));
+                    ImGui::BeginChild(childId, ImVec2(cardW, cardH), true);
+                    
+                    ImGui::TextColored(theme.colorTextMuted, "%s", label);
+                    ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                    ImGui::PushFont(FolioTheme::FontRibbonBoldLarge);
+                    ImGui::TextColored(theme.colorText, "%s", mainVal.c_str());
+                    ImGui::PopFont();
+                    ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                    ImGui::TextColored(theme.colorPrimary, "%s", subVal.c_str());
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleVar(2);
+                    ImGui::PopStyleColor(2);
+                };
+
+                // Card 1: Active Inking Time
+                renderMetricCard("##CardInkTime", "Active Inking Time", 
+                    ::Folio::UsageTracker::FormatDuration(canvasData.activeDrawingTimeSec),
+                    "Viewed: " + ::Folio::UsageTracker::FormatDuration(canvasData.canvasSessionTimeSec));
+                
+                ImGui::SameLine(0.0f, cardSpacing);
+                // Card 2: Total Strokes & Cadence
+                double spm = ::Folio::UsageTracker::Instance().GetStrokesPerMinute();
+                char spmBuf[32];
+                snprintf(spmBuf, sizeof(spmBuf), "%.1f strokes/min", spm);
+                renderMetricCard("##CardStrokes", "Strokes Committed",
+                    std::to_string(canvasData.strokesCount),
+                    spmBuf);
+
+                ImGui::SameLine(0.0f, cardSpacing);
+                // Card 3: Inking Distance
+                renderMetricCard("##CardDistance", "Total Distance Inked",
+                    ::Folio::UsageTracker::FormatDistance(canvasData.inkingDistanceMm),
+                    "Estimated vector length");
+
+                ImGui::SameLine(0.0f, cardSpacing);
+                // Card 4: Canvas Objects & Erasures
+                std::string subActions = std::to_string(canvasData.eraserActionsCount) + " erasures | " + 
+                                         std::to_string(canvasData.panGesturesCount) + " pans";
+                renderMetricCard("##CardObjects", "Objects on Canvas",
+                    std::to_string(canvasData.objectsCreatedCount),
+                    subActions);
+
+                ImGui::Dummy(ImVec2(0.0f, 20.0f));
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 14.0f));
+
+                // =========================================================
+                // 2. USER INTERFACE & NAVIGATION TIME ALLOCATION
+                // =========================================================
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorPrimary, "USER INTERFACE & NAVIGATION WORKFLOW");
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                double totalTime = std::max(1.0, uiData.totalAppTimeSec);
+                float canvasFrac = std::clamp(static_cast<float>(canvasData.canvasSessionTimeSec / totalTime), 0.0f, 1.0f);
+                float hubFrac = std::clamp(static_cast<float>(uiData.timeInHubSec / totalTime), 0.0f, 1.0f);
+
+                ImGui::Text("Time Allocation by Surface (Total App Session: %s):", ::Folio::UsageTracker::FormatDuration(totalTime).c_str());
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                // Visual proportional bar
+                float barW = std::max(200.0f, availW - 20.0f);
+                float barH = 22.0f;
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImVec2 barP0 = ImGui::GetCursorScreenPos();
+                ImVec2 barP1(barP0.x + barW, barP0.y + barH);
+
+                // Background track
+                dl->AddRectFilled(barP0, barP1, ImGui::ColorConvertFloat4ToU32(theme.colorPanel), 6.0f);
+                
+                // Canvas segment
+                float seg1W = barW * canvasFrac;
+                if (seg1W > 2.0f) {
+                    dl->AddRectFilled(barP0, ImVec2(barP0.x + seg1W, barP0.y + barH), ImGui::ColorConvertFloat4ToU32(theme.colorPrimary), 6.0f);
+                }
+                // Hub segment
+                float seg2W = barW * hubFrac;
+                if (seg2W > 2.0f) {
+                    ImVec4 hubCol = ImVec4(theme.colorPrimary.x * 0.7f, theme.colorPrimary.y * 0.9f, 0.95f, 0.85f);
+                    dl->AddRectFilled(ImVec2(barP0.x + seg1W, barP0.y), ImVec2(barP0.x + std::min(barW, seg1W + seg2W), barP0.y + barH), ImGui::ColorConvertFloat4ToU32(hubCol), 6.0f);
+                }
+                dl->AddRect(barP0, barP1, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f);
+                ImGui::Dummy(ImVec2(barW, barH + 6.0f));
+
+                // Legend
+                char pctBuf[256];
+                snprintf(pctBuf, sizeof(pctBuf), "Canvas Workspace: %.1f%% (%s)   |   Hub & Backstage: %.1f%% (%s)   |   Settings Time: %s",
+                         canvasFrac * 100.0f, ::Folio::UsageTracker::FormatDuration(canvasData.canvasSessionTimeSec).c_str(),
+                         hubFrac * 100.0f, ::Folio::UsageTracker::FormatDuration(uiData.timeInHubSec).c_str(),
+                         ::Folio::UsageTracker::FormatDuration(uiData.timeInSettingsSec).c_str());
+                ImGui::TextColored(theme.colorTextMuted, "%s", pctBuf);
+
+                ImGui::Dummy(ImVec2(0.0f, 16.0f));
+
+                // 3 Details Columns
+                ImGui::Columns(3, "##UsageDetailColumns", false);
+                ImGui::SetColumnWidth(0, availW * 0.33f);
+                ImGui::SetColumnWidth(1, availW * 0.33f);
+                ImGui::SetColumnWidth(2, availW * 0.34f);
+
+                // Column 1: Document Navigation
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Hierarchy Navigation");
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                ImGui::Text("Page Switches    : %llu", static_cast<unsigned long long>(uiData.pageSwitchesCount));
+                ImGui::Text("Section Switches : %llu", static_cast<unsigned long long>(uiData.sectionSwitchesCount));
+                ImGui::Text("Notebook Opens   : %llu", static_cast<unsigned long long>(uiData.notebookSwitchesCount));
+
+                ImGui::NextColumn();
+
+                // Column 2: User Inputs & Dialogs
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Interaction Counts");
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                ImGui::Text("Total UI Clicks  : %llu", static_cast<unsigned long long>(uiData.totalClicksCount));
+                ImGui::Text("Dialogs & Modals : %llu", static_cast<unsigned long long>(uiData.dialogsOpenedCount));
+                ImGui::Text("Sidebar Actions  : %llu", static_cast<unsigned long long>(uiData.sidebarInteractionsCount));
+
+                ImGui::NextColumn();
+
+                // Column 3: Canvas Manipulations
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Viewport Actions");
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                ImGui::Text("Pan Gestures     : %llu", static_cast<unsigned long long>(canvasData.panGesturesCount));
+                ImGui::Text("Zoom Operations  : %llu", static_cast<unsigned long long>(canvasData.zoomGesturesCount));
+                ImGui::Text("Erase Operations : %llu", static_cast<unsigned long long>(canvasData.eraserActionsCount));
+
+                ImGui::Columns(1);
                 break;
             }
 

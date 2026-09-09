@@ -5,6 +5,7 @@
 #include "app/window_state_manager.hpp"
 #include "app/theme_manager.hpp"
 #include "utils/file_logger.hpp"
+#include "core/document/document_session.hpp"
 #include <deque>
 #include <string>
 #include <algorithm>
@@ -31,14 +32,16 @@ enum class LogCategory {
 
 class DebugOverlay {
 public:
-
-
     bool isVisible = false;
 
     // Filter controls
     int selectedCategoryFilter = 0; // 0 = All, 1 = System, 2 = Window, 3 = Input, 4 = Engine
     char searchFilterText[64] = "";
     bool autoScroll = true;
+
+    // Log export status notification
+    std::string exportStatusMessage;
+    double exportStatusTimestamp = 0.0;
 
     float frameTimeHistory[120] = { 0.0f };
     int frameTimeOffset = 0;
@@ -131,11 +134,11 @@ public:
         }
     }
 
-    void Render(CanvasEngine& canvas, const InputStateMachine& inputState, const WindowStateManager& windowState, float canvasScreenX, float canvasScreenY, const ThemeManager& theme) {
+    void Render(CanvasEngine& canvas, const InputStateMachine& inputState, const WindowStateManager& windowState, DocumentSession& session, float canvasScreenX, float canvasScreenY, const ThemeManager& theme) {
         if (!isVisible) return;
 
-        ImGui::SetNextWindowSize(ImVec2(580, 560), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowPos(ImVec2(20, 160), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(620, 620), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(20, 140), ImGuiCond_FirstUseEver);
 
         OverlayThemeScope overlayScope(theme);
         ImGui::Begin("Developer Diagnostics [F3]", &isVisible);
@@ -182,8 +185,50 @@ public:
                 ImGui::EndTabItem();
             }
 
-            // TAB 2: INPUT STATE MACHINE & HARDWARE SAMPLING TELEMETRY
-            if (ImGui::BeginTabItem("Telemetry")) {
+            // TAB 2: INPUT & DOCUMENT STATE MACHINE & HARDWARE SAMPLING TELEMETRY
+            if (ImGui::BeginTabItem("Telemetry & State")) {
+                auto activeNb = session.workspace.GetActiveNotebook();
+                auto activeSec = activeNb ? activeNb->GetActiveSection() : nullptr;
+                auto activePg = session.GetActivePage();
+
+                ImGui::TextColored(theme.colorPrimary, "DOCUMENT HIERARCHY STATE MACHINE");
+                if (activeNb) {
+                    ImGui::Text("Active Notebook    : %s (GUID: %s)", activeNb->name.c_str(), activeNb->guid.substr(0, 8).c_str());
+                    if (activeSec) {
+                        std::string parentGrpName = "Root Section";
+                        if (!activeSec->groupGuid.empty()) {
+                            if (auto parentGrp = activeNb->FindSectionGroupByGuid(activeSec->groupGuid)) {
+                                parentGrpName = "Group: '" + parentGrp->name + "'";
+                            } else {
+                                parentGrpName = "Group GUID: " + activeSec->groupGuid.substr(0, 8) + "...";
+                            }
+                        }
+                        ImGui::Text("Active Section     : %s [%s]", activeSec->name.c_str(), parentGrpName.c_str());
+                        ImGui::Text("Section GUID       : %s", activeSec->guid.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Active Section     : NONE (Hierarchy desynced)");
+                    }
+
+                    if (activePg) {
+                        ImGui::Text("Active Page        : %s (Objects: %zu | GUID: %s)", activePg->title.c_str(), activePg->objects.size(), activePg->guid.substr(0, 8).c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Active Page        : NONE (Empty section)");
+                    }
+
+                    size_t totalSectionsInGroups = 0;
+                    for (const auto& g : activeNb->sectionGroups) {
+                        if (g) totalSectionsInGroups += g->sections.size();
+                    }
+                    ImGui::Text("Hierarchy Counts   : %zu Root Secs | %zu Groups (%zu Secs in groups)", 
+                                activeNb->sections.size(), activeNb->sectionGroups.size(), totalSectionsInGroups);
+                } else {
+                    ImGui::TextDisabled("No active notebook open");
+                }
+
+                ImGui::Separator();
+                ImGui::TextDisabled("Note: Detailed operational logs and export options are centralized in the 'Logs' tab.");
+
+                ImGui::Separator();
                 const char* stylusStateNames[] = { "OutOfRange", "Hovering", "Engaged (Down)" };
                 const char* toolNames[] = { "Idle", "Inking", "Eraser", "Selecting", "Panning", "Transforming" };
                 const char* deviceNames[] = { "Unknown", "Active Stylus Pen", "Touch Capacitive", "Standard Mouse" };
@@ -250,9 +295,39 @@ public:
 
             // TAB 4: FILTERABLE EVENT LOGS
             if (ImGui::BeginTabItem("Logs")) {
+                // Top control bar with export buttons
+                if (ImGui::Button("Export to File##LogsTab")) {
+                    std::string outPath;
+                    if (::Folio::FileLogger::Instance().ExportLogsToFile("", outPath)) {
+                        exportStatusMessage = "Exported logs to: " + outPath;
+                    } else {
+                        exportStatusMessage = "Failed to export logs to disk.";
+                    }
+                    exportStatusTimestamp = ImGui::GetTime();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Copy to Clipboard##LogsTab")) {
+                    std::string logs = ::Folio::FileLogger::Instance().ExportLogsToString();
+                    SDL_SetClipboardText(logs.c_str());
+                    exportStatusMessage = "Copied " + std::to_string(::Folio::FileLogger::Instance().GetHistory().size()) + " log lines to clipboard!";
+                    exportStatusTimestamp = ImGui::GetTime();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear Logs##LogsTab")) {
+                    ::Folio::FileLogger::Instance().ClearHistory();
+                    exportStatusMessage = "Log history cleared.";
+                    exportStatusTimestamp = ImGui::GetTime();
+                }
+
+                if (!exportStatusMessage.empty() && (ImGui::GetTime() - exportStatusTimestamp < 5.0)) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), "%s", exportStatusMessage.c_str());
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 2.0f));
                 ImGui::Text("Filter Source:");
                 ImGui::SameLine();
-                const char* categories[] = { "All", "General", "FileLoader", "CanvasEngine", "RTree", "DBManager", "PageRepository", "Input", "Window" };
+                const char* categories[] = { "All", "General", "FileLoader", "CanvasEngine", "RTree", "DBManager", "PageRepository", "Input", "Window", "Notebook", "NavPanel" };
                 ImGui::PushItemWidth(130);
                 ImGui::Combo("##CategoryFilter", &selectedCategoryFilter, categories, IM_ARRAYSIZE(categories));
                 ImGui::PopItemWidth();

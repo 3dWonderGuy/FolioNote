@@ -11,6 +11,7 @@
 #include "ui/imgui_theme.hpp"
 #include "ui/icon_manager.hpp"
 #include "app/app_view_mode.hpp"
+#include "utils/usage_tracker.hpp"
 
 // ============================================================================
 // 1. CONFIGURATION CONSTANTS & METRICS
@@ -100,6 +101,7 @@ public:
         strncpy(sectionSettingsPassword, sec->password.c_str(), sizeof(sectionSettingsPassword) - 1);
         sectionSettingsPassword[sizeof(sectionSettingsPassword) - 1] = '\0';
         openSectionSettingsModal = true;
+        ::Folio::UsageTracker::Instance().RecordDialogOpened();
     }
 
     void OpenPageSettings(const std::shared_ptr<CanvasPage>& page, CanvasEngine& canvas) {
@@ -110,6 +112,7 @@ public:
         pageSettingsNestingLevel = page->nestingLevel;
         pageSettingsPaperStyle = canvas.currentPaperStyle;
         openPageSettingsModal = true;
+        ::Folio::UsageTracker::Instance().RecordDialogOpened();
     }
 
     // Clipboard state
@@ -1220,7 +1223,7 @@ private:
                 colWidth - 10.0f, theme, 0, 0.0f, true, group->isCollapsed, true, &chevronClicked
             );
 
-            if (grpClicked) {
+            if (grpClicked && ImGui::GetDragDropPayload() == nullptr) {
                 group->isCollapsed = !group->isCollapsed;
             }
 
@@ -1246,6 +1249,7 @@ private:
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* pSec = ImGui::AcceptDragDropPayload("NAV_SECTION_DND")) {
                     std::string draggedGuid((const char*)pSec->Data);
+                    LOG_INFO(NavPanel, "DND Section (" + draggedGuid + ") dropped onto Group Header '" + group->name + "' (" + group->guid + ")");
                     activeNb->MoveSectionToGroup(draggedGuid, group->guid);
                     group->isCollapsed = false;
                     canvas.needsFullRebake = true;
@@ -1366,6 +1370,7 @@ private:
                     }
 
                     // Drag target on child section
+                    bool dndDroppedOnChild = false;
                     if (ImGui::BeginDragDropTarget()) {
                         if (const ImGuiPayload* pSec = ImGui::AcceptDragDropPayload("NAV_SECTION_DND")) {
                             std::string draggedGuid((const char*)pSec->Data);
@@ -1388,11 +1393,18 @@ private:
                                 } else {
                                     group->sections.push_back(moved);
                                 }
+                                for (size_t i = 0; i < group->sections.size(); ++i) {
+                                    if (group->sections[i]) group->sections[i]->sortOrder = static_cast<int32_t>(i);
+                                }
+                                LOG_INFO(NavPanel, "Reordered child section within group '" + group->name + "' to index " + std::to_string(targetIdx));
                             } else {
-                                activeNb->MoveSectionToGroup(draggedGuid, group->guid);
+                                LOG_INFO(NavPanel, "DND Section (" + draggedGuid + ") inserted into group '" + group->name + "' at index " + std::to_string(targetIdx));
+                                activeNb->MoveSectionToGroup(draggedGuid, group->guid, targetIdx);
                             }
+                            group->isCollapsed = false;
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
+                            dndDroppedOnChild = true;
                         }
                         ImVec2 itemMin = ImGui::GetItemRectMin();
                         ImVec2 itemMax = ImGui::GetItemRectMax();
@@ -1406,8 +1418,15 @@ private:
                         ImGui::EndDragDropTarget();
                     }
 
+                    if (dndDroppedOnChild) {
+                        ImGui::PopID();
+                        break;
+                    }
+
                     // Context menu on child section
                     ContextMenuThemeScope ctxScope(theme);
+                    std::string pendingMoveToRootGuid;
+                    std::string pendingMoveToGroupGuid;
                     if (ImGui::BeginPopupContextItem(("##SecCtx_" + sec->guid).c_str())) {
                         ImGui::PushFont(FolioTheme::FontNavBoldLarge);
                         ImGui::TextColored(theme.colorPrimary, "%s", sec->name.c_str());
@@ -1450,9 +1469,18 @@ private:
                             canvas.isDirty = true;
                         }
                         if (ImGui::MenuItem("Move to Root Sections")) {
-                            activeNb->MoveSectionToRoot(sec->guid);
-                            canvas.needsFullRebake = true;
-                            canvas.isDirty = true;
+                            pendingMoveToRootGuid = sec->guid;
+                        }
+                        if (activeNb->sectionGroups.size() > 1) {
+                            if (ImGui::BeginMenu("Move to Another Group")) {
+                                for (auto& grp : activeNb->sectionGroups) {
+                                    if (!grp || grp->guid == group->guid) continue;
+                                    if (ImGui::MenuItem(grp->name.c_str())) {
+                                        pendingMoveToGroupGuid = grp->guid;
+                                    }
+                                }
+                                ImGui::EndMenu();
+                            }
                         }
                         ImGui::Separator();
                         if (ImGui::MenuItem("Copy Section")) {
@@ -1510,6 +1538,33 @@ private:
                                 sec->isLocked = false;
                             }
                         }
+
+                        // Deferred move operations
+                        if (!pendingMoveToRootGuid.empty()) {
+                            LOG_INFO(NavPanel, "Context menu moving child section (" + pendingMoveToRootGuid + ") to root");
+                            activeNb->MoveSectionToRoot(pendingMoveToRootGuid);
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                            ImGui::CloseCurrentPopup();
+                            ImGui::EndPopup();
+                            ImGui::PopID();
+                            break;
+                        }
+                        if (!pendingMoveToGroupGuid.empty()) {
+                            std::string movingSecGuid = sec->guid;
+                            LOG_INFO(NavPanel, "Context menu moving child section (" + movingSecGuid + ") to group (" + pendingMoveToGroupGuid + ")");
+                            activeNb->MoveSectionToGroup(movingSecGuid, pendingMoveToGroupGuid);
+                            if (auto targetGrp = activeNb->FindSectionGroupByGuid(pendingMoveToGroupGuid)) {
+                                targetGrp->isCollapsed = false;
+                            }
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                            ImGui::CloseCurrentPopup();
+                            ImGui::EndPopup();
+                            ImGui::PopID();
+                            break;
+                        }
+
                         ImGui::EndPopup();
                     }
                     ImGui::PopID();
@@ -1569,6 +1624,7 @@ private:
             }
 
             // Drag target
+            bool dndDroppedOnRoot = false;
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* pSec = ImGui::AcceptDragDropPayload("NAV_SECTION_DND")) {
                     std::string draggedGuid((const char*)pSec->Data);
@@ -1591,10 +1647,12 @@ private:
                         if (srcIdx < targetIdx) targetIdx--;
                         activeNb->MoveSection(srcIdx, targetIdx);
                     } else {
+                        LOG_INFO(NavPanel, "DND Section (" + draggedGuid + ") dropped into root at index " + std::to_string(targetIdx));
                         activeNb->MoveSectionToRoot(draggedGuid, targetIdx);
                     }
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    dndDroppedOnRoot = true;
                 }
                 ImVec2 itemMin = ImGui::GetItemRectMin();
                 ImVec2 itemMax = ImGui::GetItemRectMax();
@@ -1608,8 +1666,14 @@ private:
                 ImGui::EndDragDropTarget();
             }
 
+            if (dndDroppedOnRoot) {
+                ImGui::PopID();
+                break;
+            }
+
             // Context menu
             ContextMenuThemeScope ctxScope(theme);
+            std::string pendingMoveToGroupGuid;
             if (ImGui::BeginPopupContextItem(("##RootSecCtx_" + sec->guid).c_str())) {
                 ImGui::PushFont(FolioTheme::FontNavBoldLarge);
                 ImGui::TextColored(theme.colorPrimary, "%s", sec->name.c_str());
@@ -1649,11 +1713,7 @@ private:
                         for (auto& grp : activeNb->sectionGroups) {
                             if (!grp) continue;
                             if (ImGui::MenuItem(grp->name.c_str())) {
-                                activeNb->MoveSectionToGroup(sec->guid, grp->guid);
-                                grp->isCollapsed = false;
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
-                                break;
+                                pendingMoveToGroupGuid = grp->guid;
                             }
                         }
                         ImGui::EndMenu();
@@ -1714,6 +1774,23 @@ private:
                         sec->isLocked = false;
                     }
                 }
+
+                // Deferred move to group
+                if (!pendingMoveToGroupGuid.empty()) {
+                    std::string movingSecGuid = sec->guid;
+                    LOG_INFO(NavPanel, "Context menu moving root section '" + sec->name + "' (" + movingSecGuid + ") to Group: " + pendingMoveToGroupGuid);
+                    activeNb->MoveSectionToGroup(movingSecGuid, pendingMoveToGroupGuid);
+                    if (auto targetGrp = activeNb->FindSectionGroupByGuid(pendingMoveToGroupGuid)) {
+                        targetGrp->isCollapsed = false;
+                    }
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                    ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                    ImGui::PopID();
+                    break;
+                }
+
                 ImGui::EndPopup();
             }
             ImGui::PopID();
@@ -1724,6 +1801,7 @@ private:
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* pSec = ImGui::AcceptDragDropPayload("NAV_SECTION_DND")) {
                 std::string draggedGuid((const char*)pSec->Data);
+                LOG_INFO(NavPanel, "DND Section (" + draggedGuid + ") dropped into bottom area (MoveSectionToRoot)");
                 activeNb->MoveSectionToRoot(draggedGuid);
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
@@ -1816,7 +1894,10 @@ private:
                     if (chevronClicked) {
                         page->isCollapsed = !page->isCollapsed;
                     } else {
-                        activeSec->activePageIndex = p;
+                        if (activeSec->activePageIndex != p) {
+                            activeSec->activePageIndex = p;
+                            ::Folio::UsageTracker::Instance().RecordPageSwitch();
+                        }
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
                     }

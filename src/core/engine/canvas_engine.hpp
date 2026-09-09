@@ -16,6 +16,7 @@
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
 #include "core/document/document_session.hpp"
+#include "utils/usage_tracker.hpp"
 #include <vector>
 #include <string>
 #include <memory>
@@ -49,6 +50,10 @@ class CanvasEngine {
 public:
     CanvasTransform transform;
     LiveLayerPipeline liveLayer;
+
+    // Tracking state
+    Point2D lastInkingWorldMm{0.0, 0.0};
+    bool isCurrentlyInking = false;
 
     char pageTitle[128] = "New Untitled";
     std::string pageDateStr = "Tuesday, August 18, 2026";
@@ -234,12 +239,14 @@ public:
         transform.PanByScreenPixels(screenDx, screenDy);
         isDirty = true;
         needsFullRebake = true;
+        ::Folio::UsageTracker::Instance().RecordPanGesture();
     }
 
     void ZoomAt(double screenX, double screenY, double factor) noexcept {
         transform.ZoomAtScreenPoint(screenX, screenY, factor);
         isDirty = true;
         needsFullRebake = true;
+        ::Folio::UsageTracker::Instance().RecordZoomGesture();
     }
 
     [[nodiscard]] Viewport GetViewport() const noexcept {
@@ -256,18 +263,28 @@ public:
         liveClear.end();
 
         Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
+        lastInkingWorldMm = worldMm;
+        isCurrentlyInking = true;
         liveLayer.BeginStroke(worldMm.x, worldMm.y, pressure, timeSec, tool, static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
         isDirty = true;
     }
 
     void OnPointerMove(float screenX, float screenY, float pressure, double timeSec, float tiltX = 0.0f, float tiltY = 0.0f) {
         Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
+        if (isCurrentlyInking) {
+            double dx = worldMm.x - lastInkingWorldMm.x;
+            double dy = worldMm.y - lastInkingWorldMm.y;
+            double distMm = std::sqrt(dx * dx + dy * dy);
+            ::Folio::UsageTracker::Instance().RecordInkingDistance(distMm);
+            lastInkingWorldMm = worldMm;
+        }
         liveLayer.AddStrokePoint(worldMm.x, worldMm.y, pressure, timeSec, static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
         isDirty = true;
     }
 
     // Finalizes the live stroke and hands the data to the DocumentSession
     void OnPointerUp(DocumentSession& session, const PenTool& tool) {
+        isCurrentlyInking = false;
         FinishedStrokeData data = liveLayer.FinishStroke();
 
         BLContext liveClear(liveInkingLayer);
@@ -280,6 +297,8 @@ public:
         // Direct handoff: Canvas -> DocumentSession (passes outlinePath + modeledPoints + segments)
         if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
             session.CommitStroke(std::move(data), tool);
+            ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
+            ::Folio::UsageTracker::Instance().RecordObjectCreated();
         }
     }
 
@@ -385,6 +404,7 @@ public:
         if (modified) {
             isDirty = true;
             needsFullRebake = true;
+            ::Folio::UsageTracker::Instance().RecordEraserAction();
         }
         return modified;
     }

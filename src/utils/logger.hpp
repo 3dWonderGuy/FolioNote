@@ -31,7 +31,9 @@ namespace Folio {
         InputStateMachine,
         AABB,
         CanvasObject,
-        Window
+        Window,
+        Notebook,
+        NavPanel
     };
 
     // Helper to convert LogSource enum values into strings
@@ -50,6 +52,8 @@ namespace Folio {
             case LogSource::AABB:              return "AABB";
             case LogSource::CanvasObject:      return "CanvasObject";
             case LogSource::Window:            return "Window";
+            case LogSource::Notebook:          return "Notebook";
+            case LogSource::NavPanel:          return "NavPanel";
             default:                           return "General";
         }
     }

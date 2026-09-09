@@ -8,6 +8,8 @@
 #include "core/document/section.hpp"
 #include "core/document/section_group.hpp"
 #include "utils/guid_generator.hpp"
+#include "utils/logger.hpp"
+#include "utils/usage_tracker.hpp"
 #include <SDL3/SDL.h>
 #include <filesystem>
 #include <fstream>
@@ -79,8 +81,8 @@ public:
     // -------------------------------------------------------------------------
     std::vector<std::shared_ptr<Section>> sections;                     ///< Root-level sections
     std::vector<std::shared_ptr<SectionGroup>> sectionGroups;           ///< Root-level section groups
-    size_t activeSectionIndex = 0;                                      ///< Index of active root section
-    std::string activeSectionGuid;                                      ///< Persistent GUID of active section (root or group)
+    mutable size_t activeSectionIndex = 0;                              ///< Index of active root section
+    mutable std::string activeSectionGuid;                              ///< Persistent GUID of active section (root or group)
 
     // -------------------------------------------------------------------------
     // Construction & Lifecycle
@@ -159,13 +161,16 @@ public:
      */
     void SetActiveSection(const std::shared_ptr<Section>& sec) {
         if (!sec) return;
+        bool changed = (activeSectionGuid != sec->guid);
         activeSectionGuid = sec->guid;
         for (size_t i = 0; i < sections.size(); ++i) {
             if (sections[i] && sections[i]->guid == sec->guid) {
                 activeSectionIndex = i;
+                if (changed) ::Folio::UsageTracker::Instance().RecordSectionSwitch();
                 return;
             }
         }
+        if (changed) ::Folio::UsageTracker::Instance().RecordSectionSwitch();
     }
 
     /**
@@ -178,13 +183,17 @@ public:
             }
         }
         if (activeSectionIndex < sections.size() && sections[activeSectionIndex]) {
+            activeSectionGuid = sections[activeSectionIndex]->guid;
             return sections[activeSectionIndex];
         }
         if (!sections.empty() && sections.front()) {
+            activeSectionIndex = 0;
+            activeSectionGuid = sections.front()->guid;
             return sections.front();
         }
         for (const auto& grp : sectionGroups) {
-            if (grp && !grp->sections.empty()) {
+            if (grp && !grp->sections.empty() && grp->sections.front()) {
+                activeSectionGuid = grp->sections.front()->guid;
                 return grp->sections.front();
             }
         }
@@ -210,7 +219,10 @@ public:
         if (!section) return;
         section->sortOrder = static_cast<int32_t>(sections.size());
         section->groupGuid.clear();
+        std::string secName = section->name;
+        std::string secGuid = section->guid;
         sections.push_back(std::move(section));
+        LOG_INFO(Notebook, "Added root section '" + secName + "' (" + secGuid + "). Total root sections: " + std::to_string(sections.size()));
     }
 
     /**
@@ -220,7 +232,10 @@ public:
         if (!group) return;
         group->notebookGuid = this->guid;
         group->sortOrder = static_cast<int32_t>(sectionGroups.size());
+        std::string grpName = group->name;
+        std::string grpGuid = group->guid;
         sectionGroups.push_back(std::move(group));
+        LOG_INFO(Notebook, "Added section group '" + grpName + "' (" + grpGuid + "). Total groups: " + std::to_string(sectionGroups.size()));
     }
 
     /**
@@ -245,6 +260,7 @@ public:
         for (size_t i = 0; i < sections.size(); ++i) {
             if (sections[i]) sections[i]->sortOrder = static_cast<int32_t>(i);
         }
+        LOG_INFO(Notebook, "Reordered root section '" + (movedSec ? movedSec->name : "Unknown") + "' from index " + std::to_string(fromIdx) + " to " + std::to_string(toIdx));
         return true;
     }
 
@@ -262,27 +278,46 @@ public:
         for (size_t i = 0; i < sectionGroups.size(); ++i) {
             if (sectionGroups[i]) sectionGroups[i]->sortOrder = static_cast<int32_t>(i);
         }
+        LOG_INFO(Notebook, "Reordered section group '" + (movedGrp ? movedGrp->name : "Unknown") + "' from index " + std::to_string(fromIdx) + " to " + std::to_string(toIdx));
         return true;
     }
 
     /**
      * @brief Moves a section (from root or another group) into a target SectionGroup.
+     * @param secGuid GUID of section to move
+     * @param targetGroupGuid GUID of target SectionGroup
+     * @param targetIdx Insertion index in target group, or (size_t)-1 to append at end
      */
-    bool MoveSectionToGroup(const std::string& secGuid, const std::string& targetGroupGuid) {
+    bool MoveSectionToGroup(const std::string& secGuid, const std::string& targetGroupGuid, size_t targetIdx = (size_t)-1) {
         auto targetGrp = FindSectionGroupByGuid(targetGroupGuid);
-        if (!targetGrp) return false;
+        if (!targetGrp) {
+            LOG_ERROR(Notebook, "MoveSectionToGroup failed: Target group not found: " + targetGroupGuid);
+            return false;
+        }
 
         std::shared_ptr<Section> targetSec = nullptr;
+        bool wasActive = (!activeSectionGuid.empty() && activeSectionGuid == secGuid);
 
-        // Try remove from root sections
+        // 1. Try remove from root sections
         auto rootIt = std::find_if(sections.begin(), sections.end(), [&](const std::shared_ptr<Section>& s) {
             return s && s->guid == secGuid;
         });
         if (rootIt != sections.end()) {
             targetSec = *rootIt;
+            size_t removedIdx = std::distance(sections.begin(), rootIt);
             sections.erase(rootIt);
+
+            if (sections.empty()) {
+                activeSectionIndex = 0;
+            } else if (activeSectionIndex >= sections.size() || activeSectionIndex == removedIdx) {
+                activeSectionIndex = (sections.size() > 0) ? std::min(removedIdx, sections.size() - 1) : 0;
+            }
+
+            for (size_t i = 0; i < sections.size(); ++i) {
+                if (sections[i]) sections[i]->sortOrder = static_cast<int32_t>(i);
+            }
         } else {
-            // Try remove from other section groups
+            // 2. Try remove from other section groups
             for (auto& grp : sectionGroups) {
                 if (!grp) continue;
                 auto it = std::find_if(grp->sections.begin(), grp->sections.end(), [&](const std::shared_ptr<Section>& s) {
@@ -290,24 +325,62 @@ public:
                 });
                 if (it != grp->sections.end()) {
                     targetSec = *it;
+                    size_t removedIdx = std::distance(grp->sections.begin(), it);
                     grp->sections.erase(it);
+
+                    if (grp->sections.empty()) {
+                        grp->activeSectionIndex = 0;
+                    } else if (grp->activeSectionIndex >= grp->sections.size() || grp->activeSectionIndex == removedIdx) {
+                        grp->activeSectionIndex = (grp->sections.size() > 0) ? std::min(removedIdx, grp->sections.size() - 1) : 0;
+                    }
+
+                    for (size_t i = 0; i < grp->sections.size(); ++i) {
+                        if (grp->sections[i]) grp->sections[i]->sortOrder = static_cast<int32_t>(i);
+                    }
                     break;
                 }
             }
         }
 
         if (targetSec) {
-            targetGrp->AddSection(targetSec);
+            targetSec->groupGuid = targetGroupGuid;
+            size_t insertPos = 0;
+            if (targetIdx < targetGrp->sections.size()) {
+                targetGrp->sections.insert(targetGrp->sections.begin() + targetIdx, targetSec);
+                insertPos = targetIdx;
+            } else {
+                insertPos = targetGrp->sections.size();
+                targetGrp->sections.push_back(targetSec);
+            }
+
+            for (size_t i = 0; i < targetGrp->sections.size(); ++i) {
+                if (targetGrp->sections[i]) targetGrp->sections[i]->sortOrder = static_cast<int32_t>(i);
+            }
+
+            // Maintain active section state
+            if (wasActive || activeSectionGuid.empty() || GetActiveSection() == nullptr) {
+                activeSectionGuid = targetSec->guid;
+                targetGrp->activeSectionIndex = insertPos;
+                targetGrp->isCollapsed = false;
+            }
+
+            LOG_INFO(Notebook, "Moved section '" + targetSec->name + "' (" + secGuid + ") into group '" + targetGrp->name + "' at index " + std::to_string(insertPos));
             return true;
         }
+
+        LOG_WARN(Notebook, "MoveSectionToGroup failed: Section not found: " + secGuid);
         return false;
     }
 
     /**
      * @brief Moves a section from a SectionGroup back to the notebook root sections list.
+     * @param secGuid GUID of section to move
+     * @param targetIdx Insertion index in root sections, or (size_t)-1 to append at end
      */
-    bool MoveSectionToRoot(const std::string& secGuid, size_t targetIdx = -1) {
+    bool MoveSectionToRoot(const std::string& secGuid, size_t targetIdx = (size_t)-1) {
         std::shared_ptr<Section> targetSec = nullptr;
+        bool wasActive = (!activeSectionGuid.empty() && activeSectionGuid == secGuid);
+
         for (auto& grp : sectionGroups) {
             if (!grp) continue;
             auto it = std::find_if(grp->sections.begin(), grp->sections.end(), [&](const std::shared_ptr<Section>& s) {
@@ -315,23 +388,48 @@ public:
             });
             if (it != grp->sections.end()) {
                 targetSec = *it;
+                size_t removedIdx = std::distance(grp->sections.begin(), it);
                 grp->sections.erase(it);
+
+                if (grp->sections.empty()) {
+                    grp->activeSectionIndex = 0;
+                } else if (grp->activeSectionIndex >= grp->sections.size() || grp->activeSectionIndex == removedIdx) {
+                    grp->activeSectionIndex = (grp->sections.size() > 0) ? std::min(removedIdx, grp->sections.size() - 1) : 0;
+                }
+
+                for (size_t i = 0; i < grp->sections.size(); ++i) {
+                    if (grp->sections[i]) grp->sections[i]->sortOrder = static_cast<int32_t>(i);
+                }
                 break;
             }
         }
 
         if (targetSec) {
             targetSec->groupGuid.clear();
+            size_t insertPos = 0;
             if (targetIdx < sections.size()) {
                 sections.insert(sections.begin() + targetIdx, targetSec);
+                insertPos = targetIdx;
             } else {
+                insertPos = sections.size();
                 sections.push_back(targetSec);
             }
+
             for (size_t i = 0; i < sections.size(); ++i) {
                 if (sections[i]) sections[i]->sortOrder = static_cast<int32_t>(i);
             }
+
+            // Maintain active section state
+            if (wasActive || activeSectionGuid.empty() || GetActiveSection() == nullptr) {
+                activeSectionGuid = targetSec->guid;
+                activeSectionIndex = insertPos;
+            }
+
+            LOG_INFO(Notebook, "Moved section '" + targetSec->name + "' (" + secGuid + ") to root sections at index " + std::to_string(insertPos));
             return true;
         }
+
+        LOG_WARN(Notebook, "MoveSectionToRoot failed: Section not found in any group: " + secGuid);
         return false;
     }
 
@@ -344,6 +442,7 @@ public:
         });
 
         if (it != sections.end()) {
+            std::string secName = (*it)->name;
             size_t removedIndex = std::distance(sections.begin(), it);
             sections.erase(it);
 
@@ -356,8 +455,16 @@ public:
                 auto newActive = GetActiveSection();
                 activeSectionGuid = newActive ? newActive->guid : "";
             }
+
+            for (size_t i = 0; i < sections.size(); ++i) {
+                if (sections[i]) sections[i]->sortOrder = static_cast<int32_t>(i);
+            }
+
+            LOG_INFO(Notebook, "Removed root section '" + secName + "' (" + secGuid + "). Remaining root sections: " + std::to_string(sections.size()));
             return true;
         }
+
+        LOG_WARN(Notebook, "RemoveSection failed: Root section not found: " + secGuid);
         return false;
     }
 
