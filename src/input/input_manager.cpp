@@ -76,14 +76,14 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     // 1. Determine which device is "Active" (Arbitration).
     // 2. Decide the user's intent (Inking, Eraser, Panning, etc).
     // 3. Dispatch the high-level semantic events to the Canvas and Document.
-    bool imguiWantsInput = (ImGui::GetIO().WantCaptureMouse && !wasCanvasImageHovered);
+    bool imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !wasCanvasImageHovered);
     
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         LOG_INFO(InputManager, "MOUSE DOWN! WantCaptureMouse: " + std::to_string(ImGui::GetIO().WantCaptureMouse) + 
                                ", wasCanvasImageHovered: " + std::to_string(wasCanvasImageHovered) + 
-                               ", imguiWantsInput: " + std::to_string(imguiWantsInput));
+                               ", imguiHasFocus: " + std::to_string(imguiHasFocus));
     }
-    stateMachine.ProcessInputState(canvas, session, imguiWantsInput);
+    stateMachine.ProcessInputState(canvas, session, imguiHasFocus);
 }
 
 void InputManager::HandlePenEvent(const SDL_Event& event) {
@@ -128,6 +128,9 @@ void InputManager::HandlePenEvent(const SDL_Event& event) {
         bool down = (event.type == SDL_EVENT_PEN_BUTTON_DOWN);
         if (event.pbutton.button == 1) pen.barrel1 = down;
         else if (event.pbutton.button == 2) pen.barrel2 = down;
+        else {
+            LOG_WARN(InputManager, "Unknown pen button: " + std::to_string(event.pbutton.button));
+        }
     }
 }
 

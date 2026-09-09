@@ -90,6 +90,7 @@ public:
         stroke.segments = std::move(data.liveSegments);
         stroke.color = tool.color;
         stroke.baseWidth = tool.baseSize;
+        stroke.pattern = tool.strokePattern;
         container->AddStroke(stroke);
 
         activePage->AddObject(container);
@@ -115,10 +116,11 @@ public:
         for (const auto& s : segments) {
             pts.push_back({ s.p1.x, s.p1.y, s.width });
         }
-        stroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, tool.capType);
+        stroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, tool.capType, tool.strokePattern);
         stroke.segments = std::move(segments);
         stroke.color = tool.color;
         stroke.baseWidth = tool.baseSize;
+        stroke.pattern = tool.strokePattern;
         container->AddStroke(stroke);
 
         activePage->AddObject(container);

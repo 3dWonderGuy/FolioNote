@@ -892,7 +892,62 @@ bool ToolbarControls::RenderPenNibControl(
     }
     }
 
-    // 6. Stroke Thickness Label (e.g. "0.5") in top-left area
+    // 6. Trace Line Preview (visualize continuous, dashed, or dotted stroke under/from tip)
+    {
+        float traceY = (size.y < 45.0f)
+            ? (pos.y + size.y - 4.5f + elevY)
+            : (pos.y + size.y - 7.0f + elevY);
+        float traceX1 = pos.x + (size.y < 45.0f ? 4.0f : 6.0f);
+        float traceX2 = pos.x + size.x - (size.y < 45.0f ? 4.0f : 6.0f);
+        float traceThick = std::clamp(preset.thicknessMm * (size.y < 45.0f ? 1.2f : 1.6f), 1.6f, 4.2f);
+
+        // Visual ink lead-in connecting the nib tip to the trace line in full mode
+        if (size.y >= 45.0f && preset.type != PenType::LaserPointer) {
+            drawList->AddLine(
+                ImVec2(tipOrigin.x, tipOrigin.y),
+                ImVec2(traceX1 + 2.0f, traceY),
+                inkCol,
+                std::min(traceThick, 2.0f)
+            );
+        }
+
+        if (preset.strokePattern == StrokePattern::Solid) {
+            // Continuous solid stroke
+            drawList->AddLine(ImVec2(traceX1, traceY), ImVec2(traceX2, traceY), inkCol, traceThick);
+        } else if (preset.strokePattern == StrokePattern::Dashed) {
+            // Discrete dashes with visible gaps
+            float totalW = traceX2 - traceX1;
+            int numDashes = (size.y < 45.0f) ? 2 : 3;
+            float gapW = (size.y < 45.0f) ? 4.0f : 5.0f;
+            float dashW = (totalW - (numDashes - 1) * gapW) / numDashes;
+            for (int d = 0; d < numDashes; d++) {
+                float dx1 = traceX1 + d * (dashW + gapW);
+                float dx2 = dx1 + dashW;
+                drawList->AddLine(ImVec2(dx1, traceY), ImVec2(dx2, traceY), inkCol, traceThick);
+            }
+        } else if (preset.strokePattern == StrokePattern::Dotted) {
+            // Crisp circular dots
+            int numDots = (size.y < 45.0f) ? 4 : 5;
+            float dotR = std::clamp(traceThick * 0.55f, 1.4f, 2.8f);
+            float span = traceX2 - traceX1;
+            for (int d = 0; d < numDots; d++) {
+                float dotX = traceX1 + d * (span / (numDots - 1));
+                drawList->AddCircleFilled(ImVec2(dotX, traceY), dotR, inkCol);
+            }
+        } else {
+            // Textured / pencil stippled trace
+            int numDots = (size.y < 45.0f) ? 6 : 8;
+            float dotR = std::clamp(traceThick * 0.45f, 1.2f, 2.2f);
+            float span = traceX2 - traceX1;
+            for (int d = 0; d < numDots; d++) {
+                float dotX = traceX1 + d * (span / (numDots - 1));
+                float jitterY = ((d % 2 == 0) ? -0.7f : 0.7f);
+                drawList->AddCircleFilled(ImVec2(dotX, traceY + jitterY), dotR, inkCol);
+            }
+        }
+    }
+
+    // 7. Stroke Thickness Label (e.g. "0.5") in top-left area
     if (size.y >= 45.0f) {
         char szBuf[16];
         snprintf(szBuf, sizeof(szBuf), "%.1f", preset.thicknessMm);
@@ -901,13 +956,17 @@ bool ToolbarControls::RenderPenNibControl(
         drawList->AddText(ImVec2(pos.x + 6.0f, pos.y + 5.0f), thickCol, szBuf);
     }
 
-    // 7. Rich Tooltip on Hover
+    // 8. Rich Tooltip on Hover
     if (hovered && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
         ImGui::BeginTooltip();
         ImGui::TextUnformatted(preset.name.c_str());
         ImGui::Separator();
         ImGui::Text("Thickness: %.1f mm", preset.thicknessMm);
         ImGui::Text("Opacity: %.0f%%", preset.opacity * 100.0f);
+        const char* patternName = (preset.strokePattern == StrokePattern::Dotted) ? "Dotted" :
+                                  (preset.strokePattern == StrokePattern::Dashed) ? "Dashed" :
+                                  (preset.strokePattern == StrokePattern::TexturedPencil) ? "Textured" : "Continuous";
+        ImGui::Text("Line Style: %s", patternName);
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
         ImGui::TextUnformatted("Left-click: Select tool\nRight-click or Double-click: Customize");
@@ -915,7 +974,7 @@ bool ToolbarControls::RenderPenNibControl(
         ImGui::EndTooltip();
     }
 
-    // 8. Event Handling
+    // 9. Event Handling
     if (clicked && onSelect) {
         onSelect();
     }
@@ -923,7 +982,7 @@ bool ToolbarControls::RenderPenNibControl(
         ImGui::OpenPopup(popupId.c_str());
     }
 
-    // 9. Customization Popover Dialog
+    // 10. Customization Popover Dialog
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 14));
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
     ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
@@ -1017,6 +1076,70 @@ bool ToolbarControls::RenderPenNibControl(
                 changed = true;
             }
             ImGui::PopID();
+        }
+
+        // Line Style Selection in Popover
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Line Style:");
+        ImGui::Spacing();
+
+        struct PatternOption {
+            const char* name;
+            StrokePattern pattern;
+        };
+        const PatternOption s_Patterns[] = {
+            { "Continuous", StrokePattern::Solid },
+            { "Dashed",     StrokePattern::Dashed },
+            { "Dotted",     StrokePattern::Dotted }
+        };
+
+        for (int p = 0; p < 3; p++) {
+            if (p > 0) ImGui::SameLine(0, 6.0f);
+            bool isCurrent = (preset.strokePattern == s_Patterns[p].pattern);
+            if (isCurrent) {
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorItemSelected);
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorItemSelectedText);
+                ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPanel);
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+                ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+            }
+            ImVec2 styleBtnPos = ImGui::GetCursorScreenPos();
+            float styleBtnW = 72.0f;
+            float styleBtnH = 34.0f;
+            std::string btnId = std::string("##style_btn_") + std::to_string(p);
+            if (ImGui::Button(btnId.c_str(), ImVec2(styleBtnW, styleBtnH))) {
+                preset.strokePattern = s_Patterns[p].pattern;
+                changed = true;
+            }
+            // Draw line style graphic preview on top and label text at bottom
+            ImDrawList* popDrawList = ImGui::GetWindowDrawList();
+            ImU32 prevCol = isCurrent ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                      : ImGui::ColorConvertFloat4ToU32(preset.color);
+            float lineY = styleBtnPos.y + 10.0f;
+            float lineX1 = styleBtnPos.x + 8.0f;
+            float lineX2 = styleBtnPos.x + styleBtnW - 8.0f;
+            if (s_Patterns[p].pattern == StrokePattern::Solid) {
+                popDrawList->AddLine(ImVec2(lineX1, lineY), ImVec2(lineX2, lineY), prevCol, 2.5f);
+            } else if (s_Patterns[p].pattern == StrokePattern::Dashed) {
+                float segW = 12.0f, gW = 6.0f;
+                popDrawList->AddLine(ImVec2(lineX1, lineY), ImVec2(lineX1 + segW, lineY), prevCol, 2.5f);
+                popDrawList->AddLine(ImVec2(lineX1 + segW + gW, lineY), ImVec2(lineX2, lineY), prevCol, 2.5f);
+            } else {
+                float dotR = 2.0f;
+                float span = lineX2 - lineX1;
+                for (int d = 0; d <= 4; d++) {
+                    popDrawList->AddCircleFilled(ImVec2(lineX1 + d * (span / 4.0f), lineY), dotR, prevCol);
+                }
+            }
+            ImVec2 txtSz = ImGui::CalcTextSize(s_Patterns[p].name);
+            float txtX = styleBtnPos.x + (styleBtnW - txtSz.x) * 0.5f;
+            float txtY = styleBtnPos.y + styleBtnH - txtSz.y - 3.0f;
+            ImU32 txtCol = isCurrent ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                     : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+            popDrawList->AddText(ImVec2(txtX, txtY), txtCol, s_Patterns[p].name);
+            ImGui::PopStyleColor(3);
         }
 
         if (changed && onCustomChange) {

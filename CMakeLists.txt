@@ -112,6 +112,7 @@ endif()
 target_include_directories(${APP_TARGET} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d/blend2d
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ink-stroke-modeler

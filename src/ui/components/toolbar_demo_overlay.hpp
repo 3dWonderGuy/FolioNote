@@ -2,6 +2,7 @@
 
 #include "imgui.h"
 #include "app/theme_manager.hpp"
+#include "app/settings_manager.hpp"
 #include "ui/imgui_theme.hpp"
 #include "ui/icon_manager.hpp"
 #include "ui/components/toolbar_builder.hpp"
@@ -17,29 +18,31 @@ struct EditorCommandDef {
     std::string tooltip;
 };
 
-struct EditorSectionDef {
-    std::string id;
-    std::string title;
-    bool isVisible = true;
-    std::vector<std::string> buttons;
-};
+using EditorSectionDef = RibbonSectionSetting;
 
 class RibbonEditorOverlay {
 public:
     bool isVisible = false;
 
     // Active Ribbon Structure (Tabs & Sections)
-    std::vector<EditorSectionDef> sections = {
-        { "sec_history",   "History",        true, { "Undo", "Redo" } },
-        { "sec_selection", "Selection",      true, { "Select", "Lasso" } },
-        { "sec_tools",     "Drawing Tools",  true, { "Eraser", "Pens & Nibs", "+ Add" } },
-        { "sec_input",     "Input Mode",     true, { "Draw with Touch" } },
-        { "sec_stencils",  "Stencils",       true, { "Ruler" } },
-        { "sec_edit",      "Edit",           true, { "Insert Space" } },
-        { "sec_shapes",    "Shapes",         true, { "Shapes Picker", "Automatic Shapes" } },
-        { "sec_math",      "Math",           true, { "Ink to Math" } },
-        { "sec_mode",      "Mode",           true, { "Full Page View" } }
-    };
+    std::vector<EditorSectionDef> sections = SettingsManager::GetDefaultRibbonSections();
+
+    RibbonEditorOverlay() {
+        LoadFromSettings();
+    }
+
+    void LoadFromSettings() {
+        auto& sm = SettingsManager::Instance();
+        if (!sm.ribbonSections.empty()) {
+            sections = sm.ribbonSections;
+        }
+    }
+
+    void SaveToSettings() {
+        auto& sm = SettingsManager::Instance();
+        sm.ribbonSections = sections;
+        sm.Save();
+    }
 
     // Master Catalog of Global Available Options
     std::vector<EditorCommandDef> globalCatalog = {
@@ -195,6 +198,7 @@ public:
                 if (selectedSectionIdx >= 0 && selectedSectionIdx < (int)sections.size() &&
                     selectedGlobalCmdIdx >= 0 && selectedGlobalCmdIdx < (int)globalCatalog.size()) {
                     sections[selectedSectionIdx].buttons.push_back(globalCatalog[selectedGlobalCmdIdx].name);
+                    SaveToSettings();
                 }
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add selected command to active category");
@@ -203,7 +207,10 @@ public:
             if (ImGui::Button("<- Remove", ImVec2(centerBtnW, 34.0f))) {
                 if (selectedSectionIdx >= 0 && selectedSectionIdx < (int)sections.size()) {
                     auto& btns = sections[selectedSectionIdx].buttons;
-                    if (!btns.empty()) btns.pop_back();
+                    if (!btns.empty()) {
+                        btns.pop_back();
+                        SaveToSettings();
+                    }
                 }
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove last button from active category");
@@ -233,17 +240,32 @@ public:
             // Reorder and visibility controls for selected section
             if (selectedSectionIdx >= 0 && selectedSectionIdx < (int)sections.size()) {
                 auto& curSec = sections[selectedSectionIdx];
-                ImGui::Checkbox("Show this section on ribbon", &curSec.isVisible);
+                if (ImGui::Checkbox("Show this section on ribbon", &curSec.isVisible)) {
+                    SaveToSettings();
+                }
                 ImGui::SameLine(0, 15.0f);
 
                 if (ImGui::Button("Move Left", ImVec2(80, 26)) && selectedSectionIdx > 0) {
                     std::swap(sections[selectedSectionIdx], sections[selectedSectionIdx - 1]);
                     selectedSectionIdx--;
+                    SaveToSettings();
                 }
                 ImGui::SameLine(0, 6.0f);
                 if (ImGui::Button("Move Right", ImVec2(80, 26)) && selectedSectionIdx + 1 < (int)sections.size()) {
                     std::swap(sections[selectedSectionIdx], sections[selectedSectionIdx + 1]);
                     selectedSectionIdx++;
+                    SaveToSettings();
+                }
+
+                if (curSec.id.rfind("sec_custom_", 0) == 0) {
+                    ImGui::SameLine(0, 6.0f);
+                    if (ImGui::Button("Delete Category", ImVec2(110, 26))) {
+                        sections.erase(sections.begin() + selectedSectionIdx);
+                        if (selectedSectionIdx >= (int)sections.size()) {
+                            selectedSectionIdx = std::max(0, (int)sections.size() - 1);
+                        }
+                        SaveToSettings();
+                    }
                 }
 
                 // Show buttons inside selected section
@@ -272,6 +294,7 @@ public:
                     std::string newId = "sec_custom_" + std::to_string(sections.size() + 1);
                     sections.push_back({ newId, newCategoryName, true, {} });
                     selectedSectionIdx = (int)sections.size() - 1;
+                    SaveToSettings();
                 }
             }
 
@@ -285,18 +308,9 @@ public:
             ImGui::Spacing();
 
             if (ImGui::Button("Reset to Default Layout", ImVec2(180, 34))) {
-                sections = {
-                    { "sec_history",   "History",        true, { "Undo", "Redo" } },
-                    { "sec_selection", "Selection",      true, { "Select", "Lasso" } },
-                    { "sec_tools",     "Drawing Tools",  true, { "Eraser", "Pens & Nibs", "+ Add" } },
-                    { "sec_input",     "Input Mode",     true, { "Draw with Touch" } },
-                    { "sec_stencils",  "Stencils",       true, { "Ruler" } },
-                    { "sec_edit",      "Edit",           true, { "Insert Space" } },
-                    { "sec_shapes",    "Shapes",         true, { "Shapes Picker", "Automatic Shapes" } },
-                    { "sec_math",      "Math",           true, { "Ink to Math" } },
-                    { "sec_mode",      "Mode",           true, { "Full Page View" } }
-                };
+                sections = SettingsManager::GetDefaultRibbonSections();
                 selectedSectionIdx = 0;
+                SaveToSettings();
             }
 
             float rightX = ImGui::GetWindowWidth() - 130.0f - ImGui::GetStyle().WindowPadding.x;
@@ -311,6 +325,7 @@ public:
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(theme.colorPrimary.x * 0.85f, theme.colorPrimary.y * 0.85f, theme.colorPrimary.z * 0.85f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
             if (ImGui::Button("Apply & Close", ImVec2(130, 34))) {
+                SaveToSettings();
                 isVisible = false;
             }
             ImGui::PopStyleColor(4);

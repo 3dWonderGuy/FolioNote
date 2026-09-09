@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <filesystem>
 #include "utils/logger.hpp"
 
 /**
@@ -109,5 +110,28 @@ public:
             return true;
         }
         return false;
+    }
+
+    /**
+     * @brief Writes an entire text string to a file using SDL3 cross-platform I/O.
+     * 
+     * WHEN TO USE IT:
+     * Use this for writing text files such as JSON configuration and settings files.
+     * @param assetRelativePath - The path to the file to write.
+     * @param content - The text content to write.
+     * @return true if the file was written successfully, false otherwise.
+     */
+    static bool WriteString(const std::string& assetRelativePath, const std::string& content) {
+        std::error_code ec;
+        std::filesystem::path dirPath = std::filesystem::path(assetRelativePath).parent_path();
+        if (!dirPath.empty() && !std::filesystem::exists(dirPath, ec)) {
+            std::filesystem::create_directories(dirPath, ec);
+        }
+
+        if (!SDL_SaveFile(assetRelativePath.c_str(), content.data(), content.size())) {
+            LOG_ERROR(FileLoader, "Failed to save file: " + assetRelativePath + " | SDL Error: " + SDL_GetError());
+            return false;
+        }
+        return true;
     }
 };

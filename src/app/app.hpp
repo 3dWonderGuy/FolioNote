@@ -13,6 +13,7 @@
 #include "backends/imgui_impl_opengl3.h"
 #include "ui/components/tuning_overlay.hpp"
 #include "ui/components/toolbar_demo_overlay.hpp"
+#include "app/settings_manager.hpp"
 #include "app/theme_manager.hpp"
 #include "app/window_state_manager.hpp"
 #include "core/engine/canvas_engine.hpp"
@@ -212,6 +213,79 @@ public:
 
         // Initialize the SQLite session using this physical directory
         session.Init(folioPath.string());
+
+        // Load persistent JSON settings
+        SettingsManager::Instance().Load();
+
+        // Sync loaded settings to RibbonBar and InputStateMachine
+        ribbon.drawWithTouch = SettingsManager::Instance().drawWithTouch;
+        ribbon.rulerEnabled = SettingsManager::Instance().rulerEnabled;
+        ribbon.autoShapesEnabled = SettingsManager::Instance().autoShapesEnabled;
+        ribbon.isStrokeEraser = SettingsManager::Instance().isStrokeEraser;
+        ribbon.eraserSizeMm = SettingsManager::Instance().eraserSizeMm;
+        inputManager.stateMachine.isStrokeEraser = SettingsManager::Instance().isStrokeEraser;
+        inputManager.stateMachine.eraserRadiusMm = SettingsManager::Instance().eraserSizeMm * 0.5f;
+        ribbon.isCanvasInverted = SettingsManager::Instance().isCanvasInverted;
+
+        // Restore per-device default tools from settings.
+        // (Placeholder — settings UI not yet built; values come from the JSON defaults.)
+        {
+            auto toolFromStr = [](const std::string& s) -> InteractionState {
+                if (s == "Inking")    return InteractionState::Inking;
+                if (s == "Eraser")    return InteractionState::Eraser;
+                if (s == "Selecting") return InteractionState::Selecting;
+                if (s == "Panning")   return InteractionState::Panning;
+                return InteractionState::Idle;
+            };
+            auto& sm = inputManager.stateMachine;
+            sm.SetToolForDevice(DeviceType::Stylus, toolFromStr(SettingsManager::Instance().defaultStylusTool));
+            sm.SetToolForDevice(DeviceType::Touch,  toolFromStr(SettingsManager::Instance().defaultTouchTool));
+            sm.SetToolForDevice(DeviceType::Mouse,  toolFromStr(SettingsManager::Instance().defaultMouseTool));
+
+            // Also honour the saved drawWithTouch toggle so the touch tool
+            // starts in Inking mode if the user had it enabled last session.
+            if (SettingsManager::Instance().drawWithTouch) {
+                sm.SetToolForDevice(DeviceType::Touch, InteractionState::Inking);
+            }
+        }
+        if (ribbon.isCanvasInverted) {
+            canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
+            canvas.gridLineColor = BLRgba32(0x34, 0x38, 0x44);
+            canvas.inkColorInverted = true;
+        } else {
+            canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
+            canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
+            canvas.inkColorInverted = false;
+        }
+
+        // Apply loaded presets and active preset
+        ribbon.presetManager.LoadFromSettings();
+        auto* activeP = ribbon.presetManager.GetActivePreset();
+        if (activeP) {
+            ribbon.presetManager.ApplyPreset(*activeP, inputManager.stateMachine.palette.GetActivePen());
+        }
+
+        // Apply display mode
+        if (SettingsManager::Instance().ribbonDisplayMode == "Collapsed") {
+            ribbon.SetDisplayMode(RibbonDisplayMode::Collapsed);
+        } else if (SettingsManager::Instance().ribbonDisplayMode == "MiniToolbar") {
+            ribbon.SetDisplayMode(RibbonDisplayMode::MiniToolbar);
+        } else if (SettingsManager::Instance().ribbonDisplayMode == "FullyHidden") {
+            ribbon.SetDisplayMode(RibbonDisplayMode::FullyHidden);
+        } else {
+            ribbon.SetDisplayMode(RibbonDisplayMode::FullRibbon);
+        }
+
+        // Apply active tab
+        if (SettingsManager::Instance().ribbonActiveTab == "Home") ribbon.activeTab = RibbonTab::Home;
+        else if (SettingsManager::Instance().ribbonActiveTab == "Insert") ribbon.activeTab = RibbonTab::Insert;
+        else if (SettingsManager::Instance().ribbonActiveTab == "Draw") ribbon.activeTab = RibbonTab::Draw;
+        else if (SettingsManager::Instance().ribbonActiveTab == "History") ribbon.activeTab = RibbonTab::History;
+        else if (SettingsManager::Instance().ribbonActiveTab == "Review") ribbon.activeTab = RibbonTab::Review;
+        else if (SettingsManager::Instance().ribbonActiveTab == "View") ribbon.activeTab = RibbonTab::View;
+        else if (SettingsManager::Instance().ribbonActiveTab == "Help") ribbon.activeTab = RibbonTab::Help;
+
+        toolbarDemo.LoadFromSettings();
 
         devTelemetry.LogEvent("FolioNote initialized.", LogCategory::System);
         return true;
@@ -666,6 +740,34 @@ public:
         // Automatically save the currently open notebook to SQLite when closing the app
         session.workspace.FlushActiveNotebookAsync();
         ::Folio::UsageTracker::Instance().SaveToJson("config/usage_stats.json");
+
+        // Sync final UI and Ribbon state to SettingsManager before saving
+        SettingsManager::Instance().drawWithTouch = ribbon.drawWithTouch;
+        SettingsManager::Instance().rulerEnabled = ribbon.rulerEnabled;
+        SettingsManager::Instance().autoShapesEnabled = ribbon.autoShapesEnabled;
+        SettingsManager::Instance().isStrokeEraser = ribbon.isStrokeEraser;
+        SettingsManager::Instance().eraserSizeMm = ribbon.eraserSizeMm;
+        SettingsManager::Instance().isCanvasInverted = ribbon.isCanvasInverted;
+
+        switch (ribbon.displayMode) {
+            case RibbonDisplayMode::FullRibbon: SettingsManager::Instance().ribbonDisplayMode = "FullRibbon"; break;
+            case RibbonDisplayMode::MiniToolbar: SettingsManager::Instance().ribbonDisplayMode = "MiniToolbar"; break;
+            case RibbonDisplayMode::Collapsed: SettingsManager::Instance().ribbonDisplayMode = "Collapsed"; break;
+            case RibbonDisplayMode::FullyHidden: SettingsManager::Instance().ribbonDisplayMode = "FullyHidden"; break;
+        }
+
+        switch (ribbon.activeTab) {
+            case RibbonTab::Home: SettingsManager::Instance().ribbonActiveTab = "Home"; break;
+            case RibbonTab::Insert: SettingsManager::Instance().ribbonActiveTab = "Insert"; break;
+            case RibbonTab::Draw: SettingsManager::Instance().ribbonActiveTab = "Draw"; break;
+            case RibbonTab::History: SettingsManager::Instance().ribbonActiveTab = "History"; break;
+            case RibbonTab::Review: SettingsManager::Instance().ribbonActiveTab = "Review"; break;
+            case RibbonTab::View: SettingsManager::Instance().ribbonActiveTab = "View"; break;
+            case RibbonTab::Help: SettingsManager::Instance().ribbonActiveTab = "Help"; break;
+        }
+
+        toolbarDemo.SaveToSettings();
+        SettingsManager::Instance().Save();
 
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplSDL3_Shutdown();
