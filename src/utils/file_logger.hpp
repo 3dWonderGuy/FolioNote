@@ -4,6 +4,9 @@
 #include <mutex>
 #include <filesystem>
 #include <vector>
+#include <sstream>
+#include <chrono>
+#include <iomanip>
 // ANDROID: SDL.h is needed for SDL_GetPrefPath() which gives us a writable
 // directory path. Android's filesystem root "/" is read-only — we cannot
 // create "logs/" relative to it like we do on desktop.
@@ -116,6 +119,73 @@ public:
     std::vector<FolioLogEntry> GetHistory() {
         std::lock_guard<std::mutex> lock(fileMutex);
         return history;
+    }
+
+    /**
+     * @brief Clears the in-memory history cache.
+     */
+    void ClearHistory() {
+        std::lock_guard<std::mutex> lock(fileMutex);
+        history.clear();
+    }
+
+    /**
+     * @brief Exports the entire in-memory log history into a single formatted string.
+     */
+    std::string ExportLogsToString() {
+        std::lock_guard<std::mutex> lock(fileMutex);
+        std::ostringstream ss;
+        ss << "=================================================\n";
+        ss << "        FolioNote Diagnostic Log Export          \n";
+        ss << "        Total Cached Records: " << history.size() << "\n";
+        ss << "=================================================\n";
+        for (const auto& entry : history) {
+            ss << "[" << entry.timestamp << "] [" << entry.level << "] [" << entry.source << "] " << entry.message << "\n";
+        }
+        return ss.str();
+    }
+
+    /**
+     * @brief Exports the log history to a specified or auto-generated disk file.
+     * @param customPath Target file path, or empty string to use default timestamped name in logs/
+     * @param outPathUsed Filled with the absolute/relative path of the exported file.
+     * @return true on success, false on error.
+     */
+    bool ExportLogsToFile(const std::string& customPath, std::string& outPathUsed) {
+        std::string exportText = ExportLogsToString();
+        
+        std::string targetPath = customPath;
+        if (targetPath.empty()) {
+            auto now = std::chrono::system_clock::now();
+            auto timer = std::chrono::system_clock::to_time_t(now);
+            std::tm bt{};
+#if defined(_WIN32)
+            localtime_s(&bt, &timer);
+#else
+            localtime_r(&timer, &bt);
+#endif
+            std::ostringstream nameStream;
+            nameStream << "logs/folionote_export_" 
+                       << std::put_time(&bt, "%Y%m%d_%H%M%S") 
+                       << ".log";
+            targetPath = nameStream.str();
+        }
+
+        std::error_code ec;
+        std::filesystem::path p(targetPath);
+        if (p.has_parent_path()) {
+            std::filesystem::create_directories(p.parent_path(), ec);
+        }
+
+        std::ofstream outFile(targetPath, std::ios::out | std::ios::trunc);
+        if (!outFile.is_open()) {
+            return false;
+        }
+
+        outFile << exportText;
+        outFile.close();
+        outPathUsed = targetPath;
+        return true;
     }
 };
 

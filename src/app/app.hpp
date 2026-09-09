@@ -26,6 +26,7 @@
 #include "ui/views/notebook_hub.hpp"
 #include "input/input_manager.hpp"
 #include "utils/file_loader.hpp"
+#include "utils/usage_tracker.hpp"
 #include <lunasvg.h>
 #include <chrono>
 #include <thread>
@@ -149,6 +150,7 @@ public:
         FolioTheme::LoadModernFonts(io);
         themeManager.ApplyTheme(ThemePreset::FolioColor);
         themeManager.LoadFromJson("config/theme_custom.json");
+        ::Folio::UsageTracker::Instance().LoadFromJson("config/usage_stats.json");
         themeManager.UpdateOSWindowFrame(window);
         canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
         canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
@@ -395,7 +397,22 @@ public:
                 }
             }
 
-            lastRenderTimeNs = SDL_GetTicksNS();
+            uint64_t currentFrameNs = SDL_GetTicksNS();
+            double frameDtSec = static_cast<double>(currentFrameNs - lastRenderTimeNs) / 1000000000.0;
+            lastRenderTimeNs = currentFrameNs;
+
+            // Usage Telemetry Tracking
+            if (currentView == AppViewMode::NotebookHub) {
+                ::Folio::UsageTracker::Instance().RecordHubTime(frameDtSec);
+                if (hubView.activeMainCategory == HubMainCategory::Settings) {
+                    ::Folio::UsageTracker::Instance().RecordSettingsTime(frameDtSec);
+                }
+            } else {
+                ::Folio::UsageTracker::Instance().RecordCanvasTime(frameDtSec);
+                if (isActivelyDrawing) {
+                    ::Folio::UsageTracker::Instance().RecordDrawingTime(frameDtSec);
+                }
+            }
 
             windowSM.Update();
             if (windowSM.currentState == WindowState::Minimized) {
@@ -406,6 +423,10 @@ public:
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplSDL3_NewFrame();
             ImGui::NewFrame();
+
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                ::Folio::UsageTracker::Instance().RecordClick();
+            }
 
             // =========================================================
             // WORKSPACE LAYOUT GEOMETRY
@@ -621,7 +642,7 @@ public:
             // =========================================================
             // DIAGNOSTICS & MODAL OVERLAYS
             // =========================================================
-            devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY, themeManager);
+            devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, session, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY, themeManager);
             themeModal.Render(themeManager, &canvas, window);
             tuningStudio.Render(themeManager);
             if (ribbon.showDemoOverlay) {
@@ -644,6 +665,7 @@ public:
     void Shutdown() {
         // Automatically save the currently open notebook to SQLite when closing the app
         session.workspace.FlushActiveNotebookAsync();
+        ::Folio::UsageTracker::Instance().SaveToJson("config/usage_stats.json");
 
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplSDL3_Shutdown();
