@@ -156,6 +156,31 @@ public:
     }
 
     /**
+     * @brief Evaluates whether any stroke segment intersects an eraser circle of radiusMm.
+     */
+    bool HitTestCircle(double worldX, double worldY, double radiusMm) const override {
+        AABB queryBox(worldX - radiusMm, worldY - radiusMm, worldX + radiusMm, worldY + radiusMm);
+        if (!bounds.Intersects(queryBox)) return false;
+
+        BLMatrix2D invTransform;
+        BLMatrix2D::invert(invTransform, transform);
+        BLPoint localPt = invTransform.map_point(worldX, worldY);
+        double scale = std::hypot(transform.m00, transform.m01);
+        double localRadius = (scale > 1e-6) ? (radiusMm / scale) : radiusMm;
+
+        for (const auto& stroke : strokes) {
+            auto hit = StrokeCollisionEngine::HitTestStroke(stroke.segments, localPt.x, localPt.y, localRadius);
+            if (hit.hit) return true;
+
+            if (!stroke.outlinePath.is_empty()) {
+                BLHitTest blHit = stroke.outlinePath.hit_test(BLPoint{localPt.x, localPt.y}, BL_FILL_RULE_NON_ZERO);
+                if (blHit == BL_HIT_TEST_IN) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @brief Checks if this container intersects a selection bounding box (e.g. lasso or marquee selection).
      */
     bool Intersects(const AABB& selectionBounds) const override {

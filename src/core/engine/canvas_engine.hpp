@@ -429,7 +429,7 @@ public:
             if (!obj) continue;
 
             if (isStrokeEraser) {
-                if (obj->HitTest(world.x, world.y) || obj->Intersects(queryBox)) {
+                if (obj->HitTestCircle(world.x, world.y, r)) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
                     activePage->RemoveObject(obj);
                     modified = true;
@@ -455,7 +455,7 @@ public:
                     }
                 } else {
                     // Non-stroke objects (e.g. image, text box, shape): delete on direct hit
-                    if (obj->HitTest(world.x, world.y) || obj->Intersects(queryBox)) {
+                    if (obj->HitTestCircle(world.x, world.y, r)) {
                         if (devMode) debugCollision.hitUids.push_back(obj->uid);
                         activePage->RemoveObject(obj);
                         modified = true;

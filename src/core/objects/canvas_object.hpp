@@ -70,6 +70,10 @@ public:
 
     virtual void UpdateBounds() = 0;
     virtual bool HitTest(double worldX, double worldY) const = 0;
+    virtual bool HitTestCircle(double worldX, double worldY, double radiusMm) const {
+        AABB queryBox(worldX - radiusMm, worldY - radiusMm, worldX + radiusMm, worldY + radiusMm);
+        return bounds.Intersects(queryBox) && (HitTest(worldX, worldY) || bounds.Contains(worldX, worldY));
+    }
     virtual bool Intersects(const AABB& selectionBounds) const = 0;
     [[nodiscard]] const AABB& GetAABB() const noexcept { return bounds; }
 
