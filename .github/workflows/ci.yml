@@ -2,10 +2,14 @@ name: CI Build Check
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
 
 jobs:
-  validate-build:
+  validate-windows:
+    name: Validate Windows (MSVC / Ninja)
     runs-on: windows-2022
 
     steps:
@@ -18,12 +22,93 @@ jobs:
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Set up CMake and Ninja
+        uses: lukka/get-cmake@latest
+
       - name: Configure CMake
         run: |
           cmake -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CXX_STANDARD=20
+            -DCMAKE_CXX_STANDARD=20 `
+            -DBLEND2D_STATIC=ON `
+            -DFOLIONOTE_BUILD_TESTS=OFF
 
       - name: Build Executable
         run: |
           cmake --build build --config Release -j 4
+
+  validate-linux-fedora:
+    name: Validate Linux (Fedora)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Build inside Fedora container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            fedora:latest \
+            bash -c "
+              set -e
+              dnf install -y \
+                gcc-c++ \
+                cmake \
+                ninja-build \
+                mesa-libGL-devel \
+                mesa-libEGL-devel \
+                libX11-devel \
+                libXext-devel \
+                libXcursor-devel \
+                libXi-devel \
+                libXfixes-devel \
+                libXrandr-devel \
+                wayland-devel \
+                wayland-protocols-devel \
+                libxkbcommon-devel \
+                pulseaudio-libs-devel \
+                alsa-lib-devel
+
+              cmake -B build-linux -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_STANDARD=20 \
+                -DBLEND2D_STATIC=ON \
+                -DFOLIONOTE_BUILD_TESTS=OFF
+
+              cmake --build build-linux --config Release -j \$(nproc)
+            "
+
+  validate-android:
+    name: Validate Android (Gradle / NDK)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK & CMake
+        run: |
+          echo "y" | sdkmanager --install "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - name: Build Android APK
+        working-directory: src/android-project
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
