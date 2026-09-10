@@ -185,13 +185,13 @@ jobs:
 
       - name: Install Android NDK & CMake
         run: |
-          echo "y" | sdkmanager --install "ndk;27.2.12479018" "cmake;3.22.1"
+          echo "y" | sdkmanager --install "ndk;27.2.12479018" "cmake;3.30.3"
 
       - name: Build Android APK
         working-directory: src/android-project
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Package Android APK
         shell: bash
