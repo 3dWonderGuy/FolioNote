@@ -185,7 +185,6 @@ public:
         float screenW,
         bool& running,
         bool& outDevTelemetryVisible,
-        bool& outThemeModalVisible,
         bool& outTuningStudioVisible,
         bool& outToolbarDemoVisible,
         const ThemeManager& theme,
@@ -256,14 +255,14 @@ public:
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.0f, 0.0f, 0.45f));
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 0.95f));
 
-            bool anyOverlayActive = outDevTelemetryVisible || outThemeModalVisible || outTuningStudioVisible || outToolbarDemoVisible;
+            bool anyOverlayActive = outDevTelemetryVisible || outTuningStudioVisible || outToolbarDemoVisible;
             const char* overlaysLabel = anyOverlayActive ? "Overlays [Active] \xe2\x96\xbe" : "Overlays \xe2\x96\xbe";
 
             if (ImGui::Button(overlaysLabel, ImVec2(buttonW, buttonH))) {
                 ImGui::OpenPopup("##OverlaysDropdownPopup");
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Open Diagnostics, Tuning Studios, Themes & Showcase Overlays");
+                ImGui::SetTooltip("Open Diagnostics, Tuning Studios & Showcase Overlays");
             }
 
             ImGui::PopStyleColor(5);
@@ -285,9 +284,6 @@ public:
                 if (ImGui::MenuItem("Developer Diagnostics", "F3", outDevTelemetryVisible)) {
                     outDevTelemetryVisible = !outDevTelemetryVisible;
                 }
-                if (ImGui::MenuItem("Appearance & Themes", "F4", outThemeModalVisible)) {
-                    outThemeModalVisible = !outThemeModalVisible;
-                }
                 if (ImGui::MenuItem("Handwriting Tuning Studio", "F5", outTuningStudioVisible)) {
                     outTuningStudioVisible = !outTuningStudioVisible;
                 }
@@ -298,13 +294,11 @@ public:
                 ImGui::Separator();
                 if (ImGui::MenuItem("Hide All Overlays", "Esc")) {
                     outDevTelemetryVisible = false;
-                    outThemeModalVisible   = false;
                     outTuningStudioVisible = false;
                     outToolbarDemoVisible  = false;
                 }
                 if (ImGui::MenuItem("Show All Overlays")) {
                     outDevTelemetryVisible = true;
-                    outThemeModalVisible   = true;
                     outTuningStudioVisible = true;
                     outToolbarDemoVisible  = true;
                 }

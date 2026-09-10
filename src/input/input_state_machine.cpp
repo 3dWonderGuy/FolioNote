@@ -24,7 +24,6 @@ void InputStateMachine::UpdateHardwareState(uint64_t nowMs) {
     // =========================================================================
     // Determines which physical device is driving input this frame. We cannot
     // process multiple devices simultaneously (e.g. palm resting while drawing)
-    // without introducing erratic behavior, so we pick exactly one winner.
     //
     // Priority order: Stylus > Touch > Mouse
     if (pen.isDown || (nowMs - lastPenTimestampMs < 80)) {
