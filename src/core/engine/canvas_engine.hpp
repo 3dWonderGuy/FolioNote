@@ -13,6 +13,7 @@
 #endif
 #include <blend2d/blend2d.h>
 #include "core/objects/canvas_object.hpp"
+#include "core/objects/ink_container.hpp"
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
 #include "core/engine/selection_gizmo.hpp"
@@ -395,10 +396,23 @@ public:
                     modified = true;
                 }
             } else {
-                // Simple / Point eraser: removes stroke segments within radius
-                if (obj->Intersects(queryBox)) {
-                    activePage->RemoveObject(obj);
-                    modified = true;
+                // Precision / Point eraser: slices vector ink strokes along eraser boundaries
+                if (obj->type == ObjectType::InkContainer) {
+                    auto ink = std::static_pointer_cast<InkContainer>(obj);
+                    if (ink && ink->SliceStrokeAt(world.x, world.y, r)) {
+                        if (ink->strokes.empty()) {
+                            activePage->RemoveObject(ink);
+                        } else {
+                            activePage->UpdateObject(ink);
+                        }
+                        modified = true;
+                    }
+                } else {
+                    // Non-stroke objects (e.g. image, text box, shape): delete on direct hit
+                    if (obj->HitTest(world.x, world.y) || obj->Intersects(queryBox)) {
+                        activePage->RemoveObject(obj);
+                        modified = true;
+                    }
                 }
             }
         }
