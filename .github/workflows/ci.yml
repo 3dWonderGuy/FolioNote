@@ -75,14 +75,17 @@ jobs:
                 wayland-protocols-devel \
                 libxkbcommon-devel \
                 pulseaudio-libs-devel \
-                alsa-lib-devel
+                alsa-lib-devel \
+                zlib-ng-compat-static
 
               cmake -B build-linux -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_CXX_STANDARD=20 \
                 -DBLEND2D_STATIC=ON \
                 -DFOLIONOTE_BUILD_TESTS=OFF \
-                -DSDL_X11_XSCRNSAVER=OFF
+                -DSDL_X11_XSCRNSAVER=OFF \
+                -DSDLIMAGE_PNG_LIBPNG=OFF \
+                -DSDLIMAGE_AVIF=OFF
 
               cmake --build build-linux --config Release -j \$(nproc)
             "
