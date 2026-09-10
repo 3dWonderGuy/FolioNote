@@ -287,8 +287,26 @@ public:
                 ImGui::TextColored(theme.colorPrimary, "OBJECT GRAPH & RASTER STATE");
                 ImGui::Text("Total Objects (History) : N/A");
                 ImGui::Text("Active In-Flight Points : %zu", canvas.liveLayer.activeStrokePoints.size());
-                ImGui::Text("Static Layer Full Rebake: %s", canvas.needsFullRebake ? "PENDING (O(N) trigger)" : "CLEAN (O(1) composite)");
-                ImGui::Text("GPU Dirty Flag          : %s", canvas.isDirty ? "DIRTY (Pending upload)" : "IDLE");
+                ImGui::Separator();
+                ImGui::TextColored(theme.colorPrimary, "DEV MODE (RNOTE-STYLE AABB & COLLISION INSPECTOR)");
+                if (ImGui::Checkbox("Enable Dev Mode Overlay [F4]", &canvas.devMode)) {
+                    canvas.isDirty = true;
+                }
+                if (canvas.devMode) {
+                    ImGui::Indent();
+                    if (ImGui::Checkbox("Object AABBs & Bounds", &canvas.debugShowObjectAABB)) canvas.isDirty = true;
+                    if (ImGui::Checkbox("Narrowphase Segment mini-AABBs", &canvas.debugShowSegmentAABB)) canvas.isDirty = true;
+                    if (ImGui::Checkbox("Spatial Query / Eraser Kernel", &canvas.debugShowQueryAABB)) canvas.isDirty = true;
+                    if (ImGui::Checkbox("Dimension & UID Badges", &canvas.debugShowLabels)) canvas.isDirty = true;
+                    ImGui::Unindent();
+
+                    ImGui::Separator();
+                    ImGui::Text("Active Query Collision State:");
+                    ImGui::Text("Query Center : (%.2f, %.2f) mm", canvas.debugCollision.queryCenter.x, canvas.debugCollision.queryCenter.y);
+                    ImGui::Text("Query Radius : %.2f mm", canvas.debugCollision.queryRadius);
+                    ImGui::Text("Candidates   : %zu broadphase hits", canvas.debugCollision.candidateUids.size());
+                    ImGui::Text("Collided     : %zu narrowphase hits", canvas.debugCollision.hitUids.size());
+                }
 
                 ImGui::EndTabItem();
             }

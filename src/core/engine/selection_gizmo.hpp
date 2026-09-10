@@ -753,12 +753,13 @@ private:
         }
     }
 
+public:
     /**
-     * @brief Robust vector stroke text fallback for numerals, dot, minus, and degree symbol.
+     * @brief Robust vector stroke text fallback for numerals, letters, and symbols.
      */
     static void DrawFallbackText(BLContext& ctx, float x, float y, const char* str) {
         ctx.set_stroke_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
-        ctx.set_stroke_width(1.5);
+        ctx.set_stroke_width(1.2);
         float curX = x;
         for (const char* p = str; *p; ++p) {
             char c = *p;
@@ -777,7 +778,7 @@ private:
                     0b01101111  // 9
                 };
                 uint8_t s = segs[d];
-                float w = 6.0f, h = 10.0f, mh = 5.0f;
+                float w = 5.0f, h = 9.0f, mh = 4.5f;
                 if (s & (1 << 0)) ctx.stroke_line(curX, y, curX + w, y);
                 if (s & (1 << 1)) ctx.stroke_line(curX + w, y, curX + w, y + mh);
                 if (s & (1 << 2)) ctx.stroke_line(curX + w, y + mh, curX + w, y + h);
@@ -785,17 +786,163 @@ private:
                 if (s & (1 << 4)) ctx.stroke_line(curX, y + mh, curX, y + h);
                 if (s & (1 << 5)) ctx.stroke_line(curX, y, curX, y + mh);
                 if (s & (1 << 6)) ctx.stroke_line(curX, y + mh, curX + w, y + mh);
-                curX += w + 3.0f;
+                curX += w + 2.5f;
             } else if (c == '-') {
-                ctx.stroke_line(curX, y + 5.0f, curX + 5.0f, y + 5.0f);
-                curX += 7.0f;
-            } else if (c == '.') {
-                ctx.fill_circle(curX + 1.5f, y + 9.0f, 1.0, BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
-                curX += 4.0f;
-            } else {
-                ctx.stroke_circle(curX + 2.5f, y + 2.5f, 2.0);
+                ctx.stroke_line(curX, y + 4.5f, curX + 4.0f, y + 4.5f);
                 curX += 6.0f;
+            } else if (c == '.') {
+                ctx.fill_circle(curX + 1.0f, y + 8.5f, 0.8, BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+                curX += 3.5f;
+            } else if (c == ':') {
+                ctx.fill_circle(curX + 1.0f, y + 2.5f, 0.8, BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+                ctx.fill_circle(curX + 1.0f, y + 6.5f, 0.8, BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+                curX += 3.5f;
+            } else if (c == '#') {
+                ctx.stroke_line(curX + 1.5f, y, curX + 1.5f, y + 9);
+                ctx.stroke_line(curX + 4.0f, y, curX + 4.0f, y + 9);
+                ctx.stroke_line(curX, y + 3.0f, curX + 5.5f, y + 3.0f);
+                ctx.stroke_line(curX, y + 6.0f, curX + 5.5f, y + 6.0f);
+                curX += 7.0f;
+            } else if (c == '[') {
+                ctx.stroke_line(curX + 2.5f, y, curX, y);
+                ctx.stroke_line(curX, y, curX, y + 9);
+                ctx.stroke_line(curX, y + 9, curX + 2.5f, y + 9);
+                curX += 4.5f;
+            } else if (c == ']') {
+                ctx.stroke_line(curX, y, curX + 2.5f, y);
+                ctx.stroke_line(curX + 2.5f, y, curX + 2.5f, y + 9);
+                ctx.stroke_line(curX + 2.5f, y + 9, curX, y + 9);
+                curX += 4.5f;
+            } else if (c == 'x') {
+                ctx.stroke_line(curX, y + 3.0f, curX + 4.5f, y + 9.0f);
+                ctx.stroke_line(curX + 4.5f, y + 3.0f, curX, y + 9.0f);
+                curX += 6.0f;
+            } else if (c == ' ') {
+                curX += 4.0f;
+            } else if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                char upper = (c >= 'a' && c <= 'z') ? static_cast<char>(c - ('a' - 'A')) : c;
+                DrawChar(ctx, curX, y, upper);
+                curX += 6.5f;
+            } else {
+                ctx.stroke_circle(curX + 2.0f, y + 2.0f, 1.5);
+                curX += 5.0f;
             }
+        }
+    }
+
+private:
+    static void DrawChar(BLContext& ctx, float x, float y, char c) {
+        float w = 4.5f, h = 9.0f, mh = 4.5f;
+        switch (c) {
+            case 'A':
+                ctx.stroke_line(x, y + h, x + w * 0.5f, y);
+                ctx.stroke_line(x + w * 0.5f, y, x + w, y + h);
+                ctx.stroke_line(x + 1.0f, y + mh, x + w - 1.0f, y + mh);
+                break;
+            case 'B':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y, x + w, y + 2.0f);
+                ctx.stroke_line(x + w, y + 2.0f, x, y + mh);
+                ctx.stroke_line(x, y + mh, x + w, y + h - 2.0f);
+                ctx.stroke_line(x + w, y + h - 2.0f, x, y + h);
+                break;
+            case 'C':
+                ctx.stroke_line(x + w, y, x, y);
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y + h, x + w, y + h);
+                break;
+            case 'D':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y, x + w - 1.0f, y + mh);
+                ctx.stroke_line(x + w - 1.0f, y + mh, x, y + h);
+                break;
+            case 'E':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y, x + w, y);
+                ctx.stroke_line(x, y + mh, x + w - 1.0f, y + mh);
+                ctx.stroke_line(x, y + h, x + w, y + h);
+                break;
+            case 'F':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y, x + w, y);
+                ctx.stroke_line(x, y + mh, x + w - 1.0f, y + mh);
+                break;
+            case 'G':
+                ctx.stroke_line(x + w, y, x, y);
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y + h, x + w, y + h);
+                ctx.stroke_line(x + w, y + h, x + w, y + mh);
+                ctx.stroke_line(x + w, y + mh, x + mh, y + mh);
+                break;
+            case 'H':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x + w, y, x + w, y + h);
+                ctx.stroke_line(x, y + mh, x + w, y + mh);
+                break;
+            case 'I':
+                ctx.stroke_line(x + w * 0.5f, y, x + w * 0.5f, y + h);
+                ctx.stroke_line(x, y, x + w, y);
+                ctx.stroke_line(x, y + h, x + w, y + h);
+                break;
+            case 'K':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x + w, y, x, y + mh);
+                ctx.stroke_line(x, y + mh, x + w, y + h);
+                break;
+            case 'L':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y + h, x + w, y + h);
+                break;
+            case 'M':
+                ctx.stroke_line(x, y + h, x, y);
+                ctx.stroke_line(x, y, x + w * 0.5f, y + mh);
+                ctx.stroke_line(x + w * 0.5f, y + mh, x + w, y);
+                ctx.stroke_line(x + w, y, x + w, y + h);
+                break;
+            case 'N':
+                ctx.stroke_line(x, y + h, x, y);
+                ctx.stroke_line(x, y, x + w, y + h);
+                ctx.stroke_line(x + w, y + h, x + w, y);
+                break;
+            case 'O':
+                ctx.stroke_rect(x, y, w, h);
+                break;
+            case 'P':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y, x + w, y);
+                ctx.stroke_line(x + w, y, x + w, y + mh);
+                ctx.stroke_line(x + w, y + mh, x, y + mh);
+                break;
+            case 'R':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y, x + w, y);
+                ctx.stroke_line(x + w, y, x + w, y + mh);
+                ctx.stroke_line(x + w, y + mh, x, y + mh);
+                ctx.stroke_line(x, y + mh, x + w, y + h);
+                break;
+            case 'S':
+                ctx.stroke_line(x + w, y, x, y);
+                ctx.stroke_line(x, y, x, y + mh);
+                ctx.stroke_line(x, y + mh, x + w, y + mh);
+                ctx.stroke_line(x + w, y + mh, x + w, y + h);
+                ctx.stroke_line(x + w, y + h, x, y + h);
+                break;
+            case 'T':
+                ctx.stroke_line(x, y, x + w, y);
+                ctx.stroke_line(x + w * 0.5f, y, x + w * 0.5f, y + h);
+                break;
+            case 'U':
+                ctx.stroke_line(x, y, x, y + h);
+                ctx.stroke_line(x, y + h, x + w, y + h);
+                ctx.stroke_line(x + w, y + h, x + w, y);
+                break;
+            case 'V':
+                ctx.stroke_line(x, y, x + w * 0.5f, y + h);
+                ctx.stroke_line(x + w * 0.5f, y + h, x + w, y);
+                break;
+            default:
+                ctx.stroke_rect(x, y, w, h);
+                break;
         }
     }
 

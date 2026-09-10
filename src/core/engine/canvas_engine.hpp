@@ -19,11 +19,14 @@
 #include "core/engine/selection_gizmo.hpp"
 #include "core/document/document_session.hpp"
 #include "utils/usage_tracker.hpp"
+#include "utils/uid_generator.hpp"
 #include <vector>
 #include <string>
 #include <memory>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 
 enum class PaperStyle { Grid, Lined, Blank, Dotted };
 enum class PageBorderType { Automatic, Fixed };
@@ -87,6 +90,22 @@ public:
 
     // Canvas Infinity Mode: SemiInfinity, FullInfinity, VerticalScroll, HorizontalScroll
     CanvasInfinityMode infinityMode = CanvasInfinityMode::SemiInfinity;
+
+    // Dev Mode (Rnote-style AABB & Collision Debugger)
+    bool devMode = false;
+    bool debugShowObjectAABB = true;
+    bool debugShowSegmentAABB = true;
+    bool debugShowQueryAABB = true;
+    bool debugShowLabels = true;
+
+    struct DebugCollisionInfo {
+        bool active = false;
+        Point2D queryCenter{0.0, 0.0};
+        double queryRadius = 0.0;
+        AABB queryBox{0.0, 0.0, 0.0, 0.0};
+        std::vector<uint32_t> candidateUids;
+        std::vector<uint32_t> hitUids;
+    } debugCollision;
 
     void SetInfinityMode(CanvasInfinityMode mode) {
         infinityMode = mode;
@@ -382,8 +401,27 @@ public:
         Point2D world = transform.ScreenToWorld(screenX, screenY);
         double r = std::max(0.5, radiusMm);
         AABB queryBox(world.x - r, world.y - r, world.x + r, world.y + r);
+
+        if (devMode) {
+            debugCollision.active = true;
+            debugCollision.queryCenter = world;
+            debugCollision.queryRadius = r;
+            debugCollision.queryBox = queryBox;
+            debugCollision.candidateUids.clear();
+            debugCollision.hitUids.clear();
+        }
+
         std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(queryBox);
-        if (candidateUids.empty()) return false;
+        if (candidateUids.empty()) {
+            if (devMode) {
+                isDirty = true;
+            }
+            return false;
+        }
+
+        if (devMode) {
+            debugCollision.candidateUids = candidateUids;
+        }
 
         bool modified = false;
         for (uint32_t uid : candidateUids) {
@@ -392,6 +430,7 @@ public:
 
             if (isStrokeEraser) {
                 if (obj->HitTest(world.x, world.y) || obj->Intersects(queryBox)) {
+                    if (devMode) debugCollision.hitUids.push_back(obj->uid);
                     activePage->RemoveObject(obj);
                     modified = true;
                 }
@@ -399,17 +438,25 @@ public:
                 // Precision / Point eraser: slices vector ink strokes along eraser boundaries
                 if (obj->type == ObjectType::InkContainer) {
                     auto ink = std::static_pointer_cast<InkContainer>(obj);
-                    if (ink && ink->SliceStrokeAt(world.x, world.y, r)) {
+                    std::vector<std::shared_ptr<InkContainer>> newFragments;
+                    if (ink && ink->SliceStrokeAt(world.x, world.y, r, newFragments)) {
+                        if (devMode) debugCollision.hitUids.push_back(obj->uid);
                         if (ink->strokes.empty()) {
                             activePage->RemoveObject(ink);
                         } else {
                             activePage->UpdateObject(ink);
+                        }
+                        // Insert newly created surviving stroke fragments into the page
+                        for (auto& frag : newFragments) {
+                            frag->uid = UIDGenerator::Next();
+                            activePage->AddObject(frag);
                         }
                         modified = true;
                     }
                 } else {
                     // Non-stroke objects (e.g. image, text box, shape): delete on direct hit
                     if (obj->HitTest(world.x, world.y) || obj->Intersects(queryBox)) {
+                        if (devMode) debugCollision.hitUids.push_back(obj->uid);
                         activePage->RemoveObject(obj);
                         modified = true;
                     }
@@ -417,10 +464,12 @@ public:
             }
         }
 
-        if (modified) {
+        if (modified || devMode) {
             isDirty = true;
-            needsFullRebake = true;
-            ::Folio::UsageTracker::Instance().RecordEraserAction();
+            if (modified) {
+                needsFullRebake = true;
+                ::Folio::UsageTracker::Instance().RecordEraserAction();
+            }
         }
         return modified;
     }
@@ -530,6 +579,11 @@ public:
         // 3. Selection Gizmo Overlay Pass (Screen Coordinates)
         if (selectionGizmo.HasSelection()) {
             selectionGizmo.Render(compCtx, transform);
+        }
+
+        // 4. Dev Mode: Rnote-Style AABB & Collision Debugger (Screen Coordinates)
+        if (devMode) {
+            RenderDevModeAABBs(compCtx, visibleBakedObjects, transform);
         }
 
         compCtx.end();
@@ -714,6 +768,186 @@ private:
                     ctx.stroke_line(sLeft.x, sLeft.y, sRight.x, sRight.y);
                 }
             }
+        }
+
+        ctx.restore();
+    }
+
+    // -------------------------------------------------------------
+    // DEV MODE: RNOTE-STYLE AABB & COLLISION INSPECTOR (Blend2D Overlay)
+    // -------------------------------------------------------------
+    void RenderDevModeAABBs(BLContext& ctx, const std::vector<std::shared_ptr<CanvasObject>>& visibleObjects, const CanvasTransform& tr) {
+        ctx.save();
+
+        // 1. Draw Object AABBs and optional segment mini-AABBs
+        for (const auto& obj : visibleObjects) {
+            if (!obj) continue;
+            AABB box = obj->GetAABB();
+            Point2D pMin = tr.WorldToScreen(box.minX, box.minY);
+            Point2D pMax = tr.WorldToScreen(box.maxX, box.maxY);
+            double sx = std::min(pMin.x, pMax.x);
+            double sy = std::min(pMin.y, pMax.y);
+            double sw = std::abs(pMax.x - pMin.x);
+            double sh = std::abs(pMax.y - pMin.y);
+
+            bool isHit = false;
+            for (uint32_t hid : debugCollision.hitUids) {
+                if (hid == obj->uid) { isHit = true; break; }
+            }
+            bool isCandidate = false;
+            if (!isHit) {
+                for (uint32_t cid : debugCollision.candidateUids) {
+                    if (cid == obj->uid) { isCandidate = true; break; }
+                }
+            }
+
+            BLRgba32 strokeColor;
+            BLRgba32 fillColor;
+            const char* typeTag = "Obj";
+
+            if (isHit) {
+                strokeColor = BLRgba32(0xFF, 0x17, 0x44, 0xE0); // Red
+                fillColor   = BLRgba32(0xFF, 0x17, 0x44, 0x2A);
+            } else if (isCandidate) {
+                strokeColor = BLRgba32(0xFF, 0xEA, 0x00, 0xD0); // Amber/Yellow
+                fillColor   = BLRgba32(0xFF, 0xEA, 0x00, 0x20);
+            } else if (obj->type == ObjectType::InkContainer) {
+                strokeColor = BLRgba32(0x00, 0xE5, 0xFF, 0x99); // Cyan
+                fillColor   = BLRgba32(0x00, 0xE5, 0xFF, 0x0F);
+                typeTag = "Ink";
+            } else if (obj->type == ObjectType::Image) {
+                strokeColor = BLRgba32(0x00, 0xE6, 0x76, 0x99); // Green
+                fillColor   = BLRgba32(0x00, 0xE6, 0x76, 0x0F);
+                typeTag = "Img";
+            } else {
+                strokeColor = BLRgba32(0xFF, 0x91, 0x00, 0x99); // Orange
+                fillColor   = BLRgba32(0xFF, 0x91, 0x00, 0x0F);
+                typeTag = "Box";
+            }
+
+            if (debugShowObjectAABB) {
+                ctx.set_fill_style(fillColor);
+                ctx.fill_rect(sx, sy, sw, sh);
+                ctx.set_stroke_style(strokeColor);
+                ctx.set_stroke_width(1.0);
+                ctx.stroke_rect(sx, sy, sw, sh);
+
+                // Corner brackets for CAD visual feel
+                double bracketLen = std::min(6.0, std::min(sw, sh) * 0.3);
+                if (bracketLen > 2.0) {
+                    ctx.set_stroke_width(2.0);
+                    ctx.stroke_line(sx, sy, sx + bracketLen, sy);
+                    ctx.stroke_line(sx, sy, sx, sy + bracketLen);
+                    ctx.stroke_line(sx + sw, sy + sh, sx + sw - bracketLen, sy + sh);
+                    ctx.stroke_line(sx + sw, sy + sh, sx + sw, sy + sh - bracketLen);
+                }
+
+                if (debugShowLabels) {
+                    char label[64];
+                    int wMm = static_cast<int>(std::round(box.Width()));
+                    int hMm = static_cast<int>(std::round(box.Height()));
+                    std::snprintf(label, sizeof(label), "[%s #%u] %dx%d", typeTag, obj->uid, wMm, hMm);
+
+                    double labelW = (std::strlen(label) * 6.5) + 6.0;
+                    ctx.set_fill_style(BLRgba32(0x10, 0x14, 0x1E, 0xEE));
+                    ctx.fill_round_rect(sx, sy - 14.0, labelW, 13.0, 2.0);
+                    ctx.set_stroke_style(strokeColor);
+                    ctx.set_stroke_width(0.8);
+                    ctx.stroke_round_rect(sx, sy - 14.0, labelW, 13.0, 2.0);
+
+                    SelectionGizmo::DrawFallbackText(ctx, static_cast<float>(sx + 3.0), static_cast<float>(sy - 12.0), label);
+                }
+            }
+
+            // On-The-Fly Narrowphase Segment mini-AABBs
+            if (debugShowSegmentAABB && obj->type == ObjectType::InkContainer) {
+                auto ink = std::static_pointer_cast<InkContainer>(obj);
+                if (ink) {
+                    ctx.set_stroke_style(isHit ? BLRgba32(0xFF, 0x52, 0x52, 0x88) : BLRgba32(0x76, 0xFF, 0x03, 0x55));
+                    ctx.set_stroke_width(0.75);
+                    for (const auto& stroke : ink->strokes) {
+                        for (const auto& seg : stroke.segments) {
+                            double r = static_cast<double>(seg.width) * 0.5;
+                            double sMinX = std::min(seg.p0.x, seg.p1.x) - r;
+                            double sMinY = std::min(seg.p0.y, seg.p1.y) - r;
+                            double sMaxX = std::max(seg.p0.x, seg.p1.x) + r;
+                            double sMaxY = std::max(seg.p0.y, seg.p1.y) + r;
+
+                            Point2D sc1 = tr.WorldToScreen(sMinX, sMinY);
+                            Point2D sc2 = tr.WorldToScreen(sMaxX, sMaxY);
+                            double msx = std::min(sc1.x, sc2.x);
+                            double msy = std::min(sc1.y, sc2.y);
+                            double msw = std::abs(sc2.x - sc1.x);
+                            double msh = std::abs(sc2.y - sc1.y);
+
+                            ctx.stroke_rect(msx, msy, msw, msh);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Spatial Query / Eraser Kernel Visualization
+        if (debugShowQueryAABB && debugCollision.active) {
+            Point2D scMin = tr.WorldToScreen(debugCollision.queryBox.minX, debugCollision.queryBox.minY);
+            Point2D scMax = tr.WorldToScreen(debugCollision.queryBox.maxX, debugCollision.queryBox.maxY);
+            double qx = std::min(scMin.x, scMax.x);
+            double qy = std::min(scMin.y, scMax.y);
+            double qw = std::abs(scMax.x - scMin.x);
+            double qh = std::abs(scMax.y - scMin.y);
+
+            // Query AABB (Hot Pink / Magenta)
+            ctx.set_fill_style(BLRgba32(0xF5, 0x00, 0x57, 0x22));
+            ctx.fill_rect(qx, qy, qw, qh);
+            ctx.set_stroke_style(BLRgba32(0xF5, 0x00, 0x57, 0xCC));
+            ctx.set_stroke_width(1.5);
+            ctx.stroke_rect(qx, qy, qw, qh);
+
+            // Eraser query circle
+            Point2D qCenter = tr.WorldToScreen(debugCollision.queryCenter.x, debugCollision.queryCenter.y);
+            double qRadScreen = debugCollision.queryRadius * tr.zoom;
+            ctx.set_stroke_style(BLRgba32(0xFF, 0x40, 0x81, 0xFF));
+            ctx.set_stroke_width(2.0);
+            ctx.stroke_circle(qCenter.x, qCenter.y, qRadScreen);
+
+            // Crosshair center
+            ctx.set_stroke_width(1.0);
+            ctx.stroke_line(qCenter.x - 4.0, qCenter.y, qCenter.x + 4.0, qCenter.y);
+            ctx.stroke_line(qCenter.x, qCenter.y - 4.0, qCenter.x, qCenter.y + 4.0);
+
+            // Query label
+            char qLabel[64];
+            std::snprintf(qLabel, sizeof(qLabel), "[QUERY R:%.1f] Cands:%zu Hits:%zu",
+                          debugCollision.queryRadius, debugCollision.candidateUids.size(), debugCollision.hitUids.size());
+            ctx.set_fill_style(BLRgba32(0x20, 0x00, 0x10, 0xF0));
+            double qlW = (std::strlen(qLabel) * 6.5) + 6.0;
+            ctx.fill_round_rect(qx, qy - 15.0, qlW, 14.0, 2.0);
+            ctx.set_stroke_style(BLRgba32(0xF5, 0x00, 0x57, 0xFF));
+            ctx.stroke_round_rect(qx, qy - 15.0, qlW, 14.0, 2.0);
+            SelectionGizmo::DrawFallbackText(ctx, static_cast<float>(qx + 3.0), static_cast<float>(qy - 13.0), qLabel);
+        }
+
+        // 3. Top-Right HUD Badge: DEV MODE [F4]
+        {
+            char hudStr[80];
+            std::snprintf(hudStr, sizeof(hudStr), "DEV[F4] Vis:%zu Hits:%zu",
+                          visibleObjects.size(),
+                          debugCollision.hitUids.size());
+            float hudW = static_cast<float>(std::strlen(hudStr) * 6.5 + 16.0);
+            float hudX = static_cast<float>(viewportW) - hudW - 16.0f;
+            float hudY = 16.0f;
+
+            ctx.set_fill_style(BLRgba32(0x12, 0x16, 0x24, 0xEE));
+            ctx.fill_round_rect(hudX, hudY, hudW, 20.0f, 4.0f);
+            ctx.set_stroke_style(BLRgba32(0x00, 0xE5, 0xFF, 0xBB));
+            ctx.set_stroke_width(1.0);
+            ctx.stroke_round_rect(hudX, hudY, hudW, 20.0f, 4.0f);
+
+            // Indicator dot: Green if clean, Red if hits active
+            BLRgba32 dotColor = debugCollision.hitUids.empty() ? BLRgba32(0x00, 0xE6, 0x76, 0xFF) : BLRgba32(0xFF, 0x17, 0x44, 0xFF);
+            ctx.fill_circle(hudX + 8.0f, hudY + 10.0f, 3.0, dotColor);
+
+            SelectionGizmo::DrawFallbackText(ctx, hudX + 16.0f, hudY + 5.0f, hudStr);
         }
 
         ctx.restore();

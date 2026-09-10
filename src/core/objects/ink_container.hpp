@@ -306,9 +306,11 @@ public:
      * @param worldX Eraser center X in world mm
      * @param worldY Eraser center Y in world mm
      * @param radius Eraser circle radius in world mm
+     * @param outNewFragments Optional destination list for newly spawned split fragment containers.
      * @return true if any stroke was modified or sliced
      */
-    bool SliceStrokeAt(double worldX, double worldY, double radius) {
+    bool SliceStrokeAt(double worldX, double worldY, double radius,
+                       std::vector<std::shared_ptr<InkContainer>>& outNewFragments) {
         if (strokes.empty()) return false;
 
         // Broadphase test: if eraser circle AABB does not intersect container bounds, early exit
@@ -333,7 +335,8 @@ public:
 
             if (strokeModified) {
                 anyModified = true;
-                for (auto& subChain : subChains) {
+                for (size_t subIdx = 0; subIdx < subChains.size(); ++subIdx) {
+                    auto& subChain = subChains[subIdx];
                     if (subChain.empty()) continue;
 
                     Stroke newStroke;
@@ -351,7 +354,16 @@ public:
                     }
                     newStroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, CapType::Round, newStroke.pattern);
 
-                    newStrokes.push_back(std::move(newStroke));
+                    // First surviving fragment stays in this container; additional fragments become separate objects
+                    if (newStrokes.empty() && subIdx == 0) {
+                        newStrokes.push_back(std::move(newStroke));
+                    } else {
+                        auto fragContainer = std::make_shared<InkContainer>();
+                        fragContainer->transform = this->transform;
+                        fragContainer->isHighlighter = this->isHighlighter;
+                        fragContainer->AddStroke(newStroke);
+                        outNewFragments.push_back(fragContainer);
+                    }
                 }
             } else {
                 newStrokes.push_back(stroke);
@@ -366,6 +378,11 @@ public:
         }
 
         return false;
+    }
+
+    bool SliceStrokeAt(double worldX, double worldY, double radius) {
+        std::vector<std::shared_ptr<InkContainer>> dummy;
+        return SliceStrokeAt(worldX, worldY, radius, dummy);
     }
 
     // --- Post-Selection Editing (Recolor, Resize, Reorder) ---
