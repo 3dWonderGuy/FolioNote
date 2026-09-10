@@ -37,6 +37,8 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
             break;
 
         // --- STYLUS / PEN ---
+        case SDL_EVENT_PEN_PROXIMITY_IN:
+        case SDL_EVENT_PEN_PROXIMITY_OUT:
         case SDL_EVENT_PEN_AXIS:
         case SDL_EVENT_PEN_DOWN:
         case SDL_EVENT_PEN_UP:
@@ -79,62 +81,116 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     bool imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !wasCanvasImageHovered);
     
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-        LOG_INFO(InputManager, "MOUSE DOWN! WantCaptureMouse: " + std::to_string(ImGui::GetIO().WantCaptureMouse) + 
-                               ", wasCanvasImageHovered: " + std::to_string(wasCanvasImageHovered) + 
-                               ", imguiHasFocus: " + std::to_string(imguiHasFocus));
+        if (event.button.which != SDL_TOUCH_MOUSEID && event.button.which != SDL_PEN_MOUSEID) {
+            LOG_INFO(InputManager, "REAL MOUSE DOWN! WantCaptureMouse: " + std::to_string(ImGui::GetIO().WantCaptureMouse) + 
+                                   ", wasCanvasImageHovered: " + std::to_string(wasCanvasImageHovered) + 
+                                   ", imguiHasFocus: " + std::to_string(imguiHasFocus));
+        }
     }
     stateMachine.ProcessInputState(canvas, session, imguiHasFocus);
 }
 
 void InputManager::HandlePenEvent(const SDL_Event& event) {
-    // Record the timestamp of the last pen event for device arbitration in the State Machine.
-    // If a pen event happened recently, the State Machine will prioritize stylus input over touch or mouse.
     stateMachine.lastPenTimestampMs = SDL_GetTicks();
-    
-    // Grab a reference to the pen state structure inside the State Machine
     auto& pen = stateMachine.pen;
 
-    // Handle high-frequency telemetry data like pressure, tilt, and hover distance.
-    // These often arrive independently of button down/up events.
+    // 1. Proximity handling (stylus enters or leaves digitizer sensor range)
+    if (event.type == SDL_EVENT_PEN_PROXIMITY_IN) {
+        pen.inProximity = true;
+        pen.isHovering = true;
+        LOG_INFO(InputManager, "PEN PROXIMITY_IN (PenID: " + std::to_string(event.pproximity.which) + ")");
+        return;
+    }
+    else if (event.type == SDL_EVENT_PEN_PROXIMITY_OUT) {
+        pen.inProximity = false;
+        pen.isHovering = false;
+        pen.isDown = false;
+        pen.eraserTip = false;
+        LOG_INFO(InputManager, "PEN PROXIMITY_OUT (PenID: " + std::to_string(event.pproximity.which) + ")");
+        return;
+    }
+
+    // 2. High-frequency axis telemetry (pressure, tilt, distance)
     if (event.type == SDL_EVENT_PEN_AXIS) {
         if (event.paxis.axis == SDL_PEN_AXIS_PRESSURE)      pen.pressure = std::clamp(event.paxis.value, 0.0f, 1.0f);
         else if (event.paxis.axis == SDL_PEN_AXIS_DISTANCE) pen.distance = event.paxis.value;
         else if (event.paxis.axis == SDL_PEN_AXIS_XTILT)    pen.tiltX = event.paxis.value;
         else if (event.paxis.axis == SDL_PEN_AXIS_YTILT)    pen.tiltY = event.paxis.value;
+
+        bool isEraser = (event.paxis.pen_state & SDL_PEN_INPUT_ERASER_TIP) != 0;
+        if (pen.eraserTip != isEraser) {
+            pen.eraserTip = isEraser;
+            LOG_INFO(InputManager, std::string("PEN ERASER TIP ") + (isEraser ? "ACTIVE" : "INACTIVE"));
+        }
         return;
     }
 
-
+    // 3. Pen contact & motion
     if (event.type == SDL_EVENT_PEN_DOWN) {
-        // The stylus tip has physically touched the screen/tablet surface.
         pen.isDown = true;
         pen.isHovering = false;
+        pen.inProximity = true;
         pen.x = event.ptouch.x;
         pen.y = event.ptouch.y;
+
+        bool isEraser = event.ptouch.eraser || ((event.ptouch.pen_state & SDL_PEN_INPUT_ERASER_TIP) != 0);
+        if (pen.eraserTip != isEraser) {
+            pen.eraserTip = isEraser;
+            LOG_INFO(InputManager, std::string("PEN ERASER TIP ") + (isEraser ? "ACTIVE" : "INACTIVE"));
+        }
     }
     else if (event.type == SDL_EVENT_PEN_MOTION) {
-        // The stylus has moved. It could be dragging on the screen (isDown == true)
-        // or hovering just above it (isDown == false).
         pen.x = event.pmotion.x;
         pen.y = event.pmotion.y;
+        pen.inProximity = true;
         if (!pen.isDown) pen.isHovering = true;
+
+        bool isEraser = (event.pmotion.pen_state & SDL_PEN_INPUT_ERASER_TIP) != 0;
+        if (pen.eraserTip != isEraser) {
+            pen.eraserTip = isEraser;
+            LOG_INFO(InputManager, std::string("PEN ERASER TIP ") + (isEraser ? "ACTIVE" : "INACTIVE"));
+        }
     }
     else if (event.type == SDL_EVENT_PEN_UP) {
-        // The stylus tip has lifted off the screen/tablet surface.
         pen.isDown = false;
         pen.isHovering = true;
+
+        bool isEraser = event.ptouch.eraser || ((event.ptouch.pen_state & SDL_PEN_INPUT_ERASER_TIP) != 0);
+        if (pen.eraserTip != isEraser) {
+            pen.eraserTip = isEraser;
+            LOG_INFO(InputManager, std::string("PEN ERASER TIP ") + (isEraser ? "ACTIVE" : "INACTIVE"));
+        }
     }
     else if (event.type == SDL_EVENT_PEN_BUTTON_DOWN || event.type == SDL_EVENT_PEN_BUTTON_UP) {
         bool down = (event.type == SDL_EVENT_PEN_BUTTON_DOWN);
+        LOG_INFO(InputManager, "PEN BUTTON " + std::to_string(event.pbutton.button) + (down ? " DOWN" : " UP"));
         if (event.pbutton.button == 1) pen.barrel1 = down;
         else if (event.pbutton.button == 2) pen.barrel2 = down;
+        else if (event.pbutton.button == 3) pen.barrel3 = down;
         else {
             LOG_WARN(InputManager, "Unknown pen button: " + std::to_string(event.pbutton.button));
+        }
+
+        bool isEraser = (event.pbutton.pen_state & SDL_PEN_INPUT_ERASER_TIP) != 0;
+        if (pen.eraserTip != isEraser) {
+            pen.eraserTip = isEraser;
+            LOG_INFO(InputManager, std::string("PEN ERASER TIP ") + (isEraser ? "ACTIVE" : "INACTIVE"));
         }
     }
 }
 
 void InputManager::HandleMouseEvent(const SDL_Event& event) {
+    // Filter out synthetic mouse events generated by SDL from capacitive touch or pen input
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        if (event.button.which == SDL_TOUCH_MOUSEID || event.button.which == SDL_PEN_MOUSEID) {
+            return;
+        }
+    } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        if (event.motion.which == SDL_TOUCH_MOUSEID || event.motion.which == SDL_PEN_MOUSEID) {
+            return;
+        }
+    }
+
     stateMachine.lastMouseTimestampMs = SDL_GetTicks();
     auto& mouse = stateMachine.mouse;
 
@@ -164,7 +220,6 @@ void InputManager::HandleKeyboardEvent(const SDL_Event& event) {
     stateMachine.keyboard.shift = (mod & SDL_KMOD_SHIFT) != 0;
     stateMachine.keyboard.alt   = (mod & SDL_KMOD_ALT) != 0;
     stateMachine.keyboard.space = (event.key.key == SDLK_SPACE) ? (event.type == SDL_EVENT_KEY_DOWN) : stateMachine.keyboard.space; 
-    
 }
     
 void InputManager::HandleTouchEvent(const SDL_Event& event) {
@@ -185,6 +240,8 @@ void InputManager::HandleTouchEvent(const SDL_Event& event) {
     float pdy = event.tfinger.dy * fh;
 
     if (event.type == SDL_EVENT_FINGER_DOWN) {
+        LOG_INFO(InputManager, "TOUCH FINGER DOWN: ID=" + std::to_string(event.tfinger.fingerID) +
+                               " at (" + std::to_string(px) + ", " + std::to_string(py) + ")");
         for (auto& slot : stateMachine.activeFingers) {
             if (slot.fingerID == -1) {
                 slot.fingerID = event.tfinger.fingerID;
@@ -210,6 +267,7 @@ void InputManager::HandleTouchEvent(const SDL_Event& event) {
         }
     }
     else if (event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED) {
+        LOG_INFO(InputManager, "TOUCH FINGER UP: ID=" + std::to_string(event.tfinger.fingerID));
         for (auto& slot : stateMachine.activeFingers) {
             if (slot.fingerID == event.tfinger.fingerID) {
                 slot.fingerID = -1;
