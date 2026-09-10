@@ -184,6 +184,7 @@ public:
      */
     void ApplyTransform(const BLMatrix2D& matrix) override {
         transform.post_transform(matrix);
+        renderDirty = true;
         UpdateBounds();
     }
 

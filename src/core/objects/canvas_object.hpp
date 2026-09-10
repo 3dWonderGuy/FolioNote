@@ -1,9 +1,13 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <vector>
+#include <string>
 #include <blend2d/blend2d.h>
 #include "core/spatial/aabb.hpp"
-#include <string>
+#include "core/engine/gizmo_types.hpp"
+
+class CanvasTransform;
 
 
 /**
@@ -24,6 +28,11 @@ enum class ObjectType {
     PDF,
     Table,
     AttachmentFile,
+    Shape,
+    Connector,
+    Audio,
+    MathLaTeX,
+    Frame,
 };
 
 /**
@@ -82,4 +91,38 @@ public:
     virtual std::unique_ptr<CanvasObject> Clone() const = 0;
     virtual void Serialize(Serializer& writer) const = 0;
     virtual void Deserialize(Deserializer& reader) = 0;
+
+    /********************************************* */
+    // Selection & Gizmo Interaction
+    /********************************************* */
+
+    /**
+     * @brief Queries custom handles for this object. If returns false, the engine
+     * automatically generates the standard 8-point bounding box resize grips + 1 rotation pin.
+     * Custom objects (e.g. SmartArrow, Connectors, custom shapes) can override this to
+     * provide custom endpoint or vertex handles.
+     */
+    virtual bool GetCustomGizmoHandles(std::vector<GizmoHandle>& outHandles, const CanvasTransform& transform) const {
+        (void)outHandles;
+        (void)transform;
+        return false;
+    }
+
+    /**
+     * @brief Called when the user drags a custom handle returned by GetCustomGizmoHandles.
+     */
+    virtual bool OnGizmoHandleDrag(int customId, const Point2D& worldPos, const Point2D& worldDelta) {
+        (void)customId;
+        (void)worldPos;
+        (void)worldDelta;
+        return false;
+    }
+
+    /**
+     * @brief Optional custom selection overlay drawing (e.g., connector anchors, curve tangents).
+     */
+    virtual void RenderCustomSelection(BLContext& ctx, const CanvasTransform& transform) const {
+        (void)ctx;
+        (void)transform;
+    }
 };

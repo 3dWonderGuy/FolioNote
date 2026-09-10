@@ -15,6 +15,7 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
+#include "core/engine/selection_gizmo.hpp"
 #include "core/document/document_session.hpp"
 #include "utils/usage_tracker.hpp"
 #include <vector>
@@ -50,6 +51,7 @@ class CanvasEngine {
 public:
     CanvasTransform transform;
     LiveLayerPipeline liveLayer;
+    SelectionGizmo selectionGizmo;
 
     // Tracking state
     Point2D lastInkingWorldMm{0.0, 0.0};
@@ -328,9 +330,7 @@ public:
                     minY = std::min(minY, pt.y);
                     maxY = std::max(maxY, pt.y);
                 }
-                Point2D worldMin = transform.ScreenToWorld(minX, minY);
-                Point2D worldMax = transform.ScreenToWorld(maxX, maxY);
-                AABB lassoBox(worldMin.x, worldMin.y, worldMax.x, worldMax.y);
+                AABB lassoBox(minX, minY, maxX, maxY);
 
                 std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(lassoBox);
                 for (uint32_t uid : candidateUids) {
@@ -339,6 +339,7 @@ public:
                         obj->isSelected = 1;
                     }
                 }
+                selectionGizmo.SetSelectedObjects(activePage->objects);
                 needsFullRebake = true;
             }
         }
@@ -367,6 +368,7 @@ public:
         for (const auto& obj : toRemove) {
             activePage->RemoveObject(obj);
         }
+        selectionGizmo.ClearSelection();
         needsFullRebake = true;
         isDirty = true;
         return true;
@@ -510,6 +512,12 @@ public:
         }
 
         compCtx.restore();
+
+        // 3. Selection Gizmo Overlay Pass (Screen Coordinates)
+        if (selectionGizmo.HasSelection()) {
+            selectionGizmo.Render(compCtx, transform);
+        }
+
         compCtx.end();
 
         // 3a. Optional ink color invert pass (canvas-level, export-safe)

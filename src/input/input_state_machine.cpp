@@ -160,9 +160,33 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
             break;
         }
         case InteractionState::Selecting: {
-            if (justDown)      canvas.OnLassoDown(canvasLocalX, canvasLocalY);
-            else if (isMoving) canvas.OnLassoMove(canvasLocalX, canvasLocalY);
-            else if (justUp)   canvas.OnLassoUp(&session);
+            if (justDown) {
+                if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform)) {
+                    canvas.isDirty = true;
+                } else {
+                    canvas.selectionGizmo.ClearSelection();
+                    canvas.OnLassoDown(canvasLocalX, canvasLocalY);
+                }
+            }
+            else if (isMoving) {
+                if (canvas.selectionGizmo.isDragging) {
+                    if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform)) {
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                } else {
+                    canvas.OnLassoMove(canvasLocalX, canvasLocalY);
+                }
+            }
+            else if (justUp) {
+                if (canvas.selectionGizmo.isDragging) {
+                    canvas.selectionGizmo.OnPointerUp();
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                } else {
+                    canvas.OnLassoUp(&session);
+                }
+            }
             break;
         }
         case InteractionState::Eraser: {
@@ -271,9 +295,66 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         }
     }
     else if (currentAction == InteractionState::Selecting) {
-        if (justDown)      canvas.OnLassoDown(canvasLocalX, canvasLocalY);
-        else if (isMoving) canvas.OnLassoMove(canvasLocalX, canvasLocalY);
-        else if (justUp)   canvas.OnLassoUp(&session);
+        if (justDown) {
+            if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform)) {
+                canvas.isDirty = true;
+            } else {
+                canvas.selectionGizmo.ClearSelection();
+                canvas.OnLassoDown(canvasLocalX, canvasLocalY);
+            }
+        }
+        else if (isMoving) {
+            if (canvas.selectionGizmo.isDragging) {
+                if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform)) {
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+            } else {
+                canvas.OnLassoMove(canvasLocalX, canvasLocalY);
+            }
+        }
+        else if (justUp) {
+            if (canvas.selectionGizmo.isDragging) {
+                canvas.selectionGizmo.OnPointerUp();
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+            } else {
+                canvas.OnLassoUp(&session);
+            }
+        }
+
+        // Set cursor according to hovered gizmo handle when idle
+        if (!canvas.selectionGizmo.isDragging && canvas.selectionGizmo.HasSelection()) {
+            auto hit = canvas.selectionGizmo.HitTest(canvasLocalX, canvasLocalY, canvas.transform);
+            if (hit.hit) {
+                switch (hit.role) {
+                    case HandleRole::TopLeft:
+                    case HandleRole::BottomRight:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
+                        break;
+                    case HandleRole::TopRight:
+                    case HandleRole::BottomLeft:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
+                        break;
+                    case HandleRole::TopCenter:
+                    case HandleRole::BottomCenter:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                        break;
+                    case HandleRole::LeftCenter:
+                    case HandleRole::RightCenter:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                        break;
+                    case HandleRole::Rotation:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                        break;
+                    case HandleRole::Body:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
     }
     else if (currentAction == InteractionState::Panning && isMoving) {
         // Left-button drag while in pan mode (e.g. space held + left drag).
