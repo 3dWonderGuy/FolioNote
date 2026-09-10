@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstring>
 #include "imgui.h"
 #include "ui/imgui_theme.hpp"
 #include "ui/icon_manager.hpp"
@@ -341,7 +343,7 @@ struct NotebookHubView {
         ImGui::SameLine(0.0f, 8.0f);
         if (ImGui::Button("Rename##NbCardRename", ImVec2(76.0f, 26.0f))) {
             renameNotebookIndex = static_cast<int>(item.workspaceIndex);
-            strncpy_s(renameNotebookBuffer, item.name.c_str(), sizeof(renameNotebookBuffer) - 1);
+            snprintf(renameNotebookBuffer, sizeof(renameNotebookBuffer), "%s", item.name.c_str());
             showRenameNotebookModal = true;
         }
         if (ImGui::IsItemActive()) {
@@ -788,7 +790,7 @@ private:
                 ImGui::SameLine(0.0f, 14.0f);
                 if (ImGui::Button("Duplicate Active", ImVec2(154.0f, 40.0f))) {
                     if (auto nb = ws.GetActiveNotebook()) {
-                        strncpy_s(copyNbName, (nb->name + " - Copy").c_str(), sizeof(copyNbName) - 1);
+                        snprintf(copyNbName, sizeof(copyNbName), "%s", (nb->name + " - Copy").c_str());
                         showSaveAsCopyModal = true;
                     }
                 }
@@ -1137,7 +1139,7 @@ private:
                 if (ImGui::Button("Browse...##ImportPkgBrowse", ImVec2(90.0f, 38.0f))) {
                     std::string picked = ShowNativeFolderPicker("Select FolioNote Package (.notebook)");
                     if (!picked.empty()) {
-                        strncpy_s(importPkgPath, picked.c_str(), sizeof(importPkgPath) - 1);
+                        snprintf(importPkgPath, sizeof(importPkgPath), "%s", picked.c_str());
                     }
                 }
                 ImGui::SameLine(0.0f, 14.0f);
@@ -1185,7 +1187,7 @@ private:
                 if (ImGui::Button("Browse...##ImportLibBrowse", ImVec2(90.0f, 38.0f))) {
                     std::string picked = ShowNativeFolderPicker("Select External Library Folder");
                     if (!picked.empty()) {
-                        strncpy_s(importLibFolder, picked.c_str(), sizeof(importLibFolder) - 1);
+                        snprintf(importLibFolder, sizeof(importLibFolder), "%s", picked.c_str());
                     }
                 }
                 ImGui::SameLine(0.0f, 10.0f);
@@ -1263,7 +1265,7 @@ private:
                     if (ImGui::Button("Browse...##NewNbBrowseBtn", ImVec2(90.0f, 0.0f))) {
                         std::string picked = ShowNativeFolderPicker("Select Custom Folder for Standalone Notebook");
                         if (!picked.empty()) {
-                            strncpy_s(newNbPath, picked.c_str(), sizeof(newNbPath) - 1);
+                            snprintf(newNbPath, sizeof(newNbPath), "%s", picked.c_str());
                         }
                     }
                 }
@@ -1650,7 +1652,7 @@ private:
         if (ImGui::Button("Browse...##ExportBrowse", ImVec2(browseBtnW, 32.0f))) {
             std::string picked = ShowNativeFolderPicker("Select Export Destination Folder");
             if (!picked.empty()) {
-                strncpy_s(exportCustomPath, picked.c_str(), sizeof(exportCustomPath) - 1);
+                snprintf(exportCustomPath, sizeof(exportCustomPath), "%s", picked.c_str());
             }
         }
 
@@ -2223,7 +2225,7 @@ private:
                     if (ImGui::Button("Browse...##ModalBrowse", ImVec2(browseBtnW, 32.0f))) {
                         std::string picked = ShowNativeFolderPicker("Select Custom Folder for Standalone Notebook");
                         if (!picked.empty()) {
-                            strncpy_s(newNbPath, picked.c_str(), sizeof(newNbPath) - 1);
+                            snprintf(newNbPath, sizeof(newNbPath), "%s", picked.c_str());
                         }
                     }
                 }
@@ -2309,7 +2311,7 @@ private:
                 if (ImGui::Button("Browse...##CopyBrowse", ImVec2(browseBtnW, 32.0f))) {
                     std::string picked = ShowNativeFolderPicker("Select Destination Folder for Duplicate Notebook");
                     if (!picked.empty()) {
-                        strncpy_s(copyNbDestPath, picked.c_str(), sizeof(copyNbDestPath) - 1);
+                        snprintf(copyNbDestPath, sizeof(copyNbDestPath), "%s", picked.c_str());
                     }
                 }
 
@@ -2386,7 +2388,7 @@ private:
                 if (ImGui::Button("Browse...##LibBrowse", ImVec2(browseBtnW, 32.0f))) {
                     std::string picked = ShowNativeFolderPicker("Select Library Folder on Disk");
                     if (!picked.empty()) {
-                        strncpy_s(newLibPath, picked.c_str(), sizeof(newLibPath) - 1);
+                        snprintf(newLibPath, sizeof(newLibPath), "%s", picked.c_str());
                     }
                 }
 
@@ -2451,7 +2453,7 @@ private:
                 if (ImGui::Button("Browse...##OpenCustomBrowse", ImVec2(browseBtnW, 32.0f))) {
                     std::string picked = ShowNativeFolderPicker("Select Notebook Package (.notebook) or Library Folder");
                     if (!picked.empty()) {
-                        strncpy_s(openCustomPath, picked.c_str(), sizeof(openCustomPath) - 1);
+                        snprintf(openCustomPath, sizeof(openCustomPath), "%s", picked.c_str());
                     }
                 }
 
