@@ -354,6 +354,12 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                         break;
                 }
             }
+        } else if (canvas.selectionGizmo.isDragging) {
+            if (canvas.selectionGizmo.activeRole == HandleRole::Rotation) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            } else if (canvas.selectionGizmo.activeRole == HandleRole::Body) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            }
         }
     }
     else if (currentAction == InteractionState::Panning && isMoving) {
