@@ -5,7 +5,7 @@ plugins {
 android {
     namespace "org.libsdl.app"
     compileSdk 35
-    ndkVersion "27.3.13750724"
+    ndkVersion "27.2.12479018"
 
     defaultConfig {
         applicationId "org.libsdl.app"
@@ -38,9 +38,8 @@ android {
 
     externalNativeBuild {
         cmake {
-            path file("C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/CMakeLists.txt")
-            version "3.30.3"
-            buildStagingDirectory file("C:/b/fn")
+            path file("../../../CMakeLists.txt")
+            version "3.22.1+"
         }
     }
 
@@ -50,7 +49,7 @@ android {
     // directory at the project root is ignored by Gradle and no icons/fonts will load.
     sourceSets {
         main {
-            assets.srcDirs = ['C:/SoftwareDevelopment/UADE-Universal-Application-Development-Enviroment/UniversalFrameworkapplication/assets']
+            assets.srcDirs = ['../../../assets']
         }
     }
 
