@@ -6,6 +6,7 @@
 #include <blend2d/blend2d.h>
 #include "core/spatial/aabb.hpp"
 #include "core/engine/gizmo_types.hpp"
+#include "core/engine/stroke_smoother.hpp"
 
 class CanvasTransform;
 
@@ -73,6 +74,16 @@ public:
     virtual bool HitTestCircle(double worldX, double worldY, double radiusMm) const {
         AABB queryBox(worldX - radiusMm, worldY - radiusMm, worldX + radiusMm, worldY + radiusMm);
         return bounds.Intersects(queryBox) && (HitTest(worldX, worldY) || bounds.Contains(worldX, worldY));
+    }
+    virtual bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const {
+        AABB sweptBox(
+            std::min(w0.x, w1.x) - radiusMm,
+            std::min(w0.y, w1.y) - radiusMm,
+            std::max(w0.x, w1.x) + radiusMm,
+            std::max(w0.y, w1.y) + radiusMm
+        );
+        if (!bounds.Intersects(sweptBox)) return false;
+        return HitTestCircle(w0.x, w0.y, radiusMm) || HitTestCircle(w1.x, w1.y, radiusMm);
     }
     virtual bool Intersects(const AABB& selectionBounds) const = 0;
     [[nodiscard]] const AABB& GetAABB() const noexcept { return bounds; }
