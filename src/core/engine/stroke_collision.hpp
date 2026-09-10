@@ -122,6 +122,102 @@ public:
         const double dy = p.y - qy;
         return (dx * dx + dy * dy) <= (maxR * maxR);
     }
+
+    /**
+     * @brief Computes minimum distance squared between two line segments in 2D space.
+     * Implements Dan Sunday's robust segment-to-segment algorithm with zero heap allocation.
+     */
+    [[nodiscard]] static inline double SegmentSegmentDistanceSq(
+        const Point2D& p0, const Point2D& p1,
+        const Point2D& q0, const Point2D& q1) noexcept
+    {
+        const double ux = p1.x - p0.x;
+        const double uy = p1.y - p0.y;
+        const double vx = q1.x - q0.x;
+        const double vy = q1.y - q0.y;
+        const double wx = p0.x - q0.x;
+        const double wy = p0.y - q0.y;
+
+        const double a = ux * ux + uy * uy;
+        const double b = ux * vx + uy * vy;
+        const double c = vx * vx + vy * vy;
+        const double d = ux * wx + uy * wy;
+        const double e = vx * wx + vy * wy;
+        const double D = a * c - b * b;
+
+        double sN, sD = D;
+        double tN, tD = D;
+
+        if (D < 1e-9) {
+            sN = 0.0;
+            sD = 1.0;
+            tN = e;
+            tD = c;
+        } else {
+            sN = (b * e - c * d);
+            tN = (a * e - b * d);
+            if (sN < 0.0) {
+                sN = 0.0;
+                tN = e;
+                tD = c;
+            } else if (sN > sD) {
+                sN = sD;
+                tN = e + b;
+                tD = c;
+            }
+        }
+
+        if (tN < 0.0) {
+            tN = 0.0;
+            if (-d < 0.0) sN = 0.0;
+            else if (-d > a) sN = sD;
+            else {
+                sN = -d;
+                sD = a;
+            }
+        } else if (tN > tD) {
+            tN = tD;
+            if ((-d + b) < 0.0) sN = 0.0;
+            else if ((-d + b) > a) sN = sD;
+            else {
+                sN = (-d + b);
+                sD = a;
+            }
+        }
+
+        const double sc = (std::abs(sN) < 1e-9 ? 0.0 : sN / sD);
+        const double tc = (std::abs(tN) < 1e-9 ? 0.0 : tN / tD);
+
+        const double dpx = wx + (sc * ux) - (tc * vx);
+        const double dpy = wy + (sc * uy) - (tc * vy);
+        return dpx * dpx + dpy * dpy;
+    }
+
+    /**
+     * @brief Continuous swept-capsule collision test against all segments of a stroke.
+     * Detects hits regardless of mouse movement speed (zero tunneling/skipping).
+     */
+    [[nodiscard]] static inline bool HitTestStrokeSwept(
+        const std::vector<Segment1D>& segments,
+        const Point2D& w0, const Point2D& w1, double queryRadius) noexcept
+    {
+        for (const auto& seg : segments) {
+            const double maxR = queryRadius + static_cast<double>(seg.width) * 0.5;
+            // Transient register mini-AABB test for early rejection
+            const double minX = std::min({ seg.p0.x, seg.p1.x, w0.x, w1.x }) - maxR;
+            const double maxX = std::max({ seg.p0.x, seg.p1.x, w0.x, w1.x }) + maxR;
+            const double minY = std::min({ seg.p0.y, seg.p1.y, w0.y, w1.y }) - maxR;
+            const double maxY = std::max({ seg.p0.y, seg.p1.y, w0.y, w1.y }) + maxR;
+
+            if (minX > maxX || minY > maxY) continue;
+
+            const double distSq = SegmentSegmentDistanceSq(seg.p0, seg.p1, w0, w1);
+            if (distSq <= maxR * maxR) {
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 /**

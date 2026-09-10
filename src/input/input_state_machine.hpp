@@ -107,6 +107,9 @@ public:
     StylusButtonState stylusButtons      = StylusButtonState::None;
     bool  isStrokeEraser                 = true;
     float eraserRadiusMm                 = 3.0f;
+    float lastEraserX                    = 0.0f;
+    float lastEraserY                    = 0.0f;
+    bool  isEraserActive                 = false;
 
     // -------------------------------------------------------------------------
     // HARDWARE STATE TRACKERS

@@ -107,6 +107,37 @@ public:
         std::vector<uint32_t> hitUids;
     } debugCollision;
 
+    struct EraserVisualState {
+        bool isVisible = false;
+        float screenX = 0.0f;
+        float screenY = 0.0f;
+        double radiusMm = 3.0;
+        bool isDown = false;
+        bool isStrokeEraser = true;
+    } eraserVisual;
+
+    void SetEraserCursor(float screenX, float screenY, double radiusMm, bool isDown, bool isStroke) {
+        bool wasVisible = eraserVisual.isVisible;
+        float oldX = eraserVisual.screenX;
+        float oldY = eraserVisual.screenY;
+        eraserVisual.isVisible = true;
+        eraserVisual.screenX = screenX;
+        eraserVisual.screenY = screenY;
+        eraserVisual.radiusMm = radiusMm;
+        eraserVisual.isDown = isDown;
+        eraserVisual.isStrokeEraser = isStroke;
+        if (!wasVisible || std::abs(oldX - screenX) > 0.5f || std::abs(oldY - screenY) > 0.5f) {
+            isDirty = true;
+        }
+    }
+
+    void HideEraserCursor() {
+        if (eraserVisual.isVisible) {
+            eraserVisual.isVisible = false;
+            isDirty = true;
+        }
+    }
+
     void SetInfinityMode(CanvasInfinityMode mode) {
         infinityMode = mode;
         transform.infinityMode = mode;
@@ -394,24 +425,32 @@ public:
         return true;
     }
 
-    bool EraseAt(float screenX, float screenY, double radiusMm, DocumentSession& session, bool isStrokeEraser = true) {
+    bool EraseSegment(float screenX0, float screenY0, float screenX1, float screenY1,
+                      double radiusMm, DocumentSession& session, bool isStrokeEraser = true) {
         auto activePage = session.GetActivePage();
         if (!activePage) return false;
 
-        Point2D world = transform.ScreenToWorld(screenX, screenY);
+        Point2D w0 = transform.ScreenToWorld(screenX0, screenY0);
+        Point2D w1 = transform.ScreenToWorld(screenX1, screenY1);
         double r = std::max(0.5, radiusMm);
-        AABB queryBox(world.x - r, world.y - r, world.x + r, world.y + r);
+
+        AABB sweptBox(
+            std::min(w0.x, w1.x) - r,
+            std::min(w0.y, w1.y) - r,
+            std::max(w0.x, w1.x) + r,
+            std::max(w0.y, w1.y) + r
+        );
 
         if (devMode) {
             debugCollision.active = true;
-            debugCollision.queryCenter = world;
+            debugCollision.queryCenter = w1;
             debugCollision.queryRadius = r;
-            debugCollision.queryBox = queryBox;
+            debugCollision.queryBox = sweptBox;
             debugCollision.candidateUids.clear();
             debugCollision.hitUids.clear();
         }
 
-        std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(queryBox);
+        std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(sweptBox);
         if (candidateUids.empty()) {
             if (devMode) {
                 isDirty = true;
@@ -429,24 +468,42 @@ public:
             if (!obj) continue;
 
             if (isStrokeEraser) {
-                if (obj->HitTestCircle(world.x, world.y, r)) {
+                if (obj->HitTestSwept(w0, w1, r)) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
                     activePage->RemoveObject(obj);
                     modified = true;
                 }
             } else {
-                // Precision / Point eraser: slices vector ink strokes along eraser boundaries
+                // Precision / Point eraser: slices vector ink strokes along continuous swept path
                 if (obj->type == ObjectType::InkContainer) {
                     auto ink = std::static_pointer_cast<InkContainer>(obj);
+                    double segLen = std::hypot(w1.x - w0.x, w1.y - w0.y);
+                    int steps = std::clamp(static_cast<int>(std::ceil(segLen / (r * 0.6))), 1, 30);
+
+                    bool inkModified = false;
                     std::vector<std::shared_ptr<InkContainer>> newFragments;
-                    if (ink && ink->SliceStrokeAt(world.x, world.y, r, newFragments)) {
+
+                    for (int s = (steps > 1 ? 0 : 1); s <= steps; ++s) {
+                        double t = (steps == 1) ? 1.0 : (static_cast<double>(s) / steps);
+                        double curX = w0.x + t * (w1.x - w0.x);
+                        double curY = w0.y + t * (w1.y - w0.y);
+
+                        std::vector<std::shared_ptr<InkContainer>> stepFrags;
+                        if (ink->SliceStrokeAt(curX, curY, r, stepFrags)) {
+                            inkModified = true;
+                            for (auto& frag : stepFrags) {
+                                newFragments.push_back(std::move(frag));
+                            }
+                        }
+                    }
+
+                    if (inkModified) {
                         if (devMode) debugCollision.hitUids.push_back(obj->uid);
                         if (ink->strokes.empty()) {
                             activePage->RemoveObject(ink);
                         } else {
                             activePage->UpdateObject(ink);
                         }
-                        // Insert newly created surviving stroke fragments into the page
                         for (auto& frag : newFragments) {
                             frag->uid = UIDGenerator::Next();
                             activePage->AddObject(frag);
@@ -454,8 +511,8 @@ public:
                         modified = true;
                     }
                 } else {
-                    // Non-stroke objects (e.g. image, text box, shape): delete on direct hit
-                    if (obj->HitTestCircle(world.x, world.y, r)) {
+                    // Non-stroke objects (e.g. image, text box, shape): delete on hit
+                    if (obj->HitTestSwept(w0, w1, r)) {
                         if (devMode) debugCollision.hitUids.push_back(obj->uid);
                         activePage->RemoveObject(obj);
                         modified = true;
@@ -472,6 +529,10 @@ public:
             }
         }
         return modified;
+    }
+
+    bool EraseAt(float screenX, float screenY, double radiusMm, DocumentSession& session, bool isStrokeEraser = true) {
+        return EraseSegment(screenX, screenY, screenX, screenY, radiusMm, session, isStrokeEraser);
     }
 
     // -------------------------------------------------------------
@@ -584,6 +645,35 @@ public:
         // 4. Dev Mode: Rnote-Style AABB & Collision Debugger (Screen Coordinates)
         if (devMode) {
             RenderDevModeAABBs(compCtx, visibleBakedObjects, transform);
+        }
+
+        // 5. Live Eraser Circular Cursor Reticle (Screen Coordinates)
+        if (eraserVisual.isVisible) {
+            double radiusPx = eraserVisual.radiusMm * transform.GetEffectiveScale();
+            float cx = eraserVisual.screenX;
+            float cy = eraserVisual.screenY;
+
+            if (eraserVisual.isStrokeEraser) {
+                // Stroke Eraser: ring with centered crosshair
+                compCtx.set_stroke_style(BLRgba32(0xFF, 0x40, 0x81, 0xDD));
+                compCtx.set_stroke_width(1.5);
+                compCtx.stroke_circle(cx, cy, std::max(4.0, radiusPx));
+                compCtx.set_fill_style(eraserVisual.isDown ? BLRgba32(0xFF, 0x40, 0x81, 0x2E) : BLRgba32(0xFF, 0x40, 0x81, 0x12));
+                compCtx.fill_circle(cx, cy, std::max(4.0, radiusPx));
+
+                compCtx.stroke_line(cx - 3.5, cy, cx + 3.5, cy);
+                compCtx.stroke_line(cx, cy - 3.5, cx, cy + 3.5);
+            } else {
+                // Point Eraser: accurate physical circle showing the exact deletion footprint!
+                compCtx.set_stroke_style(BLRgba32(0x29, 0xB6, 0xF6, 0xEE));
+                compCtx.set_stroke_width(1.5);
+                compCtx.stroke_circle(cx, cy, radiusPx);
+                compCtx.set_fill_style(eraserVisual.isDown ? BLRgba32(0x29, 0xB6, 0xF6, 0x3A) : BLRgba32(0x29, 0xB6, 0xF6, 0x14));
+                compCtx.fill_circle(cx, cy, radiusPx);
+
+                // Precise center dot
+                compCtx.fill_circle(cx, cy, 1.2, BLRgba32(0x29, 0xB6, 0xF6, 0xFF));
+            }
         }
 
         compCtx.end();
@@ -896,19 +986,20 @@ private:
             double qw = std::abs(scMax.x - scMin.x);
             double qh = std::abs(scMax.y - scMin.y);
 
-            // Query AABB (Hot Pink / Magenta)
-            ctx.set_fill_style(BLRgba32(0xF5, 0x00, 0x57, 0x22));
-            ctx.fill_rect(qx, qy, qw, qh);
-            ctx.set_stroke_style(BLRgba32(0xF5, 0x00, 0x57, 0xCC));
-            ctx.set_stroke_width(1.5);
-            ctx.stroke_rect(qx, qy, qw, qh);
-
-            // Eraser query circle
             Point2D qCenter = tr.WorldToScreen(debugCollision.queryCenter.x, debugCollision.queryCenter.y);
             double qRadScreen = debugCollision.queryRadius * tr.zoom;
-            ctx.set_stroke_style(BLRgba32(0xFF, 0x40, 0x81, 0xFF));
+
+            // Primary Eraser Circle (accurate circular footprint)
+            ctx.set_fill_style(BLRgba32(0xF5, 0x00, 0x57, 0x30));
+            ctx.fill_circle(qCenter.x, qCenter.y, qRadScreen);
+            ctx.set_stroke_style(BLRgba32(0xF5, 0x00, 0x57, 0xFF));
             ctx.set_stroke_width(2.0);
             ctx.stroke_circle(qCenter.x, qCenter.y, qRadScreen);
+
+            // Subtle ghost reference bounds for swept broadphase culling inspection
+            ctx.set_stroke_style(BLRgba32(0xF5, 0x00, 0x57, 0x44));
+            ctx.set_stroke_width(0.75);
+            ctx.stroke_rect(qx, qy, qw, qh);
 
             // Crosshair center
             ctx.set_stroke_width(1.0);

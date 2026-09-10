@@ -190,9 +190,19 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
             break;
         }
         case InteractionState::Eraser: {
-            if (justDown || isMoving) {
-                canvas.EraseAt(canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+            if (justDown) {
+                lastEraserX = canvasLocalX;
+                lastEraserY = canvasLocalY;
+                isEraserActive = true;
+                canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+            } else if (isMoving && isEraserActive) {
+                canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+                lastEraserX = canvasLocalX;
+                lastEraserY = canvasLocalY;
+            } else if (justUp) {
+                isEraserActive = false;
             }
+            canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
             break;
         }
         default: break;
@@ -279,6 +289,10 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     const float canvasLocalX = mouse.x - canvasOriginX;
     const float canvasLocalY = mouse.y - canvasOriginY;
 
+    if (currentAction != InteractionState::Eraser) {
+        canvas.HideEraserCursor();
+    }
+
     if (currentAction == InteractionState::Inking) {
         if (justDown) {
             canvas.OnPointerDown(canvasLocalX, canvasLocalY, 1.0f, latestEventTimeSec, palette.GetActivePen(), 0.0f, 0.0f);
@@ -290,9 +304,20 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         }
     } 
     else if (currentAction == InteractionState::Eraser) {
-        if (justDown || isMoving) {
-            canvas.EraseAt(canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+        if (justDown) {
+            lastEraserX = canvasLocalX;
+            lastEraserY = canvasLocalY;
+            isEraserActive = true;
+            canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+        } else if (isMoving && isEraserActive) {
+            canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+            lastEraserX = canvasLocalX;
+            lastEraserY = canvasLocalY;
+        } else if (justUp) {
+            isEraserActive = false;
         }
+        canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
+        ImGui::SetMouseCursor(ImGuiMouseCursor_None);
     }
     else if (currentAction == InteractionState::Selecting) {
         if (justDown) {

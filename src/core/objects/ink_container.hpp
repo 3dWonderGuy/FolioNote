@@ -181,6 +181,37 @@ public:
     }
 
     /**
+     * @brief Evaluates whether any stroke segment intersects a continuous swept capsule from w0 to w1.
+     * Prevents fast-moving eraser skips / tunneling with continuous swept-line collision.
+     */
+    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const override {
+        AABB sweptBox(
+            std::min(w0.x, w1.x) - radiusMm,
+            std::min(w0.y, w1.y) - radiusMm,
+            std::max(w0.x, w1.x) + radiusMm,
+            std::max(w0.y, w1.y) + radiusMm
+        );
+        if (!bounds.Intersects(sweptBox)) return false;
+
+        BLMatrix2D invTransform;
+        BLMatrix2D::invert(invTransform, transform);
+        BLPoint local0 = invTransform.map_point(w0.x, w0.y);
+        BLPoint local1 = invTransform.map_point(w1.x, w1.y);
+        Point2D lw0{ local0.x, local0.y };
+        Point2D lw1{ local1.x, local1.y };
+
+        double scale = std::hypot(transform.m00, transform.m01);
+        double localRadius = (scale > 1e-6) ? (radiusMm / scale) : radiusMm;
+
+        for (const auto& stroke : strokes) {
+            if (StrokeCollisionEngine::HitTestStrokeSwept(stroke.segments, lw0, lw1, localRadius)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @brief Checks if this container intersects a selection bounding box (e.g. lasso or marquee selection).
      */
     bool Intersects(const AABB& selectionBounds) const override {
