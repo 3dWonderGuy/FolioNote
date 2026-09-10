@@ -26,12 +26,11 @@ void InputStateMachine::UpdateHardwareState(uint64_t nowMs) {
     // process multiple devices simultaneously (e.g. palm resting while drawing)
     //
     // Priority order: Stylus > Touch > Mouse
-    if (pen.isDown || (nowMs - lastPenTimestampMs < 80)) {
-        // Stylus wins if the tip is down OR if a pen event occurred within 80ms
-        // (the grace window absorbs the gap between pen events at low frame rates).
+    if (pen.isDown || pen.inProximity || pen.isHovering || (nowMs - lastPenTimestampMs < 600)) {
+        // Stylus wins if in proximity, tip is down, hovering, or within 600ms grace window.
         ActiveDevice = DeviceType::Stylus;
-    } else if (fingerCount > 0 || (nowMs - lastTouchTimestampMs < 80)) {
-        // Touch wins over mouse when fingers are on screen or very recently lifted.
+    } else if (fingerCount > 0 || (nowMs - lastTouchTimestampMs < 250)) {
+        // Touch wins over mouse when fingers are on screen or recently lifted.
         ActiveDevice = DeviceType::Touch;
     } else {
         // Mouse is the lowest-priority fallback device.
@@ -71,16 +70,16 @@ void InputStateMachine::UpdateHardwareState(uint64_t nowMs) {
         // Map physical tip contact to stylus state
         if (pen.isDown) {
             currentStylusState = StylusState::Engaged;
-        } else if (pen.isHovering) {
+        } else if (pen.isHovering || pen.inProximity || (nowMs - lastPenTimestampMs < 600)) {
             currentStylusState = StylusState::Hovering;
         } else {
             currentStylusState = StylusState::OutOfRange;
         }
 
-        // Barrel button 1 / eraser tip → transient Eraser override
-        // Barrel button 2             → transient Lasso/Select override
-        // No button held             → restore the stylus's saved tool
-        if (pen.barrel1 || pen.eraserTip) {
+        // Barrel button 1 / barrel button 3 / eraser tip → transient Eraser override
+        // Barrel button 2                                → transient Lasso/Select override
+        // No button held                                 → restore the stylus's saved tool
+        if (pen.barrel1 || pen.barrel3 || pen.eraserTip) {
             stylusButtons = StylusButtonState::BarrelPressed;
             currentAction = InteractionState::Eraser;
         } else if (pen.barrel2) {

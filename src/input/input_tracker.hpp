@@ -11,6 +11,7 @@ struct PenState {
     float tiltY = 0.0f;
     bool isDown = false;
     bool isHovering = false;
+    bool inProximity = false;
     bool barrel1 = false;
     bool barrel2 = false;
     bool barrel3 = false;
