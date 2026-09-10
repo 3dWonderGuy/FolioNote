@@ -422,6 +422,7 @@ public:
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
                     if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
+                    else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
                     else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                     else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
                     else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
@@ -455,6 +456,7 @@ public:
                         }
                         else if (event.type == SDL_EVENT_KEY_DOWN) {
                             if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
+                            else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
                             else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                             else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
                             else if (event.key.key == SDLK_F1 && (SDL_GetModState() & SDL_KMOD_CTRL)) ribbon.CycleDisplayMode();

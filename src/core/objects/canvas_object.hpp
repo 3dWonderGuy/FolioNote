@@ -71,6 +71,7 @@ public:
     virtual void UpdateBounds() = 0;
     virtual bool HitTest(double worldX, double worldY) const = 0;
     virtual bool Intersects(const AABB& selectionBounds) const = 0;
+    [[nodiscard]] const AABB& GetAABB() const noexcept { return bounds; }
 
     /********************************************* */
     // Geometry & Transforms

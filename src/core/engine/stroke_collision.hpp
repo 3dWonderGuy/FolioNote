@@ -109,6 +109,19 @@ public:
 
         return bestHit;
     }
+
+    /**
+     * @brief Point hit test for single-point strokes (e.g. period / tap dots).
+     */
+    [[nodiscard]] static inline bool HitTestPoint(
+        const Point2D& p, float width,
+        double qx, double qy, double queryRadius) noexcept
+    {
+        const double maxR = std::max(0.2, static_cast<double>(width) * 0.5 + queryRadius);
+        const double dx = p.x - qx;
+        const double dy = p.y - qy;
+        return (dx * dx + dy * dy) <= (maxR * maxR);
+    }
 };
 
 /**
@@ -157,6 +170,12 @@ public:
             }
         };
 
+        auto PushSegmentIfNonDegenerate = [&](const Point2D& a, const Point2D& b, float w) {
+            if (std::hypot(b.x - a.x, b.y - a.y) > 1e-4) {
+                currentChain.push_back(Segment1D{ a, b, w });
+            }
+        };
+
         for (const auto& seg : segments) {
             const double effR = eraserRadius + static_cast<double>(seg.width) * 0.5;
             const double effRSq = effR * effR;
@@ -202,11 +221,11 @@ public:
                     Point2D cutOut = LerpPoint(seg.p0, seg.p1, t2);
 
                     // First part terminates current sub-stroke
-                    currentChain.push_back(Segment1D{ seg.p0, cutIn, seg.width });
+                    PushSegmentIfNonDegenerate(seg.p0, cutIn, seg.width);
                     PushChainIfValid();
 
                     // Second part begins new sub-stroke
-                    currentChain.push_back(Segment1D{ cutOut, seg.p1, seg.width });
+                    PushSegmentIfNonDegenerate(cutOut, seg.p1, seg.width);
                 } else {
                     // Segment completely outside
                     currentChain.push_back(seg);
@@ -217,7 +236,7 @@ public:
                 double tCut = (hasIntersection && t1 >= 0.0 && t1 <= 1.0) ? t1 : 0.5;
                 Point2D cutPt = LerpPoint(seg.p0, seg.p1, tCut);
 
-                currentChain.push_back(Segment1D{ seg.p0, cutPt, seg.width });
+                PushSegmentIfNonDegenerate(seg.p0, cutPt, seg.width);
                 PushChainIfValid();
             } else if (p0In && !p1In) {
                 // Exits eraser: cut at t2 and start new sub-stroke
@@ -225,7 +244,7 @@ public:
                 double tCut = (hasIntersection && t2 >= 0.0 && t2 <= 1.0) ? t2 : 0.5;
                 Point2D cutPt = LerpPoint(seg.p0, seg.p1, tCut);
 
-                currentChain.push_back(Segment1D{ cutPt, seg.p1, seg.width });
+                PushSegmentIfNonDegenerate(cutPt, seg.p1, seg.width);
             } else {
                 // Both endpoints inside: entirely deleted
                 modified = true;
