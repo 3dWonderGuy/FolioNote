@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows Nightly
+    name: Build Windows Nightly (MSVC / Ninja)
     runs-on: windows-latest
 
     steps:
@@ -43,21 +43,38 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/FolioNote-Windows
-          Copy-Item -Path build/FolioNote.exe -Destination dist/FolioNote-Windows/
+
+          # Locate the compiled binary dynamically anywhere in the build tree
+          $exe = Get-ChildItem -Path build -Recurse -Filter "*.exe" | Where-Object { 
+            $_.FullName -notmatch "CMakeFiles|test|_deps" 
+          } | Select-Object -First 1
+
+          if (-not $exe) {
+            Write-Error "Could not find any compiled executable in the build directory!"
+            Get-ChildItem -Path build -Recurse | Select-Object FullName
+            exit 1
+          }
+
+          Write-Host "Found executable at: $($exe.FullName)"
+          Copy-Item -Path $exe.FullName -Destination "dist/FolioNote-Windows/FolioNote.exe"
+
           if (Test-Path assets) {
             Copy-Item -Path assets -Destination dist/FolioNote-Windows/ -Recurse
           }
+
           Compress-Archive -Path dist/FolioNote-Windows/* -DestinationPath dist/FolioNote-nightly-windows-x64.zip
 
       - name: Publish Nightly Pre-Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
-          name: "FolioNote Nightly Build"
+          name: "FolioNote Nightly Build (Develop)"
           body: |
             ## Automated Nightly Pre-Release
             - **Branch:** `develop`
             - **Commit:** ${{ github.sha }}
+
+            *Automated rolling preview build compiled directly from the `develop` branch.*
           prerelease: true
           make_latest: false
           files: |
