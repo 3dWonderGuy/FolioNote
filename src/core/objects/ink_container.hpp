@@ -8,6 +8,7 @@
 #include "core/spatial/aabb.hpp"
 #include "core/engine/stroke_smoother.hpp"
 #include "core/engine/stroke_outline_builder.hpp"
+#include "core/engine/stroke_collision.hpp"
 
 /**
  * @brief Baked vector stroke data representing a single stroke (pen down -> pen up).
@@ -133,7 +134,7 @@ public:
      * @brief Performs precise geometric hit testing for a world-space point (e.g., stylus or eraser).
      */
     bool HitTest(double worldX, double worldY) const override {
-        // Broadphase: fast bounding box check
+        // Tier 1: Stroke-level AABB Broadphase Culling
         if (!bounds.Contains(worldX, worldY)) return false;
 
         // Map query point from world space into object local space
@@ -141,29 +142,15 @@ public:
         BLMatrix2D::invert(invTransform, transform);
         BLPoint localPt = invTransform.map_point(worldX, worldY);
 
-        // Narrowphase: check inside filled polygon outline, or distance to segment centerlines
+        // Tier 2: On-the-fly register-only narrowphase
         for (const auto& stroke : strokes) {
             if (!stroke.outlinePath.is_empty()) {
                 BLHitTest hit = stroke.outlinePath.hit_test(BLPoint{localPt.x, localPt.y}, BL_FILL_RULE_NON_ZERO);
                 if (hit == BL_HIT_TEST_IN) return true;
             }
 
-            for (const auto& seg : stroke.segments) {
-                double dx = seg.p1.x - seg.p0.x;
-                double dy = seg.p1.y - seg.p0.y;
-                double magSq = dx * dx + dy * dy;
-
-                double u = (magSq < 0.0001) 
-                    ? 0.0 
-                    : std::clamp(((localPt.x - seg.p0.x) * dx + (localPt.y - seg.p0.y) * dy) / magSq, 0.0, 1.0);
-
-                double px = seg.p0.x + u * dx;
-                double py = seg.p0.y + u * dy;
-
-                if (std::hypot(localPt.x - px, localPt.y - py) <= (seg.width * 0.5 + 2.0)) {
-                    return true;
-                }
-            }
+            auto hit = StrokeCollisionEngine::HitTestStroke(stroke.segments, localPt.x, localPt.y, 1.5);
+            if (hit.hit) return true;
         }
         return false;
     }
@@ -315,15 +302,69 @@ public:
 
     // --- True "Slice" / Point Eraser (Segment Splitting) ---
     /**
-     * @brief Erases segments within an eraser radius and slices affected strokes into sub-strokes.
+     * @brief Erases segments within an eraser radius and slices affected strokes into surviving sub-strokes.
      * @param worldX Eraser center X in world mm
      * @param worldY Eraser center Y in world mm
      * @param radius Eraser circle radius in world mm
      * @return true if any stroke was modified or sliced
      */
-    bool SliceStrokeAt(double /*worldX*/, double /*worldY*/, double /*radius*/) {
-        // Reserved: Point/slice eraser algorithm.
-        // Splits a stroke into multiple surviving strokes when intersected by an eraser sphere.
+    bool SliceStrokeAt(double worldX, double worldY, double radius) {
+        if (strokes.empty()) return false;
+
+        // Broadphase test: if eraser circle AABB does not intersect container bounds, early exit
+        AABB eraserAABB(worldX - radius, worldY - radius, worldX + radius, worldY + radius);
+        if (!bounds.Intersects(eraserAABB)) return false;
+
+        // Transform eraser circle into local object space
+        BLMatrix2D invTransform;
+        BLMatrix2D::invert(invTransform, transform);
+        BLPoint localCenter = invTransform.map_point(worldX, worldY);
+
+        double scale = std::hypot(transform.m00, transform.m01);
+        double localRadius = (scale > 1e-6) ? (radius / scale) : radius;
+
+        std::vector<Stroke> newStrokes;
+        bool anyModified = false;
+
+        for (const auto& stroke : strokes) {
+            std::vector<std::vector<Segment1D>> subChains;
+            bool strokeModified = StrokeSlicer::SliceSegments(
+                stroke.segments, localCenter.x, localCenter.y, localRadius, subChains);
+
+            if (strokeModified) {
+                anyModified = true;
+                for (auto& subChain : subChains) {
+                    if (subChain.empty()) continue;
+
+                    Stroke newStroke;
+                    newStroke.color = stroke.color;
+                    newStroke.baseWidth = stroke.baseWidth;
+                    newStroke.pattern = stroke.pattern;
+                    newStroke.segments = std::move(subChain);
+
+                    // Re-bake clean 2D closed polygon outline (BLPath) for each surviving sub-stroke
+                    std::vector<StrokeOutlineBuilder::InputPoint> pts;
+                    pts.reserve(newStroke.segments.size() + 1);
+                    pts.push_back({ newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width });
+                    for (const auto& s : newStroke.segments) {
+                        pts.push_back({ s.p1.x, s.p1.y, s.width });
+                    }
+                    newStroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, CapType::Round, newStroke.pattern);
+
+                    newStrokes.push_back(std::move(newStroke));
+                }
+            } else {
+                newStrokes.push_back(stroke);
+            }
+        }
+
+        if (anyModified) {
+            strokes = std::move(newStrokes);
+            renderDirty = true;
+            UpdateBounds();
+            return true;
+        }
+
         return false;
     }
 
