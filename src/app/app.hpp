@@ -22,7 +22,6 @@
 #include "ui/components/ribbon_bar.hpp"
 #include "ui/components/modern_nav_panel.hpp"
 #include "ui/components/debug_overlay.hpp"
-#include "ui/components/dialogs.hpp"
 #include "ui/components/custom_titlebar.hpp"
 #include "ui/views/notebook_hub.hpp"
 #include "input/input_manager.hpp"
@@ -51,7 +50,6 @@ public:
     ModernNavPanel modernNav;
     NotebookHubView hubView;
     DebugOverlay devTelemetry;
-    ThemeCustomizerModal themeModal;
     InkingTuningOverlay tuningStudio;
     ToolbarDemoOverlay toolbarDemo;
 
@@ -417,7 +415,6 @@ public:
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
                     if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
-                    else if (event.key.key == SDLK_F4) themeModal.isVisible = !themeModal.isVisible;
                     else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                     else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
                     else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
@@ -451,7 +448,6 @@ public:
                         }
                         else if (event.type == SDL_EVENT_KEY_DOWN) {
                             if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
-                            else if (event.key.key == SDLK_F4) themeModal.isVisible = !themeModal.isVisible;
                             else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                             else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
                             else if (event.key.key == SDLK_F1 && (SDL_GetModState() & SDL_KMOD_CTRL)) ribbon.CycleDisplayMode();
@@ -523,7 +519,6 @@ public:
                     screenW,
                     running,
                     devTelemetry.isVisible,
-                    themeModal.isVisible,
                     tuningStudio.isVisible,
                     toolbarDemo.isVisible,
                     themeManager,
@@ -717,7 +712,6 @@ public:
             // DIAGNOSTICS & MODAL OVERLAYS
             // =========================================================
             devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, session, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY, themeManager);
-            themeModal.Render(themeManager, &canvas, window);
             tuningStudio.Render(themeManager);
             if (ribbon.showDemoOverlay) {
                 toolbarDemo.isVisible = true;
