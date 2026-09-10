@@ -4,7 +4,7 @@
 #include <memory>
 #include <algorithm>
 #include <cmath>
-#include <algorithm>  // std::lerp (C++20) fallback handled below
+#include <cstring>
 #include "core/document/document_session.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "app/theme_manager.hpp"
