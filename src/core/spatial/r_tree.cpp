@@ -47,7 +47,8 @@ void RTree::FreeNode(int nodeIdx) {
 }
 
 void RTree::InsertLeaf(int leafIdx) {
-    const AABB& targetBounds = r_tree[leafIdx].ObjBounds;
+    if (leafIdx < 0 || static_cast<size_t>(leafIdx) >= r_tree.size()) return;
+    const AABB targetBounds = r_tree[leafIdx].ObjBounds; // Value copy: prevents UAF if r_tree vector reallocates
 
     if (rootIndex == -1) {
         rootIndex = leafIdx;
@@ -56,12 +57,17 @@ void RTree::InsertLeaf(int leafIdx) {
     }
 
     // STEP 1: Find best sibling based on surface area enlargement heuristic
-    // We start at the root and walk down the tree to find the node whose bounding box 
-    // would grow the least if we added our new leaf to it.
     int current = rootIndex;
-    while (!r_tree[current].IsLeaf()) {
+    size_t depth = 0;
+    const size_t maxDepth = r_tree.size() + 2; // Cycle guard
+    while (!r_tree[current].IsLeaf() && depth++ < maxDepth) {
         int left = r_tree[current].left;
         int right = r_tree[current].right;
+
+        if (left == -1 || static_cast<size_t>(left) >= r_tree.size() ||
+            right == -1 || static_cast<size_t>(right) >= r_tree.size()) {
+            break;
+        }
 
         double areaLeft = Area(r_tree[left].ObjBounds);
         double areaRight = Area(r_tree[right].ObjBounds);
@@ -102,7 +108,7 @@ void RTree::InsertLeaf(int leafIdx) {
     r_tree[leafIdx].parent = newParentIdx;
 
     // STEP 3: Update Old Parent
-    if (oldParent != -1) {
+    if (oldParent != -1 && static_cast<size_t>(oldParent) < r_tree.size()) {
         if (r_tree[oldParent].left == sibling) {
             r_tree[oldParent].left = newParentIdx;
         } else {
@@ -117,6 +123,8 @@ void RTree::InsertLeaf(int leafIdx) {
 }
 
 void RTree::RemoveLeaf(int leafIdx) {
+    if (leafIdx < 0 || static_cast<size_t>(leafIdx) >= r_tree.size()) return;
+
     if (leafIdx == rootIndex) {
         rootIndex = -1;
         FreeNode(leafIdx);
@@ -124,103 +132,125 @@ void RTree::RemoveLeaf(int leafIdx) {
     }
 
     int parent = r_tree[leafIdx].parent;
-    int grandParent = (parent != -1) ? r_tree[parent].parent : -1;
+    if (parent == -1 || static_cast<size_t>(parent) >= r_tree.size()) {
+        FreeNode(leafIdx);
+        return;
+    }
+
+    int grandParent = r_tree[parent].parent;
     int sibling = (r_tree[parent].left == leafIdx) ? r_tree[parent].right : r_tree[parent].left;
 
-    if (grandParent != -1) {
+    if (grandParent != -1 && static_cast<size_t>(grandParent) < r_tree.size()) {
         if (r_tree[grandParent].left == parent) {
             r_tree[grandParent].left = sibling;
         } else {
             r_tree[grandParent].right = sibling;
         }
-        r_tree[sibling].parent = grandParent;
+        if (sibling != -1 && static_cast<size_t>(sibling) < r_tree.size()) {
+            r_tree[sibling].parent = grandParent;
+        }
         FreeNode(parent);
         FreeNode(leafIdx);
 
         RefitBoundsUp(grandParent);
     } else {
         rootIndex = sibling;
-        r_tree[sibling].parent = -1;
+        if (sibling != -1 && static_cast<size_t>(sibling) < r_tree.size()) {
+            r_tree[sibling].parent = -1;
+        }
         FreeNode(parent);
         FreeNode(leafIdx);
     }
 }
 
 int RTree::Balance(int iA) {
-    if (iA == -1 || r_tree[iA].IsLeaf() || r_tree[iA].IsDead()) {
+    if (iA == -1 || static_cast<size_t>(iA) >= r_tree.size() || r_tree[iA].IsLeaf() || r_tree[iA].IsDead()) {
         return iA;
     }
 
     int iB = r_tree[iA].left;
     int iC = r_tree[iA].right;
 
+    if (iB == -1 || static_cast<size_t>(iB) >= r_tree.size() || r_tree[iB].IsDead() ||
+        iC == -1 || static_cast<size_t>(iC) >= r_tree.size() || r_tree[iC].IsDead()) {
+        return iA;
+    }
+
     // Check rotations on left child iB
-    if (iB != -1 && !r_tree[iB].IsLeaf() && !r_tree[iB].IsDead()) {
+    if (!r_tree[iB].IsLeaf()) {
         int iD = r_tree[iB].left;
         int iE = r_tree[iB].right;
 
-        double areaB = Area(r_tree[iB].ObjBounds);
+        if (iD != -1 && static_cast<size_t>(iD) < r_tree.size() && !r_tree[iD].IsDead() &&
+            iE != -1 && static_cast<size_t>(iE) < r_tree.size() && !r_tree[iE].IsDead()) {
 
-        // Rotation 1: Swap C with D
-        double costD = Area(Union(r_tree[iC].ObjBounds, r_tree[iE].ObjBounds));
-        // Rotation 2: Swap C with E
-        double costE = Area(Union(r_tree[iC].ObjBounds, r_tree[iD].ObjBounds));
+            double areaB = Area(r_tree[iB].ObjBounds);
 
-        if (costD < areaB && costD <= costE) {
-            r_tree[iB].left = iC;
-            r_tree[iA].right = iD;
+            // Rotation 1: Swap C with D
+            double costD = Area(Union(r_tree[iC].ObjBounds, r_tree[iE].ObjBounds));
+            // Rotation 2: Swap C with E
+            double costE = Area(Union(r_tree[iC].ObjBounds, r_tree[iD].ObjBounds));
 
-            r_tree[iC].parent = iB;
-            r_tree[iD].parent = iA;
+            if (costD < areaB && costD <= costE) {
+                r_tree[iB].left = iC;
+                r_tree[iA].right = iD;
 
-            r_tree[iB].ObjBounds = Union(r_tree[iE].ObjBounds, r_tree[iC].ObjBounds);
-            r_tree[iA].ObjBounds = Union(r_tree[iB].ObjBounds, r_tree[iD].ObjBounds);
-            return iA;
-        } else if (costE < areaB && costE < costD) {
-            r_tree[iB].right = iC;
-            r_tree[iA].right = iE;
+                r_tree[iC].parent = iB;
+                r_tree[iD].parent = iA;
 
-            r_tree[iC].parent = iB;
-            r_tree[iE].parent = iA;
+                r_tree[iB].ObjBounds = Union(r_tree[iE].ObjBounds, r_tree[iC].ObjBounds);
+                r_tree[iA].ObjBounds = Union(r_tree[iB].ObjBounds, r_tree[iD].ObjBounds);
+                return iA;
+            } else if (costE < areaB && costE < costD) {
+                r_tree[iB].right = iC;
+                r_tree[iA].right = iE;
 
-            r_tree[iB].ObjBounds = Union(r_tree[iD].ObjBounds, r_tree[iC].ObjBounds);
-            r_tree[iA].ObjBounds = Union(r_tree[iB].ObjBounds, r_tree[iE].ObjBounds);
-            return iA;
+                r_tree[iC].parent = iB;
+                r_tree[iE].parent = iA;
+
+                r_tree[iB].ObjBounds = Union(r_tree[iD].ObjBounds, r_tree[iC].ObjBounds);
+                r_tree[iA].ObjBounds = Union(r_tree[iB].ObjBounds, r_tree[iE].ObjBounds);
+                return iA;
+            }
         }
     }
 
     // Check rotations on right child iC
-    if (iC != -1 && !r_tree[iC].IsLeaf() && !r_tree[iC].IsDead()) {
+    if (!r_tree[iC].IsLeaf()) {
         int iF = r_tree[iC].left;
         int iG = r_tree[iC].right;
 
-        double areaC = Area(r_tree[iC].ObjBounds);
+        if (iF != -1 && static_cast<size_t>(iF) < r_tree.size() && !r_tree[iF].IsDead() &&
+            iG != -1 && static_cast<size_t>(iG) < r_tree.size() && !r_tree[iG].IsDead()) {
 
-        // Rotation 3: Swap B with F
-        double costF = Area(Union(r_tree[iB].ObjBounds, r_tree[iG].ObjBounds));
-        // Rotation 4: Swap B with G
-        double costG = Area(Union(r_tree[iB].ObjBounds, r_tree[iF].ObjBounds));
+            double areaC = Area(r_tree[iC].ObjBounds);
 
-        if (costF < areaC && costF <= costG) {
-            r_tree[iC].left = iB;
-            r_tree[iA].left = iF;
+            // Rotation 3: Swap B with F
+            double costF = Area(Union(r_tree[iB].ObjBounds, r_tree[iG].ObjBounds));
+            // Rotation 4: Swap B with G
+            double costG = Area(Union(r_tree[iB].ObjBounds, r_tree[iF].ObjBounds));
 
-            r_tree[iB].parent = iC;
-            r_tree[iF].parent = iA;
+            if (costF < areaC && costF <= costG) {
+                r_tree[iC].left = iB;
+                r_tree[iA].left = iF;
 
-            r_tree[iC].ObjBounds = Union(r_tree[iG].ObjBounds, r_tree[iB].ObjBounds);
-            r_tree[iA].ObjBounds = Union(r_tree[iC].ObjBounds, r_tree[iF].ObjBounds);
-            return iA;
-        } else if (costG < areaC && costG < costF) {
-            r_tree[iC].right = iB;
-            r_tree[iA].left = iG;
+                r_tree[iB].parent = iC;
+                r_tree[iF].parent = iA;
 
-            r_tree[iB].parent = iC;
-            r_tree[iG].parent = iA;
+                r_tree[iC].ObjBounds = Union(r_tree[iG].ObjBounds, r_tree[iB].ObjBounds);
+                r_tree[iA].ObjBounds = Union(r_tree[iC].ObjBounds, r_tree[iF].ObjBounds);
+                return iA;
+            } else if (costG < areaC && costG < costF) {
+                r_tree[iC].right = iB;
+                r_tree[iA].left = iG;
 
-            r_tree[iC].ObjBounds = Union(r_tree[iF].ObjBounds, r_tree[iB].ObjBounds);
-            r_tree[iA].ObjBounds = Union(r_tree[iC].ObjBounds, r_tree[iG].ObjBounds);
-            return iA;
+                r_tree[iB].parent = iC;
+                r_tree[iG].parent = iA;
+
+                r_tree[iC].ObjBounds = Union(r_tree[iF].ObjBounds, r_tree[iB].ObjBounds);
+                r_tree[iA].ObjBounds = Union(r_tree[iC].ObjBounds, r_tree[iG].ObjBounds);
+                return iA;
+            }
         }
     }
 
@@ -229,13 +259,18 @@ int RTree::Balance(int iA) {
 
 void RTree::RefitBoundsUp(int nodeIdx) {
     int current = nodeIdx;
-    while (current != -1) {
+    size_t depth = 0;
+    const size_t maxDepth = r_tree.size() + 2; // Cycle guard prevents infinite loops
+
+    while (current != -1 && depth++ < maxDepth) {
         current = Balance(current);
+        if (current == -1 || static_cast<size_t>(current) >= r_tree.size()) break;
 
         int left = r_tree[current].left;
         int right = r_tree[current].right;
 
-        if (left != -1 && right != -1) {
+        if (left != -1 && right != -1 &&
+            static_cast<size_t>(left) < r_tree.size() && static_cast<size_t>(right) < r_tree.size()) {
             r_tree[current].ObjBounds = Union(r_tree[left].ObjBounds, r_tree[right].ObjBounds);
         }
         current = r_tree[current].parent;
@@ -257,8 +292,10 @@ void RTree::CycleTree() {
         n--;
 
         if (candidate != rootIndex && !r_tree[candidate].IsDead() && r_tree[candidate].IsLeaf()) {
-            RemoveLeaf(candidate);
-            InsertLeaf(candidate);
+            uint32_t uid = r_tree[candidate].uid;
+            AABB b = r_tree[candidate].ObjBounds;
+            Remove(uid);
+            Insert(uid, b);
             count++;
         }
     }
@@ -305,30 +342,8 @@ void RTree::Update() {
 }
 
 void RTree::Update(const uint32_t _uid, const AABB& targetBounds) {
-    if (rootIndex == -1) return;
-
-    int targetIdx = -1;
-    for (size_t i = 0; i < r_tree.size(); ++i) {
-        if (!r_tree[i].IsDead() && r_tree[i].IsLeaf() && r_tree[i].uid == _uid) {
-            targetIdx = static_cast<int>(i);
-            break;
-        }
-    }
-
-    if (targetIdx == -1) {
-        Insert(_uid, targetBounds);
-        return;
-    }
-
-    // If new bounds are already within current bounds, keep structure
-    if (r_tree[targetIdx].ObjBounds.Contains(targetBounds.minX, targetBounds.minY) &&
-        r_tree[targetIdx].ObjBounds.Contains(targetBounds.maxX, targetBounds.maxY)) {
-        return;
-    }
-
-    RemoveLeaf(targetIdx);
-    r_tree[targetIdx].ObjBounds = targetBounds;
-    InsertLeaf(targetIdx);
+    Remove(_uid);
+    Insert(_uid, targetBounds);
 }
 
 std::vector<uint32_t> RTree::Query(const AABB& area) const {
