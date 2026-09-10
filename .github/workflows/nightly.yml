@@ -8,6 +8,12 @@ on:
     branches:
       - develop
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build nightly from'
+        required: true
+        default: 'develop'
+        type: string
 
 permissions:
   contents: write
@@ -21,6 +27,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.branch || 'develop' }}
           submodules: recursive
           fetch-depth: 0
 
@@ -28,7 +35,7 @@ jobs:
         id: get_version
         shell: pwsh
         run: |
-          $shortSha = "${{ github.sha }}".Substring(0, 7)
+          $shortSha = (git rev-parse --short HEAD).Trim()
           $version = "0.1.0-nightly.$shortSha"
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
@@ -106,6 +113,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.branch || 'develop' }}
           submodules: recursive
           fetch-depth: 0
 
@@ -174,6 +182,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.branch || 'develop' }}
           submodules: recursive
           fetch-depth: 0
 
@@ -221,6 +230,19 @@ jobs:
     if: always() && !cancelled()
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || 'develop' }}
+          fetch-depth: 1
+
+      - name: Get commit info
+        id: commit_info
+        shell: bash
+        run: |
+          echo "SHA=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         continue-on-error: true
@@ -246,18 +268,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
-          name: "FolioNote Nightly Build (Develop)"
+          name: "FolioNote Nightly Build (${{ steps.commit_info.outputs.SHORT_SHA }})"
           body: |
             ## Automated Nightly Pre-Release
-            - **Branch:** `develop`
-            - **Commit:** ${{ github.sha }}
+            - **Branch:** `${{ inputs.branch || 'develop' }}`
+            - **Commit:** ${{ steps.commit_info.outputs.SHA }}
 
             ### Included Packages:
             - **Windows**: Installer (`.exe`) & Portable Archive (`.zip`)
             - **Linux**: Fedora x86_64 Archive (`.tar.gz`)
             - **Android**: ARM64-v8a Package (`.apk`)
 
-            *Automated rolling preview build compiled directly from the `develop` branch.*
+            *Automated rolling preview build compiled directly from the `${{ inputs.branch || 'develop' }}` branch.*
           prerelease: true
           make_latest: false
           files: |
