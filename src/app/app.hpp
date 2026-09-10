@@ -75,7 +75,7 @@ public:
 #endif
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-        window = SDL_CreateWindow(title, initialW, initialH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS);
+        window = SDL_CreateWindow(title, initialW, initialH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS | SDL_WINDOW_HIGH_PIXEL_DENSITY);
         if (!window) {
             SDL_Quit();
             return false;
@@ -388,11 +388,18 @@ public:
 
         while (running) {
 
-            int windowW, windowH;
-            SDL_GetWindowSizeInPixels(window, &windowW, &windowH);
-            if (windowW <= 0 || windowH <= 0) {
+            int pixelW = 0, pixelH = 0;
+            SDL_GetWindowSizeInPixels(window, &pixelW, &pixelH);
+            if (pixelW <= 0 || pixelH <= 0) {
                 SDL_Delay(10);
                 continue;
+            }
+
+            int logicalW = 0, logicalH = 0;
+            SDL_GetWindowSize(window, &logicalW, &logicalH);
+            if (logicalW <= 0 || logicalH <= 0) {
+                logicalW = pixelW;
+                logicalH = pixelH;
             }
 
             auto& sm = inputManager.stateMachine;
@@ -499,10 +506,10 @@ public:
             }
 
             // =========================================================
-            // WORKSPACE LAYOUT GEOMETRY
+            // WORKSPACE LAYOUT GEOMETRY (LOGICAL WINDOW COORDINATES)
             // =========================================================
-            float screenW = static_cast<float>(windowW);
-            float screenH = static_cast<float>(windowH);
+            float screenW = static_cast<float>(logicalW);
+            float screenH = static_cast<float>(logicalH);
 
             Uint32 winFlags = SDL_GetWindowFlags(window);
             bool isFullscreen = (winFlags & SDL_WINDOW_FULLSCREEN) != 0;
@@ -720,7 +727,7 @@ public:
             toolbarDemo.Render(themeManager);
 
             ImGui::Render();
-            glViewport(0, 0, windowW, windowH);
+            glViewport(0, 0, pixelW, pixelH);
             glClearColor(themeManager.colorBg.x, themeManager.colorBg.y, themeManager.colorBg.z, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

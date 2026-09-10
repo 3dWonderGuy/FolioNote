@@ -1,6 +1,8 @@
 #pragma once
 #include "imgui.h"
 #include <filesystem>
+#include <vector>
+#include <string>
 
 namespace FolioTheme {
     inline ImFont* FontRegular          = nullptr; // Standard UI size (20px)
@@ -13,6 +15,16 @@ namespace FolioTheme {
     inline ImFont* FontRibbonBoldLarge  = nullptr; // 3x Large Bold for the active selected tab (32px)
     inline ImFont* FontBoldLarge        = nullptr; // Backward compatibility alias
 
+    inline std::string FindFontPath(const std::vector<std::string>& candidates) {
+        std::error_code ec;
+        for (const auto& path : candidates) {
+            if (std::filesystem::exists(path, ec) && !ec) {
+                return path;
+            }
+        }
+        return "";
+    }
+
     inline void LoadModernFonts(ImGuiIO& io) {
         ImFontConfig cfg;
         cfg.OversampleH = 3;
@@ -20,11 +32,8 @@ namespace FolioTheme {
         cfg.PixelSnapH = true;
 
 #if defined(__ANDROID__)
-        // ANDROID: Windows system fonts (Segoe UI) do not exist on Android.
-        // ImGui's built-in font is used as a fallback. To get a custom font on Android,
-        // bundle a .ttf file in the project's assets/ folder and load it like:
-        //   FontRegular = io.Fonts->AddFontFromFileTTF("fonts/Inter-Regular.ttf", 20.0f, &cfg);
-        // SDL_IOFromFile will resolve the path from the APK's assets/ bundle automatically.
+        // ANDROID: Windows system fonts do not exist on Android.
+        // Fall back to scalable default or bundled font.
         FontRegular           = io.Fonts->AddFontDefault(&cfg);
         FontRibbonSection     = FontRegular;
         FontRibbonSectionBold = FontRegular;
@@ -34,18 +43,69 @@ namespace FolioTheme {
         FontNavBoldLarge      = FontRegular;
         FontRibbonBoldLarge   = FontRegular;
 #else
-        const char* regularPath = "C:\\Windows\\Fonts\\segoeui.ttf";
-        const char* boldPath    = "C:\\Windows\\Fonts\\segoeuib.ttf";
+        const std::vector<std::string> regularCandidates = {
+            // Windows
+            "C:\\Windows\\Fonts\\segoeui.ttf",
+            "C:/Windows/Fonts/segoeui.ttf",
+            // Linux / Fedora (Cantarell, Noto Sans, Liberation Sans, DejaVu Sans, Inter)
+            "/usr/share/fonts/cantarell/Cantarell-Regular.otf",
+            "/usr/share/fonts/cantarell/Cantarell-VF.otf",
+            "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf",
+            "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/inter/Inter-Regular.ttf",
+            "/usr/share/fonts/inter/Inter-Regular.otf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+            // Bundled and relative repo assets
+            "assets/fonts/Roboto-Medium.ttf",
+            "../assets/fonts/Roboto-Medium.ttf",
+            "../../assets/fonts/Roboto-Medium.ttf",
+            "third_party/imgui/misc/fonts/Roboto-Medium.ttf",
+            "../third_party/imgui/misc/fonts/Roboto-Medium.ttf",
+            "../../third_party/imgui/misc/fonts/Roboto-Medium.ttf"
+        };
 
-        // Use non-throwing error_code overload to avoid crashes on non-Windows systems.
-        std::error_code ec;
+        const std::vector<std::string> boldCandidates = {
+            // Windows
+            "C:\\Windows\\Fonts\\segoeuib.ttf",
+            "C:/Windows/Fonts/segoeuib.ttf",
+            // Linux / Fedora
+            "/usr/share/fonts/cantarell/Cantarell-Bold.otf",
+            "/usr/share/fonts/cantarell/Cantarell-VF.otf",
+            "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
+            "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf",
+            "/usr/share/fonts/liberation-sans/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/inter/Inter-Bold.ttf",
+            "/usr/share/fonts/inter/Inter-Bold.otf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+            // Bundled and relative repo assets
+            "assets/fonts/Roboto-Bold.ttf",
+            "assets/fonts/Roboto-Medium.ttf",
+            "../assets/fonts/Roboto-Medium.ttf",
+            "third_party/imgui/misc/fonts/Roboto-Medium.ttf",
+            "../third_party/imgui/misc/fonts/Roboto-Medium.ttf",
+            "../../third_party/imgui/misc/fonts/Roboto-Medium.ttf"
+        };
+
+        std::string regularPath = FindFontPath(regularCandidates);
+        std::string boldPath    = FindFontPath(boldCandidates);
 
         // 1. Standard regular UI font
-        if (std::filesystem::exists(regularPath, ec) && !ec) {
-            FontRegular       = io.Fonts->AddFontFromFileTTF(regularPath, 20.0f, &cfg);
-            FontRibbonSection = io.Fonts->AddFontFromFileTTF(regularPath, 15.0f, &cfg); // 0.75x of 20px
-            FontNavLarge      = io.Fonts->AddFontFromFileTTF(regularPath, 23.0f, &cfg);
-            FontRibbonLarge   = io.Fonts->AddFontFromFileTTF(regularPath, 32.0f, &cfg);
+        if (!regularPath.empty()) {
+            FontRegular       = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 20.0f, &cfg);
+            FontRibbonSection = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 15.0f, &cfg); // 0.75x of 20px
+            FontNavLarge      = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 23.0f, &cfg);
+            FontRibbonLarge   = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 32.0f, &cfg);
         } else {
             FontRegular       = io.Fonts->AddFontDefault(&cfg);
             FontRibbonSection = FontRegular;
@@ -54,14 +114,14 @@ namespace FolioTheme {
         }
 
         // 2. Bold fonts
-        if (std::filesystem::exists(boldPath, ec) && !ec) {
-            FontBold              = io.Fonts->AddFontFromFileTTF(boldPath, 20.0f, &cfg);
-            FontRibbonSectionBold = io.Fonts->AddFontFromFileTTF(boldPath, 15.0f, &cfg); // 0.75x of 20px
-            FontNavBoldLarge      = io.Fonts->AddFontFromFileTTF(boldPath, 23.0f, &cfg);
-            FontRibbonBoldLarge   = io.Fonts->AddFontFromFileTTF(boldPath, 32.0f, &cfg);
+        if (!boldPath.empty()) {
+            FontBold              = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 20.0f, &cfg);
+            FontRibbonSectionBold = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 15.0f, &cfg); // 0.75x of 20px
+            FontNavBoldLarge      = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 23.0f, &cfg);
+            FontRibbonBoldLarge   = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 32.0f, &cfg);
         } else {
             FontBold              = FontRegular;
-            FontRibbonSectionBold = FontBold;
+            FontRibbonSectionBold = FontRibbonSection;
             FontNavBoldLarge      = FontNavLarge;
             FontRibbonBoldLarge   = FontRibbonLarge;
         }
