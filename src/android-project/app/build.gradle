@@ -25,6 +25,7 @@ android {
                         "-DBLEND2D_STATIC=ON",
                         "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
                 abiFilters 'arm64-v8a'
+                targets 'main'
             }
         }
     }
