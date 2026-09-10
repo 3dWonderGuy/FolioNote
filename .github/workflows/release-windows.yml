@@ -54,8 +54,22 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist/FolioNote
 
-          # Copy main executable
-          Copy-Item "build/bin/FolioNote.exe" -Destination "dist/FolioNote/"
+          # Locate and copy main executable
+          $exe = if (Test-Path "build/bin/FolioNote.exe") { 
+            "build/bin/FolioNote.exe" 
+          } else {
+            (Get-ChildItem -Path build -Recurse -Filter "FolioNote.exe" | Where-Object { 
+              $_.FullName -notmatch "CMakeFiles|test|_deps" 
+            } | Select-Object -First 1).FullName
+          }
+
+          if (-not $exe -or -not (Test-Path $exe)) {
+            Write-Error "Could not find FolioNote.exe in the build directory!"
+            exit 1
+          }
+
+          Write-Host "Found executable at: $exe"
+          Copy-Item -Path $exe -Destination "dist/FolioNote/FolioNote.exe" -Force
 
           # Copy all runtime DLLs (SDL3.dll, blend2d.dll if shared, etc.)
           Get-ChildItem -Path "build" -Filter "*.dll" -Recurse | Copy-Item -Destination "dist/FolioNote/" -Force

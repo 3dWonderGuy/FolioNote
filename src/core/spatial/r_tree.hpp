@@ -3,7 +3,7 @@
 #include <vector>
 #include <memory>
 #include <algorithm>
-#include "utils/Logger.hpp"
+#include "utils/logger.hpp"
 
 class CanvasObject;
 
