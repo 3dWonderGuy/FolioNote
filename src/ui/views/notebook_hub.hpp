@@ -19,6 +19,7 @@
 #include "core/engine/canvas_engine.hpp"
 #include "app/app_view_mode.hpp"
 #include "utils/usage_tracker.hpp"
+#include "utils/printer_installer.hpp"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -1749,6 +1750,60 @@ private:
                 const char* langOpts[] = { "English (United States)", "Español", "Français", "Deutsch", "日本語" };
                 ImGui::SetNextItemWidth(260.0f);
                 ImGui::Combo("##LanguageCombo", &selectedLanguage, langOpts, 5);
+
+                // --- Print to FolioNote Virtual Printer Integration ---
+                ImGui::Dummy(ImVec2(0.0f, 16.0f));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Print to FolioNote (Virtual System Printer)");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Integrates a virtual system printer so any application (browsers, Word, Acrobat, etc.) can print directly to FolioNote.");
+
+                static bool s_isCheckingPrinter = true;
+                static bool s_printerInstalled = false;
+                static std::string s_printerStatusMsg = "";
+
+                if (s_isCheckingPrinter) {
+                    s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                    s_isCheckingPrinter = false;
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                if (s_printerInstalled) {
+                    ImGui::TextColored(ImVec4(0.2f, 0.85f, 0.35f, 1.0f), "Virtual Printer Status: Installed ('Print to FolioNote')");
+                } else {
+                    ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.2f, 1.0f), "Virtual Printer Status: Not installed on this machine");
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14.0f, 8.0f));
+
+                if (!s_printerInstalled) {
+                    if (ImGui::Button("Install 'Print to FolioNote' Printer (Admin UAC)", ImVec2(360.0f, 38.0f))) {
+                        s_printerStatusMsg = "Requesting Administrator privileges...";
+                        bool ok = Folio::PrinterInstaller::InstallPrinterElevated();
+                        s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                        s_printerStatusMsg = ok ? "Virtual printer successfully registered!" : "Installation failed or was cancelled.";
+                    }
+                } else {
+                    if (ImGui::Button("Reinstall / Refresh Printer (Admin UAC)", ImVec2(300.0f, 38.0f))) {
+                        bool ok = Folio::PrinterInstaller::InstallPrinterElevated();
+                        s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                        s_printerStatusMsg = ok ? "Virtual printer refreshed!" : "Action cancelled.";
+                    }
+                    ImGui::SameLine(0.0f, 12.0f);
+                    if (ImGui::Button("Remove Virtual Printer (Admin UAC)", ImVec2(280.0f, 38.0f))) {
+                        bool ok = Folio::PrinterInstaller::UninstallPrinterElevated();
+                        s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                        s_printerStatusMsg = ok ? "Virtual printer removed." : "Removal cancelled.";
+                    }
+                }
+                ImGui::PopStyleVar(2);
+
+                if (!s_printerStatusMsg.empty()) {
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    ImGui::TextColored(theme.colorPrimary, "%s", s_printerStatusMsg.c_str());
+                }
                 break;
             }
 

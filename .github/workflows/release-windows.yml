@@ -94,11 +94,40 @@ jobs:
           # Build portable archive
           Compress-Archive -Path "dist/FolioNote/*" -DestinationPath "FolioNote-Windows-Portable.zip" -Force
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+
       - name: Compile Inno Setup Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
-        with:
-          path: installer/FolioNoteSetup.iss
-          options: /O"dist-installer" /DMyAppVersion=${{ steps.get_version.outputs.VERSION }}
+        shell: pwsh
+        run: |
+          $iscc = if (Get-Command iscc.exe -ErrorAction SilentlyContinue) { 
+            (Get-Command iscc.exe).Source 
+          } elseif (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") { 
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" 
+          } elseif (Test-Path "${env:ProgramFiles}\Inno Setup 6\ISCC.exe") { 
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe" 
+          } else { 
+            throw "ISCC.exe compiler not found after Inno Setup installation!" 
+          }
+
+          Write-Host "Compiling installer with ISCC at: $iscc"
+          $version = "${{ steps.get_version.outputs.VERSION }}"
+          & $iscc "/DMyAppVersion=$version" "installer/FolioNoteSetup.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Inno Setup compilation failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+          $installers = Get-ChildItem -Path "dist-installer" -Filter "*.exe"
+          if (-not $installers) {
+            Write-Error "No installer .exe found in dist-installer after compilation!"
+            exit 1
+          }
+          Write-Host "Compiled installer successfully: $($installers[0].FullName)"
+
 
       - name: Upload Artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
