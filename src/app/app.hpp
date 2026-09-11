@@ -634,7 +634,7 @@ public:
 
                 auto activePg = session.GetActivePage();
                 if (activePg && activePg->isDedicatedPdf) {
-                    pdfViewer.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager);
+                    pdfViewer.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager, canvas.inkColorInverted);
                 } else {
 
                 ImGui::SetNextWindowPos(ImVec2(canvasX, contentY));

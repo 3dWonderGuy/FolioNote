@@ -10,7 +10,8 @@
 #include <string>
 
 #include "app/app_view_mode.hpp"
-enum class RibbonTab { Home, Insert, Draw, History, Review, View, Help, ShapeFormat };
+#include "ui/views/pdf_viewer_page.hpp"
+enum class RibbonTab { Home, Insert, Draw, History, Review, View, Help, ShapeFormat, PdfTools };
 
 enum class RibbonDisplayMode {
     FullyHidden,    // 0.0f px  (canvas-only fullscreen)
@@ -179,8 +180,18 @@ public:
             { "View",    false, RibbonTab::View, false }
         };
 
+        auto currentDocSession = session ? session : currentSession;
+        auto activePg = currentDocSession ? currentDocSession->GetActivePage() : nullptr;
+        bool isDedicatedPdf = activePg && activePg->isDedicatedPdf;
+
         if (selectedShape != nullptr || activeTab == RibbonTab::ShapeFormat) {
             tabs.push_back({ "Shape Format", false, RibbonTab::ShapeFormat, true });
+        }
+        if (isDedicatedPdf || activeTab == RibbonTab::PdfTools) {
+            tabs.push_back({ "PDF Tools", false, RibbonTab::PdfTools, true });
+        }
+        if (!isDedicatedPdf && activeTab == RibbonTab::PdfTools) {
+            activeTab = (previousTab != RibbonTab::PdfTools) ? previousTab : RibbonTab::Draw;
         }
         const int numTabs = static_cast<int>(tabs.size());
 
@@ -2393,6 +2404,139 @@ public:
                     });
 
                     sec.EndStack();
+                    sec.Render();
+                }
+            }
+            else if (activeTab == RibbonTab::PdfTools) {
+                auto* pv = Folio::PdfViewerPage::GetActiveInstance();
+
+                // -------------------------------------------------------------
+                // SECTION 1: Reading Mode (Invert Canvas & Sidebar Toggle)
+                // -------------------------------------------------------------
+                {
+                    FolioUI::ToolbarSectionBuilder sec("grp_pdf_reading", "Reading Mode", theme, isMini);
+
+                    bool isDark = canvas.inkColorInverted;
+                    sec.AddLargeButton("btn_pdf_dark_mode", 0, isDark ? "Light Canvas" : "Invert Canvas",
+                        "Invert Canvas: Invert PDF colors and canvas background for comfortable reading at night",
+                        isDark,
+                        [&]() {
+                            canvas.inkColorInverted = !canvas.inkColorInverted;
+                            isCanvasInverted = canvas.inkColorInverted;
+                            if (canvas.inkColorInverted) {
+                                canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
+                                canvas.gridLineColor = BLRgba32(0x34, 0x38, 0x44);
+                            } else {
+                                canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
+                                canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
+                            }
+                            canvas.isDirty = true;
+                            canvas.needsFullRebake = true;
+                        },
+                        false, ImVec2(78.0f, 58.0f));
+
+                    bool sbOpen = pv ? pv->isSidebarOpen : true;
+                    sec.AddLargeButton("btn_pdf_sidebar_toggle", 0, sbOpen ? "Hide Panel" : "Show Panel",
+                        "Toggle Navigation Sidebar (Thumbnails, Outline, Bookmarks)",
+                        sbOpen,
+                        [&]() {
+                            if (pv) pv->ToggleSidebar();
+                        },
+                        false, ImVec2(76.0f, 58.0f));
+
+                    sec.Render();
+                }
+
+                // -------------------------------------------------------------
+                // SECTION 2: Navigation
+                // -------------------------------------------------------------
+                {
+                    FolioUI::ToolbarSectionBuilder sec("grp_pdf_nav", "Navigation", theme, isMini);
+
+                    sec.AddLargeButton("btn_pdf_prev_page", 0, "Prev Page",
+                        "Go to previous document page",
+                        false,
+                        [&]() {
+                            if (pv) pv->PrevPage();
+                        },
+                        false, ImVec2(72.0f, 58.0f));
+
+                    sec.AddLargeButton("btn_pdf_next_page", 0, "Next Page",
+                        "Go to next document page",
+                        false,
+                        [&]() {
+                            if (pv) pv->NextPage();
+                        },
+                        false, ImVec2(72.0f, 58.0f));
+
+                    sec.Render();
+                }
+
+                // -------------------------------------------------------------
+                // SECTION 3: Zoom Presets
+                // -------------------------------------------------------------
+                {
+                    FolioUI::ToolbarSectionBuilder sec("grp_pdf_zoom", "Zoom", theme, isMini);
+
+                    sec.AddLargeButton("btn_pdf_fit_width", 0, "Fit Width",
+                        "Fit document page width to viewport",
+                        false,
+                        [&]() {
+                            if (pv) pv->SetZoomScale(1.0f);
+                        },
+                        false, ImVec2(68.0f, 58.0f));
+
+                    sec.AddLargeButton("btn_pdf_zoom_100", 0, "100%",
+                        "Zoom to 100%",
+                        false,
+                        [&]() {
+                            if (pv) pv->SetZoomScale(1.0f);
+                        },
+                        false, ImVec2(54.0f, 58.0f));
+
+                    sec.AddLargeButton("btn_pdf_zoom_150", 0, "150%",
+                        "Zoom to 150%",
+                        false,
+                        [&]() {
+                            if (pv) pv->SetZoomScale(1.5f);
+                        },
+                        false, ImVec2(54.0f, 58.0f));
+
+                    sec.AddLargeButton("btn_pdf_zoom_200", 0, "200%",
+                        "Zoom to 200%",
+                        false,
+                        [&]() {
+                            if (pv) pv->SetZoomScale(2.0f);
+                        },
+                        false, ImVec2(54.0f, 58.0f));
+
+                    sec.Render();
+                }
+
+                // -------------------------------------------------------------
+                // SECTION 4: Text Annotation Tools (Snapping Highlighter & Selector)
+                // -------------------------------------------------------------
+                {
+                    FolioUI::ToolbarSectionBuilder sec("grp_pdf_text_tools", "Text & Annotation", theme, isMini);
+
+                    bool isHl = pv ? (pv->activeTool == Folio::PdfToolMode::Highlight) : true;
+                    sec.AddLargeButton("btn_pdf_highlighter", 0, "Text Highlight",
+                        "Text Highlighter: Drag across text to highlight. Click an existing highlight to erase it.",
+                        isHl,
+                        [&]() {
+                            if (pv) pv->activeTool = Folio::PdfToolMode::Highlight;
+                        },
+                        false, ImVec2(80.0f, 58.0f));
+
+                    bool isSel = pv ? (pv->activeTool == Folio::PdfToolMode::Select) : false;
+                    sec.AddLargeButton("btn_pdf_select_mode", 0, "Select Text",
+                        "Select Text: Select text on PDF pages to copy, extract Markdown, or highlight.",
+                        isSel,
+                        [&]() {
+                            if (pv) pv->activeTool = Folio::PdfToolMode::Select;
+                        },
+                        false, ImVec2(76.0f, 58.0f));
+
                     sec.Render();
                 }
             }
