@@ -76,6 +76,11 @@ public:
     bool isDarkMode = true;
     bool isCanvasInverted = false;
 
+    // PDF & Virtual Printer Ingestion State
+    std::string pdfSpoolFolderPath = "";
+    bool autoIngestPrintedPdfs = true;
+    int defaultPdfImportMode = 0; // 0 = LocalCopy, 1 = ExternalLink
+
     // Has settings been loaded from disk
     bool isLoaded = false;
 
@@ -281,6 +286,14 @@ public:
                 if (jApp.contains("isCanvasInverted")) isCanvasInverted = jApp["isCanvasInverted"].get<bool>();
             }
 
+            // 4. PDF Ingestion Settings
+            if (j.contains("pdf") && j["pdf"].is_object()) {
+                const auto& jPdf = j["pdf"];
+                if (jPdf.contains("spoolFolderPath")) pdfSpoolFolderPath = jPdf["spoolFolderPath"].get<std::string>();
+                if (jPdf.contains("autoIngestPrintedPdfs")) autoIngestPrintedPdfs = jPdf["autoIngestPrintedPdfs"].get<bool>();
+                if (jPdf.contains("defaultImportMode")) defaultPdfImportMode = jPdf["defaultImportMode"].get<int>();
+            }
+
             isLoaded = true;
             return true;
         } catch (const std::exception& ex) {
@@ -354,6 +367,13 @@ public:
             j["appearance"] = {
                 { "isDarkMode", isDarkMode },
                 { "isCanvasInverted", isCanvasInverted }
+            };
+
+            // PDF Ingestion section
+            j["pdf"] = {
+                { "spoolFolderPath", pdfSpoolFolderPath },
+                { "autoIngestPrintedPdfs", autoIngestPrintedPdfs },
+                { "defaultImportMode", defaultPdfImportMode }
             };
 
             return FileLoader::WriteString(filepath, j.dump(2));

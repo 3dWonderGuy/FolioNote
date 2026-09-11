@@ -176,3 +176,25 @@ if(NOT ANDROID AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
         COMMENT "Deploying assets to build output directory..."
     )
 endif()
+
+# 9. PDFium Cross-Platform Library Integration
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium")
+    target_include_directories(${APP_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium/include")
+    target_compile_definitions(${APP_TARGET} PRIVATE FOLIO_HAS_PDFIUM=1)
+    if(WIN32)
+        target_link_libraries(${APP_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium/lib/pdfium.dll.lib")
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium/bin/pdfium.dll")
+            add_custom_command(
+                TARGET FolioNote POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium/bin/pdfium.dll"
+                "$<TARGET_FILE_DIR:${APP_TARGET}>/pdfium.dll"
+                COMMENT "Deploying pdfium.dll to output directory..."
+            )
+        endif()
+    elseif(ANDROID)
+        # Android will link libpdfium.so from jniLibs
+    else()
+        target_link_libraries(${APP_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium/lib/libpdfium.so")
+    endif()
+endif()

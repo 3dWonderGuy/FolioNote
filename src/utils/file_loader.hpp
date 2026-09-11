@@ -135,4 +135,101 @@ public:
         }
         return true;
     }
+
+    /**
+     * @brief Computes a fast 64-bit content hash (FNV-1a) and file size for any file on disk.
+     */
+    static bool ComputeFileHash64(const std::string& filePath, uint64_t& outHash, uint64_t& outSize) {
+        outHash = 14695981039346656037ULL;
+        outSize = 0;
+        SDL_IOStream* stream = SDL_IOFromFile(filePath.c_str(), "rb");
+        if (!stream) return false;
+
+        uint8_t buffer[65536];
+        size_t bytesRead = 0;
+        while ((bytesRead = SDL_ReadIO(stream, buffer, sizeof(buffer))) > 0) {
+            outSize += bytesRead;
+            for (size_t i = 0; i < bytesRead; ++i) {
+                outHash ^= buffer[i];
+                outHash *= 1099511628211ULL;
+            }
+        }
+        SDL_CloseIO(stream);
+        return true;
+    }
+
+    /**
+     * @brief Fast, non-blocking scan to inspect a PDF file and extract its page count.
+     * Searches for standard PDF /Count metadata and /Type /Page entries without external dependencies.
+     */
+    static int DetectPdfPageCount(const std::string& filePath) {
+        SDL_IOStream* stream = SDL_IOFromFile(filePath.c_str(), "rb");
+        if (!stream) return 1;
+
+        // Check header '%PDF-'
+        char header[8] = {0};
+        if (SDL_ReadIO(stream, header, 5) < 5 || std::memcmp(header, "%PDF-", 5) != 0) {
+            SDL_CloseIO(stream);
+            return 1;
+        }
+
+        Sint64 fileSize = SDL_GetIOSize(stream);
+        if (fileSize <= 0) {
+            SDL_CloseIO(stream);
+            return 1;
+        }
+
+        // 1. Scan from file end backwards (trailers / page catalog are almost always in the last 64KB)
+        size_t tailScanSize = static_cast<size_t>(std::min<Sint64>(fileSize, 65536));
+        SDL_SeekIO(stream, fileSize - tailScanSize, SDL_IO_SEEK_SET);
+        std::vector<char> buffer(tailScanSize + 1, 0);
+        SDL_ReadIO(stream, buffer.data(), tailScanSize);
+
+        std::string tailStr(buffer.data(), tailScanSize);
+        // Look for /Count followed by number
+        size_t countPos = tailStr.rfind("/Count");
+        while (countPos != std::string::npos) {
+            size_t numStart = countPos + 6;
+            while (numStart < tailStr.size() && (tailStr[numStart] == ' ' || tailStr[numStart] == '\t' || tailStr[numStart] == '\r' || tailStr[numStart] == '\n')) {
+                numStart++;
+            }
+            if (numStart < tailStr.size() && std::isdigit(static_cast<unsigned char>(tailStr[numStart]))) {
+                try {
+                    int countVal = std::stoi(tailStr.substr(numStart, 10));
+                    if (countVal > 0) {
+                        SDL_CloseIO(stream);
+                        return countVal;
+                    }
+                } catch (...) {}
+            }
+            if (countPos == 0) break;
+            countPos = tailStr.rfind("/Count", countPos - 1);
+        }
+
+        // 2. Fallback: Full stream sweep counting "/Type /Page" tokens (excluding "/Type /Pages")
+        SDL_SeekIO(stream, 0, SDL_IO_SEEK_SET);
+        int pageTokenCount = 0;
+        std::vector<char> chunk(32768, 0);
+        std::string carry = "";
+        while (true) {
+            size_t readCount = SDL_ReadIO(stream, chunk.data(), chunk.size());
+            if (readCount == 0) break;
+            std::string block = carry + std::string(chunk.data(), readCount);
+            size_t p = 0;
+            while ((p = block.find("/Type", p)) != std::string::npos) {
+                size_t afterType = p + 5;
+                while (afterType < block.size() && (block[afterType] == ' ' || block[afterType] == '\t' || block[afterType] == '\r' || block[afterType] == '\n')) afterType++;
+                if (block.compare(afterType, 5, "/Page") == 0) {
+                    if (afterType + 5 < block.size() && block[afterType + 5] != 's') {
+                        pageTokenCount++;
+                    }
+                }
+                p += 5;
+            }
+            carry = (block.size() > 64) ? block.substr(block.size() - 64) : block;
+        }
+
+        SDL_CloseIO(stream);
+        return pageTokenCount > 0 ? pageTokenCount : 1;
+    }
 };

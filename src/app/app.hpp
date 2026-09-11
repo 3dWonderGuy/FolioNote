@@ -13,6 +13,7 @@
 #include "backends/imgui_impl_opengl3.h"
 #include "ui/components/tuning_overlay.hpp"
 #include "ui/components/toolbar_demo_overlay.hpp"
+#include "ui/components/pdf_import_modal.hpp"
 #include "app/settings_manager.hpp"
 #include "app/theme_manager.hpp"
 #include "app/window_state_manager.hpp"
@@ -24,6 +25,7 @@
 #include "ui/components/debug_overlay.hpp"
 #include "ui/components/custom_titlebar.hpp"
 #include "ui/views/notebook_hub.hpp"
+#include "ui/views/pdf_viewer_page.hpp"
 #include "input/input_manager.hpp"
 #include "utils/file_loader.hpp"
 #include "utils/usage_tracker.hpp"
@@ -52,6 +54,8 @@ public:
     DebugOverlay devTelemetry;
     InkingTuningOverlay tuningStudio;
     ToolbarDemoOverlay toolbarDemo;
+    Folio::PdfImportModal pdfImportModal;
+    Folio::PdfViewerPage pdfViewer;
 
     AppViewMode currentView = AppViewMode::CanvasWorkspace;
 
@@ -288,6 +292,10 @@ public:
 
         toolbarDemo.LoadFromSettings();
 
+        canvas.onPdfImportRequested = [this](const std::string& path, DocumentSession* s) {
+            pdfImportModal.Open(path, s);
+        };
+
         devTelemetry.LogEvent("FolioNote initialized.", LogCategory::System);
         return true;
     }
@@ -432,6 +440,20 @@ public:
                         canvas.InsertImageFromClipboard(&session);
                     }
                     else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
+                }
+                else if (event.type == SDL_EVENT_DROP_FILE) {
+                    if (event.drop.data) {
+                        std::string droppedPath = event.drop.data;
+                        std::string ext = "";
+                        auto dotPos = droppedPath.find_last_of('.');
+                        if (dotPos != std::string::npos) {
+                            ext = droppedPath.substr(dotPos);
+                            for (auto& c : ext) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+                        }
+                        if (ext == ".pdf") {
+                            pdfImportModal.Open(droppedPath, &session);
+                        }
+                    }
                 }
 
                 inputManager.ProcessEvent(event, canvas, session, windowSM);
@@ -605,10 +627,15 @@ public:
 
                 modernNav.Render(0.0f, contentY, contentH, session, canvas, themeManager, &currentView);
 
-                // 3. CANVAS WORKSPACE (FILLS EXACT REMAINDER)
+                // 3. CANVAS WORKSPACE OR DEDICATED PDF VIEWER (FILLS EXACT REMAINDER)
                 float navW = modernNav.GetTotalWidth();
                 float canvasX = navW;
                 float canvasW = screenW - navW;
+
+                auto activePg = session.GetActivePage();
+                if (activePg && activePg->isDedicatedPdf) {
+                    pdfViewer.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager);
+                } else {
 
                 ImGui::SetNextWindowPos(ImVec2(canvasX, contentY));
                 ImGui::SetNextWindowSize(ImVec2(canvasW, contentH));
@@ -715,6 +742,7 @@ public:
                 }
                 ImGui::End();
                 ImGui::PopStyleVar();
+                } // End of if (activePg && activePg->isDedicatedPdf) else
 
                 // 4. ADVANCED DOCUMENT OPTIONS SLIDING PANEL
                 // Floats over canvas from right side when View tab -> Adv. Options is toggled.
@@ -737,6 +765,7 @@ public:
                 ribbon.showDemoOverlay = false;
             }
             toolbarDemo.Render(themeManager);
+            pdfImportModal.Render(session, canvas, themeManager);
 
             ImGui::Render();
             glViewport(0, 0, pixelW, pixelH);
