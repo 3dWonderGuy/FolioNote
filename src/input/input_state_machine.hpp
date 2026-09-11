@@ -3,7 +3,9 @@
 #include "input/input_tracker.hpp"
 #include "input/pen_palette.hpp"
 #include "input/touch_gesture_recognizer.hpp"
+#include "utils/logger.hpp"
 #include <array>
+#include <string>
 #include <cstdint>
 
 // =============================================================================
@@ -28,7 +30,8 @@ enum class InteractionState : uint8_t {
     Eraser,      // Erasing strokes or points
     Selecting,   // Lasso / freehand selection
     Panning,     // Panning the canvas viewport
-    Transforming // Moving / scaling selected objects (future use)
+    Transforming,// Moving / scaling selected objects (future use)
+    DrawingShape // Drag-creating vector shapes
 };
 
 // =============================================================================
@@ -90,14 +93,14 @@ public:
     // -------------------------------------------------------------------------
     DeviceToolState stylusTool  = { InteractionState::Inking  };
     DeviceToolState touchTool   = { InteractionState::Panning };
-    DeviceToolState mouseTool   = { InteractionState::Idle    };
+    DeviceToolState mouseTool   = { InteractionState::Selecting };
 
     // -------------------------------------------------------------------------
     // CURRENT ACTION (live / computed each frame)
     // This is what dispatchers read. It may differ from savedTool temporarily
     // due to transient overrides (barrel buttons, space-bar panning, etc.).
     // -------------------------------------------------------------------------
-    InteractionState currentAction = InteractionState::Inking;
+    InteractionState currentAction = InteractionState::Selecting;
 
     // -------------------------------------------------------------------------
     // STYLUS TELEMETRY
@@ -199,6 +202,12 @@ public:
         if (device == ActiveDevice) {
             currentAction = tool;
         }
+        std::string toolName = (tool == InteractionState::Inking) ? "Inking" :
+                               (tool == InteractionState::Eraser) ? "Eraser" :
+                               (tool == InteractionState::Selecting) ? "Selecting" :
+                               (tool == InteractionState::Panning) ? "Panning" :
+                               (tool == InteractionState::DrawingShape) ? "DrawingShape" : "Idle";
+        LOG_INFO(InputStateMachine, "Set tool for device " + std::to_string(static_cast<int>(device)) + " to " + toolName);
     }
 
     // Main per-frame entry point. Call once per SDL event after all Handle*Event

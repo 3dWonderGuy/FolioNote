@@ -162,7 +162,7 @@ else()
         OpenGL::GL
     )
     if(WIN32)
-        target_link_libraries(FolioNote PRIVATE dwmapi ole32 shell32)
+        target_link_libraries(FolioNote PRIVATE dwmapi ole32 shell32 winspool)
     endif()
 endif()
 
@@ -176,3 +176,41 @@ if(NOT ANDROID AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets")
         COMMENT "Deploying assets to build output directory..."
     )
 endif()
+
+# 9. PDFium Cross-Platform Library Integration
+set(PDFIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium")
+if(EXISTS "${PDFIUM_DIR}")
+    set(FOLIO_PDFIUM_FOUND OFF)
+    if(WIN32 AND EXISTS "${PDFIUM_DIR}/lib/pdfium.dll.lib")
+        set(FOLIO_PDFIUM_FOUND ON)
+        target_include_directories(${APP_TARGET} PRIVATE "${PDFIUM_DIR}/include")
+        target_compile_definitions(${APP_TARGET} PRIVATE FOLIO_HAS_PDFIUM=1)
+        target_link_libraries(${APP_TARGET} PRIVATE "${PDFIUM_DIR}/lib/pdfium.dll.lib")
+        if(EXISTS "${PDFIUM_DIR}/bin/pdfium.dll")
+            add_custom_command(
+                TARGET FolioNote POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${PDFIUM_DIR}/bin/pdfium.dll"
+                "$<TARGET_FILE_DIR:${APP_TARGET}>/pdfium.dll"
+                COMMENT "Deploying pdfium.dll to output directory..."
+            )
+        endif()
+    elseif(ANDROID AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/android-project/app/src/main/jniLibs/${ANDROID_ABI}/libpdfium.so")
+        set(FOLIO_PDFIUM_FOUND ON)
+        target_include_directories(${APP_TARGET} PRIVATE "${PDFIUM_DIR}/include")
+        target_compile_definitions(${APP_TARGET} PRIVATE FOLIO_HAS_PDFIUM=1)
+        target_link_libraries(${APP_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/android-project/app/src/main/jniLibs/${ANDROID_ABI}/libpdfium.so")
+    elseif(UNIX AND NOT APPLE AND NOT ANDROID AND EXISTS "${PDFIUM_DIR}/lib/libpdfium.so")
+        set(FOLIO_PDFIUM_FOUND ON)
+        target_include_directories(${APP_TARGET} PRIVATE "${PDFIUM_DIR}/include")
+        target_compile_definitions(${APP_TARGET} PRIVATE FOLIO_HAS_PDFIUM=1)
+        target_link_libraries(${APP_TARGET} PRIVATE "${PDFIUM_DIR}/lib/libpdfium.so")
+    endif()
+
+    if(FOLIO_PDFIUM_FOUND)
+        message(STATUS "PDFium library found and enabled for ${CMAKE_SYSTEM_NAME}")
+    else()
+        message(STATUS "PDFium library not found for ${CMAKE_SYSTEM_NAME}; building with PDF viewer stubs")
+    endif()
+endif()
+

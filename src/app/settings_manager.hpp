@@ -63,9 +63,9 @@ public:
     //
     // Valid string values: "Inking", "Eraser", "Selecting", "Panning", "Idle"
     // ==========================================================================
-    std::string defaultStylusTool = "Inking";   // Stylus default: always inks
-    std::string defaultTouchTool  = "Panning";  // Touch default: navigate (finger pan/zoom)
-    std::string defaultMouseTool  = "Idle";     // Mouse default: navigation/selection mode
+    std::string defaultStylusTool = "Inking";    // Stylus default: pen inking mode
+    std::string defaultTouchTool  = "Panning";   // Touch default: navigation/pan mode
+    std::string defaultMouseTool  = "Selecting"; // Mouse default: box selection / object hit-test
 
     // Ribbon Layout State
     std::string ribbonDisplayMode = "FullRibbon";
@@ -75,6 +75,11 @@ public:
     // Appearance State
     bool isDarkMode = true;
     bool isCanvasInverted = false;
+
+    // PDF & Virtual Printer Ingestion State
+    std::string pdfSpoolFolderPath = "";
+    bool autoIngestPrintedPdfs = true;
+    int defaultPdfImportMode = 0; // 0 = LocalCopy, 1 = ExternalLink
 
     // Has settings been loaded from disk
     bool isLoaded = false;
@@ -214,7 +219,10 @@ public:
                 // Device default tools — placeholder, settings UI not yet built
                 if (jInking.contains("defaultStylusTool")) defaultStylusTool = jInking["defaultStylusTool"].get<std::string>();
                 if (jInking.contains("defaultTouchTool"))  defaultTouchTool  = jInking["defaultTouchTool"].get<std::string>();
-                if (jInking.contains("defaultMouseTool"))  defaultMouseTool  = jInking["defaultMouseTool"].get<std::string>();
+                if (jInking.contains("defaultMouseTool")) {
+                    defaultMouseTool  = jInking["defaultMouseTool"].get<std::string>();
+                    if (defaultMouseTool == "Idle") defaultMouseTool = "Selecting";
+                }
 
                 if (jInking.contains("presets") && jInking["presets"].is_array()) {
                     inkingPresets.clear();
@@ -276,6 +284,14 @@ public:
                 const auto& jApp = j["appearance"];
                 if (jApp.contains("isDarkMode")) isDarkMode = jApp["isDarkMode"].get<bool>();
                 if (jApp.contains("isCanvasInverted")) isCanvasInverted = jApp["isCanvasInverted"].get<bool>();
+            }
+
+            // 4. PDF Ingestion Settings
+            if (j.contains("pdf") && j["pdf"].is_object()) {
+                const auto& jPdf = j["pdf"];
+                if (jPdf.contains("spoolFolderPath")) pdfSpoolFolderPath = jPdf["spoolFolderPath"].get<std::string>();
+                if (jPdf.contains("autoIngestPrintedPdfs")) autoIngestPrintedPdfs = jPdf["autoIngestPrintedPdfs"].get<bool>();
+                if (jPdf.contains("defaultImportMode")) defaultPdfImportMode = jPdf["defaultImportMode"].get<int>();
             }
 
             isLoaded = true;
@@ -351,6 +367,13 @@ public:
             j["appearance"] = {
                 { "isDarkMode", isDarkMode },
                 { "isCanvasInverted", isCanvasInverted }
+            };
+
+            // PDF Ingestion section
+            j["pdf"] = {
+                { "spoolFolderPath", pdfSpoolFolderPath },
+                { "autoIngestPrintedPdfs", autoIngestPrintedPdfs },
+                { "defaultImportMode", defaultPdfImportMode }
             };
 
             return FileLoader::WriteString(filepath, j.dump(2));

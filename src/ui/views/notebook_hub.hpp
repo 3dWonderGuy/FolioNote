@@ -4,6 +4,7 @@
 #include <memory>
 #include <filesystem>
 #include <algorithm>
+#include <unordered_set>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -18,6 +19,7 @@
 #include "core/engine/canvas_engine.hpp"
 #include "app/app_view_mode.hpp"
 #include "utils/usage_tracker.hpp"
+#include "utils/printer_installer.hpp"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -716,7 +718,7 @@ private:
                 RenderExportContent(session, canvas, theme);
                 break;
             case HubMainCategory::Settings:
-                RenderSettingsContent(theme, canvas, window);
+                RenderSettingsContent(theme, canvas, window, session);
                 break;
         }
 
@@ -1706,7 +1708,7 @@ private:
     // ========================================================================
     // CATEGORY 4: SETTINGS & PREFERENCES CONTENT
     // ========================================================================
-    void RenderSettingsContent(ThemeManager& theme, CanvasEngine& canvas, SDL_Window* window) {
+    void RenderSettingsContent(ThemeManager& theme, CanvasEngine& canvas, SDL_Window* window, DocumentSession& session) {
         ImGui::PushFont(FolioTheme::FontRibbonBoldLarge);
         ImGui::TextColored(theme.colorText, "Application Settings");
         ImGui::PopFont();
@@ -1748,6 +1750,60 @@ private:
                 const char* langOpts[] = { "English (United States)", "Español", "Français", "Deutsch", "日本語" };
                 ImGui::SetNextItemWidth(260.0f);
                 ImGui::Combo("##LanguageCombo", &selectedLanguage, langOpts, 5);
+
+                // --- Print to FolioNote Virtual Printer Integration ---
+                ImGui::Dummy(ImVec2(0.0f, 16.0f));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Print to FolioNote (Virtual System Printer)");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Integrates a virtual system printer so any application (browsers, Word, Acrobat, etc.) can print directly to FolioNote.");
+
+                static bool s_isCheckingPrinter = true;
+                static bool s_printerInstalled = false;
+                static std::string s_printerStatusMsg = "";
+
+                if (s_isCheckingPrinter) {
+                    s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                    s_isCheckingPrinter = false;
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                if (s_printerInstalled) {
+                    ImGui::TextColored(ImVec4(0.2f, 0.85f, 0.35f, 1.0f), "Virtual Printer Status: Installed ('Print to FolioNote')");
+                } else {
+                    ImGui::TextColored(ImVec4(0.85f, 0.65f, 0.2f, 1.0f), "Virtual Printer Status: Not installed on this machine");
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14.0f, 8.0f));
+
+                if (!s_printerInstalled) {
+                    if (ImGui::Button("Install 'Print to FolioNote' Printer (Admin UAC)", ImVec2(360.0f, 38.0f))) {
+                        s_printerStatusMsg = "Requesting Administrator privileges...";
+                        bool ok = Folio::PrinterInstaller::InstallPrinterElevated();
+                        s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                        s_printerStatusMsg = ok ? "Virtual printer successfully registered!" : "Installation failed or was cancelled.";
+                    }
+                } else {
+                    if (ImGui::Button("Reinstall / Refresh Printer (Admin UAC)", ImVec2(300.0f, 38.0f))) {
+                        bool ok = Folio::PrinterInstaller::InstallPrinterElevated();
+                        s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                        s_printerStatusMsg = ok ? "Virtual printer refreshed!" : "Action cancelled.";
+                    }
+                    ImGui::SameLine(0.0f, 12.0f);
+                    if (ImGui::Button("Remove Virtual Printer (Admin UAC)", ImVec2(280.0f, 38.0f))) {
+                        bool ok = Folio::PrinterInstaller::UninstallPrinterElevated();
+                        s_printerInstalled = Folio::PrinterInstaller::IsPrinterInstalled();
+                        s_printerStatusMsg = ok ? "Virtual printer removed." : "Removal cancelled.";
+                    }
+                }
+                ImGui::PopStyleVar(2);
+
+                if (!s_printerStatusMsg.empty()) {
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    ImGui::TextColored(theme.colorPrimary, "%s", s_printerStatusMsg.c_str());
+                }
                 break;
             }
 
@@ -1889,6 +1945,84 @@ private:
                     // Compact SQLite
                 }
                 ImGui::PopStyleVar(2);
+
+                ImGui::Dummy(ImVec2(0.0f, 16.0f));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Storage Maintenance & Cache Purge");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Scan imported images and media packages. Delete orphaned files no longer referenced by any page.");
+
+                static std::string purgeResultMsg = "";
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 10.0f));
+                if (ImGui::Button("Clear Cache (Purge Unused Imports)", ImVec2(300.0f, 40.0f))) {
+                    auto activeNb = session.workspace.GetActiveNotebook();
+                    if (activeNb && !activeNb->filePath.empty()) {
+                        std::filesystem::path nbPath(activeNb->filePath);
+                        std::filesystem::path importsDir = nbPath / "imports" / "images";
+                        if (std::filesystem::exists(importsDir)) {
+                            std::unordered_set<std::string> usedFilenames;
+                            auto checkPage = [&](const std::shared_ptr<CanvasPage>& page) {
+                                if (!page) return;
+                                if (!page->isLoaded) {
+                                    session.workspace.repository.LoadPage(page);
+                                }
+                                for (const auto& obj : page->objects) {
+                                    if (obj && obj->type == ObjectType::Image) {
+                                        auto img = std::dynamic_pointer_cast<Folio::ImageObject>(obj);
+                                        if (img && !img->imagePath.empty()) {
+                                            std::filesystem::path p(img->imagePath);
+                                            usedFilenames.insert(p.filename().string());
+                                        }
+                                    }
+                                }
+                            };
+
+                            for (const auto& sec : activeNb->sections) {
+                                if (!sec) continue;
+                                for (const auto& page : sec->pages) checkPage(page);
+                            }
+                            for (const auto& grp : activeNb->sectionGroups) {
+                                if (!grp) continue;
+                                for (const auto& sec : grp->sections) {
+                                    if (!sec) continue;
+                                    for (const auto& page : sec->pages) checkPage(page);
+                                }
+                            }
+
+                            int removedCount = 0;
+                            uintmax_t reclaimedBytes = 0;
+                            for (const auto& entry : std::filesystem::directory_iterator(importsDir)) {
+                                if (entry.is_regular_file()) {
+                                    std::string fname = entry.path().filename().string();
+                                    if (usedFilenames.find(fname) == usedFilenames.end()) {
+                                        reclaimedBytes += entry.file_size();
+                                        std::error_code ec;
+                                        std::filesystem::remove(entry.path(), ec);
+                                        if (!ec) {
+                                            removedCount++;
+                                        }
+                                    }
+                                }
+                            }
+                            purgeResultMsg = "Purged " + std::to_string(removedCount) + " unused files (" +
+                                             std::to_string(reclaimedBytes / 1024) + " KB reclaimed).";
+                            LOG_INFO(SettingsManager, purgeResultMsg);
+                        } else {
+                            purgeResultMsg = "No imports/images directory found for active notebook.";
+                            LOG_INFO(SettingsManager, purgeResultMsg);
+                        }
+                    } else {
+                        purgeResultMsg = "No active saved notebook to purge.";
+                    }
+                }
+                ImGui::PopStyleVar(2);
+
+                if (!purgeResultMsg.empty()) {
+                    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                    ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.3f, 1.0f), "%s", purgeResultMsg.c_str());
+                }
                 break;
             }
 

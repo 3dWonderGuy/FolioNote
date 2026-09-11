@@ -86,6 +86,11 @@ public:
     bool isModified = false;            ///< Dirty flag indicating unsaved changes exist
     bool isLoaded = true;               ///< True if stroke geometry and objects are present in RAM
 
+    // Dedicated Standalone PDF Document Page
+    bool isDedicatedPdf = false;        ///< True if this page is viewed in the dedicated PDF continuous viewer
+    std::string dedicatedPdfPath;       ///< Path to the backing PDF document on disk / package
+    std::string dedicatedPdfBookmarks;  ///< Serialized user bookmarks (JSON or pipe-delimited) persisted to SQLite
+
     // -------------------------------------------------------------------------
     // Construction & Lifecycle
     // -------------------------------------------------------------------------

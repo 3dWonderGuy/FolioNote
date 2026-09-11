@@ -18,6 +18,7 @@
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/gizmo_types.hpp"
 #include "core/objects/canvas_object.hpp"
+#include "utils/logger.hpp"
 
 /**
  * @brief Hit-test result indicating whether a click intersected a gizmo handle or the body.
@@ -101,12 +102,18 @@ public:
         displayAngleDeg = 0.0;
         isAngleSnapped = false;
         RecalculateBounds();
+        if (hasSelection) {
+            LOG_INFO(CanvasEngine, "Selection Gizmo selected " + std::to_string(selectedObjects.size()) + " object(s)");
+        }
     }
 
     /**
      * @brief Clears the current selection and marks all objects unselected.
      */
     void ClearSelection() {
+        if (hasSelection) {
+            LOG_INFO(CanvasEngine, "Selection Gizmo cleared selection (" + std::to_string(selectedObjects.size()) + " objects deselected)");
+        }
         for (auto& obj : selectedObjects) {
             if (obj) obj->isSelected = 0;
         }
@@ -397,6 +404,12 @@ public:
         activeRole = hit.role;
         activeCustomId = hit.customId;
 
+        const char* roleStr = (activeRole == HandleRole::Body) ? "Body Move" :
+                              (activeRole == HandleRole::Rotation) ? "Rotation" : "Resize Handle";
+        LOG_INFO(CanvasEngine, "Selection Gizmo drag started (operation=" + std::string(roleStr) +
+                 ", handleRole=" + std::to_string(static_cast<int>(activeRole)) +
+                 ", selectedCount=" + std::to_string(selectedObjects.size()) + ")");
+
         dragStartScreen = { screenX, screenY };
         dragStartWorld = transform.ScreenToWorld(screenX, screenY);
         lastDragWorld = dragStartWorld;
@@ -601,6 +614,12 @@ public:
      */
     void OnPointerUp() {
         if (!isDragging) return;
+        const char* roleStr = (activeRole == HandleRole::Body) ? "Body Move" :
+                              (activeRole == HandleRole::Rotation) ? "Rotation" : "Resize Handle";
+        LOG_INFO(CanvasEngine, "Selection Gizmo drag completed (operation=" + std::string(roleStr) +
+                 ", finalBounds=[" + std::to_string(bounds.minX) + ", " + std::to_string(bounds.minY) +
+                 " to " + std::to_string(bounds.maxX) + ", " + std::to_string(bounds.maxY) + "])");
+
         isDragging = false;
         activeRole = HandleRole::None;
         currentRotationAngle = 0.0;

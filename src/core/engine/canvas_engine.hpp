@@ -14,12 +14,17 @@
 #include <blend2d/blend2d.h>
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container.hpp"
+#include "core/objects/image_container.hpp"
+#include "core/objects/shape_container.hpp"
+#include "core/objects/pdf_container.hpp"
+#include "core/storage/pdf_storage.hpp"
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
 #include "core/engine/selection_gizmo.hpp"
 #include "core/document/document_session.hpp"
 #include "utils/usage_tracker.hpp"
 #include "utils/uid_generator.hpp"
+#include "utils/guid_generator.hpp"
 #include <vector>
 #include <string>
 #include <memory>
@@ -27,6 +32,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <SDL3/SDL_dialog.h>
 
 enum class PaperStyle { Grid, Lined, Blank, Dotted };
 enum class PageBorderType { Automatic, Fixed };
@@ -214,6 +223,7 @@ public:
     GLuint glTexture = 0;
     int viewportW = 0;
     int viewportH = 0;
+    SDL_Window* sdlWindow = nullptr;
 
     // Dynamic capacity tracking to prevent repeated buffer allocations during resize
     int allocatedCapacityW = 0;
@@ -397,6 +407,85 @@ public:
         return lasso;
     }
 
+    struct MarqueeBoxState {
+        bool isActive = false;
+        Point2D startWorld{0.0, 0.0};
+        Point2D currentWorld{0.0, 0.0};
+        float startScreenX = 0.0f;
+        float startScreenY = 0.0f;
+        float currentScreenX = 0.0f;
+        float currentScreenY = 0.0f;
+    } marqueeBox;
+
+    void OnBoxSelectDown(float screenX, float screenY) {
+        marqueeBox.isActive = true;
+        marqueeBox.startScreenX = screenX;
+        marqueeBox.startScreenY = screenY;
+        marqueeBox.currentScreenX = screenX;
+        marqueeBox.currentScreenY = screenY;
+        marqueeBox.startWorld = transform.ScreenToWorld(screenX, screenY);
+        marqueeBox.currentWorld = marqueeBox.startWorld;
+        isDirty = true;
+    }
+
+    void OnBoxSelectMove(float screenX, float screenY) {
+        if (!marqueeBox.isActive) return;
+        marqueeBox.currentScreenX = screenX;
+        marqueeBox.currentScreenY = screenY;
+        marqueeBox.currentWorld = transform.ScreenToWorld(screenX, screenY);
+        isDirty = true;
+    }
+
+    void OnBoxSelectUp(DocumentSession* session = nullptr) {
+        if (!marqueeBox.isActive) return;
+        marqueeBox.isActive = false;
+        isDirty = true;
+
+        if (session) {
+            auto activePage = session->GetActivePage();
+            if (activePage) {
+                double minX = std::min(marqueeBox.startWorld.x, marqueeBox.currentWorld.x);
+                double maxX = std::max(marqueeBox.startWorld.x, marqueeBox.currentWorld.x);
+                double minY = std::min(marqueeBox.startWorld.y, marqueeBox.currentWorld.y);
+                double maxY = std::max(marqueeBox.startWorld.y, marqueeBox.currentWorld.y);
+
+                // If dragged at least a small threshold (> 2mm)
+                if ((maxX - minX) > 2.0 || (maxY - minY) > 2.0) {
+                    AABB box(minX, minY, maxX, maxY);
+                    std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(box);
+                    for (uint32_t uid : candidateUids) {
+                        auto obj = activePage->FindObjectByUid(uid);
+                        if (obj && obj->Intersects(box)) {
+                            obj->isSelected = 1;
+                        }
+                    }
+                    selectionGizmo.SetSelectedObjects(activePage->objects);
+                    needsFullRebake = true;
+                }
+            }
+        }
+    }
+
+    enum class SelectionMode {
+        Box,
+        Lasso
+    };
+    SelectionMode selectionMode = SelectionMode::Box;
+
+    void ClearSelection(DocumentSession* session = nullptr) {
+        if (session) {
+            auto activePage = session->GetActivePage();
+            if (activePage) {
+                for (auto& obj : activePage->objects) {
+                    if (obj) obj->isSelected = 0;
+                }
+            }
+        }
+        selectionGizmo.ClearSelection();
+        needsFullRebake = true;
+        isDirty = true;
+    }
+
     bool DeleteSelectedObjects(DocumentSession* session = nullptr) {
         if (!session) return false;
         auto activePage = session->GetActivePage();
@@ -423,6 +512,405 @@ public:
         needsFullRebake = true;
         isDirty = true;
         return true;
+    }
+
+    struct ShapeCreationState {
+        bool isActive = false;
+        bool isDragging = false;
+        Folio::ShapeType shapeType = Folio::ShapeType::Rectangle;
+        bool lockDrawingMode = false;
+        Point2D startWorld{0.0, 0.0};
+        Point2D currentWorld{0.0, 0.0};
+        float startScreenX = 0.0f;
+        float startScreenY = 0.0f;
+        float currentScreenX = 0.0f;
+        float currentScreenY = 0.0f;
+
+        // Current default properties for newly created shapes
+        Folio::ShapeFillType defaultFillType = Folio::ShapeFillType::SemiTransparent;
+        BLRgba32 defaultFillColor = BLRgba32(0x00, 0x78, 0xD4, 0x40);
+        Folio::ShapeOutlineType defaultOutlineType = Folio::ShapeOutlineType::Solid;
+        BLRgba32 defaultOutlineColor = BLRgba32(0x18, 0x1A, 0x20, 0xFF);
+        double defaultStrokeWidth = 1.0;
+    } shapeCreation;
+
+    void StartShapeCreation(Folio::ShapeType type, bool lockMode = false) {
+        shapeCreation.isActive = true;
+        shapeCreation.isDragging = false;
+        shapeCreation.shapeType = type;
+        shapeCreation.lockDrawingMode = lockMode;
+        LOG_INFO(CanvasEngine, "Started shape creation mode for type=" + std::to_string(static_cast<int>(type)) +
+                 (lockMode ? " [LOCKED]" : " [ONE-SHOT]"));
+    }
+
+    void CancelShapeCreation() {
+        shapeCreation.isActive = false;
+        shapeCreation.isDragging = false;
+    }
+
+    void OnShapeDrawDown(float screenX, float screenY) {
+        shapeCreation.isDragging = true;
+        shapeCreation.startScreenX = screenX;
+        shapeCreation.startScreenY = screenY;
+        shapeCreation.currentScreenX = screenX;
+        shapeCreation.currentScreenY = screenY;
+        shapeCreation.startWorld = transform.ScreenToWorld(screenX, screenY);
+        shapeCreation.currentWorld = shapeCreation.startWorld;
+        isDirty = true;
+    }
+
+    void OnShapeDrawMove(float screenX, float screenY) {
+        if (!shapeCreation.isDragging) return;
+        shapeCreation.currentScreenX = screenX;
+        shapeCreation.currentScreenY = screenY;
+        shapeCreation.currentWorld = transform.ScreenToWorld(screenX, screenY);
+        isDirty = true;
+    }
+
+    std::shared_ptr<Folio::ShapeObject> OnShapeDrawUp(DocumentSession* session) {
+        if (!shapeCreation.isDragging) return nullptr;
+        shapeCreation.isDragging = false;
+
+        if (!session) return nullptr;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return nullptr;
+
+        double minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+        double maxX = std::max(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+        double minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+        double maxY = std::max(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+        double w = maxX - minX;
+        double h = maxY - minY;
+
+        // If clicked/tapped without dragging (less than 2mm threshold), create a standard default size centered at tap
+        if (w < 2.0 && h < 2.0) {
+            w = 50.0;
+            h = 35.0;
+            minX = shapeCreation.startWorld.x - w * 0.5;
+            minY = shapeCreation.startWorld.y - h * 0.5;
+        }
+
+        auto shp = std::make_shared<Folio::ShapeObject>(shapeCreation.shapeType, minX, minY, w, h);
+        shp->guuid = GUIDGenerator::GenerateV4();
+        shp->uid = UIDGenerator::Next();
+        shp->fillType = shapeCreation.defaultFillType;
+        shp->fillColor = shapeCreation.defaultFillColor;
+        shp->outlineType = shapeCreation.defaultOutlineType;
+        shp->strokeColor = shapeCreation.defaultOutlineColor;
+        shp->strokeWidth = shapeCreation.defaultStrokeWidth;
+        shp->UpdateBounds();
+
+        activePage->AddObject(shp);
+
+        // Select the newly created shape
+        ClearSelection(session);
+        shp->isSelected = 1;
+        selectionGizmo.SetSelectedObjects(activePage->objects);
+
+        needsFullRebake = true;
+        isDirty = true;
+
+        LOG_INFO(CanvasEngine, "Created vector shape by drag (type=" + std::to_string(static_cast<int>(shapeCreation.shapeType)) +
+                 ", uid=" + std::to_string(shp->uid) + ", bounds=[" + std::to_string(minX) + "," + std::to_string(minY) + " " + std::to_string(w) + "x" + std::to_string(h) + "])");
+
+        if (!shapeCreation.lockDrawingMode) {
+            shapeCreation.isActive = false;
+        }
+
+        return shp;
+    }
+
+    std::shared_ptr<Folio::ShapeObject> GetSelectedShape(DocumentSession* session) const {
+        if (!session) return nullptr;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return nullptr;
+        for (const auto& obj : activePage->objects) {
+            if (obj && obj->isSelected && obj->type == ObjectType::Shape) {
+                return std::dynamic_pointer_cast<Folio::ShapeObject>(obj);
+            }
+        }
+        return nullptr;
+    }
+
+    std::shared_ptr<Folio::ShapeObject> InsertShape(Folio::ShapeType type, DocumentSession* session, double worldX = 0.0, double worldY = 0.0) {
+        if (!session) return nullptr;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return nullptr;
+
+        // If default coordinates, place at viewport center
+        if (worldX == 0.0 && worldY == 0.0) {
+            Point2D center = transform.ScreenToWorld(viewportW * 0.5f, viewportH * 0.5f);
+            worldX = center.x - 30.0;
+            worldY = center.y - 20.0;
+        }
+
+        auto shp = std::make_shared<Folio::ShapeObject>(type, worldX, worldY, 60.0, 40.0);
+        shp->guuid = GUIDGenerator::GenerateV4();
+        shp->uid = UIDGenerator::Next();
+        shp->fillType = shapeCreation.defaultFillType;
+        shp->fillColor = shapeCreation.defaultFillColor;
+        shp->outlineType = shapeCreation.defaultOutlineType;
+        shp->strokeColor = shapeCreation.defaultOutlineColor;
+        shp->strokeWidth = shapeCreation.defaultStrokeWidth;
+        shp->UpdateBounds();
+
+        activePage->AddObject(shp);
+
+        // Select the newly inserted shape so the user can immediately transform/drag it
+        ClearSelection(session);
+        shp->isSelected = 1;
+        selectionGizmo.SetSelectedObjects(activePage->objects);
+
+        needsFullRebake = true;
+        isDirty = true;
+
+        LOG_INFO(CanvasEngine, "Inserted vector shape (type=" + std::to_string(static_cast<int>(type)) + ", uid=" + std::to_string(shp->uid) + ")");
+        return shp;
+    }
+
+    /**
+     * @brief Synchronizes all currently selected objects to the active page spatial index.
+     * Updates object bounds and re-indexes into the R-Tree so queries (e.g. eraser collision)
+     * instantly recognize the modified/moved geometries.
+     */
+    void SyncSelectionToSpatialIndex(DocumentSession* session) {
+        if (!session) return;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return;
+        for (const auto& obj : selectionGizmo.selectedObjects) {
+            if (obj) {
+                activePage->UpdateObject(obj);
+            }
+        }
+    }
+
+    /**
+     * @brief Deduplicates an imported image file or raw memory buffer into the active notebook's
+     * imports/images/ directory, returning the relative package path (e.g. "imports/images/img_<hash>.ext").
+     */
+    static std::string DeduplicateAndSaveImage(const std::string& srcPath, const void* data, size_t size, DocumentSession* session, const std::string& ext = ".png") {
+        if (!session) return "";
+        auto activeNb = session->workspace.GetActiveNotebook();
+        if (!activeNb || activeNb->filePath.empty()) return "";
+
+        std::error_code ec;
+        std::filesystem::path pkgPath(activeNb->filePath);
+        std::filesystem::path imgDir = pkgPath / "imports" / "images";
+        std::filesystem::create_directories(imgDir, ec);
+
+        // FNV-1a 64-bit content hash for fast deduplication
+        uint64_t hash = 14695981039346656037ULL;
+        if (data && size > 0) {
+            const uint8_t* p = static_cast<const uint8_t*>(data);
+            for (size_t i = 0; i < size; ++i) {
+                hash ^= p[i];
+                hash *= 1099511628211ULL;
+            }
+        } else if (!srcPath.empty() && std::filesystem::exists(srcPath, ec)) {
+            std::ifstream f(srcPath, std::ios::binary);
+            char buf[8192];
+            while (f.read(buf, sizeof(buf)) || f.gcount() > 0) {
+                for (std::streamsize i = 0; i < f.gcount(); ++i) {
+                    hash ^= static_cast<uint8_t>(buf[i]);
+                    hash *= 1099511628211ULL;
+                }
+            }
+        } else {
+            return "";
+        }
+
+        char hashStr[32];
+        std::snprintf(hashStr, sizeof(hashStr), "%016llx", static_cast<unsigned long long>(hash));
+        std::string filename = std::string("img_") + hashStr + ext;
+        std::filesystem::path destFile = imgDir / filename;
+
+        // Deduplicate: write/copy only if target doesn't already exist
+        if (!std::filesystem::exists(destFile, ec)) {
+            if (!srcPath.empty() && std::filesystem::exists(srcPath, ec)) {
+                std::filesystem::copy_file(srcPath, destFile, std::filesystem::copy_options::overwrite_existing, ec);
+            } else if (data && size > 0) {
+                std::ofstream out(destFile, std::ios::binary | std::ios::trunc);
+                if (out.is_open()) {
+                    out.write(static_cast<const char*>(data), size);
+                }
+            }
+        }
+
+        return (std::filesystem::path("imports") / "images" / filename).string();
+    }
+
+    struct ImageFileDialogContext {
+        CanvasEngine* canvas = nullptr;
+        DocumentSession* session = nullptr;
+        Point2D insertPosWorld{0.0, 0.0};
+    };
+
+    static void SDLCALL OnImageFileSelected(void* userdata, const char* const* filelist, int /*filter*/) {
+        auto* ctx = static_cast<ImageFileDialogContext*>(userdata);
+        if (!ctx) return;
+
+        if (filelist && filelist[0] && filelist[0][0] != '\0') {
+            std::string selectedPath = filelist[0];
+            std::vector<uint8_t> rawBytes;
+            std::ifstream file(selectedPath, std::ios::binary | std::ios::ate);
+            if (file.is_open()) {
+                size_t sz = static_cast<size_t>(file.tellg());
+                file.seekg(0, std::ios::beg);
+                rawBytes.resize(sz);
+                file.read(reinterpret_cast<char*>(rawBytes.data()), sz);
+            }
+
+            BLImage blImg;
+            if (blImg.read_from_file(selectedPath.c_str()) == BL_SUCCESS && !blImg.is_empty()) {
+                std::string ext = std::filesystem::path(selectedPath).extension().string();
+                if (ext.empty()) ext = ".png";
+                std::string storedPath = DeduplicateAndSaveImage(selectedPath, rawBytes.data(), rawBytes.size(), ctx->session, ext);
+
+                auto img = std::make_shared<Folio::ImageContainer>();
+                img->SetImage(blImg, storedPath.empty() ? selectedPath : storedPath, 120.0);
+                img->embeddedData = std::move(rawBytes);
+                img->worldX = ctx->insertPosWorld.x - img->worldWidth * 0.5;
+                img->worldY = ctx->insertPosWorld.y - img->worldHeight * 0.5;
+                img->UpdateBounds();
+
+                ctx->session->AddImage(img);
+                ctx->canvas->needsFullRebake = true;
+                ctx->canvas->isDirty = true;
+                LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "'");
+            }
+        }
+
+        delete ctx;
+    }
+
+    /**
+     * @brief Opens a native file dialog (Pictures on Android, Explorer on Desktop) to pick and insert an image.
+     */
+    void OpenImageFileDialog(SDL_Window* parentWin, DocumentSession* session) {
+        if (!session) return;
+        Point2D centerWorld = transform.ScreenToWorld(static_cast<float>(viewportW) * 0.5f, static_cast<float>(viewportH) * 0.5f);
+
+        auto* ctx = new ImageFileDialogContext{ this, session, centerWorld };
+
+        static const SDL_DialogFileFilter imageFilters[] = {
+            { "Image Files (*.png;*.jpg;*.jpeg;*.webp;*.bmp)", "png;jpg;jpeg;webp;bmp" },
+            { "PNG Images (*.png)", "png" },
+            { "JPEG Images (*.jpg;*.jpeg)", "jpg;jpeg" },
+            { "All Files (*.*)", "*" }
+        };
+
+        LOG_INFO(CanvasEngine, "Opening native image file dialog...");
+        SDL_ShowOpenFileDialog(OnImageFileSelected, ctx, parentWin ? parentWin : sdlWindow, imageFilters, 4, nullptr, false);
+    }
+
+    struct PdfFileDialogContext {
+        CanvasEngine* canvas = nullptr;
+        DocumentSession* session = nullptr;
+        Point2D insertPosWorld{0.0, 0.0};
+        bool asBackground = false;
+        Folio::PdfImportMode importMode = Folio::PdfImportMode::LocalCopy;
+    };
+
+    // Callback invoked when a PDF file is chosen via OpenPdfFileDialog or file drag-and-drop
+    std::function<void(const std::string& filePath, DocumentSession* session)> onPdfImportRequested = nullptr;
+
+    static void SDLCALL OnPdfFileSelected(void* userdata, const char* const* filelist, int /*filter*/) {
+        auto* ctx = static_cast<PdfFileDialogContext*>(userdata);
+        if (!ctx) return;
+
+        if (filelist && filelist[0] && filelist[0][0] != '\0') {
+            std::string selectedPath = filelist[0];
+            if (ctx->canvas && ctx->canvas->onPdfImportRequested) {
+                ctx->canvas->onPdfImportRequested(selectedPath, ctx->session);
+            } else {
+                Folio::PdfDocumentInfo docInfo;
+                if (Folio::PdfStorage::IngestPdf(selectedPath, ctx->session, ctx->importMode, docInfo)) {
+                    if (docInfo.isLongDocument) {
+                        LOG_INFO(CanvasEngine, "[PDF Recommendation] " + docInfo.warningMessage);
+                    }
+
+                    auto activePage = ctx->session->GetActivePage();
+                    if (activePage) {
+                        auto pdfObj = std::make_shared<Folio::PdfContainer>(
+                            docInfo.packagePath, docInfo.originalFileName, 0, docInfo.pageCount,
+                            ctx->insertPosWorld.x - 105.0, ctx->insertPosWorld.y - 148.5, 210.0, 297.0, ctx->asBackground
+                        );
+                        pdfObj->isExternalLink = docInfo.isExternal;
+                        pdfObj->guuid = GUIDGenerator::GenerateV4();
+                        pdfObj->uid = UIDGenerator::Next();
+                        pdfObj->UpdateBounds();
+
+                        activePage->AddObject(pdfObj);
+                        ctx->canvas->needsFullRebake = true;
+                        ctx->canvas->isDirty = true;
+                    }
+                }
+            }
+        }
+
+        delete ctx;
+    }
+
+    /**
+     * @brief Opens a native file dialog to pick and import a PDF document.
+     */
+    void OpenPdfFileDialog(SDL_Window* parentWin, DocumentSession* session, bool asBackground = false, Folio::PdfImportMode mode = Folio::PdfImportMode::LocalCopy) {
+        if (!session) return;
+        Point2D centerWorld = transform.ScreenToWorld(static_cast<float>(viewportW) * 0.5f, static_cast<float>(viewportH) * 0.5f);
+
+        auto* ctx = new PdfFileDialogContext{ this, session, centerWorld, asBackground, mode };
+
+        static const SDL_DialogFileFilter pdfFilters[] = {
+            { "PDF Documents (*.pdf)", "pdf" },
+            { "All Files (*.*)", "*" }
+        };
+
+        LOG_INFO(CanvasEngine, "Opening native PDF file dialog...");
+        SDL_ShowOpenFileDialog(OnPdfFileSelected, ctx, parentWin ? parentWin : sdlWindow, pdfFilters, 2, nullptr, false);
+    }
+
+    /**
+     * @brief Inserts an image from the OS clipboard directly onto the canvas.
+     * Returns true if an image was found and inserted; false if no clipboard image exists (no bloat/sample generated).
+     */
+    bool InsertImageFromClipboard(DocumentSession* session) {
+        if (!session) return false;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return false;
+
+        const char* mimeTypes[] = { "image/png", "image/jpeg", "image/bmp" };
+        for (const char* mime : mimeTypes) {
+            if (SDL_HasClipboardData(mime)) {
+                size_t dataSize = 0;
+                void* clipData = SDL_GetClipboardData(mime, &dataSize);
+                if (clipData && dataSize > 0) {
+                    BLImage clipImg;
+                    if (clipImg.read_from_data(clipData, dataSize) == BL_SUCCESS && !clipImg.is_empty()) {
+                        std::string ext = (std::strcmp(mime, "image/jpeg") == 0) ? ".jpg" :
+                                          (std::strcmp(mime, "image/bmp") == 0) ? ".bmp" : ".png";
+                        std::string relPath = DeduplicateAndSaveImage("", clipData, dataSize, session, ext);
+
+                        auto img = std::make_shared<Folio::ImageContainer>();
+                        img->SetImage(clipImg, relPath, 120.0);
+                        img->embeddedData.assign(static_cast<const uint8_t*>(clipData), static_cast<const uint8_t*>(clipData) + dataSize);
+
+                        Point2D centerWorld = transform.ScreenToWorld(static_cast<float>(viewportW) * 0.5f, static_cast<float>(viewportH) * 0.5f);
+                        img->worldX = centerWorld.x - img->worldWidth * 0.5;
+                        img->worldY = centerWorld.y - img->worldHeight * 0.5;
+                        img->UpdateBounds();
+
+                        session->AddImage(img);
+                        needsFullRebake = true;
+                        isDirty = true;
+                        SDL_free(clipData);
+                        LOG_INFO(CanvasEngine, "Pasted image from clipboard (" + std::to_string(clipImg.width()) + "x" + std::to_string(clipImg.height()) + " px)");
+                        return true;
+                    }
+                    SDL_free(clipData);
+                }
+            }
+        }
+        return false;
     }
 
     bool EraseSegment(float screenX0, float screenY0, float screenX1, float screenY1,
@@ -526,6 +1014,7 @@ public:
             if (modified) {
                 needsFullRebake = true;
                 ::Folio::UsageTracker::Instance().RecordEraserAction();
+                LOG_INFO(CanvasEngine, "Erased content on page (strokeEraser=" + std::string(isStrokeEraser ? "true" : "false") + ")");
             }
         }
         return modified;
@@ -635,11 +1124,47 @@ public:
             compCtx.stroke_path(lassoPath);
         }
 
+        // Draw active vector shape drag preview (World Coordinates)
+        if (shapeCreation.isDragging) {
+            double minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+            double maxX = std::max(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+            double minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+            double maxY = std::max(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+            double w = std::max(0.5, maxX - minX);
+            double h = std::max(0.5, maxY - minY);
+
+            Folio::ShapeObject preview(shapeCreation.shapeType, minX, minY, w, h);
+            preview.fillType = shapeCreation.defaultFillType;
+            preview.fillColor = shapeCreation.defaultFillColor;
+            preview.outlineType = shapeCreation.defaultOutlineType;
+            preview.strokeColor = shapeCreation.defaultOutlineColor;
+            preview.strokeWidth = shapeCreation.defaultStrokeWidth;
+
+            Viewport vp;
+            vp.zoom = transform.zoom;
+            preview.Render(compCtx, vp);
+        }
+
         compCtx.restore();
 
         // 3. Selection Gizmo Overlay Pass (Screen Coordinates)
         if (selectionGizmo.HasSelection()) {
             selectionGizmo.Render(compCtx, transform);
+        }
+
+        // 3b. Marquee Box Selection Overlay (Screen Coordinates)
+        if (marqueeBox.isActive) {
+            float bx = std::min(marqueeBox.startScreenX, marqueeBox.currentScreenX);
+            float by = std::min(marqueeBox.startScreenY, marqueeBox.currentScreenY);
+            float bw = std::abs(marqueeBox.currentScreenX - marqueeBox.startScreenX);
+            float bh = std::abs(marqueeBox.currentScreenY - marqueeBox.startScreenY);
+
+            compCtx.set_fill_style(BLRgba32(0x00, 0x78, 0xD4, 0x24));
+            compCtx.fill_rect(bx, by, bw, bh);
+
+            compCtx.set_stroke_style(BLRgba32(0x00, 0x78, 0xD4, 0xDD));
+            compCtx.set_stroke_width(1.5);
+            compCtx.stroke_rect(bx, by, bw, bh);
         }
 
         // 4. Dev Mode: Rnote-Style AABB & Collision Debugger (Screen Coordinates)
@@ -949,19 +1474,23 @@ private:
                 }
             }
 
-            // On-The-Fly Narrowphase Segment mini-AABBs
+            // On-The-Fly Narrowphase Segment mini-AABBs (Correctly transformed with stroke affine matrix)
             if (debugShowSegmentAABB && obj->type == ObjectType::InkContainer) {
                 auto ink = std::static_pointer_cast<InkContainer>(obj);
                 if (ink) {
                     ctx.set_stroke_style(isHit ? BLRgba32(0xFF, 0x52, 0x52, 0x88) : BLRgba32(0x76, 0xFF, 0x03, 0x55));
                     ctx.set_stroke_width(0.75);
+                    double scale = std::hypot(ink->transform.m00, ink->transform.m01);
                     for (const auto& stroke : ink->strokes) {
                         for (const auto& seg : stroke.segments) {
-                            double r = static_cast<double>(seg.width) * 0.5;
-                            double sMinX = std::min(seg.p0.x, seg.p1.x) - r;
-                            double sMinY = std::min(seg.p0.y, seg.p1.y) - r;
-                            double sMaxX = std::max(seg.p0.x, seg.p1.x) + r;
-                            double sMaxY = std::max(seg.p0.y, seg.p1.y) + r;
+                            // Map local segment endpoints through the object's affine transform
+                            BLPoint wp0 = ink->transform.map_point(seg.p0.x, seg.p0.y);
+                            BLPoint wp1 = ink->transform.map_point(seg.p1.x, seg.p1.y);
+                            double worldR = (static_cast<double>(seg.width) * 0.5) * scale;
+                            double sMinX = std::min(wp0.x, wp1.x) - worldR;
+                            double sMinY = std::min(wp0.y, wp1.y) - worldR;
+                            double sMaxX = std::max(wp0.x, wp1.x) + worldR;
+                            double sMaxY = std::max(wp0.y, wp1.y) + worldR;
 
                             Point2D sc1 = tr.WorldToScreen(sMinX, sMinY);
                             Point2D sc2 = tr.WorldToScreen(sMaxX, sMaxY);
@@ -1018,27 +1547,115 @@ private:
             SelectionGizmo::DrawFallbackText(ctx, static_cast<float>(qx + 3.0), static_cast<float>(qy - 13.0), qLabel);
         }
 
-        // 3. Top-Right HUD Badge: DEV MODE [F4]
-        {
-            char hudStr[80];
-            std::snprintf(hudStr, sizeof(hudStr), "DEV[F4] Vis:%zu Hits:%zu",
-                          visibleObjects.size(),
-                          debugCollision.hitUids.size());
-            float hudW = static_cast<float>(std::strlen(hudStr) * 6.5 + 16.0);
-            float hudX = static_cast<float>(viewportW) - hudW - 16.0f;
-            float hudY = 16.0f;
+        // 3. Canvas Origin Visualizer (World 0,0 mm)
+        Point2D originScreen = tr.WorldToScreen(0.0, 0.0);
+        if (originScreen.x >= -150.0 && originScreen.x <= static_cast<double>(viewportW) + 150.0 &&
+            originScreen.y >= -150.0 && originScreen.y <= static_cast<double>(viewportH) + 150.0) {
+            double ox = originScreen.x;
+            double oy = originScreen.y;
 
-            ctx.set_fill_style(BLRgba32(0x12, 0x16, 0x24, 0xEE));
-            ctx.fill_round_rect(hudX, hudY, hudW, 20.0f, 4.0f);
-            ctx.set_stroke_style(BLRgba32(0x00, 0xE5, 0xFF, 0xBB));
+            // Target reticle
+            ctx.set_stroke_style(BLRgba32(0xFF, 0xD6, 0x00, 0xCC)); // Gold
+            ctx.set_stroke_width(1.5);
+            ctx.stroke_circle(ox, oy, 8.0);
+            ctx.stroke_circle(ox, oy, 16.0);
+            ctx.set_fill_style(BLRgba32(0xFF, 0xD6, 0x00, 0x33));
+            ctx.fill_circle(ox, oy, 4.0);
+
+            // Axes (+X in Red, +Y in Green)
+            ctx.set_stroke_style(BLRgba32(0xFF, 0x17, 0x44, 0xEE)); // +X
+            ctx.set_stroke_width(2.0);
+            ctx.stroke_line(ox, oy, ox + 45.0, oy);
+
+            ctx.set_stroke_style(BLRgba32(0x00, 0xE6, 0x76, 0xEE)); // +Y
+            ctx.set_stroke_width(2.0);
+            ctx.stroke_line(ox, oy, ox, oy + 45.0);
+
+            SelectionGizmo::DrawFallbackText(ctx, static_cast<float>(ox + 48.0), static_cast<float>(oy - 4.0), "+X (mm)");
+            SelectionGizmo::DrawFallbackText(ctx, static_cast<float>(ox - 6.0), static_cast<float>(oy + 48.0), "+Y (mm)");
+
+            char originLabel[48];
+            std::snprintf(originLabel, sizeof(originLabel), "ORIGIN (0,0) mm");
+            ctx.set_fill_style(BLRgba32(0x10, 0x14, 0x1E, 0xEE));
+            double olW = (std::strlen(originLabel) * 6.5) + 6.0;
+            ctx.fill_round_rect(ox + 10.0, oy - 20.0, olW, 14.0, 2.0);
+            ctx.set_stroke_style(BLRgba32(0xFF, 0xD6, 0x00, 0xAA));
+            ctx.set_stroke_width(0.8);
+            ctx.stroke_round_rect(ox + 10.0, oy - 20.0, olW, 14.0, 2.0);
+            SelectionGizmo::DrawFallbackText(ctx, static_cast<float>(ox + 13.0), static_cast<float>(oy - 18.0), originLabel);
+        }
+
+        // 4. Viewport Center Reticle with World Coordinates
+        float screenMidX = static_cast<float>(viewportW) * 0.5f;
+        float screenMidY = static_cast<float>(viewportH) * 0.5f;
+        Point2D centerWorld = tr.ScreenToWorld(screenMidX, screenMidY);
+
+        ctx.set_stroke_style(BLRgba32(0x00, 0xE5, 0xFF, 0x55));
+        ctx.set_stroke_width(1.0);
+        ctx.stroke_line(screenMidX - 14.0f, screenMidY, screenMidX + 14.0f, screenMidY);
+        ctx.stroke_line(screenMidX, screenMidY - 14.0f, screenMidX, screenMidY + 14.0f);
+        ctx.stroke_circle(screenMidX, screenMidY, 3.5);
+
+        char centerLabel[64];
+        std::snprintf(centerLabel, sizeof(centerLabel), "Ctr: (%.1f, %.1f) mm", centerWorld.x, centerWorld.y);
+        ctx.set_fill_style(BLRgba32(0x10, 0x14, 0x1E, 0x99));
+        double clW = (std::strlen(centerLabel) * 6.5) + 6.0;
+        ctx.fill_round_rect(screenMidX + 6.0, screenMidY + 6.0, clW, 13.0, 2.0);
+        SelectionGizmo::DrawFallbackText(ctx, screenMidX + 9.0f, screenMidY + 7.0f, centerLabel);
+
+        // 5. Top-Right HUD Badge: DEV MODE & VIEWPORT TELEMETRY [F4]
+        {
+            Point2D vpMinWorld = tr.ScreenToWorld(0.0, 0.0);
+            Point2D vpMaxWorld = tr.ScreenToWorld(viewportW, viewportH);
+            double vpWorldW = vpMaxWorld.x - vpMinWorld.x;
+            double vpWorldH = vpMaxWorld.y - vpMinWorld.y;
+
+            const char* modeStr = "Semi-Inf";
+            if (tr.infinityMode == CanvasInfinityMode::FullInfinity) modeStr = "Full-Inf";
+            else if (tr.infinityMode == CanvasInfinityMode::VerticalScroll) modeStr = "VertScroll";
+            else if (tr.infinityMode == CanvasInfinityMode::HorizontalScroll) modeStr = "HorizScroll";
+
+            char line0[96], line1[96], line2[96], line3[96], line4[96], line5[96];
+            std::snprintf(line0, sizeof(line0), "DEV[F4] %s | Vis:%zu Hits:%zu",
+                          modeStr, visibleObjects.size(), debugCollision.hitUids.size());
+            std::snprintf(line1, sizeof(line1), "Zoom: %.1f%% (Scale: %.2f px/mm)",
+                          tr.zoom * 100.0, tr.GetEffectiveScale());
+            std::snprintf(line2, sizeof(line2), "Pan: (%.1f, %.1f) mm%s",
+                          tr.panXMm, tr.panYMm,
+                          (tr.infinityMode == CanvasInfinityMode::SemiInfinity && (tr.panXMm == 0.0 || tr.panYMm == 0.0)) ? " [CLAMP]" : "");
+            std::snprintf(line3, sizeof(line3), "World Ctr: (%.1f, %.1f) mm",
+                          centerWorld.x, centerWorld.y);
+            std::snprintf(line4, sizeof(line4), "View Bounds: [%.1f, %.1f] -> [%.1f, %.1f]",
+                          vpMinWorld.x, vpMinWorld.y, vpMaxWorld.x, vpMaxWorld.y);
+            std::snprintf(line5, sizeof(line5), "View Size: %.1fx%.1f mm (%dx%d px)",
+                          vpWorldW, vpWorldH, viewportW, viewportH);
+
+            const char* lines[6] = { line0, line1, line2, line3, line4, line5 };
+            float cardW = 325.0f;
+            float lineH = 15.0f;
+            float cardH = 6 * lineH + 12.0f;
+            float cardX = static_cast<float>(viewportW) - cardW - 16.0f;
+            float cardY = 16.0f;
+
+            ctx.set_fill_style(BLRgba32(0x0E, 0x12, 0x1C, 0xF2));
+            ctx.fill_round_rect(cardX, cardY, cardW, cardH, 5.0f);
+            ctx.set_stroke_style(BLRgba32(0x00, 0xE5, 0xFF, 0xAA));
             ctx.set_stroke_width(1.0);
-            ctx.stroke_round_rect(hudX, hudY, hudW, 20.0f, 4.0f);
+            ctx.stroke_round_rect(cardX, cardY, cardW, cardH, 5.0f);
 
             // Indicator dot: Green if clean, Red if hits active
             BLRgba32 dotColor = debugCollision.hitUids.empty() ? BLRgba32(0x00, 0xE6, 0x76, 0xFF) : BLRgba32(0xFF, 0x17, 0x44, 0xFF);
-            ctx.fill_circle(hudX + 8.0f, hudY + 10.0f, 3.0, dotColor);
+            ctx.fill_circle(cardX + 11.0f, cardY + 11.0f, 3.5, dotColor);
 
-            SelectionGizmo::DrawFallbackText(ctx, hudX + 16.0f, hudY + 5.0f, hudStr);
+            // Divider line after header
+            ctx.set_stroke_style(BLRgba32(0x00, 0xE5, 0xFF, 0x44));
+            ctx.stroke_line(cardX + 6.0f, cardY + lineH + 5.0f, cardX + cardW - 6.0f, cardY + lineH + 5.0f);
+
+            for (int i = 0; i < 6; ++i) {
+                float textX = cardX + (i == 0 ? 20.0f : 10.0f);
+                float textY = cardY + 5.0f + (i * lineH);
+                SelectionGizmo::DrawFallbackText(ctx, textX, textY, lines[i]);
+            }
         }
 
         ctx.restore();

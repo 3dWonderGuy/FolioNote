@@ -12,7 +12,7 @@
 #include "core/document/canvas_page.hpp"
 #include "core/objects/ink_container.hpp"
 #include "core/objects/text_box.hpp"
-#include "core/objects/image_object.hpp"
+#include "core/objects/image_container.hpp"
 
 using TextBox = Folio::TextBoxObject;
 
