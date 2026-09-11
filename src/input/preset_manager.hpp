@@ -2,6 +2,7 @@
 #include "imgui.h"
 #include "input/pen_palette.hpp"
 #include "app/settings_manager.hpp"
+#include "utils/logger.hpp"
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -92,6 +93,7 @@ public:
         activePen.baseSize      = p.thicknessMm;
         activePen.opacity       = p.opacity;
         activePen.strokePattern = p.strokePattern;
+        LOG_INFO(InputStateMachine, "Applied pen preset: '" + p.name + "' (" + p.id + ", thickness=" + std::to_string(p.thicknessMm) + "mm)");
 
         // Convert ImVec4 normalized (0.0 - 1.0) RGBA color values to Blend2D 8-bit unsigned integer channels
         uint8_t cr = static_cast<uint8_t>(std::clamp(p.color.x * 255.0f, 0.0f, 255.0f));

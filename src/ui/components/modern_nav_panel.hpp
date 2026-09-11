@@ -1897,6 +1897,7 @@ private:
                         if (activeSec->activePageIndex != p) {
                             activeSec->activePageIndex = p;
                             ::Folio::UsageTracker::Instance().RecordPageSwitch();
+                            LOG_INFO(NavPanel, "Switched active page to: '" + page->title + "' (" + page->guid + ")");
                         }
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;

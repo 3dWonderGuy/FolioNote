@@ -411,6 +411,22 @@ void BinarySerializer::SerializeObject(const std::shared_ptr<CanvasObject>& obj,
         writer.WriteString(img->imagePath);
         writer.WriteU32(static_cast<uint32_t>(img->embeddedData.size()));
         writer.WriteBytes(img->embeddedData.data(), img->embeddedData.size());
+    } else if (obj->type == ObjectType::Shape) {
+        auto shp = std::static_pointer_cast<ShapeObject>(obj);
+        writer.WriteU8(static_cast<uint8_t>(shp->shapeType));
+        writer.WriteU8(static_cast<uint8_t>(shp->fillType));
+        writer.WriteU8(static_cast<uint8_t>(shp->outlineType));
+        writer.WriteDouble(shp->worldX);
+        writer.WriteDouble(shp->worldY);
+        writer.WriteDouble(shp->worldWidth);
+        writer.WriteDouble(shp->worldHeight);
+        writer.WriteU32(shp->strokeColor.value);
+        writer.WriteU32(shp->fillColor.value);
+        writer.WriteU32(shp->secondaryFillColor.value);
+        writer.WriteDouble(shp->strokeWidth);
+        writer.WriteDouble(shp->cornerRadius);
+        writer.WriteDouble(shp->param1);
+        writer.WriteDouble(shp->param2);
     } else {
         LOG_WARN(BinarySerializer, "Serializing generic object with type ID: " + std::to_string(static_cast<int>(obj->type)));
     }
@@ -565,7 +581,37 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
         if (embeddedSize > 0) {
             img->embeddedData = reader.ReadBytes(embeddedSize);
         }
+        img->EnsureLoaded();
         return img;
+
+    } else if (type == ObjectType::Shape) {
+        auto shp = std::make_shared<ShapeObject>();
+        shp->guuid = objGuid;
+        shp->uid = UIDGenerator::Next();
+        shp->bounds = bounds;
+        shp->transform = transform;
+        shp->zOrder = zOrder;
+        shp->opacity = opacity;
+        shp->isVisible = isVisible ? 1 : 0;
+        shp->isLocked = isLocked ? 1 : 0;
+        shp->isSelectable = isSelectable ? 1 : 0;
+
+        shp->shapeType = static_cast<ShapeType>(reader.ReadU8());
+        shp->fillType = static_cast<ShapeFillType>(reader.ReadU8());
+        shp->outlineType = static_cast<ShapeOutlineType>(reader.ReadU8());
+        shp->worldX = reader.ReadDouble();
+        shp->worldY = reader.ReadDouble();
+        shp->worldWidth = reader.ReadDouble();
+        shp->worldHeight = reader.ReadDouble();
+        shp->strokeColor.value = reader.ReadU32();
+        shp->fillColor.value = reader.ReadU32();
+        shp->secondaryFillColor.value = reader.ReadU32();
+        shp->strokeWidth = reader.ReadDouble();
+        shp->cornerRadius = reader.ReadDouble();
+        shp->param1 = reader.ReadDouble();
+        shp->param2 = reader.ReadDouble();
+        shp->UpdateBounds();
+        return shp;
     }
 
     LOG_WARN(BinarySerializer, "Skipping unrecognized object type: " + std::to_string(static_cast<int>(type)));

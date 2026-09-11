@@ -8,7 +8,8 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container.hpp"
 #include "core/objects/text_box.hpp"
-#include "core/objects/image_object.hpp"
+#include "core/objects/image_container.hpp"
+#include "core/objects/shape_container.hpp"
 
 namespace Folio {
 
