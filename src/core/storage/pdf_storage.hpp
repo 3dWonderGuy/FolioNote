@@ -9,6 +9,7 @@
 #include "utils/file_loader.hpp"
 #include "utils/logger.hpp"
 #include "core/document/document_session.hpp"
+#include "core/render/pdf_renderer.hpp"
 
 namespace Folio {
 
@@ -35,6 +36,18 @@ public:
     /**
      * @brief Inspects an external PDF file without modifying it, returning metadata,
      * detected page count, and recommendation flags.
+     *
+     * Working Process:
+     * 1. Validates that the input source file exists and is accessible.
+     * 2. Computes a 64-bit content hash for package deduplication.
+     * 3. Uses PdfRenderer::GetPageCount (PDFium) to accurately parse the document catalog,
+     *    page tree B-tree, compressed object streams (/ObjStm), and cross-reference streams.
+     * 4. If PDFium is unavailable or fails, gracefully falls back to FileLoader::DetectPdfPageCount.
+     * 5. Flags documents with >= 20 pages as long documents and populates recommendation warnings.
+     *
+     * @param srcPath UTF-8 path to the PDF on disk.
+     * @param outInfo Destination struct for populated metadata and page count.
+     * @return true on successful inspection, false if file does not exist or cannot be read.
      */
     static bool InspectPdf(const std::string& srcPath, PdfDocumentInfo& outInfo) {
         std::error_code ec;
@@ -53,7 +66,17 @@ public:
         char hashStr[32];
         std::snprintf(hashStr, sizeof(hashStr), "%016llx", static_cast<unsigned long long>(hash));
 
-        int pages = FileLoader::DetectPdfPageCount(srcPath);
+        // 1. Primary inspection: Query page count via PDFium engine
+        // Handles compressed object streams (/ObjStm), multi-level page trees, and linearized PDFs
+        int pages = PdfRenderer::GetPageCount(srcPath);
+
+        // 2. Fallback to lightweight byte scan if PDFium is not compiled or returned 0
+        if (pages <= 0) {
+            pages = FileLoader::DetectPdfPageCount(srcPath);
+        }
+        if (pages <= 0) {
+            pages = 1;
+        }
 
         outInfo.originalPath = srcPath;
         outInfo.originalFileName = std::filesystem::path(srcPath).filename().string();
