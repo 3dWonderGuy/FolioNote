@@ -165,6 +165,9 @@ public:
         int32_t level = page->nestingLevel;
         bool collapsed = page->isCollapsed;
         int32_t order = (sortOrder != 0) ? sortOrder : page->sortOrder;
+        bool isDedicatedPdf = page->isDedicatedPdf;
+        std::string dedicatedPdfPath = page->dedicatedPdfPath;
+        std::string dedicatedPdfBookmarks = page->dedicatedPdfBookmarks;
 
         // ---------------------------------------------------------------------------------
         // Stage 2: Synchronous In-Memory Binary Serialization
@@ -190,7 +193,7 @@ public:
         // Stage 3 & 4: Background ThreadPool Dispatch (Disk I/O & SQLite Write)
         // Offload disk writing and database upserting to a worker thread.
         // ---------------------------------------------------------------------------------
-        return GetGlobalThreadPool().Enqueue([db, pkgPath, pageGuid, sectionGuid, title, createdDate, createdTime, order, blobData, parentGuid, level, collapsed]() -> bool {
+        return GetGlobalThreadPool().Enqueue([db, pkgPath, pageGuid, sectionGuid, title, createdDate, createdTime, order, blobData, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks]() -> bool {
             // Write compressed binary payload to disk: pages/{pageGuid}.ink
             std::string inkPath = (std::filesystem::path(pkgPath) / "pages" / (pageGuid + ".ink")).string();
             std::ofstream out(inkPath, std::ios::binary);
@@ -204,7 +207,7 @@ public:
             }
 
             // Update SQLite metadata record in 'pages' table
-            bool success = db->SavePageMetadata(pageGuid, sectionGuid, title, createdDate, createdTime, order, hasBlob, parentGuid, level, collapsed);
+            bool success = db->SavePageMetadata(pageGuid, sectionGuid, title, createdDate, createdTime, order, hasBlob, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks);
             if (!success) {
                 LOG_ERROR(PageRepository, "Asynchronous page metadata write failed for GUID: " + pageGuid);
             }
@@ -453,6 +456,9 @@ public:
                 page->createdTimeStr = pRec.createdTime;
                 page->sortOrder = pRec.sortOrder;
                 page->isCollapsed = pRec.isCollapsed;
+                page->isDedicatedPdf = pRec.isDedicatedPdf;
+                page->dedicatedPdfPath = pRec.dedicatedPdfPath;
+                page->dedicatedPdfBookmarks = pRec.dedicatedPdfBookmarks;
                 page->isLoaded = false; // Lazy loading: payload will be fetched on-demand
                 page->isModified = false;
                 section->pages.push_back(page);

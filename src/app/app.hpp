@@ -29,6 +29,7 @@
 #include "input/input_manager.hpp"
 #include "utils/file_loader.hpp"
 #include "utils/usage_tracker.hpp"
+#include "app/theme_manager.hpp"
 #include <lunasvg.h>
 #include <chrono>
 #include <thread>
@@ -58,6 +59,16 @@ public:
     Folio::PdfViewerPage pdfViewer;
 
     AppViewMode currentView = AppViewMode::CanvasWorkspace;
+
+    /**
+     * @brief Stored world coordinates (in millimeters) where the user right-clicked on the infinite canvas.
+     * 
+     * Mathematical derivation:
+     *   P_world = ScreenToWorld(P_screen) = (P_screen / (DPI * Zoom)) - Pan
+     * This world position serves as the insertion origin for clipboard text paste operations
+     * or context-dependent annotations spawned from the right-click menu.
+     */
+    Point2D generalContextMenuWorldPos{0.0, 0.0};
 
     bool Init(const char* title = "FolioNote", int initialW = 1920, int initialH = 1080) {
         if (!SDL_Init(SDL_INIT_VIDEO)) return false;
@@ -687,6 +698,23 @@ public:
                         inputManager.stateMachine.isCanvasHovered = false;
                     }
 
+                    // =========================================================================
+                    // RIGHT-CLICK DETECTION ON GENERAL CANVAS
+                    // =========================================================================
+                    // When the user right clicks on the canvas viewport, we capture the mouse
+                    // cursor screen coordinates and project them into the continuous 2D world
+                    // coordinate space:
+                    //   worldX = (screenX - originX) / (pixelsPerMm * zoom) - panXMm
+                    //   worldY = (screenY - originY) / (pixelsPerMm * zoom) - panYMm
+                    // This position is retained so pasted elements appear exactly under the cursor.
+                    if (inputManager.wasCanvasImageHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                        ImVec2 mousePos = ImGui::GetMousePos();
+                        float localX = mousePos.x - canvasOrigin.x;
+                        float localY = mousePos.y - canvasOrigin.y;
+                        generalContextMenuWorldPos = canvas.transform.ScreenToWorld(localX, localY);
+                        ImGui::OpenPopup("##GeneralCanvasContextMenu");
+                    }
+
                     Point2D titleScreen = canvas.transform.WorldToScreen(80.0, 50.0);
                     float currentZoom = static_cast<float>(canvas.transform.zoom);
                     if (titleScreen.x > -800.0 && titleScreen.y > -300.0) {
@@ -738,6 +766,91 @@ public:
                         ImGui::PopFont();
 
                         drawList->AddText(ImVec2(boxMin.x + padX, boxMin.y + padY + titleH + gapY), dateTextCol, dateTimeStr.c_str());
+                    }
+
+                    // =========================================================================
+                    // GENERAL INFINITE CANVAS RIGHT-CLICK CONTEXT MENU
+                    // =========================================================================
+                    // Provides standard workspace operations:
+                    // 1. Paste text from clipboard as a new persistent text block at click position.
+                    // 2. Select All / Deselect objects via the interactive SelectionGizmo.
+                    // 3. Create bidirectional Markdown link to this page: [Title](folionote://page/<guid>)
+                    // 4. Viewport controls: Reset Zoom (100%) and Reset View to origin (0, 0).
+                    {
+                        ContextMenuThemeScope ctxScope(themeManager);
+                        if (ImGui::BeginPopup("##GeneralCanvasContextMenu")) {
+                            auto activePg = session.GetActivePage();
+                            const char* displayTitle = (canvas.pageTitle[0] != '\0') ? canvas.pageTitle : (activePg ? activePg->title.c_str() : "Untitled Page");
+
+                            ImGui::PushFont(FolioTheme::FontNavBoldLarge ? FolioTheme::FontNavBoldLarge : FolioTheme::FontBold);
+                            ImGui::TextColored(themeManager.colorPrimary, "%s", displayTitle);
+                            ImGui::PopFont();
+                            ImGui::TextColored(themeManager.colorTextMuted, "Pos: (%.1f, %.1f) mm  |  Zoom: %.0f%%", 
+                                               generalContextMenuWorldPos.x, generalContextMenuWorldPos.y, canvas.transform.zoom * 100.0);
+                            ImGui::Separator();
+
+                            // 1. Paste (enabled if clipboard has text)
+                            bool canPaste = SDL_HasClipboardText();
+                            if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPaste)) {
+                                char* clipText = SDL_GetClipboardText();
+                                if (clipText) {
+                                    if (clipText[0] != '\0') {
+                                        auto tb = std::make_shared<Folio::TextBoxObject>();
+                                        tb->worldX = generalContextMenuWorldPos.x;
+                                        tb->worldY = generalContextMenuWorldPos.y;
+                                        tb->text = clipText;
+                                        tb->UpdateBounds();
+                                        session.AddTextBox(tb);
+                                        canvas.isDirty = true;
+                                    }
+                                    SDL_free(clipText);
+                                }
+                            }
+
+                            // 2. Select All & Clear Selection
+                            if (ImGui::MenuItem("Select All", "Ctrl+A")) {
+                                auto allObjs = session.QueryVisible(canvas.GetViewport());
+                                for (auto& obj : allObjs) {
+                                    if (obj) obj->isSelected = 1;
+                                }
+                                canvas.selectionGizmo.SetSelectedObjects(allObjs);
+                                canvas.isDirty = true;
+                            }
+
+                            if (canvas.selectionGizmo.HasSelection()) {
+                                if (ImGui::MenuItem("Clear Selection", "Esc")) {
+                                    canvas.selectionGizmo.ClearSelection();
+                                    canvas.isDirty = true;
+                                }
+                            }
+
+                            ImGui::Separator();
+
+                            // 3. Create Link to This Page
+                            if (ImGui::MenuItem("Create Link to This Page")) {
+                                if (activePg) {
+                                    std::string linkMarkdown = "[" + std::string(displayTitle) + "](folionote://page/" + activePg->guid + ")";
+                                    SDL_SetClipboardText(linkMarkdown.c_str());
+                                }
+                            }
+
+                            ImGui::Separator();
+
+                            // 4. Zoom and Viewport Reset
+                            if (ImGui::MenuItem("Reset Zoom to 100%")) {
+                                canvas.transform.zoom = 1.0;
+                                canvas.isDirty = true;
+                            }
+
+                            if (ImGui::MenuItem("Reset View to Origin")) {
+                                canvas.transform.panXMm = 0.0;
+                                canvas.transform.panYMm = 0.0;
+                                canvas.transform.zoom = 1.0;
+                                canvas.isDirty = true;
+                            }
+
+                            ImGui::EndPopup();
+                        }
                     }
                 }
                 ImGui::End();

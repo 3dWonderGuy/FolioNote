@@ -669,7 +669,9 @@ private:
             auto newPage = std::make_shared<CanvasPage>(pageTitle);
             newPage->guid = GUIDGenerator::GenerateV4();
             newPage->isDedicatedPdf = true;
-            newPage->dedicatedPdfPath = docInfo.diskPath;
+            // Store portable package-relative path for local copies, or absolute path for external links
+            newPage->dedicatedPdfPath = docInfo.isExternal ? docInfo.diskPath : docInfo.packagePath;
+            newPage->isModified = true;
 
             auto pdfObj = std::make_shared<PdfContainer>(
                 docInfo.packagePath, docInfo.originalFileName, 0, docInfo.pageCount,
@@ -687,6 +689,7 @@ private:
             targetSec->activePageIndex = targetSec->pages.size() - 1;
         }
 
+        session.workspace.FlushActiveNotebookAsync();
         canvas.needsFullRebake = true;
         canvas.isDirty = true;
         LOG_INFO(PdfStorage, "Successfully imported PDF '" + docInfo.originalFileName +

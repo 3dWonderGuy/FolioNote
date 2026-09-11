@@ -150,6 +150,9 @@ bool DBManager::InitSchema() {
             is_collapsed INTEGER NOT NULL DEFAULT 0,
             has_blob INTEGER NOT NULL DEFAULT 0,
             last_accessed INTEGER NOT NULL DEFAULT 0,
+            is_dedicated_pdf INTEGER NOT NULL DEFAULT 0,
+            dedicated_pdf_path TEXT,
+            dedicated_pdf_bookmarks TEXT,
             FOREIGN KEY (section_guid) REFERENCES sections(guid) ON DELETE CASCADE
         );
 
@@ -171,6 +174,9 @@ bool DBManager::InitSchema() {
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN parent_page_guid TEXT;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN nesting_level INTEGER NOT NULL DEFAULT 0;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN is_collapsed INTEGER NOT NULL DEFAULT 0;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN is_dedicated_pdf INTEGER NOT NULL DEFAULT 0;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_path TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_bookmarks TEXT;", nullptr, nullptr, nullptr);
 
     // Initialize FTS5 and spatial search catalog
     if (!NotebookSearchIndex::InitSchema(db)) {
@@ -486,13 +492,15 @@ bool DBManager::SavePageMetadata(const std::string& pageGuid, const std::string&
                                  const std::string& title, const std::string& createdDate, 
                                  const std::string& createdTime, int32_t sortOrder,
                                  bool hasBlob, const std::string& parentPageGuid,
-                                 int32_t nestingLevel, bool isCollapsed) {
+                                 int32_t nestingLevel, bool isCollapsed,
+                                 bool isDedicatedPdf, const std::string& dedicatedPdfPath,
+                                 const std::string& dedicatedPdfBookmarks) {
     std::lock_guard<std::mutex> lock(dbMutex);
     if (!db) return false;
 
     const char* sql = R"(
-        INSERT INTO pages (guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, last_accessed)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pages (guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, last_accessed, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guid) DO UPDATE SET
             section_guid = excluded.section_guid,
             title = excluded.title,
@@ -503,7 +511,10 @@ bool DBManager::SavePageMetadata(const std::string& pageGuid, const std::string&
             sort_order = excluded.sort_order,
             is_collapsed = excluded.is_collapsed,
             has_blob = excluded.has_blob,
-            last_accessed = excluded.last_accessed;
+            last_accessed = excluded.last_accessed,
+            is_dedicated_pdf = excluded.is_dedicated_pdf,
+            dedicated_pdf_path = excluded.dedicated_pdf_path,
+            dedicated_pdf_bookmarks = excluded.dedicated_pdf_bookmarks;
     )";
 
     sqlite3_stmt* stmt = nullptr;
@@ -528,6 +539,17 @@ bool DBManager::SavePageMetadata(const std::string& pageGuid, const std::string&
     sqlite3_bind_int(stmt, 9, isCollapsed ? 1 : 0);
     sqlite3_bind_int(stmt, 10, hasBlob ? 1 : 0);
     sqlite3_bind_int64(stmt, 11, now);
+    sqlite3_bind_int(stmt, 12, isDedicatedPdf ? 1 : 0);
+    if (!dedicatedPdfPath.empty()) {
+        sqlite3_bind_text(stmt, 13, dedicatedPdfPath.c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 13);
+    }
+    if (!dedicatedPdfBookmarks.empty()) {
+        sqlite3_bind_text(stmt, 14, dedicatedPdfBookmarks.c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 14);
+    }
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -562,7 +584,7 @@ std::vector<DBPageRecord> DBManager::LoadPagesMetadata(const std::string& sectio
     std::vector<DBPageRecord> results;
     if (!db) return results;
 
-    const char* sql = "SELECT guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob FROM pages WHERE section_guid = ? ORDER BY sort_order ASC;";
+    const char* sql = "SELECT guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks FROM pages WHERE section_guid = ? ORDER BY sort_order ASC;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         LOG_ERROR(DBManager, "Failed to prepare LoadPagesMetadata: " + std::string(sqlite3_errmsg(db)));
@@ -584,6 +606,11 @@ std::vector<DBPageRecord> DBManager::LoadPagesMetadata(const std::string& sectio
         page.sortOrder = sqlite3_column_int(stmt, 7);
         page.isCollapsed = (sqlite3_column_int(stmt, 8) != 0);
         page.hasBlob = (sqlite3_column_int(stmt, 9) != 0);
+        page.isDedicatedPdf = (sqlite3_column_int(stmt, 10) != 0);
+        const auto* pdfPathText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
+        page.dedicatedPdfPath = pdfPathText ? pdfPathText : "";
+        const auto* pdfBmText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
+        page.dedicatedPdfBookmarks = pdfBmText ? pdfBmText : "";
         results.push_back(std::move(page));
     }
 
