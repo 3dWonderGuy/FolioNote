@@ -510,14 +510,11 @@ public:
                     FolioUI::ToolbarSectionBuilder sec("grp_insert_files", "Files", theme, isMini);
 
                     // 1. Import PDF
-                    sec.AddSplitButton("btn_insert_pdf", iconPdf, "Import PDF", "Import PDF documents as printout pages or canvas background", false,
-                        [&]() {},
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddItem("Insert as Printout Pages...", iconPdf, nullptr, [&]() {});
-                            menu.AddItem("Insert as Canvas Background...", iconPdf, nullptr, [&]() {});
-                            menu.AddSeparator();
-                            menu.AddItem("Insert First Page Only...", 0, nullptr, [&]() {});
-                        }
+                    sec.AddLargeButton("btn_insert_pdf", iconPdf, "Import PDF", "Import a PDF document into notebook sections or dedicated viewer", false,
+                        [&]() {
+                            canvas.OpenPdfFileDialog(nullptr, currentSession);
+                        },
+                        false, ImVec2(64.0f, 58.0f)
                     );
 
                     // 2. File Attachment (storage options: Make a copy vs. System-wide path reference)
@@ -2016,6 +2013,7 @@ public:
                                         if (selectedShape) {
                                             selectedShape->shapeType = item.type;
                                             selectedShape->UpdateBounds();
+                                            canvas.SyncSelectionToSpatialIndex(currentSession);
                                             canvas.selectionGizmo.RecalculateBounds();
                                             canvas.needsFullRebake = true;
                                             canvas.isDirty = true;
@@ -2278,6 +2276,7 @@ public:
                             if (selectedShape) {
                                 selectedShape->strokeWidth = nw;
                                 selectedShape->UpdateBounds();
+                                canvas.SyncSelectionToSpatialIndex(currentSession);
                                 canvas.selectionGizmo.RecalculateBounds();
                                 canvas.needsFullRebake = true;
                                 canvas.isDirty = true;
@@ -2290,6 +2289,7 @@ public:
                                 if (selectedShape) {
                                     selectedShape->strokeWidth = w;
                                     selectedShape->UpdateBounds();
+                                    canvas.SyncSelectionToSpatialIndex(currentSession);
                                     canvas.selectionGizmo.RecalculateBounds();
                                     canvas.needsFullRebake = true;
                                     canvas.isDirty = true;

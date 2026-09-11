@@ -212,6 +212,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
             else if (justUp) {
                 if (canvas.selectionGizmo.isDragging) {
                     canvas.selectionGizmo.OnPointerUp();
+                    canvas.SyncSelectionToSpatialIndex(&session);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                 } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
@@ -430,6 +431,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         else if (justUp) {
             if (canvas.selectionGizmo.isDragging) {
                 canvas.selectionGizmo.OnPointerUp();
+                canvas.SyncSelectionToSpatialIndex(&session);
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
             } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
