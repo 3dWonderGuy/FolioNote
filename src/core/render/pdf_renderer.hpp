@@ -44,6 +44,57 @@ struct PdfOutlineItem {
     std::vector<PdfOutlineItem> children;
 };
 
+#if defined(FOLIO_HAS_PDFIUM)
+/**
+ * @brief RAII container managing FPDF_DOCUMENT lifecycles across platforms.
+ * Supports both standard native FPDF_LoadDocument descriptors and custom
+ * FPDF_FILEACCESS streams (such as wide-character _wfopen streams for Windows Unicode paths).
+ * Automatically releases PDFium document handles and underlying file streams upon destruction.
+ */
+struct PdfDocHolder {
+    FPDF_DOCUMENT doc = nullptr;
+    FILE* fileHandle = nullptr;
+
+    PdfDocHolder() = default;
+    PdfDocHolder(FPDF_DOCUMENT d, FILE* f = nullptr) : doc(d), fileHandle(f) {}
+    ~PdfDocHolder() {
+        if (doc) {
+            FPDF_CloseDocument(doc);
+            doc = nullptr;
+        }
+        if (fileHandle) {
+            fclose(fileHandle);
+            fileHandle = nullptr;
+        }
+    }
+
+    // Move semantics (non-copyable)
+    PdfDocHolder(const PdfDocHolder&) = delete;
+    PdfDocHolder& operator=(const PdfDocHolder&) = delete;
+
+    PdfDocHolder(PdfDocHolder&& other) noexcept
+        : doc(other.doc), fileHandle(other.fileHandle) {
+        other.doc = nullptr;
+        other.fileHandle = nullptr;
+    }
+
+    PdfDocHolder& operator=(PdfDocHolder&& other) noexcept {
+        if (this != &other) {
+            if (doc) FPDF_CloseDocument(doc);
+            if (fileHandle) fclose(fileHandle);
+            doc = other.doc;
+            fileHandle = other.fileHandle;
+            other.doc = nullptr;
+            other.fileHandle = nullptr;
+        }
+        return *this;
+    }
+
+    explicit operator bool() const { return doc != nullptr; }
+    FPDF_DOCUMENT get() const { return doc; }
+};
+#endif
+
 class PdfRenderer {
 public:
     static void InitializeLibrary() {
@@ -68,22 +119,105 @@ public:
 #endif
     }
 
+    /**
+     * @brief Cross-platform, Unicode-aware loader to safely open a PDF document with PDFium.
+     *
+     * General Working Process:
+     * 1. On Windows: Standard FPDF_LoadDocument accepts a char* string interpreted via the system ANSI code page.
+     *    When files are named with non-ASCII characters (e.g. French accents, Cyrillic, Chinese, Japanese, or emoji),
+     *    FPDF_LoadDocument fails to open the file. We fall back to std::filesystem::u8path and _wfopen to open
+     *    the file with full wide-character fidelity, connecting it to FPDF_LoadCustomDocument via an FPDF_FILEACCESS
+     *    block-reading callback.
+     * 2. On Linux / macOS / Android: System file paths are natively UTF-8. If FPDF_LoadDocument encounters an issue,
+     *    standard fopen is used as the custom fallback.
+     *
+     * @param filePath Full UTF-8 encoded path to the PDF document.
+     * @return PdfDocHolder RAII container wrapping the opened FPDF_DOCUMENT and any custom file handle.
+     */
+#if defined(FOLIO_HAS_PDFIUM)
+    static PdfDocHolder OpenDocument(const std::string& filePath) {
+        InitializeLibrary();
+        if (filePath.empty()) return {};
+
+        // 1. First attempt: standard fast load path
+        FPDF_DOCUMENT doc = FPDF_LoadDocument(filePath.c_str(), nullptr);
+        if (doc) {
+            return PdfDocHolder(doc, nullptr);
+        }
+
+        // 2. Fallback: Wide/UTF-8 custom stream reader for non-ASCII paths
+        FILE* fp = nullptr;
+#if defined(_WIN32)
+        std::error_code ec;
+        auto p = std::filesystem::u8path(filePath);
+        if (std::filesystem::exists(p, ec)) {
+            fp = _wfopen(p.wstring().c_str(), L"rb");
+        }
+#else
+        fp = fopen(filePath.c_str(), "rb");
+#endif
+
+        if (fp) {
+            fseek(fp, 0, SEEK_END);
+            long sz = ftell(fp);
+            fseek(fp, 0, SEEK_SET);
+
+            if (sz > 0) {
+                FPDF_FILEACCESS access{};
+                access.m_FileLen = static_cast<unsigned long>(sz);
+                access.m_Param = fp;
+                access.m_GetBlock = [](void* param, unsigned long pos, unsigned char* buf, unsigned long size) -> int {
+                    FILE* f = static_cast<FILE*>(param);
+                    if (!f || !buf || size == 0) return 0;
+                    if (fseek(f, static_cast<long>(pos), SEEK_SET) != 0) return 0;
+                    return fread(buf, 1, size, f) == size ? 1 : 0;
+                };
+
+                doc = FPDF_LoadCustomDocument(&access, nullptr);
+                if (doc) {
+                    return PdfDocHolder(doc, fp);
+                }
+            }
+            fclose(fp);
+        }
+        return {};
+    }
+#endif
+
+    /**
+     * @brief Accurately queries the total number of pages in a PDF document using PDFium.
+     * Accurately parses document catalogs, multi-level B-tree page hierarchies, compressed object
+     * streams (/ObjStm), linearized fast web view catalogs, and cross-reference streams.
+     *
+     * @param filePath Full UTF-8 path to the PDF document.
+     * @return Positive total page count on success, or 0 if the file could not be parsed.
+     */
+    static int GetPageCount(const std::string& filePath) {
+        if (filePath.empty()) return 0;
+#if defined(FOLIO_HAS_PDFIUM)
+        auto holder = OpenDocument(filePath);
+        if (holder) {
+            int count = FPDF_GetPageCount(holder.get());
+            return count > 0 ? count : 0;
+        }
+#endif
+        return 0;
+    }
+
     static bool GetPageDimensions(const std::string& filePath, int pageIndex, double& outWidthMm, double& outHeightMm) {
         outWidthMm = 210.0;
         outHeightMm = 297.0;
 #if defined(FOLIO_HAS_PDFIUM)
-        InitializeLibrary();
-        FPDF_DOCUMENT doc = FPDF_LoadDocument(filePath.c_str(), nullptr);
-        if (!doc) return false;
+        auto holder = OpenDocument(filePath);
+        if (!holder) return false;
         double ptW = 0.0, ptH = 0.0;
-        if (FPDF_GetPageSizeByIndex(doc, pageIndex, &ptW, &ptH)) {
+        if (FPDF_GetPageSizeByIndex(holder.get(), pageIndex, &ptW, &ptH)) {
+            // Math: PDF coordinate points are defined at 72 points per inch (1 pt = 1/72 in = 25.4/72 mm).
             constexpr double PT_TO_MM = 25.4 / 72.0;
             outWidthMm = ptW * PT_TO_MM;
             outHeightMm = ptH * PT_TO_MM;
-            FPDF_CloseDocument(doc);
             return true;
         }
-        FPDF_CloseDocument(doc);
 #endif
         return false;
     }
@@ -99,20 +233,18 @@ public:
         }
 
 #if defined(FOLIO_HAS_PDFIUM)
-        InitializeLibrary();
-
-        FPDF_DOCUMENT doc = FPDF_LoadDocument(filePath.c_str(), nullptr);
-        if (!doc) {
+        auto docHolder = OpenDocument(filePath);
+        if (!docHolder) {
             unsigned long err = FPDF_GetLastError();
             result.errorMessage = "PDFium failed to load document (error=" + std::to_string(err) + ")";
             LOG_WARN(PdfStorage, result.errorMessage + ": " + filePath);
             return result;
         }
 
+        FPDF_DOCUMENT doc = docHolder.get();
         int pageCount = FPDF_GetPageCount(doc);
         if (pageIndex < 0 || pageIndex >= pageCount) {
             result.errorMessage = "Page index out of range";
-            FPDF_CloseDocument(doc);
             return result;
         }
 
@@ -208,35 +340,31 @@ public:
         }
 
         FPDF_ClosePage(page);
-        FPDF_CloseDocument(doc);
         return result;
 #else
-        result.errorMessage = "PDFium not configured yet. Using high-fidelity vector placeholder.";
+        result.errorMessage = "PDFium support is not compiled into this build";
         return result;
 #endif
     }
 
     static bool LoadTextLayer(const std::string& filePath, int pageIndex, PdfTextLayer& outTextLayer) {
 #if defined(FOLIO_HAS_PDFIUM)
-        InitializeLibrary();
-        FPDF_DOCUMENT doc = FPDF_LoadDocument(filePath.c_str(), nullptr);
-        if (!doc) return false;
+        auto docHolder = OpenDocument(filePath);
+        if (!docHolder) return false;
 
+        FPDF_DOCUMENT doc = docHolder.get();
         int count = FPDF_GetPageCount(doc);
         if (pageIndex < 0 || pageIndex >= count) {
-            FPDF_CloseDocument(doc);
             return false;
         }
 
         FPDF_PAGE page = FPDF_LoadPage(doc, pageIndex);
         if (!page) {
-            FPDF_CloseDocument(doc);
             return false;
         }
 
         bool ok = outTextLayer.LoadFromPage(page);
         FPDF_ClosePage(page);
-        FPDF_CloseDocument(doc);
         return ok;
 #else
         return false;
@@ -353,13 +481,13 @@ public:
         if (filePath.empty()) return false;
 
 #if defined(FOLIO_HAS_PDFIUM)
-        InitializeLibrary();
-        FPDF_DOCUMENT doc = FPDF_LoadDocument(filePath.c_str(), nullptr);
-        if (!doc) {
+        auto docHolder = OpenDocument(filePath);
+        if (!docHolder) {
             LOG_WARN(PdfStorage, "PDFium failed to open document for single-pass structure load: " + filePath);
             return false;
         }
 
+        FPDF_DOCUMENT doc = docHolder.get();
         int count = FPDF_GetPageCount(doc);
         outSummary.pageCount = count;
         outSummary.dimensions.resize(count, {210.0, 297.0});
@@ -379,8 +507,6 @@ public:
 
         // Extract outline bookmarks while document is already open in memory
         WalkBookmarks(doc, nullptr, outSummary.outline);
-
-        FPDF_CloseDocument(doc);
         return true;
 #else
         return false;

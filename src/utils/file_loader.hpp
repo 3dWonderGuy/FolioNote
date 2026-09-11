@@ -159,8 +159,27 @@ public:
     }
 
     /**
-     * @brief Fast, non-blocking scan to inspect a PDF file and extract its page count.
-     * Searches for standard PDF /Count metadata and /Type /Page entries without external dependencies.
+     * @brief Fast, non-blocking fallback scanner to inspect a PDF file and extract its page count.
+     * Uses SDL_IOStream for unified cross-platform file access (Windows, Linux, macOS, Android).
+     *
+     * Working Process & PDF Specification Details:
+     * 1. Header Validation: Confirms standard '%PDF-' magic bytes at byte offset 0.
+     * 2. Linearized Fast Web View Detection:
+     *    Per ISO 32000-1 Section 10.2.2 ('Linearization Parameter Dictionary'), linearized documents
+     *    define a dictionary near the file beginning containing the key '/N <integer>', which specifies
+     *    the exact total page count of the complete document. We scan the first 4KB for this key.
+     * 3. Document Catalog Page Tree (/Pages) /Count Extraction:
+     *    Standard non-linearized PDFs define a page tree with root dictionary '<< /Type /Pages /Count N >>'.
+     *    We scan the trailing 64KB (where trailers and xref catalogs typically reside). To prevent false
+     *    positives from outline bookmark items (which also use '/Count' to indicate child bookmarks, often
+     *    leading to false 1-page reports), we strictly verify that the dictionary context contains '/Pages'
+     *    and excludes outline tokens ('/Title', '/Dest'). We retain the maximum valid count found.
+     * 4. Fallback Token Sweep:
+     *    As a last resort for uncompressed PDFs without standard count headers, scans for '/Type /Page'
+     *    tokens while strictly excluding '/Type /Pages'.
+     *
+     * @param filePath UTF-8 encoded file path.
+     * @return Detected page count (>= 1).
      */
     static int DetectPdfPageCount(const std::string& filePath) {
         SDL_IOStream* stream = SDL_IOFromFile(filePath.c_str(), "rb");
@@ -179,34 +198,83 @@ public:
             return 1;
         }
 
-        // 1. Scan from file end backwards (trailers / page catalog are almost always in the last 64KB)
+        // ---------------------------------------------------------------------
+        // 1. Check for Linearized PDF Parameter Dictionary in initial 4KB
+        // ---------------------------------------------------------------------
+        size_t headScanSize = static_cast<size_t>(std::min<Sint64>(fileSize, 4096));
+        SDL_SeekIO(stream, 0, SDL_IO_SEEK_SET);
+        std::vector<char> headBuf(headScanSize + 1, 0);
+        SDL_ReadIO(stream, headBuf.data(), headScanSize);
+        std::string headStr(headBuf.data(), headScanSize);
+
+        size_t linPos = headStr.find("/Linearized");
+        if (linPos != std::string::npos) {
+            // Find '/N' followed by whitespace and integer
+            size_t nPos = headStr.find("/N", linPos);
+            if (nPos != std::string::npos) {
+                size_t numStart = nPos + 2;
+                while (numStart < headStr.size() && (headStr[numStart] == ' ' || headStr[numStart] == '\t' || headStr[numStart] == '\r' || headStr[numStart] == '\n')) {
+                    numStart++;
+                }
+                if (numStart < headStr.size() && std::isdigit(static_cast<unsigned char>(headStr[numStart]))) {
+                    try {
+                        int linCount = std::stoi(headStr.substr(numStart, 10));
+                        if (linCount > 0) {
+                            SDL_CloseIO(stream);
+                            return linCount;
+                        }
+                    } catch (...) {}
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. Scan trailing 64KB for /Type /Pages /Count metadata
+        // ---------------------------------------------------------------------
         size_t tailScanSize = static_cast<size_t>(std::min<Sint64>(fileSize, 65536));
         SDL_SeekIO(stream, fileSize - tailScanSize, SDL_IO_SEEK_SET);
         std::vector<char> buffer(tailScanSize + 1, 0);
         SDL_ReadIO(stream, buffer.data(), tailScanSize);
 
         std::string tailStr(buffer.data(), tailScanSize);
-        // Look for /Count followed by number
-        size_t countPos = tailStr.rfind("/Count");
-        while (countPos != std::string::npos) {
-            size_t numStart = countPos + 6;
-            while (numStart < tailStr.size() && (tailStr[numStart] == ' ' || tailStr[numStart] == '\t' || tailStr[numStart] == '\r' || tailStr[numStart] == '\n')) {
-                numStart++;
+        int maxPagesFound = 0;
+        size_t countPos = 0;
+
+        while ((countPos = tailStr.find("/Count", countPos)) != std::string::npos) {
+            // Context filter: Examine surrounding 80-byte neighborhood
+            size_t ctxStart = (countPos >= 80) ? countPos - 80 : 0;
+            size_t ctxEnd = std::min(tailStr.size(), countPos + 80);
+            std::string ctx = tailStr.substr(ctxStart, ctxEnd - ctxStart);
+
+            // Reject outline items (bookmarks containing '/Title', '/Dest')
+            bool isOutline = (ctx.find("/Title") != std::string::npos || ctx.find("/Dest") != std::string::npos);
+            bool isPagesNode = (ctx.find("/Pages") != std::string::npos);
+
+            if (!isOutline && isPagesNode) {
+                size_t numStart = countPos + 6;
+                while (numStart < tailStr.size() && (tailStr[numStart] == ' ' || tailStr[numStart] == '\t' || tailStr[numStart] == '\r' || tailStr[numStart] == '\n')) {
+                    numStart++;
+                }
+                if (numStart < tailStr.size() && std::isdigit(static_cast<unsigned char>(tailStr[numStart]))) {
+                    try {
+                        int countVal = std::stoi(tailStr.substr(numStart, 10));
+                        if (countVal > maxPagesFound) {
+                            maxPagesFound = countVal;
+                        }
+                    } catch (...) {}
+                }
             }
-            if (numStart < tailStr.size() && std::isdigit(static_cast<unsigned char>(tailStr[numStart]))) {
-                try {
-                    int countVal = std::stoi(tailStr.substr(numStart, 10));
-                    if (countVal > 0) {
-                        SDL_CloseIO(stream);
-                        return countVal;
-                    }
-                } catch (...) {}
-            }
-            if (countPos == 0) break;
-            countPos = tailStr.rfind("/Count", countPos - 1);
+            countPos += 6;
         }
 
-        // 2. Fallback: Full stream sweep counting "/Type /Page" tokens (excluding "/Type /Pages")
+        if (maxPagesFound > 0) {
+            SDL_CloseIO(stream);
+            return maxPagesFound;
+        }
+
+        // ---------------------------------------------------------------------
+        // 3. Fallback: Full stream sweep counting "/Type /Page" tokens
+        // ---------------------------------------------------------------------
         SDL_SeekIO(stream, 0, SDL_IO_SEEK_SET);
         int pageTokenCount = 0;
         std::vector<char> chunk(32768, 0);
