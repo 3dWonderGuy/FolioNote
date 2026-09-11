@@ -51,6 +51,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_CXX_STANDARD=20 `
             -DBLEND2D_STATIC=ON `
+            -DSDL_SHARED=ON `
             -DFOLIONOTE_BUILD_TESTS=OFF
 
       - name: Build FolioNote
@@ -61,40 +62,44 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/FolioNote
+          New-Item -ItemType Directory -Force -Path dist-installer
 
-          # Locate and copy main executable
-          $exe = if (Test-Path "build/bin/FolioNote.exe") { 
-            "build/bin/FolioNote.exe" 
-          } else {
-            (Get-ChildItem -Path build -Recurse -Filter "FolioNote.exe" | Where-Object { 
-              $_.FullName -notmatch "CMakeFiles|test|_deps" 
-            } | Select-Object -First 1).FullName
-          }
+          # Robust executable locator
+          $exe = if (Test-Path "build/FolioNote.exe") { "build/FolioNote.exe" }
+                 elseif (Test-Path "build/bin/FolioNote.exe") { "build/bin/FolioNote.exe" }
+                 elseif (Test-Path "build/Release/FolioNote.exe") { "build/Release/FolioNote.exe" }
+                 else {
+                   (Get-ChildItem -Path build -Recurse -Filter "FolioNote.exe" | Where-Object { 
+                     $_.FullName -notmatch "CMakeFiles|test|_deps" 
+                   } | Select-Object -First 1).FullName
+                 }
 
           if (-not $exe -or -not (Test-Path $exe)) {
-            Write-Error "Could not find FolioNote.exe in the build directory!"
+            Write-Error "Could not find FolioNote.exe in build directory!"
             exit 1
           }
 
           Write-Host "Found executable at: $exe"
           Copy-Item -Path $exe -Destination "dist/FolioNote/FolioNote.exe" -Force
 
-          # Copy all runtime DLLs (SDL3.dll, blend2d.dll if dynamically linked, etc.)
-          Get-ChildItem -Path "build" -Filter "*.dll" -Recurse | Copy-Item -Destination "dist/FolioNote/" -Force
+          # Copy runtime DLLs (SDL3.dll, etc.)
+          Get-ChildItem -Path "build" -Filter "*.dll" -Recurse | Where-Object {
+            $_.FullName -notmatch "CMakeFiles"
+          } | Copy-Item -Destination "dist/FolioNote/" -Force
 
           # Copy assets, config, and license
           if (Test-Path "assets") { Copy-Item -Recurse "assets" -Destination "dist/FolioNote/assets" }
           if (Test-Path "config") { Copy-Item -Recurse "config" -Destination "dist/FolioNote/config" }
           if (Test-Path "LICENSE") { Copy-Item "LICENSE" -Destination "dist/FolioNote/" }
 
-          # Build portable zip
-          Compress-Archive -Path "dist/FolioNote/*" -DestinationPath "FolioNote-Windows-Portable.zip"
+          # Build portable archive
+          Compress-Archive -Path "dist/FolioNote/*" -DestinationPath "FolioNote-Windows-Portable.zip" -Force
 
       - name: Compile Inno Setup Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
         with:
           path: installer/FolioNoteSetup.iss
-          options: /DMyAppVersion=${{ steps.get_version.outputs.VERSION }}
+          options: /O"dist-installer" /DMyAppVersion=${{ steps.get_version.outputs.VERSION }}
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
@@ -160,7 +165,7 @@ jobs:
               cmake --build build-linux --config Release -j \$(nproc)
 
               mkdir -p dist/FolioNote-Linux
-              cp build-linux/bin/FolioNote dist/FolioNote-Linux/
+              cp build-linux/bin/FolioNote dist/FolioNote-Linux/ 2>/dev/null || cp build-linux/FolioNote dist/FolioNote-Linux/
               [ -d assets ] && cp -r assets dist/FolioNote-Linux/
               [ -d config ] && cp -r config dist/FolioNote-Linux/
               [ -f LICENSE ] && cp LICENSE dist/FolioNote-Linux/
@@ -242,27 +247,28 @@ jobs:
         run: |
           echo "SHA=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          mkdir -p release-artifacts
 
       - name: Download Windows Artifacts
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: FolioNote-Windows-Nightly
-          path: release-artifacts/windows
+          path: release-artifacts
 
       - name: Download Linux Artifacts
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: FolioNote-Linux-Fedora
-          path: release-artifacts/linux
+          path: release-artifacts
 
       - name: Download Android Artifacts
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: FolioNote-Android-APK
-          path: release-artifacts/android
+          path: release-artifacts
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -282,9 +288,6 @@ jobs:
             *Automated rolling preview build compiled directly from the `${{ inputs.branch || 'develop' }}` branch.*
           prerelease: true
           make_latest: false
-          files: |
-            release-artifacts/windows/*
-            release-artifacts/linux/*
-            release-artifacts/android/*
+          files: release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
