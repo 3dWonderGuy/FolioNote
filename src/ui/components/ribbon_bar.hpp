@@ -281,6 +281,30 @@ public:
                 }
             }
 
+            // Contextual tabs (e.g. PDF Tools, Shape Format) elevated visual styling:
+            // Instead of coloring text the same color as the header (which rendered orange-on-orange invisible text),
+            // draw an elevated translucent pill container with border and clean bright typography.
+            if (tab.isContextual) {
+                ImU32 pillBg = isSelected 
+                    ? IM_COL32(255, 255, 255, 60) 
+                    : (isHovered ? IM_COL32(255, 255, 255, 38) : IM_COL32(255, 255, 255, 20));
+                ImU32 pillBorder = IM_COL32(255, 255, 255, isSelected ? 120 : 50);
+                drawList->AddRectFilled(
+                    ImVec2(tabPos.x + 2.0f, tabPos.y + 6.0f),
+                    ImVec2(tabPos.x + tabWidth - 2.0f, tabPos.y + tabHeight - 6.0f),
+                    pillBg,
+                    8.0f
+                );
+                drawList->AddRect(
+                    ImVec2(tabPos.x + 2.0f, tabPos.y + 6.0f),
+                    ImVec2(tabPos.x + tabWidth - 2.0f, tabPos.y + tabHeight - 6.0f),
+                    pillBorder,
+                    8.0f,
+                    0,
+                    1.0f
+                );
+            }
+
             // Draw Clean Modern Typography
             ImFont* font = isSelected ? FolioTheme::FontRibbonBoldLarge : FolioTheme::FontRibbonLarge;
             ImGui::PushFont(font);
@@ -288,8 +312,8 @@ public:
             float textX = tabPos.x + (tabWidth - currentTextSize.x) * 0.5f;
             float textY = tabPos.y + (tabHeight - currentTextSize.y) * 0.5f - 1.0f;
             ImU32 textCol = isSelected 
-                ? (tab.isContextual ? ImGui::ColorConvertFloat4ToU32(theme.colorPrimary) : ImGui::ColorConvertFloat4ToU32(theme.colorHeaderText))
-                : (tab.isContextual ? ImGui::ColorConvertFloat4ToU32(theme.colorPrimary) : ImGui::ColorConvertFloat4ToU32(isHovered ? theme.colorTabHoverText : theme.colorHeaderTextMuted));
+                ? ImGui::ColorConvertFloat4ToU32(theme.colorHeaderText)
+                : (isHovered ? ImGui::ColorConvertFloat4ToU32(theme.colorTabHoverText) : ImGui::ColorConvertFloat4ToU32(theme.colorHeaderTextMuted));
 
             drawList->AddText(ImVec2(textX, textY), textCol, tab.name);
             ImGui::PopFont();
@@ -2514,23 +2538,56 @@ public:
                 }
 
                 // -------------------------------------------------------------
-                // SECTION 4: Text Annotation Tools (Snapping Highlighter & Selector)
+                // SECTION 4: Text Annotation Tools (Highlighter, Eraser, Selector)
                 // -------------------------------------------------------------
                 {
                     FolioUI::ToolbarSectionBuilder sec("grp_pdf_text_tools", "Text & Annotation", theme, isMini);
 
                     bool isHl = pv ? (pv->activeTool == Folio::PdfToolMode::Highlight) : true;
-                    sec.AddLargeButton("btn_pdf_highlighter", 0, "Text Highlight",
-                        "Text Highlighter: Drag across text to highlight. Click an existing highlight to erase it.",
+                    sec.AddSplitButton("btn_pdf_highlighter", iconHigh, "Highlighter",
+                        "Text Highlighter: Drag across text to highlight passages. Click arrow to change color.",
                         isHl,
                         [&]() {
                             if (pv) pv->activeTool = Folio::PdfToolMode::Highlight;
                         },
-                        false, ImVec2(80.0f, 58.0f));
+                        [&](FolioUI::FlyoutMenuBuilder& menu) {
+                            menu.AddHeader("Highlighter Color");
+                            menu.AddCustom([&]() {
+                                if (!pv) return;
+                                const auto& presets = Folio::GetHighlightColorPresets();
+                                for (int c = 0; c < static_cast<int>(presets.size()); ++c) {
+                                    if (c > 0 && c % 3 != 0) ImGui::SameLine(0.0f, 8.0f);
+                                    if (c > 0 && c % 3 == 0) ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                                    ImGui::PushID(c + 9400);
+                                    bool isCur = (pv->activeHighlightColorIdx == c);
+                                    ImGuiColorEditFlags flags = ImGuiColorEditFlags_NoTooltip;
+                                    if (!isCur) flags |= ImGuiColorEditFlags_NoBorder;
+                                    if (ImGui::ColorButton("##RibbonHlColor", presets[c].swatch, flags, ImVec2(28.0f, 28.0f))) {
+                                        pv->activeHighlightColorIdx = c;
+                                        pv->activeTool = Folio::PdfToolMode::Highlight;
+                                        ImGui::CloseCurrentPopup();
+                                    }
+                                    if (ImGui::IsItemHovered()) {
+                                        ImGui::SetTooltip("%s", presets[c].name);
+                                    }
+                                    ImGui::PopID();
+                                }
+                            });
+                        },
+                        false, ImVec2(82.0f, 58.0f));
+
+                    bool isEraser = pv ? (pv->activeTool == Folio::PdfToolMode::Eraser) : false;
+                    sec.AddLargeButton("btn_pdf_eraser", iconEraser, "Eraser",
+                        "Highlight Eraser: Click on text highlights to erase them cleanly.",
+                        isEraser,
+                        [&]() {
+                            if (pv) pv->activeTool = Folio::PdfToolMode::Eraser;
+                        },
+                        false, ImVec2(72.0f, 58.0f));
 
                     bool isSel = pv ? (pv->activeTool == Folio::PdfToolMode::Select) : false;
-                    sec.AddLargeButton("btn_pdf_select_mode", 0, "Select Text",
-                        "Select Text: Select text on PDF pages to copy, extract Markdown, or highlight.",
+                    sec.AddLargeButton("btn_pdf_select_mode", selectIcon, "Select Text",
+                        "Select Text: Select text on PDF pages to copy, quote to notes, or export.",
                         isSel,
                         [&]() {
                             if (pv) pv->activeTool = Folio::PdfToolMode::Select;

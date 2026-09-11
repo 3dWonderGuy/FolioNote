@@ -94,6 +94,9 @@ struct DBPageRecord {
     bool isCollapsed = false;   ///< Whether child sub-pages are folded in sidebar
     int64_t lastAccessed = 0;   ///< Telemetry timestamp for LRU memory cache eviction
     bool hasBlob = false;       ///< True if an on-disk .ink payload file exists
+    bool isDedicatedPdf = false;///< True if this page is a dedicated standalone PDF reader canvas
+    std::string dedicatedPdfPath;///< Persistent relative package path or absolute disk path to backing PDF
+    std::string dedicatedPdfBookmarks;///< Serialized user bookmarks for this dedicated PDF page
 };
 
 /**
@@ -197,12 +200,28 @@ public:
 
     /**
      * @brief Inserts or updates a page's metadata record in SQLite.
+     * @param pageGuid Unique page GUID.
+     * @param sectionGuid GUID of owning section.
+     * @param title User-facing title.
+     * @param createdDate Creation date string.
+     * @param createdTime Creation time string.
+     * @param sortOrder Display position order index.
+     * @param hasBlob Whether an on-disk .ink file exists.
+     * @param parentPageGuid GUID of parent page for subpage trees.
+     * @param nestingLevel Nesting depth (0 = root, 1 = subpage, 2 = sub-subpage).
+     * @param isCollapsed Whether child subpages are folded in UI.
+     * @param isDedicatedPdf Whether this page is a dedicated continuous PDF viewer page.
+     * @param dedicatedPdfPath Relative package path or external disk path to the PDF document.
+     * @param dedicatedPdfBookmarks Serialized user bookmarks JSON / string.
+     * @return true if upsert succeeded; false otherwise.
      */
     bool SavePageMetadata(const std::string& pageGuid, const std::string& sectionGuid, 
                           const std::string& title, const std::string& createdDate, 
                           const std::string& createdTime, int32_t sortOrder,
                           bool hasBlob, const std::string& parentPageGuid = "",
-                          int32_t nestingLevel = 0, bool isCollapsed = false);
+                          int32_t nestingLevel = 0, bool isCollapsed = false,
+                          bool isDedicatedPdf = false, const std::string& dedicatedPdfPath = "",
+                          const std::string& dedicatedPdfBookmarks = "");
 
     /**
      * @brief Deletes a page's metadata record from SQLite.

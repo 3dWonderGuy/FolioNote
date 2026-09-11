@@ -793,7 +793,8 @@ private:
         bool isCollapsed = false,
         bool isFolder = false,
         bool* outChevronClicked = nullptr,
-        bool isLocked = false
+        bool isLocked = false,
+        bool isDedicatedPdf = false
     ) {
         ImGui::SetCursorPosX(5.0f + indentX);
         ImVec2 pMin = ImGui::GetCursorScreenPos();
@@ -879,6 +880,32 @@ private:
             curX += iconSize + 6.0f;
         } else {
             curX += 4.0f;
+        }
+
+        // Dedicated standalone PDF badge indicator
+        if (isDedicatedPdf) {
+            // Mathematical centering of badge:
+            // Center Y = pMin.y + (ROW_HEIGHT - badgeH) / 2
+            float badgeH = 16.0f;
+            float badgeW = 28.0f;
+            float badgeY = pMin.y + (size.y - badgeH) * 0.5f;
+            ImVec2 bMin(curX, badgeY);
+            ImVec2 bMax(curX + badgeW, badgeY + badgeH);
+
+            // Coral red styling matching PDF theme
+            ImU32 badgeBg = isSelected ? IM_COL32(230, 60, 60, 240) : IM_COL32(195, 45, 45, 185);
+            ImU32 badgeBorder = IM_COL32(255, 120, 120, 190);
+            drawList->AddRectFilled(bMin, bMax, badgeBg, 3.0f);
+            drawList->AddRect(bMin, bMax, badgeBorder, 3.0f, 0, 1.0f);
+
+            // Vertical & horizontal centering for compact "PDF" label
+            const char* badgeText = "PDF";
+            ImVec2 bTextSz = ImGui::CalcTextSize(badgeText);
+            float bTx = bMin.x + (badgeW - bTextSz.x) * 0.5f;
+            float bTy = bMin.y + (badgeH - bTextSz.y) * 0.5f;
+            drawList->AddText(ImVec2(bTx, bTy), IM_COL32(255, 255, 255, 255), badgeText);
+
+            curX += badgeW + 6.0f;
         }
 
         // Title text with clipping
@@ -1890,7 +1917,8 @@ private:
                 bool isSelected = (activeSec->activePageIndex == p);
                 std::string pageId = "##PageItem_" + page->guid;
 
-                if (RenderHierarchyItemCard(pageId.c_str(), page->title.c_str(), isSelected, itemW, theme, 0, indentX, hasChildren, page->isCollapsed, false, &chevronClicked)) {
+                // Render page item card, displaying dedicated PDF badge if this page is a continuous PDF reader
+                if (RenderHierarchyItemCard(pageId.c_str(), page->title.c_str(), isSelected, itemW, theme, 0, indentX, hasChildren, page->isCollapsed, false, &chevronClicked, false, page->isDedicatedPdf)) {
                     if (chevronClicked) {
                         page->isCollapsed = !page->isCollapsed;
                     } else {
@@ -1951,6 +1979,9 @@ private:
                     ImGui::TextColored(theme.colorPrimary, "%s", page->title.c_str());
                     ImGui::PopFont();
                     ImGui::TextColored(theme.colorTextMuted, "Page %zu of %zu", p + 1, activeSec->pages.size());
+                    if (page->isDedicatedPdf) {
+                        ImGui::TextColored(ImVec4(0.95f, 0.40f, 0.40f, 1.0f), "[Dedicated PDF Document]");
+                    }
                     ImGui::Separator();
 
                     if (ImGui::MenuItem("Page Settings...")) {
