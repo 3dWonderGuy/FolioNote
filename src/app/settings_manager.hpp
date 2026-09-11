@@ -63,9 +63,9 @@ public:
     //
     // Valid string values: "Inking", "Eraser", "Selecting", "Panning", "Idle"
     // ==========================================================================
-    std::string defaultStylusTool = "Inking";   // Stylus default: always inks
-    std::string defaultTouchTool  = "Panning";  // Touch default: navigate (finger pan/zoom)
-    std::string defaultMouseTool  = "Idle";     // Mouse default: navigation/selection mode
+    std::string defaultStylusTool = "Inking";    // Stylus default: pen inking mode
+    std::string defaultTouchTool  = "Panning";   // Touch default: navigation/pan mode
+    std::string defaultMouseTool  = "Selecting"; // Mouse default: box selection / object hit-test
 
     // Ribbon Layout State
     std::string ribbonDisplayMode = "FullRibbon";
@@ -214,7 +214,10 @@ public:
                 // Device default tools — placeholder, settings UI not yet built
                 if (jInking.contains("defaultStylusTool")) defaultStylusTool = jInking["defaultStylusTool"].get<std::string>();
                 if (jInking.contains("defaultTouchTool"))  defaultTouchTool  = jInking["defaultTouchTool"].get<std::string>();
-                if (jInking.contains("defaultMouseTool"))  defaultMouseTool  = jInking["defaultMouseTool"].get<std::string>();
+                if (jInking.contains("defaultMouseTool")) {
+                    defaultMouseTool  = jInking["defaultMouseTool"].get<std::string>();
+                    if (defaultMouseTool == "Idle") defaultMouseTool = "Selecting";
+                }
 
                 if (jInking.contains("presets") && jInking["presets"].is_array()) {
                     inkingPresets.clear();

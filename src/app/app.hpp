@@ -84,6 +84,7 @@ public:
         // Enable native window dragging & edge resizing for custom software titlebar
         SDL_SetWindowHitTest(window, CustomTitleBar::HitTestCallback, &customTitleBar);
         customTitleBar.AttachWindow(window);
+        canvas.sdlWindow = window;
 
 #if defined(_WIN32)
         // Set Win32 Taskbar and Window Icon directly on the HWND from compiled resource
@@ -245,6 +246,8 @@ public:
             if (SettingsManager::Instance().drawWithTouch) {
                 sm.SetToolForDevice(DeviceType::Touch, InteractionState::Inking);
             }
+
+            sm.currentAction = sm.GetActiveDeviceTool();
         }
         if (ribbon.isCanvasInverted) {
             canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
@@ -425,6 +428,9 @@ public:
                     else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
                     else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                     else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
+                    else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                        canvas.InsertImageFromClipboard(&session);
+                    }
                     else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
                 }
 
@@ -459,6 +465,10 @@ public:
                             else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
                             else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                             else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
+                            else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                                canvas.InsertImageFromClipboard(&session);
+                            }
+                            else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
                             else if (event.key.key == SDLK_F1 && (SDL_GetModState() & SDL_KMOD_CTRL)) ribbon.CycleDisplayMode();
                         }
 
@@ -767,6 +777,7 @@ public:
             case RibbonTab::Review: SettingsManager::Instance().ribbonActiveTab = "Review"; break;
             case RibbonTab::View: SettingsManager::Instance().ribbonActiveTab = "View"; break;
             case RibbonTab::Help: SettingsManager::Instance().ribbonActiveTab = "Help"; break;
+            case RibbonTab::ShapeFormat: break;
         }
 
         toolbarDemo.SaveToSettings();

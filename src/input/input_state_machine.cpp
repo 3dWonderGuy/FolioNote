@@ -106,6 +106,7 @@ void InputStateMachine::UpdateHardwareState(uint64_t nowMs) {
                                  (currentAction == InteractionState::Eraser)      ? "Eraser"      :
                                  (currentAction == InteractionState::Selecting)   ? "Selecting"   :
                                  (currentAction == InteractionState::Panning)     ? "Panning"     :
+                                 (currentAction == InteractionState::DrawingShape) ? "DrawingShape" :
                                  (currentAction == InteractionState::Transforming) ? "Transforming" : "Idle";
         LOG_INFO(InputStateMachine, "Interaction state changed to: " + actionName);
     }
@@ -164,8 +165,36 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                 if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform)) {
                     canvas.isDirty = true;
                 } else {
-                    canvas.selectionGizmo.ClearSelection();
-                    canvas.OnLassoDown(canvasLocalX, canvasLocalY);
+                    Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
+                    auto activePage = session.GetActivePage();
+                    std::shared_ptr<CanvasObject> clickedObj = nullptr;
+                    if (activePage) {
+                        for (auto it = activePage->objects.rbegin(); it != activePage->objects.rend(); ++it) {
+                            auto& obj = *it;
+                            if (obj && obj->isVisible && obj->isSelectable &&
+                                (obj->HitTest(worldMm.x, worldMm.y) || obj->HitTestCircle(worldMm.x, worldMm.y, 2.0))) {
+                                clickedObj = obj;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (clickedObj) {
+                        canvas.ClearSelection(&session);
+                        clickedObj->isSelected = 1;
+                        canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
+                        canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform);
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                        LOG_INFO(InputStateMachine, "Stylus direct click selected object uid=" + std::to_string(clickedObj->uid));
+                    } else {
+                        canvas.ClearSelection(&session);
+                        if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
+                            canvas.OnLassoDown(canvasLocalX, canvasLocalY);
+                        } else {
+                            canvas.OnBoxSelectDown(canvasLocalX, canvasLocalY);
+                        }
+                    }
                 }
             }
             else if (isMoving) {
@@ -174,8 +203,10 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
                     }
-                } else {
+                } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                     canvas.OnLassoMove(canvasLocalX, canvasLocalY);
+                } else if (canvas.marqueeBox.isActive) {
+                    canvas.OnBoxSelectMove(canvasLocalX, canvasLocalY);
                 }
             }
             else if (justUp) {
@@ -183,8 +214,10 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                     canvas.selectionGizmo.OnPointerUp();
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
-                } else {
+                } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                     canvas.OnLassoUp(&session);
+                } else if (canvas.marqueeBox.isActive) {
+                    canvas.OnBoxSelectUp(&session);
                 }
             }
             break;
@@ -203,6 +236,29 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                 isEraserActive = false;
             }
             canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
+            break;
+        }
+        case InteractionState::DrawingShape: {
+            if (justDown) {
+                canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY);
+                canvas.isDirty = true;
+            } else if (isMoving) {
+                if (canvas.shapeCreation.isDragging) {
+                    canvas.OnShapeDrawMove(canvasLocalX, canvasLocalY);
+                    canvas.isDirty = true;
+                }
+            } else if (justUp) {
+                if (canvas.shapeCreation.isDragging) {
+                    canvas.OnShapeDrawUp(&session);
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                    if (!canvas.shapeCreation.lockDrawingMode) {
+                        currentAction = InteractionState::Selecting;
+                        SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
+                        SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
+                    }
+                }
+            }
             break;
         }
         default: break;
@@ -227,6 +283,8 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     // -------------------------------------------------------------------------
     if (mouse.middleButton || keyboard.space) {
         currentAction = InteractionState::Panning;
+    } else if (mouseTool.savedTool == InteractionState::DrawingShape || currentAction == InteractionState::DrawingShape) {
+        currentAction = InteractionState::DrawingShape;
     } else {
         currentAction = mouseTool.savedTool;
     }
@@ -235,7 +293,8 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         std::string actionName = (currentAction == InteractionState::Inking) ? "Inking" :
                                  (currentAction == InteractionState::Eraser) ? "Eraser" :
                                  (currentAction == InteractionState::Selecting) ? "Selecting" :
-                                 (currentAction == InteractionState::Panning) ? "Panning" : "Idle";
+                                 (currentAction == InteractionState::Panning) ? "Panning" :
+                                 (currentAction == InteractionState::DrawingShape) ? "DrawingShape" : "Idle";
         LOG_INFO(InputStateMachine, "Mouse interaction state changed to: " + actionName);
     }
 
@@ -324,8 +383,36 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform)) {
                 canvas.isDirty = true;
             } else {
-                canvas.selectionGizmo.ClearSelection();
-                canvas.OnLassoDown(canvasLocalX, canvasLocalY);
+                Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
+                auto activePage = session.GetActivePage();
+                std::shared_ptr<CanvasObject> clickedObj = nullptr;
+                if (activePage) {
+                    for (auto it = activePage->objects.rbegin(); it != activePage->objects.rend(); ++it) {
+                        auto& obj = *it;
+                        if (obj && obj->isVisible && obj->isSelectable &&
+                            (obj->HitTest(worldMm.x, worldMm.y) || obj->HitTestCircle(worldMm.x, worldMm.y, 2.0))) {
+                            clickedObj = obj;
+                            break;
+                        }
+                    }
+                }
+
+                if (clickedObj) {
+                    canvas.ClearSelection(&session);
+                    clickedObj->isSelected = 1;
+                    canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
+                    canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform);
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                    LOG_INFO(InputStateMachine, "Mouse direct click selected object uid=" + std::to_string(clickedObj->uid));
+                } else {
+                    canvas.ClearSelection(&session);
+                    if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
+                        canvas.OnLassoDown(canvasLocalX, canvasLocalY);
+                    } else {
+                        canvas.OnBoxSelectDown(canvasLocalX, canvasLocalY);
+                    }
+                }
             }
         }
         else if (isMoving) {
@@ -334,8 +421,10 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                 }
-            } else {
+            } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                 canvas.OnLassoMove(canvasLocalX, canvasLocalY);
+            } else if (canvas.marqueeBox.isActive) {
+                canvas.OnBoxSelectMove(canvasLocalX, canvasLocalY);
             }
         }
         else if (justUp) {
@@ -343,8 +432,10 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 canvas.selectionGizmo.OnPointerUp();
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
-            } else {
+            } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                 canvas.OnLassoUp(&session);
+            } else if (canvas.marqueeBox.isActive) {
+                canvas.OnBoxSelectUp(&session);
             }
         }
 
@@ -384,6 +475,29 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
             } else if (canvas.selectionGizmo.activeRole == HandleRole::Body) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            }
+        }
+    }
+    else if (currentAction == InteractionState::DrawingShape) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+        if (justDown) {
+            canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY);
+            canvas.isDirty = true;
+        } else if (isMoving) {
+            if (canvas.shapeCreation.isDragging) {
+                canvas.OnShapeDrawMove(canvasLocalX, canvasLocalY);
+                canvas.isDirty = true;
+            }
+        } else if (justUp) {
+            if (canvas.shapeCreation.isDragging) {
+                canvas.OnShapeDrawUp(&session);
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+                if (!canvas.shapeCreation.lockDrawingMode) {
+                    currentAction = InteractionState::Selecting;
+                    SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
+                    SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
+                }
             }
         }
     }
