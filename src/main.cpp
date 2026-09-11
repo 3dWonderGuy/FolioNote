@@ -1,6 +1,10 @@
 #include "app/app.hpp"
 #include <SDL3/SDL_main.h>
 
+#include "utils/printer_installer.hpp"
+#include <iostream>
+#include <string_view>
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #define LOG_TAG "FolioNoteNative"
@@ -22,6 +26,26 @@ int main(int argc, char* argv[])
     ALOG("FolioNote started successfully on Android!");
 #endif
 
+    // Process CLI arguments for headless setup and integration tasks
+    for (int i = 1; i < argc; ++i) {
+        std::string_view arg = argv[i];
+        if (arg == "--install-printer") {
+            std::cout << "[FolioNote] Installing 'Print to FolioNote' virtual printer (requesting admin access)..." << std::endl;
+            bool ok = Folio::PrinterInstaller::InstallPrinterElevated();
+            std::cout << "[FolioNote] Virtual printer installation " << (ok ? "succeeded." : "failed or was cancelled.") << std::endl;
+            return ok ? 0 : 1;
+        } else if (arg == "--uninstall-printer") {
+            std::cout << "[FolioNote] Removing 'Print to FolioNote' virtual printer (requesting admin access)..." << std::endl;
+            bool ok = Folio::PrinterInstaller::UninstallPrinterElevated();
+            std::cout << "[FolioNote] Virtual printer removal " << (ok ? "succeeded." : "failed or was cancelled.") << std::endl;
+            return ok ? 0 : 1;
+        } else if (arg == "--check-printer") {
+            bool installed = Folio::PrinterInstaller::IsPrinterInstalled();
+            std::cout << "[FolioNote] 'Print to FolioNote' printer is " << (installed ? "installed." : "not installed.") << std::endl;
+            return installed ? 0 : 1;
+        }
+    }
+
     Application app;
     if (!app.Init("FolioNote", 1920, 1080)) {
         return -1;
@@ -30,4 +54,4 @@ int main(int argc, char* argv[])
     app.Run();
     app.Shutdown();
     return 0;
-}
+}
