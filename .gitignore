@@ -1,8 +1,10 @@
 
-build/
-bin/
-dist/
-dist-installer/
+/build/
+/bin/
+/dist/
+/dist-installer/
+!third_party/pdfium/bin/
+!third_party/pdfium/bin/pdfium.dll
 
 # Android Studio & Gradle
 .gradle/

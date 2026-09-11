@@ -7,11 +7,10 @@
 #include <blend2d/blend2d.h>
 #include "utils/logger.hpp"
 
-#if __has_include(<fpdfview.h>)
+#if defined(FOLIO_HAS_PDFIUM) && __has_include(<fpdfview.h>)
 #include <fpdfview.h>
 #include <fpdf_doc.h>
 #include <fpdf_text.h>
-#define FOLIO_HAS_PDFIUM 1
 #endif
 
 #include "core/render/pdf_text_layer.hpp"
