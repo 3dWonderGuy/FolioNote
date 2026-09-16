@@ -1,3 +1,20 @@
+/**
+ * @file touch_gesture_recognizer.hpp
+ * @brief Translates raw multi-touch contact telemetry into high-level UI gestures.
+ *
+ * GESTURE RECOGNITION ARCHITECTURE:
+ * ---------------------------------
+ * Glass touchscreens report discrete contact points across consecutive frames.
+ * The recognizer classifies these contacts into distinct semantic gestures:
+ *   1. Tap: Single finger contact released within HOLD_TIME_MS without moving beyond DRAG_THRESHOLD_PX.
+ *   2. Press & Hold: Single finger dwelling in place >= HOLD_TIME_MS within DRAG_THRESHOLD_PX.
+ *   3. Single Finger Scroll / Pan: Single finger moving beyond DRAG_THRESHOLD_PX.
+ *   4. Two-Finger Pinch-Pan: Two fingers moving; centroid translation drives pan, Euclidean distance ratio drives zoom.
+ *   5. Two-Finger Tap: Quick two-finger tap released within MULTI_TAP_MAX_MS (Digital ink shortcut for Undo).
+ *   6. Three-Finger Tap: Quick three-finger tap released within MULTI_TAP_MAX_MS (Digital ink shortcut for Redo).
+ *   7. Gizmo Transform: Route single-finger drag directly to selection handles when active.
+ */
+
 #pragma once
 #include <array>
 #include <cmath>
@@ -5,27 +22,29 @@
 #include <algorithm>
 #include "input/input_tracker.hpp"
 
-// The different types of gestures we can recognize from touch events on the screen.
+// The different types of gestures recognized from capacitive multi-touch contacts.
 enum class TouchGestureType : uint8_t {
-    None,
+    None = 0,
     Tap,
     PressAndHold,
     SingleFingerScroll,
     GizmoTransform,
-    TwoFingerPinchPan
+    TwoFingerPinchPan,
+    TwoFingerTap,   ///< Quick 2-finger tap (Undo)
+    ThreeFingerTap  ///< Quick 3-finger tap (Redo)
 };
 
 // Payload sent out whenever a touch gesture is triggered or updated.
 struct TouchGestureEvent {
     TouchGestureType type = TouchGestureType::None;
-    float focusX = 0.0f;     // Where the gesture is happening (tap spot, or center point between fingers)
-    float focusY = 0.0f;     // Focal point Y coordinate
-    float deltaX = 0.0f;     // How far we moved horizontally (for panning/scrolling)
-    float deltaY = 0.0f;     // How far we moved vertically
-    float zoomDelta = 1.0f;  // Scale factor for pinch-to-zoom (1.0 = no change, >1 = zoom in, <1 = zoom out)
+    float focusX = 0.0f;     ///< Focal point X coordinate (tap spot or centroid between fingers)
+    float focusY = 0.0f;     ///< Focal point Y coordinate
+    float deltaX = 0.0f;     ///< Horizontal displacement delta (for panning/scrolling)
+    float deltaY = 0.0f;     ///< Vertical displacement delta
+    float zoomDelta = 1.0f;  ///< Scale factor for pinch-to-zoom (1.0 = no change, >1 = zoom in, <1 = zoom out)
 };
 
-// Translates raw finger contacts on glass into clean UI gestures like tapping, panning, holding, and pinch-to-zoom.
+// Translates raw finger contacts on glass into clean UI gestures.
 class TouchGestureRecognizer {
 private:
     // Tracking variables for single-finger touches
@@ -33,57 +52,84 @@ private:
     float startY = 0.0f;
     float prevX  = 0.0f;
     float prevY  = 0.0f;
-    uint64_t touchStartTimeMs = 0; // we need to tell if it is tap or hold
+    uint64_t touchStartTimeMs = 0;
     
-    // Status flags to track what the user is currently up to
+    // Status flags to track what the user is currently performing
     bool isScrolling  = false;
     bool isHolding    = false;
     bool isPinching   = false;
 
     // Tracking variables for two-finger gestures (pinch & pan)
     float prevPinchDist = 0.0f;
-    float prevMidX    = 0.0f;
-    float prevMidY    = 0.0f;
+    float prevMidX      = 0.0f;
+    float prevMidY      = 0.0f;
+    uint64_t twoFingerStartTimeMs = 0;
+    bool twoFingerMoved = false;
 
-    // Remembers how many fingers were on screen during the previous frame.
-    // This helps us smoothly handle transitions—like when a user lifts one finger after pinch-zooming.
+    // Tracking variables for three-finger gestures
+    uint64_t threeFingerStartTimeMs = 0;
+
+    // Remembers how many fingers were on screen during the previous frame
     size_t lastActiveCount = 0;
 
-    // Small wiggle threshold in pixels (slop zone).
-    // Humans can't hold a finger 100% still on glass, so we ignore movements smaller than this 
-    // before declaring that the user has started scrolling or dragging.
+    // Spatial slop threshold in pixels
     static constexpr float DRAG_THRESHOLD_PX = 8.0f;
 
-    // How long (in milliseconds) a finger has to rest in place before it counts as a "Press and Hold".
-    static constexpr uint64_t HOLD_TIME_MS   = 450;
+    // Minimum dwell duration in ms for Press and Hold
+    static constexpr uint64_t HOLD_TIME_MS = 450;
+
+    // Maximum duration in ms for multi-finger tap gestures (Undo/Redo)
+    static constexpr uint64_t MULTI_TAP_MAX_MS = 250;
 
 public:
+    /**
+     * @brief Evaluates the current state of active touch contacts and yields a gesture event.
+     *
+     * @param fingers                Array of tracked touch slots.
+     * @param activeCount            Number of currently engaged touch slots (fingerID != -1).
+     * @param nowMs                  Current timestamp in milliseconds.
+     * @param isInteractingWithGizmo True if user is dragging an active selection gizmo handle.
+     * @return TouchGestureEvent containing the resolved gesture type and transform deltas.
+     */
     TouchGestureEvent Evaluate(const std::array<TouchSlot, 10>& fingers, size_t activeCount, uint64_t nowMs, bool isInteractingWithGizmo) {
         TouchGestureEvent gesture;
 
         // ---------------------------------------------------------------------
         // 0 FINGERS: ALL TOUCHES RELEASED
         // ---------------------------------------------------------------------
-        // When all fingers leave the screen, we check if the user just performed a quick "Tap".
-        // We only confirm a Tap when the finger is lifted, because while the finger is down 
-        // we can't tell yet if they're about to drag, hold, or place a second finger down!
+        // Evaluate completion of tap gestures (Single Tap, Two-Finger Tap, Three-Finger Tap)
         if (activeCount == 0) {
-            
-            if (!isScrolling && !isHolding && !isPinching && (nowMs - touchStartTimeMs < HOLD_TIME_MS) && touchStartTimeMs > 0) {
-                gesture.type = TouchGestureType::Tap;
+            // Case A: Two-Finger Tap (Undo)
+            if (lastActiveCount == 2 && (nowMs - twoFingerStartTimeMs <= MULTI_TAP_MAX_MS) && !twoFingerMoved && twoFingerStartTimeMs > 0) {
+                gesture.type   = TouchGestureType::TwoFingerTap;
+                gesture.focusX = prevMidX;
+                gesture.focusY = prevMidY;
+            }
+            // Case B: Three-Finger Tap (Redo)
+            else if (lastActiveCount == 3 && (nowMs - threeFingerStartTimeMs <= MULTI_TAP_MAX_MS) && threeFingerStartTimeMs > 0) {
+                gesture.type   = TouchGestureType::ThreeFingerTap;
+                gesture.focusX = prevMidX;
+                gesture.focusY = prevMidY;
+            }
+            // Case C: Single Finger Tap
+            else if (!isScrolling && !isHolding && !isPinching && (nowMs - touchStartTimeMs < HOLD_TIME_MS) && touchStartTimeMs > 0) {
+                gesture.type   = TouchGestureType::Tap;
                 gesture.focusX = startX;
                 gesture.focusY = startY;
             }
 
-            // Wipe clean all internal tracking state so the next touch sequence starts fresh
-            isScrolling      = false;
-            isHolding        = false;
-            isPinching       = false;
-            prevPinchDist    = 0.0f;
-            prevMidX         = 0.0f;
-            prevMidY         = 0.0f;
-            touchStartTimeMs = 0;
-            lastActiveCount  = 0;
+            // Wipe clean internal tracking state
+            isScrolling            = false;
+            isHolding              = false;
+            isPinching             = false;
+            prevPinchDist          = 0.0f;
+            prevMidX               = 0.0f;
+            prevMidY               = 0.0f;
+            touchStartTimeMs       = 0;
+            twoFingerStartTimeMs   = 0;
+            threeFingerStartTimeMs = 0;
+            twoFingerMoved         = false;
+            lastActiveCount        = 0;
             return gesture;
         }
 
@@ -91,7 +137,6 @@ public:
         // 1 FINGER: SCROLLING, GIZMO DRAGGING, TAP PREPARATION, OR PRESS & HOLD
         // ---------------------------------------------------------------------
         if (activeCount == 1) {
-            // Find which slot holds our active finger
             size_t idx = 0;
             while (idx < fingers.size() && fingers[idx].fingerID == -1) idx++;
             if (idx >= fingers.size()) {
@@ -101,9 +146,7 @@ public:
 
             const auto& pt = fingers[idx].point;
 
-            // Handle finger transition: If we just came from 2+ fingers down to 1 finger (e.g., user lifted one finger),
-            // we re-anchor our position baseline. Otherwise `prevX` and `prevY` would be stale from before the 2-finger gesture,
-            // causing a sudden coordinate jump on screen!
+            // Handle transition from multi-touch down to single touch
             if (lastActiveCount > 1 || touchStartTimeMs == 0) {
                 touchStartTimeMs = nowMs;
                 startX           = pt.x;
@@ -118,18 +161,17 @@ public:
 
             lastActiveCount = 1;
 
-            // Total distance moved from where the finger first touched down
+            // Total Euclidean distance moved from where the finger first touched down:
+            //   D = sqrt((x - x0)^2 + (y - y0)^2)
             float totalDist = std::hypot(pt.x - startX, pt.y - startY);
             
-            // Movement delta since the very last frame
+            // Movement delta since the previous frame
             float dx = pt.x - prevX;
             float dy = pt.y - prevY;
             prevX = pt.x;
             prevY = pt.y;
 
             // Option 1: Gizmo Dragging
-            // If the user is grabbing an on-screen widget handle (like a selection box corner),
-            // route the movement directly to the gizmo transformer.
             if (isInteractingWithGizmo) {
                 gesture.type   = TouchGestureType::GizmoTransform;
                 gesture.focusX = pt.x;
@@ -140,11 +182,10 @@ public:
             }
 
             // Option 2: Press and Hold Trigger
-            // If the finger stayed put inside the small drag slop zone and hasn't started scrolling...
+            // If contact remains stationary within DRAG_THRESHOLD_PX for >= HOLD_TIME_MS:
             if (!isScrolling && totalDist < DRAG_THRESHOLD_PX) {
-                // ...and enough time has passed without moving, trigger Press & Hold!
                 if ((nowMs - touchStartTimeMs >= HOLD_TIME_MS) && !isHolding) {
-                    isHolding = true; // Prevents firing the hold event repeatedly every frame
+                    isHolding = true; // Prevents firing repeatedly every frame
                     gesture.type   = TouchGestureType::PressAndHold;
                     gesture.focusX = pt.x;
                     gesture.focusY = pt.y;
@@ -153,7 +194,7 @@ public:
             }
 
             // Option 3: Single Finger Scroll / Pan
-            // Once the finger moves past the slop threshold (or was already scrolling), kick off canvas scrolling.
+            // Moving beyond the slop threshold initiates scrolling
             if (totalDist >= DRAG_THRESHOLD_PX || isScrolling) {
                 isScrolling    = true;
                 gesture.type   = TouchGestureType::SingleFingerScroll;
@@ -171,7 +212,6 @@ public:
         // 2 FINGERS: PINCH-TO-ZOOM & TWO-FINGER PANNING
         // ---------------------------------------------------------------------
         if (activeCount == 2) {
-            // Locate the two active finger slots
             int idx1 = -1, idx2 = -1;
             for (size_t i = 0; i < fingers.size(); ++i) {
                 if (fingers[i].fingerID != -1) {
@@ -184,35 +224,43 @@ public:
                 const auto& p1 = fingers[idx1].point;
                 const auto& p2 = fingers[idx2].point;
 
-                // Midpoint between both fingers (acts as the zoom focus point and pan reference)
+                // Midpoint (centroid) between both fingers:
+                //   M = ((p1.x + p2.x) / 2, (p1.y + p2.y) / 2)
                 float midX = (p1.x + p2.x) * 0.5f;
                 float midY = (p1.y + p2.y) * 0.5f;
                 
-                // Straight-line distance between the two fingers
+                // Straight-line Euclidean distance between both fingers:
+                //   dist = sqrt((p2.x - p1.x)^2 + (p2.y - p1.y)^2)
                 float dist = std::hypot(p2.x - p1.x, p2.y - p1.y);
 
-                // Initial setup frame for 2-finger gesture:
-                // Record initial distance & midpoint without emitting a gesture event yet.
-                // This prevents a sudden jump on frame 1 when the 2nd finger touches down.
+                // Initial frame for 2-finger contact
                 if (!isPinching || lastActiveCount != 2) {
-                    isPinching    = true;
-                    prevPinchDist = dist;
-                    prevMidX      = midX;
-                    prevMidY      = midY;
+                    isPinching           = true;
+                    prevPinchDist        = dist;
+                    prevMidX             = midX;
+                    prevMidY             = midY;
+                    twoFingerStartTimeMs = nowMs;
+                    twoFingerMoved       = false;
                 } else {
+                    // Check if movement exceeded tap slop
+                    if (std::abs(dist - prevPinchDist) > DRAG_THRESHOLD_PX ||
+                        std::hypot(midX - prevMidX, midY - prevMidY) > DRAG_THRESHOLD_PX) {
+                        twoFingerMoved = true;
+                    }
+
                     // Continuous 2-finger pan & zoom updates
                     gesture.type   = TouchGestureType::TwoFingerPinchPan;
                     gesture.focusX = midX;
                     gesture.focusY = midY;
                     
-                    // How far the center point between fingers moved (for canvas panning)
+                    // Centroid translation for canvas panning
                     gesture.deltaX = midX - prevMidX;
                     gesture.deltaY = midY - prevMidY;
                     
-                    // Ratio of current finger distance vs previous finger distance (for zooming)
+                    // Distance ratio for zoom factor:
+                    //   zoomDelta = dist_current / dist_previous
                     gesture.zoomDelta = (prevPinchDist > 0.001f) ? (dist / prevPinchDist) : 1.0f;
 
-                    // Save values for next frame's comparison
                     prevPinchDist = dist;
                     prevMidX      = midX;
                     prevMidY      = midY;
@@ -223,7 +271,17 @@ public:
             return gesture;
         }
 
-        // 3+ fingers (multi-touch shortcuts or palm rejection fallthrough)
+        // ---------------------------------------------------------------------
+        // 3 FINGERS: THREE-FINGER GESTURES (e.g. Redo tap tracking)
+        // ---------------------------------------------------------------------
+        if (activeCount == 3) {
+            if (lastActiveCount != 3) {
+                threeFingerStartTimeMs = nowMs;
+            }
+            lastActiveCount = 3;
+            return gesture;
+        }
+
         lastActiveCount = activeCount;
         return gesture;
     }
