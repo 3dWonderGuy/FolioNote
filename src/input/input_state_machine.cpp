@@ -116,11 +116,21 @@ void InputStateMachine::ProcessInputState(CanvasEngine& canvas, DocumentSession&
     uint64_t now = SDL_GetTicks();
     UpdateHardwareState(now);
 
-    switch (ActiveDevice) {
-        case DeviceType::Stylus: DispatchStylus(canvas, session, imguiWantsInput); break;
-        case DeviceType::Touch:  DispatchTouch(canvas, session, imguiWantsInput);  break;
-        case DeviceType::Mouse:  DispatchMouse(canvas, session, imguiWantsInput);  break;
-        default: break;
+    auto activePg = session.GetActivePage();
+    isPdfModeActive = (activePg && activePg->isDedicatedPdf);
+
+    // If the active page is a dedicated continuous PDF, interaction is handled
+    // directly by PdfViewerPage with PDF-local millimeter coordinate projection
+    // and live inking. We retain hardware arbitration and tool telemetry above
+    // so PdfViewerPage can read the active pen, pressure, and semantic actions,
+    // while bypassing CanvasEngine dispatching to prevent corrupting the background canvas.
+    if (!isPdfModeActive) {
+        switch (ActiveDevice) {
+            case DeviceType::Stylus: DispatchStylus(canvas, session, imguiWantsInput); break;
+            case DeviceType::Touch:  DispatchTouch(canvas, session, imguiWantsInput);  break;
+            case DeviceType::Mouse:  DispatchMouse(canvas, session, imguiWantsInput);  break;
+            default: break;
+        }
     }
 
     oldStylusState = currentStylusState;

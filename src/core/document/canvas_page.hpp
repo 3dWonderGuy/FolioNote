@@ -90,6 +90,37 @@ public:
     bool isDedicatedPdf = false;        ///< True if this page is viewed in the dedicated PDF continuous viewer
     std::string dedicatedPdfPath;       ///< Path to the backing PDF document on disk / package
     std::string dedicatedPdfBookmarks;  ///< Serialized user bookmarks (JSON or pipe-delimited) persisted to SQLite
+    std::string dedicatedPdfHighlights; ///< Serialized text highlight spans (tab-delimited) persisted to SQLite
+
+    /**
+     * @struct CanvasViewportState
+     * @brief In-memory runtime camera viewport cache for this individual canvas page.
+     * 
+     * Mathematical projection:
+     *   P_screen = (P_world + panMm) * (pixelsPerMm * zoom)
+     *   P_world  = (P_screen / (pixelsPerMm * zoom)) - panMm
+     * 
+     * When switching between multiple pages/documents, this struct preserves the exact
+     * user pan offset and zoom level in RAM during the active session. If a page has been
+     * unaccessed for longer than the absence timeout (e.g. 60,000ms), or when evicted by
+     * the LRU memory manager, the viewport automatically resets to "homed" (0,0, 1.0x).
+     */
+    struct CanvasViewportState {
+        double panXMm = 0.0;
+        double panYMm = 0.0;
+        double zoom = 1.0;
+        bool hasCustomViewport = false;
+        uint64_t lastViewportAccessMs = 0;
+
+        void Home() noexcept {
+            panXMm = 0.0;
+            panYMm = 0.0;
+            zoom = 1.0;
+            hasCustomViewport = false;
+            lastViewportAccessMs = 0;
+        }
+    };
+    CanvasViewportState inMemoryViewport;
 
     // -------------------------------------------------------------------------
     // Construction & Lifecycle
@@ -122,6 +153,10 @@ public:
         clone->createdTimeStr = createdTimeStr;
         clone->objects = this->objects;
         clone->spatialIndex = this->spatialIndex;
+        clone->isDedicatedPdf = this->isDedicatedPdf;
+        clone->dedicatedPdfPath = this->dedicatedPdfPath;
+        clone->dedicatedPdfBookmarks = this->dedicatedPdfBookmarks;
+        clone->dedicatedPdfHighlights = this->dedicatedPdfHighlights;
         clone->isLoaded = true;
         clone->isModified = true;
         return clone;
@@ -130,11 +165,13 @@ public:
     /**
      * @brief Evicts in-memory vector strokes, spatial index, and undo stack to free RAM.
      * Called by PageRepository / Workspace LRU cache when memory limits are reached.
+     * Automatically homes the in-memory viewport when unloaded due to prolonged absence.
      */
     void EvictFromRAM() {
         spatialIndex.Clear();
         objects.clear();
         history.Clear();
+        inMemoryViewport.Home();
         isLoaded = false;
     }
 

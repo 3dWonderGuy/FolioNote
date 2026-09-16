@@ -255,6 +255,12 @@ public:
                             activeTab = tab.tabEnum;
                             isCollapsedPopupOpen = true;
                             tabTransitionTimer = 1.0f;
+                            if (isDedicatedPdf && activeTab == RibbonTab::Draw) {
+                                auto* pv = Folio::PdfViewerPage::GetActiveInstance();
+                                inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
+                                inputSM.currentAction = InteractionState::Inking;
+                                if (pv) pv->activeTool = Folio::PdfToolMode::Pen;
+                            }
                         }
                     } else {
                         if (activeTab == tab.tabEnum) {
@@ -264,6 +270,12 @@ public:
                                 previousTab = activeTab;
                                 activeTab = tab.tabEnum;
                                 tabTransitionTimer = 0.0f; // Smooth fade-in
+                                if (isDedicatedPdf && activeTab == RibbonTab::Draw) {
+                                    auto* pv = Folio::PdfViewerPage::GetActiveInstance();
+                                    inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
+                                    inputSM.currentAction = InteractionState::Inking;
+                                    if (pv) pv->activeTool = Folio::PdfToolMode::Pen;
+                                }
                             }
                             if (displayMode == RibbonDisplayMode::FullyHidden) {
                                 SetDisplayMode(previousActiveMode);
@@ -2538,17 +2550,44 @@ public:
                 }
 
                 // -------------------------------------------------------------
-                // SECTION 4: Text Annotation Tools (Highlighter, Eraser, Selector)
+                // SECTION 4: Inking & Text Annotation Shortcut Tools
                 // -------------------------------------------------------------
                 {
-                    FolioUI::ToolbarSectionBuilder sec("grp_pdf_text_tools", "Text & Annotation", theme, isMini);
+                    FolioUI::ToolbarSectionBuilder sec("grp_pdf_text_tools", "Inking & Tools", theme, isMini);
 
-                    bool isHl = pv ? (pv->activeTool == Folio::PdfToolMode::Highlight) : true;
-                    sec.AddSplitButton("btn_pdf_highlighter", iconHigh, "Highlighter",
+                    // 1. Pen shortcut: writes ink with active pen preset
+                    bool isPen = pv ? (pv->activeTool == Folio::PdfToolMode::Pen) : false;
+                    sec.AddLargeButton("btn_pdf_pen", iconPen, "Pen Ink",
+                        "Pen Ink: Write notes and draw freely on PDF pages. Switch to Draw tab for more pens and full palette.",
+                        isPen,
+                        [&]() {
+                            if (pv) pv->activeTool = Folio::PdfToolMode::Pen;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
+                            inputSM.currentAction = InteractionState::Inking;
+                        },
+                        false, ImVec2(68.0f, 58.0f));
+
+                    // 2. Freehand Highlighter shortcut: freeform inking highlighter
+                    bool isFreeHl = pv ? (pv->activeTool == Folio::PdfToolMode::FreeHighlight) : false;
+                    sec.AddLargeButton("btn_pdf_free_hl", iconHigh, "Free Highlight",
+                        "Freehand Highlighter: Freeform translucent highlighter for marking text, diagrams, and figures.",
+                        isFreeHl,
+                        [&]() {
+                            if (pv) pv->activeTool = Folio::PdfToolMode::FreeHighlight;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Inking);
+                            inputSM.currentAction = InteractionState::Inking;
+                        },
+                        false, ImVec2(80.0f, 58.0f));
+
+                    // 3. Text Highlighter: snapping highlighter
+                    bool isHl = pv ? (pv->activeTool == Folio::PdfToolMode::Highlight) : false;
+                    sec.AddSplitButton("btn_pdf_highlighter", iconHigh, "Text Highlight",
                         "Text Highlighter: Drag across text to highlight passages. Click arrow to change color.",
                         isHl,
                         [&]() {
                             if (pv) pv->activeTool = Folio::PdfToolMode::Highlight;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Selecting);
+                            inputSM.currentAction = InteractionState::Selecting;
                         },
                         [&](FolioUI::FlyoutMenuBuilder& menu) {
                             menu.AddHeader("Highlighter Color");
@@ -2565,6 +2604,8 @@ public:
                                     if (ImGui::ColorButton("##RibbonHlColor", presets[c].swatch, flags, ImVec2(28.0f, 28.0f))) {
                                         pv->activeHighlightColorIdx = c;
                                         pv->activeTool = Folio::PdfToolMode::Highlight;
+                                        inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Selecting);
+                                        inputSM.currentAction = InteractionState::Selecting;
                                         ImGui::CloseCurrentPopup();
                                     }
                                     if (ImGui::IsItemHovered()) {
@@ -2574,23 +2615,29 @@ public:
                                 }
                             });
                         },
-                        false, ImVec2(82.0f, 58.0f));
+                        false, ImVec2(84.0f, 58.0f));
 
+                    // 4. Eraser: erases ink strokes & text highlights
                     bool isEraser = pv ? (pv->activeTool == Folio::PdfToolMode::Eraser) : false;
                     sec.AddLargeButton("btn_pdf_eraser", iconEraser, "Eraser",
-                        "Highlight Eraser: Click on text highlights to erase them cleanly.",
+                        "Highlight Eraser: Click on text highlights or drag across ink to erase them cleanly.",
                         isEraser,
                         [&]() {
                             if (pv) pv->activeTool = Folio::PdfToolMode::Eraser;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Eraser);
+                            inputSM.currentAction = InteractionState::Eraser;
                         },
-                        false, ImVec2(72.0f, 58.0f));
+                        false, ImVec2(68.0f, 58.0f));
 
+                    // 5. Select Text: drag to copy / quote
                     bool isSel = pv ? (pv->activeTool == Folio::PdfToolMode::Select) : false;
                     sec.AddLargeButton("btn_pdf_select_mode", selectIcon, "Select Text",
                         "Select Text: Select text on PDF pages to copy, quote to notes, or export.",
                         isSel,
                         [&]() {
                             if (pv) pv->activeTool = Folio::PdfToolMode::Select;
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Selecting);
+                            inputSM.currentAction = InteractionState::Selecting;
                         },
                         false, ImVec2(76.0f, 58.0f));
 

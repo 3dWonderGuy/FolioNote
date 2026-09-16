@@ -136,6 +136,17 @@ public:
     bool  isCanvasHovered = false;
 
     // -------------------------------------------------------------------------
+    // DEDICATED PDF MODE TELEMETRY
+    // -------------------------------------------------------------------------
+    // Set to true when pointer is over the continuous PDF document content in
+    // PdfViewerPage. Used by input arbitration to distinguish PDF document
+    // canvas hover from ImGui chrome (sidebar, ribbon, HUD, modals).
+    bool isPdfCanvasHovered = false;
+
+    // True when the active document page is a dedicated standalone continuous PDF.
+    bool isPdfModeActive = false;
+
+    // -------------------------------------------------------------------------
     // EVENT TIMESTAMPS
     // -------------------------------------------------------------------------
     uint64_t lastPenTimestampMs   = 0;
@@ -208,6 +219,24 @@ public:
                                (tool == InteractionState::Panning) ? "Panning" :
                                (tool == InteractionState::DrawingShape) ? "DrawingShape" : "Idle";
         LOG_INFO(InputStateMachine, "Set tool for device " + std::to_string(static_cast<int>(device)) + " to " + toolName);
+    }
+
+    /**
+     * @brief Queries whether the state machine is currently in active inking/drawing mode.
+     * 
+     * @return true if current action is Inking.
+     */
+    [[nodiscard]] bool IsDrawingMode() const noexcept {
+        return currentAction == InteractionState::Inking;
+    }
+
+    /**
+     * @brief Queries whether the state machine is currently in active eraser mode.
+     * 
+     * @return true if current action is Eraser.
+     */
+    [[nodiscard]] bool IsEraserMode() const noexcept {
+        return currentAction == InteractionState::Eraser;
     }
 
     // Main per-frame entry point. Call once per SDL event after all Handle*Event

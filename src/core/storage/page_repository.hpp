@@ -168,6 +168,7 @@ public:
         bool isDedicatedPdf = page->isDedicatedPdf;
         std::string dedicatedPdfPath = page->dedicatedPdfPath;
         std::string dedicatedPdfBookmarks = page->dedicatedPdfBookmarks;
+        std::string dedicatedPdfHighlights = page->dedicatedPdfHighlights;
 
         // ---------------------------------------------------------------------------------
         // Stage 2: Synchronous In-Memory Binary Serialization
@@ -193,7 +194,7 @@ public:
         // Stage 3 & 4: Background ThreadPool Dispatch (Disk I/O & SQLite Write)
         // Offload disk writing and database upserting to a worker thread.
         // ---------------------------------------------------------------------------------
-        return GetGlobalThreadPool().Enqueue([db, pkgPath, pageGuid, sectionGuid, title, createdDate, createdTime, order, blobData, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks]() -> bool {
+        return GetGlobalThreadPool().Enqueue([db, pkgPath, pageGuid, sectionGuid, title, createdDate, createdTime, order, blobData, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks, dedicatedPdfHighlights]() -> bool {
             // Write compressed binary payload to disk: pages/{pageGuid}.ink
             std::string inkPath = (std::filesystem::path(pkgPath) / "pages" / (pageGuid + ".ink")).string();
             std::ofstream out(inkPath, std::ios::binary);
@@ -207,7 +208,7 @@ public:
             }
 
             // Update SQLite metadata record in 'pages' table
-            bool success = db->SavePageMetadata(pageGuid, sectionGuid, title, createdDate, createdTime, order, hasBlob, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks);
+            bool success = db->SavePageMetadata(pageGuid, sectionGuid, title, createdDate, createdTime, order, hasBlob, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks, dedicatedPdfHighlights);
             if (!success) {
                 LOG_ERROR(PageRepository, "Asynchronous page metadata write failed for GUID: " + pageGuid);
             }
@@ -329,7 +330,14 @@ public:
                     if (!page) continue;
 
                     page->sortOrder = pIdx;
-                    // Only dispatch save if page is dirty or newly initialized
+
+                    // Always persist the new sort_order for every page — this is a
+                    // lightweight UPDATE (sort_order + updated_at only) and ensures
+                    // drag-and-drop or Move Up/Down reorders survive app restart even
+                    // when no ink was drawn on the page (isModified would be false).
+                    dbManager->UpdatePageSortOrder(page->guid, pIdx);
+
+                    // Full blob + metadata save: only needed when canvas content changed
                     if (page->isModified || !page->isLoaded) {
                         SavePageAsync(page, section->guid, pIdx);
                     }
@@ -459,6 +467,7 @@ public:
                 page->isDedicatedPdf = pRec.isDedicatedPdf;
                 page->dedicatedPdfPath = pRec.dedicatedPdfPath;
                 page->dedicatedPdfBookmarks = pRec.dedicatedPdfBookmarks;
+                page->dedicatedPdfHighlights = pRec.dedicatedPdfHighlights;
                 page->isLoaded = false; // Lazy loading: payload will be fetched on-demand
                 page->isModified = false;
                 section->pages.push_back(page);
@@ -480,6 +489,33 @@ public:
         // Fallback: Ensure notebook has at least one default section
         if (notebook->sections.empty() && notebook->sectionGroups.empty()) {
             notebook->sections.push_back(std::make_shared<Section>("New Section 1"));
+        }
+
+        // -----------------------------------------------------------------------------
+        // Sort all section/group collections by their saved sortOrder so that the
+        // order the user arranged them (and wrote to SQLite) is faithfully restored.
+        // Without this, push_back order is driven by the global SQL ORDER BY sort_order
+        // across ALL sections regardless of group, which interleaves groups incorrectly.
+        // -----------------------------------------------------------------------------
+        auto sortBySortOrder = [](auto& vec) {
+            std::sort(vec.begin(), vec.end(), [](const auto& a, const auto& b) {
+                return a->sortOrder < b->sortOrder;
+            });
+        };
+
+        // Sort top-level section groups
+        sortBySortOrder(notebook->sectionGroups);
+
+        // Sort root sections
+        sortBySortOrder(notebook->sections);
+
+        // Sort sections inside each group and sub-group
+        for (auto& grp : notebook->sectionGroups) {
+            if (!grp) continue;
+            sortBySortOrder(grp->sections);
+            for (auto& sub : grp->subGroups) {
+                if (sub) sortBySortOrder(sub->sections);
+            }
         }
 
         // -----------------------------------------------------------------------------

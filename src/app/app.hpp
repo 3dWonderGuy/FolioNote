@@ -70,6 +70,19 @@ public:
      */
     Point2D generalContextMenuWorldPos{0.0, 0.0};
 
+    /**
+     * @brief GUID of the canvas page that was active in the previous frame.
+     * Used to detect page transitions so we can save/restore the canvas
+     * viewport (panXMm, panYMm, zoom) in each page's inMemoryViewport.
+     */
+    std::string lastActivePageGuid;
+
+    /**
+     * @brief Timestamp (SDL_GetTicks) of the last LRU working-set eviction check.
+     * The check runs at most once per second to avoid overhead.
+     */
+    uint64_t lastLruCheckMs = 0;
+
     bool Init(const char* title = "FolioNote", int initialW = 1920, int initialH = 1080) {
         if (!SDL_Init(SDL_INIT_VIDEO)) return false;
 
@@ -643,9 +656,91 @@ public:
                 float canvasX = navW;
                 float canvasW = screenW - navW;
 
+                // =========================================================
+                // CANVAS VIEWPORT PRESERVATION ON PAGE SWITCH
+                // =========================================================
+                // When the user switches canvas pages we save the outgoing
+                // page's transform and restore the incoming page's saved
+                // transform if it was accessed within the last 60 seconds.
+                // After 60 s of absence (matching the LRU eviction window)
+                // we home the viewport to (pan=0, zoom=1) so the user always
+                // starts at a sensible position after a long break.
+                //
+                //   Timeout condition: elapsed > VIEWPORT_TIMEOUT_MS
+                //   Restore condition: hasCustomViewport && elapsed <= VIEWPORT_TIMEOUT_MS
+                //   Home    condition: !hasCustomViewport || elapsed > VIEWPORT_TIMEOUT_MS
+                constexpr uint64_t VIEWPORT_TIMEOUT_MS = 60000;
+
                 auto activePg = session.GetActivePage();
+                if (activePg && !activePg->isDedicatedPdf) {
+                    std::string newGuid = activePg->guid;
+                    if (newGuid != lastActivePageGuid) {
+                        uint64_t nowMs = SDL_GetTicks();
+
+                        // --- Save outgoing page viewport ---
+                        if (!lastActivePageGuid.empty()) {
+                            // Find the outgoing page across all sections
+                            auto activeNb = session.workspace.GetActiveNotebook();
+                            if (activeNb) {
+                                auto findPage = [&](const std::string& guid) -> std::shared_ptr<CanvasPage> {
+                                    for (auto& s : activeNb->sections) {
+                                        if (s) { if (auto p = s->FindPageByGuid(guid)) return p; }
+                                    }
+                                    for (auto& g : activeNb->sectionGroups) {
+                                        if (g) { for (auto& s : g->sections) {
+                                            if (s) { if (auto p = s->FindPageByGuid(guid)) return p; }
+                                        }}
+                                    }
+                                    return nullptr;
+                                };
+                                if (auto outPg = findPage(lastActivePageGuid)) {
+                                    outPg->inMemoryViewport.panXMm            = canvas.transform.panXMm;
+                                    outPg->inMemoryViewport.panYMm            = canvas.transform.panYMm;
+                                    outPg->inMemoryViewport.zoom              = canvas.transform.zoom;
+                                    outPg->inMemoryViewport.hasCustomViewport = true;
+                                    outPg->inMemoryViewport.lastViewportAccessMs = nowMs;
+                                }
+                            }
+                        }
+
+                        // --- Restore or home incoming page viewport ---
+                        auto& vp = activePg->inMemoryViewport;
+                        if (vp.hasCustomViewport &&
+                            (nowMs - vp.lastViewportAccessMs) <= VIEWPORT_TIMEOUT_MS) {
+                            // Restore previously saved viewport
+                            canvas.transform.panXMm = vp.panXMm;
+                            canvas.transform.panYMm = vp.panYMm;
+                            canvas.transform.zoom   = vp.zoom;
+                        } else {
+                            // Home: absent too long or never visited
+                            canvas.transform.panXMm = 0.0;
+                            canvas.transform.panYMm = 0.0;
+                            canvas.transform.zoom   = 1.0;
+                            vp.Home();
+                        }
+                        vp.lastViewportAccessMs = nowMs;
+
+                        lastActivePageGuid = newGuid;
+                        canvas.needsFullRebake = true;
+                    }
+                }
+
+                // Periodic LRU eviction: evict pages absent for >60 s (~1/s)
+                {
+                    uint64_t nowMs = SDL_GetTicks();
+                    if (nowMs - lastLruCheckMs >= 1000) {
+                        lastLruCheckMs = nowMs;
+                        session.workspace.MaintainWorkingSetLRU(VIEWPORT_TIMEOUT_MS);
+                    }
+                }
+
                 if (activePg && activePg->isDedicatedPdf) {
                     pdfViewer.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager, canvas.inkColorInverted);
+                    inputManager.wasCanvasImageHovered = pdfViewer.isPdfContentHovered;
+                    inputManager.stateMachine.isCanvasHovered = pdfViewer.isPdfContentHovered;
+                    inputManager.stateMachine.isPdfCanvasHovered = pdfViewer.isPdfContentHovered;
+                    inputManager.stateMachine.canvasOriginX = canvasX;
+                    inputManager.stateMachine.canvasOriginY = contentY;
                 } else {
 
                 ImGui::SetNextWindowPos(ImVec2(canvasX, contentY));
