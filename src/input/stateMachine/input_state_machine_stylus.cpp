@@ -62,6 +62,11 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
     const float canvasLocalX = pen.x - canvasOriginX;
     const float canvasLocalY = pen.y - canvasOriginY;
 
+    if (currentAction != InteractionState::DrawingShape && canvas.shapeCreation.lockDrawingMode) {
+        canvas.shapeCreation.lockDrawingMode = false;
+        canvas.shapeCreation.isActive = false;
+    }
+
     // -------------------------------------------------------------------------
     // 2. SEMANTIC ACTION DISPATCH
     // -------------------------------------------------------------------------
@@ -176,24 +181,50 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
         // DRAWING SHAPE (Geometric Vector Shape Drag-Creation)
         // =====================================================================
         case InteractionState::DrawingShape: {
-            if (justDown) {
-                canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY);
-                canvas.isDirty = true;
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                canvas.CancelShapeCreation();
+                currentAction = InteractionState::Selecting;
+                SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
+                SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
+            } else if (justDown) {
+                bool hitGizmo = false;
+                if (canvas.selectionGizmo.HasSelection()) {
+                    auto hit = canvas.selectionGizmo.HitTest(canvasLocalX, canvasLocalY, canvas.transform);
+                    if (hit.hit) {
+                        hitGizmo = true;
+                        canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform);
+                    }
+                }
+                if (!hitGizmo) {
+                    canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY);
+                    canvas.isDirty = true;
+                }
             } else if (isMoving) {
-                if (canvas.shapeCreation.isDragging) {
+                if (canvas.selectionGizmo.isDragging) {
+                    if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform)) {
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                } else if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
                     canvas.OnShapeDrawMove(canvasLocalX, canvasLocalY);
                     canvas.isDirty = true;
                 }
             } else if (justUp) {
-                if (canvas.shapeCreation.isDragging) {
+                if (canvas.selectionGizmo.isDragging) {
+                    canvas.selectionGizmo.OnPointerUp();
+                    canvas.SyncSelectionToSpatialIndex(&session);
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                } else if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
                     canvas.OnShapeDrawUp(&session);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
-                    // If mode is not locked, revert to Selection tool
-                    if (!canvas.shapeCreation.lockDrawingMode) {
-                        currentAction = InteractionState::Selecting;
-                        SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
-                        SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
+                    if (canvas.shapeCreation.ellipseStep == 0) {
+                        if (!canvas.shapeCreation.lockDrawingMode) {
+                            currentAction = InteractionState::Selecting;
+                            SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
+                            SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
+                        }
                     }
                 }
             }

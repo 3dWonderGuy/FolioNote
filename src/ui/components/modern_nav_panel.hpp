@@ -1891,6 +1891,7 @@ private:
                 newPage->nestingLevel = 0;
                 activeSec->pages.push_back(newPage);
                 activeSec->activePageIndex = activeSec->pages.size() - 1;
+                canvas.ClearSelection(&session);
                 canvas.ApplyDefaultTemplate();
             }
         }
@@ -1951,6 +1952,7 @@ private:
                     } else {
                         if (activeSec->activePageIndex != p) {
                             activeSec->activePageIndex = p;
+                            canvas.ClearSelection(&session);
                             ::Folio::UsageTracker::Instance().RecordPageSwitch();
                             LOG_INFO(NavPanel, "Switched active page to: '" + page->title + "' (" + page->guid + ")");
                         }
@@ -2035,6 +2037,7 @@ private:
                         newSub->nestingLevel = std::min(2, page->nestingLevel + 1);
                         activeSec->pages.insert(activeSec->pages.begin() + p + 1, newSub);
                         activeSec->activePageIndex = p + 1;
+                        canvas.ClearSelection(&session);
                         canvas.ApplyDefaultTemplate();
                     }
                     if (ImGui::MenuItem("Make Subpage (Indent)", nullptr, false, page->nestingLevel < 2)) {
@@ -2065,6 +2068,7 @@ private:
                             auto pastePg = copiedPage->Clone();
                             activeSec->pages.insert(activeSec->pages.begin() + p + 1, pastePg);
                             activeSec->activePageIndex = p + 1;
+                            canvas.ClearSelection(&session);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
                         }

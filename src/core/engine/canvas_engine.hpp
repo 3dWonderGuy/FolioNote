@@ -519,6 +519,18 @@ public:
         bool isDragging = false;
         Folio::ShapeType shapeType = Folio::ShapeType::Rectangle;
         bool lockDrawingMode = false;
+        bool lockToGrid = false;          ///< When true, snaps coordinates to canvas.gridSpacingMm (graph paper grid)
+        int polygonSides = 6;             ///< Number of sides for RegularPolygon / Hexagon (default 6)
+
+        // Ellipse multi-step creation state:
+        // step 0: waiting/dragging major radius from center
+        // step 1: major radius fixed, moving mouse to adjust minor radius (thickness), click to finalize
+        int ellipseStep = 0;
+        Point2D ellipseCenter{0.0, 0.0};
+        Point2D ellipseMajorPoint{0.0, 0.0};
+        double ellipseMajorRadius = 0.0;
+        double ellipseMinorRadius = 0.0;
+
         Point2D startWorld{0.0, 0.0};
         Point2D currentWorld{0.0, 0.0};
         float startScreenX = 0.0f;
@@ -527,16 +539,26 @@ public:
         float currentScreenY = 0.0f;
 
         // Current default properties for newly created shapes
-        Folio::ShapeFillType defaultFillType = Folio::ShapeFillType::SemiTransparent;
+        Folio::ShapeFillType defaultFillType = Folio::ShapeFillType::None; // By default shapes are non-colored
         BLRgba32 defaultFillColor = BLRgba32(0x00, 0x78, 0xD4, 0x40);
         Folio::ShapeOutlineType defaultOutlineType = Folio::ShapeOutlineType::Solid;
         BLRgba32 defaultOutlineColor = BLRgba32(0x18, 0x1A, 0x20, 0xFF);
         double defaultStrokeWidth = 1.0;
+        Folio::ArrowHeadType defaultEndArrow = Folio::ArrowHeadType::Triangle;
     } shapeCreation;
+
+    Point2D SnapToGridIfNeeded(const Point2D& pt) const {
+        if (!shapeCreation.lockToGrid || gridSpacingMm <= 0.001) return pt;
+        return Point2D(
+            std::round(pt.x / gridSpacingMm) * gridSpacingMm,
+            std::round(pt.y / gridSpacingMm) * gridSpacingMm
+        );
+    }
 
     void StartShapeCreation(Folio::ShapeType type, bool lockMode = false) {
         shapeCreation.isActive = true;
         shapeCreation.isDragging = false;
+        shapeCreation.ellipseStep = 0;
         shapeCreation.shapeType = type;
         shapeCreation.lockDrawingMode = lockMode;
         LOG_INFO(CanvasEngine, "Started shape creation mode for type=" + std::to_string(static_cast<int>(type)) +
@@ -546,48 +568,155 @@ public:
     void CancelShapeCreation() {
         shapeCreation.isActive = false;
         shapeCreation.isDragging = false;
+        shapeCreation.ellipseStep = 0;
+        shapeCreation.lockDrawingMode = false; // Always disable lock drawing mode on quit/cancel
+        isDirty = true;
     }
 
     void OnShapeDrawDown(float screenX, float screenY) {
+        if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
+            // Clicking during step 1 finalizes the ellipse; handled in OnShapeDrawUp.
+            shapeCreation.isDragging = true;
+            return;
+        }
+
         shapeCreation.isDragging = true;
         shapeCreation.startScreenX = screenX;
         shapeCreation.startScreenY = screenY;
         shapeCreation.currentScreenX = screenX;
         shapeCreation.currentScreenY = screenY;
-        shapeCreation.startWorld = transform.ScreenToWorld(screenX, screenY);
+        Point2D rawStart = transform.ScreenToWorld(screenX, screenY);
+        shapeCreation.startWorld = SnapToGridIfNeeded(rawStart);
         shapeCreation.currentWorld = shapeCreation.startWorld;
         isDirty = true;
     }
 
     void OnShapeDrawMove(float screenX, float screenY) {
-        if (!shapeCreation.isDragging) return;
         shapeCreation.currentScreenX = screenX;
         shapeCreation.currentScreenY = screenY;
-        shapeCreation.currentWorld = transform.ScreenToWorld(screenX, screenY);
-        isDirty = true;
+        Point2D rawWorld = transform.ScreenToWorld(screenX, screenY);
+        shapeCreation.currentWorld = SnapToGridIfNeeded(rawWorld);
+
+        if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
+            // Step 2 of ellipse creation: adjust minor radius (thickness) relative to major radius
+            double d = std::hypot(shapeCreation.currentWorld.x - shapeCreation.ellipseCenter.x,
+                                  shapeCreation.currentWorld.y - shapeCreation.ellipseCenter.y);
+            shapeCreation.ellipseMinorRadius = std::clamp(d, 1.0, std::max(2.0, shapeCreation.ellipseMajorRadius));
+            isDirty = true;
+            return;
+        }
+
+        if (shapeCreation.isDragging) {
+            isDirty = true;
+        }
     }
 
     std::shared_ptr<Folio::ShapeObject> OnShapeDrawUp(DocumentSession* session) {
-        if (!shapeCreation.isDragging) return nullptr;
-        shapeCreation.isDragging = false;
+        if (!shapeCreation.isDragging && shapeCreation.ellipseStep == 0) return nullptr;
 
         if (!session) return nullptr;
         auto activePage = session->GetActivePage();
         if (!activePage) return nullptr;
 
-        double minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
-        double maxX = std::max(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
-        double minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
-        double maxY = std::max(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
-        double w = maxX - minX;
-        double h = maxY - minY;
+        // Ellipse step 1 finalization: click places the completed ellipse
+        if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
+            double rx = shapeCreation.ellipseMajorRadius;
+            double ry = shapeCreation.ellipseMinorRadius;
+            if (rx < 1.0) rx = 10.0;
+            if (ry < 1.0) ry = 10.0;
 
-        // If clicked/tapped without dragging (less than 2mm threshold), create a standard default size centered at tap
-        if (w < 2.0 && h < 2.0) {
-            w = 50.0;
-            h = 35.0;
-            minX = shapeCreation.startWorld.x - w * 0.5;
-            minY = shapeCreation.startWorld.y - h * 0.5;
+            double cx = shapeCreation.ellipseCenter.x;
+            double cy = shapeCreation.ellipseCenter.y;
+            double minX = cx - rx;
+            double minY = cy - ry;
+            double w = rx * 2.0;
+            double h = ry * 2.0;
+
+            auto shp = std::make_shared<Folio::ShapeObject>(Folio::ShapeType::Ellipse, minX, minY, w, h);
+            shp->guuid = GUIDGenerator::GenerateV4();
+            shp->uid = UIDGenerator::Next();
+            shp->fillType = shapeCreation.defaultFillType;
+            shp->fillColor = shapeCreation.defaultFillColor;
+            shp->outlineType = shapeCreation.defaultOutlineType;
+            shp->strokeColor = shapeCreation.defaultOutlineColor;
+            shp->strokeWidth = shapeCreation.defaultStrokeWidth;
+            shp->UpdateBounds();
+
+            activePage->AddObject(shp);
+            ClearSelection(session);
+            shp->isSelected = 1;
+            selectionGizmo.SetSelectedObjects(activePage->objects);
+
+            shapeCreation.ellipseStep = 0;
+            shapeCreation.isDragging = false;
+            if (!shapeCreation.lockDrawingMode) {
+                shapeCreation.isActive = false;
+            }
+            needsFullRebake = true;
+            isDirty = true;
+            return shp;
+        }
+
+        shapeCreation.isDragging = false;
+
+        // Threshold guard: shapes must be dragged out. Accidental clicks/taps (< 2.5mm) do NOT spawn a shape!
+        double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
+                                     shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+        if (dragDist < 2.5) {
+            LOG_INFO(CanvasEngine, "Shape drag cancelled: drag distance below 2.5mm threshold - clearing selection");
+            shapeCreation.isDragging = false;
+            shapeCreation.ellipseStep = 0;
+            ClearSelection(session);
+            selectionGizmo.ClearSelection();
+            needsFullRebake = true;
+            isDirty = true;
+            return nullptr;
+        }
+
+        // Ellipse Step 0: User just dragged out the major radius. Advance to Step 1 for thickness adjustment!
+        if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 0) {
+            shapeCreation.ellipseStep = 1;
+            shapeCreation.ellipseCenter = shapeCreation.startWorld;
+            shapeCreation.ellipseMajorPoint = shapeCreation.currentWorld;
+            shapeCreation.ellipseMajorRadius = dragDist;
+            shapeCreation.ellipseMinorRadius = dragDist; // starts circular
+            isDirty = true;
+            LOG_INFO(CanvasEngine, "Ellipse Step 1: Major radius set to " + std::to_string(dragDist) + "mm. Move mouse to adjust thickness, click to place.");
+            return nullptr;
+        }
+
+        double minX = 0.0, minY = 0.0, w = 0.0, h = 0.0;
+
+        if (shapeCreation.shapeType == Folio::ShapeType::Circle) {
+            // Circle starts from center as a dot and expands symmetrically
+            double r = dragDist;
+            w = r * 2.0;
+            h = r * 2.0;
+            minX = shapeCreation.startWorld.x - r;
+            minY = shapeCreation.startWorld.y - r;
+        }
+        else if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
+                 shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
+            // Onshape style: draw radius from center, polygon vertices circumscribed
+            double r = dragDist;
+            w = r * 2.0;
+            h = r * 2.0;
+            minX = shapeCreation.startWorld.x - r;
+            minY = shapeCreation.startWorld.y - r;
+        }
+        else if (shapeCreation.shapeType == Folio::ShapeType::Line ||
+                 shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
+            minX = shapeCreation.startWorld.x;
+            minY = shapeCreation.startWorld.y;
+            w = shapeCreation.currentWorld.x - shapeCreation.startWorld.x;
+            h = shapeCreation.currentWorld.y - shapeCreation.startWorld.y;
+        }
+        else {
+            // Rectangle, RoundedRect, Triangle, RightTriangle, Star, etc. (bounding box drag)
+            minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+            minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+            w = std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x);
+            h = std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
         }
 
         auto shp = std::make_shared<Folio::ShapeObject>(shapeCreation.shapeType, minX, minY, w, h);
@@ -598,11 +727,18 @@ public:
         shp->outlineType = shapeCreation.defaultOutlineType;
         shp->strokeColor = shapeCreation.defaultOutlineColor;
         shp->strokeWidth = shapeCreation.defaultStrokeWidth;
+        if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
+            shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
+            shp->param1 = static_cast<double>(shapeCreation.polygonSides);
+        }
+        if (shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
+            shp->endArrow = shapeCreation.defaultEndArrow;
+        }
         shp->UpdateBounds();
 
         activePage->AddObject(shp);
 
-        // Select the newly created shape
+        // Select the newly created shape so the user can immediately transform or operate with it
         ClearSelection(session);
         shp->isSelected = 1;
         selectionGizmo.SetSelectedObjects(activePage->objects);
@@ -835,9 +971,11 @@ public:
                             docInfo.packagePath, docInfo.originalFileName, 0, docInfo.pageCount,
                             ctx->insertPosWorld.x - 105.0, ctx->insertPosWorld.y - 148.5, 210.0, 297.0, ctx->asBackground
                         );
+                        pdfObj->resolvedDiskPath = docInfo.diskPath;
                         pdfObj->isExternalLink = docInfo.isExternal;
                         pdfObj->guuid = GUIDGenerator::GenerateV4();
                         pdfObj->uid = UIDGenerator::Next();
+                        pdfObj->EnsurePageLoaded();
                         pdfObj->UpdateBounds();
 
                         activePage->AddObject(pdfObj);
@@ -1125,24 +1263,80 @@ public:
         }
 
         // Draw active vector shape drag preview (World Coordinates)
-        if (shapeCreation.isDragging) {
-            double minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
-            double maxX = std::max(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
-            double minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
-            double maxY = std::max(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
-            double w = std::max(0.5, maxX - minX);
-            double h = std::max(0.5, maxY - minY);
+        if (shapeCreation.isDragging || (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
+            double minX = 0.0, minY = 0.0, w = 0.5, h = 0.5;
 
-            Folio::ShapeObject preview(shapeCreation.shapeType, minX, minY, w, h);
-            preview.fillType = shapeCreation.defaultFillType;
-            preview.fillColor = shapeCreation.defaultFillColor;
-            preview.outlineType = shapeCreation.defaultOutlineType;
-            preview.strokeColor = shapeCreation.defaultOutlineColor;
-            preview.strokeWidth = shapeCreation.defaultStrokeWidth;
+            if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
+                double rx = shapeCreation.ellipseMajorRadius;
+                double ry = shapeCreation.ellipseMinorRadius;
+                double cx = shapeCreation.ellipseCenter.x;
+                double cy = shapeCreation.ellipseCenter.y;
+                minX = cx - rx;
+                minY = cy - ry;
+                w = std::max(0.5, rx * 2.0);
+                h = std::max(0.5, ry * 2.0);
 
-            Viewport vp;
-            vp.zoom = transform.zoom;
-            preview.Render(compCtx, vp);
+                // Guide markers for center and major axis
+                compCtx.fill_circle(cx, cy, 0.8, shapeCreation.defaultOutlineColor);
+                compCtx.fill_circle(shapeCreation.ellipseMajorPoint.x, shapeCreation.ellipseMajorPoint.y, 0.8, shapeCreation.defaultOutlineColor);
+            }
+            else if (shapeCreation.shapeType == Folio::ShapeType::Circle) {
+                double r = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
+                                      shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+                w = std::max(0.5, r * 2.0);
+                h = std::max(0.5, r * 2.0);
+                minX = shapeCreation.startWorld.x - r;
+                minY = shapeCreation.startWorld.y - r;
+
+                // Center dot indicator
+                compCtx.fill_circle(shapeCreation.startWorld.x, shapeCreation.startWorld.y, 0.8, shapeCreation.defaultOutlineColor);
+            }
+            else if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
+                     shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
+                double r = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
+                                      shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+                w = std::max(0.5, r * 2.0);
+                h = std::max(0.5, r * 2.0);
+                minX = shapeCreation.startWorld.x - r;
+                minY = shapeCreation.startWorld.y - r;
+
+                compCtx.fill_circle(shapeCreation.startWorld.x, shapeCreation.startWorld.y, 0.8, shapeCreation.defaultOutlineColor);
+            }
+            else if (shapeCreation.shapeType == Folio::ShapeType::Line ||
+                     shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
+                minX = shapeCreation.startWorld.x;
+                minY = shapeCreation.startWorld.y;
+                w = shapeCreation.currentWorld.x - shapeCreation.startWorld.x;
+                h = shapeCreation.currentWorld.y - shapeCreation.startWorld.y;
+            }
+            else {
+                minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+                minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+                w = std::max(0.5, std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x));
+                h = std::max(0.5, std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y));
+            }
+
+            double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
+                                         shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+            if (dragDist >= 1.0 || (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
+                Folio::ShapeObject preview(shapeCreation.shapeType, minX, minY, w, h);
+                preview.fillType = shapeCreation.defaultFillType;
+                preview.fillColor = shapeCreation.defaultFillColor;
+                preview.outlineType = shapeCreation.defaultOutlineType;
+                preview.strokeColor = shapeCreation.defaultOutlineColor;
+                preview.strokeWidth = shapeCreation.defaultStrokeWidth;
+                if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
+                    shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
+                    preview.param1 = static_cast<double>(shapeCreation.polygonSides);
+                }
+                if (shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
+                    preview.endArrow = shapeCreation.defaultEndArrow;
+                }
+
+                Viewport vp;
+                vp.zoom = transform.zoom;
+                preview.Render(compCtx, vp);
+            }
         }
 
         compCtx.restore();

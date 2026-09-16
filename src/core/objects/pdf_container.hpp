@@ -1,5 +1,15 @@
 #pragma once
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 #include <string>
 #include <vector>
 #include <memory>
@@ -41,15 +51,47 @@ public:
     mutable bool loadAttempted = false;
     mutable BLImage cachedPageImage;      // Decoded raster surface for the page
 
-    void EnsurePageLoaded() const {
-        if (isLoaded || loadAttempted) return;
+    /**
+     * @brief Resets the cached raster surface and load attempt flag, allowing reload upon path updates.
+     */
+    void ResetLoadState() {
+        isLoaded = false;
+        loadAttempted = false;
+        cachedPageImage.reset();
+    }
+
+    /**
+     * @brief Ensures that the underlying PDF page raster surface is decoded and cached in memory.
+     * 
+     * --- RESOLUTION WORKFLOW ---
+     * 1. Checks `resolvedDiskPath` first (direct absolute path on disk).
+     * 2. If empty or missing, falls back to `pdfPath`.
+     * 3. If missing and `fallbackDir` (e.g. notebook package root) is supplied, attempts
+     *    resolving relative path: `std::filesystem::path(fallbackDir) / pdfPath`.
+     * 4. Once verified, invokes Folio::PdfRenderer::RenderPage to decode the vector page
+     *    into a high-resolution Blend2D bitmap surface (at 150 DPI) and caches it.
+     * 
+     * @param fallbackDir Optional directory (such as notebook root folder) to locate relative assets.
+     */
+    void EnsurePageLoaded(const std::string& fallbackDir = "") const {
+        if (isLoaded) return;
+        if (loadAttempted && cachedPageImage.is_empty() && fallbackDir.empty()) return;
         loadAttempted = true;
 
         std::string diskPath = resolvedDiskPath;
         if (diskPath.empty()) {
             diskPath = pdfPath;
         }
-        if (diskPath.empty() || !std::filesystem::exists(diskPath)) {
+
+        std::error_code ec;
+        if (!diskPath.empty() && !std::filesystem::exists(diskPath, ec) && !fallbackDir.empty()) {
+            std::filesystem::path resolved = std::filesystem::path(fallbackDir) / pdfPath;
+            if (std::filesystem::exists(resolved, ec)) {
+                diskPath = resolved.string();
+                const_cast<PdfContainer*>(this)->resolvedDiskPath = diskPath;
+            }
+        }
+        if (diskPath.empty() || !std::filesystem::exists(diskPath, ec)) {
             return;
         }
 
@@ -98,10 +140,10 @@ public:
         };
 
         bounds = AABB{
-            std::min({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
-            std::min({corners[0].y, corners[1].y, corners[2].y, corners[3].y}),
-            std::max({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
-            std::max({corners[0].y, corners[1].y, corners[2].y, corners[3].y})
+            (std::min)({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
+            (std::min)({corners[0].y, corners[1].y, corners[2].y, corners[3].y}),
+            (std::max)({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
+            (std::max)({corners[0].y, corners[1].y, corners[2].y, corners[3].y})
         };
     }
 
@@ -128,12 +170,33 @@ public:
         return (local.x >= minX && local.x <= maxX && local.y >= minY && local.y <= maxY);
     }
 
+    /**
+     * @brief Circular proximity hit-test.
+     * 
+     * @note When `isBackground` is true, the PDF container acts as an immutable paper backdrop;
+     *       all selection probes and clicks are rejected so freehand drawing and lasso selection
+     *       pass freely over the page without selecting or moving it.
+     */
+    bool HitTestCircle(double worldXQuery, double worldYQuery, double /*radiusMm*/) const override {
+        if (!isVisible || opacity <= 0.0f) return false;
+        if (isBackground) return false;
+        return HitTest(worldXQuery, worldYQuery);
+    }
+
     bool HitTestSwept(const Point2D& /*w0*/, const Point2D& /*w1*/, double /*radiusMm*/) const override {
         // Erasers must never erase PDF document pages
         return false;
     }
 
+    /**
+     * @brief Marquee/lasso selection bounding box intersection.
+     * 
+     * @note Background PDF pages are excluded from marquee selection to prevent accidental
+     *       group movement of the background canvas page.
+     */
     bool Intersects(const AABB& selectionBounds) const override {
+        if (!isVisible || opacity <= 0.0f) return false;
+        if (isBackground) return false;
         return bounds.Intersects(selectionBounds);
     }
 
