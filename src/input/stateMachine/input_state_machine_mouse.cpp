@@ -229,39 +229,25 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     else if (currentAction == InteractionState::DrawingShape) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             canvas.CancelShapeCreation();
+            canvas.ClearSelection(&session);
             currentAction = InteractionState::Selecting;
             SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
             SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
         } else if (justDown) {
-            bool hitGizmo = false;
+            // Clean state isolation: suppress previous gizmo interactions when actively drawing
             if (canvas.selectionGizmo.HasSelection()) {
-                auto hit = canvas.selectionGizmo.HitTest(canvasLocalX, canvasLocalY, canvas.transform);
-                if (hit.hit) {
-                    hitGizmo = true;
-                    canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform);
-                }
+                canvas.ClearSelection(&session);
+                canvas.selectionGizmo.ClearSelection();
             }
-            if (!hitGizmo) {
-                canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY);
-                canvas.isDirty = true;
-            }
+            canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY, &session);
+            canvas.isDirty = true;
         } else if (isMoving) {
-            if (canvas.selectionGizmo.isDragging) {
-                if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform)) {
-                    canvas.needsFullRebake = true;
-                    canvas.isDirty = true;
-                }
-            } else if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
-                canvas.OnShapeDrawMove(canvasLocalX, canvasLocalY);
+            if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
+                canvas.OnShapeDrawMove(canvasLocalX, canvasLocalY, &session);
                 canvas.isDirty = true;
             }
         } else if (justUp) {
-            if (canvas.selectionGizmo.isDragging) {
-                canvas.selectionGizmo.OnPointerUp();
-                canvas.SyncSelectionToSpatialIndex(&session);
-                canvas.needsFullRebake = true;
-                canvas.isDirty = true;
-            } else if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
+            if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
                 canvas.OnShapeDrawUp(&session);
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
@@ -275,43 +261,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             }
         }
 
-        // Dynamically update mouse cursor: crosshair/pencil when drawing, or resize cursors if hovering over gizmo
-        if (canvas.selectionGizmo.HasSelection() && !canvas.shapeCreation.isDragging) {
-            auto hit = canvas.selectionGizmo.HitTest(canvasLocalX, canvasLocalY, canvas.transform);
-            if (hit.hit) {
-                switch (hit.role) {
-                    case HandleRole::TopLeft:
-                    case HandleRole::BottomRight:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
-                        break;
-                    case HandleRole::TopRight:
-                    case HandleRole::BottomLeft:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
-                        break;
-                    case HandleRole::TopCenter:
-                    case HandleRole::BottomCenter:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                        break;
-                    case HandleRole::LeftCenter:
-                    case HandleRole::RightCenter:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        break;
-                    case HandleRole::Rotation:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                        break;
-                    case HandleRole::Body:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-                        break;
-                    default:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
-                        break;
-                }
-            } else {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
-            }
-        } else {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
-        }
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
     else if (currentAction == InteractionState::Panning && isMoving) {
         canvas.Pan(mouse.dx, mouse.dy);

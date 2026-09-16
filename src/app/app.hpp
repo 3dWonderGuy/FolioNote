@@ -737,7 +737,7 @@ public:
                 if (activePg && activePg->isDedicatedPdf) {
                     pdfViewer.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager, canvas.inkColorInverted);
                     inputManager.wasCanvasImageHovered = pdfViewer.isPdfContentHovered;
-                    inputManager.stateMachine.isCanvasHovered = pdfViewer.isPdfContentHovered;
+                    inputManager.stateMachine.isCanvasHovered = false; // Prevent background canvas marquee selection
                     inputManager.stateMachine.isPdfCanvasHovered = pdfViewer.isPdfContentHovered;
                     inputManager.stateMachine.canvasOriginX = canvasX;
                     inputManager.stateMachine.canvasOriginY = contentY;

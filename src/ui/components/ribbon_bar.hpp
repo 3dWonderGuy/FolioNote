@@ -210,7 +210,7 @@ public:
      * @param inputSM Reference to InputStateMachine for updating device interaction mode.
      * @param theme ThemeManager reference for colors and styling.
      */
-    void RenderShapeGridPalette(CanvasEngine& canvas, InputStateMachine& inputSM, const ThemeManager& theme) {
+    void RenderShapeGridPalette(CanvasEngine& canvas, InputStateMachine& inputSM, const ThemeManager& theme, DocumentSession* session = nullptr) {
         struct ShapeGridEntry {
             Folio::ShapeType type;
             const char* name;
@@ -290,14 +290,12 @@ public:
 
             ImU32 strokeCol, fillCol;
             if (pressed) {
-                // Bright white icon on press for contrast against vivid blue bg
                 strokeCol = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
                 fillCol   = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
             } else if (isCurrent) {
                 strokeCol = ImGui::GetColorU32(ImVec4(0.18f, 0.65f, 1.0f, 1.0f));
                 fillCol   = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.30f));
             } else if (hovered) {
-                // Bright accent on hover so icon pops clearly
                 strokeCol = ImGui::GetColorU32(ImVec4(0.18f, 0.65f, 1.0f, 0.95f));
                 fillCol   = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.20f));
             } else {
@@ -315,7 +313,7 @@ public:
         };
 
         // 1. Lines Section
-        ImGui::TextDisabled("Lines");
+        ImGui::TextDisabled("Lines & Connectors");
         for (size_t i = 0; i < IM_ARRAYSIZE(s_lineEntries); ++i) {
             if (i > 0) ImGui::SameLine(0.0f, 6.0f);
             renderCell(s_lineEntries[i], 7100);
@@ -331,6 +329,278 @@ public:
             if (i % 4 != 0) ImGui::SameLine(0.0f, 6.0f);
             renderCell(s_geomEntries[i], 7200);
         }
+
+        // 3. Divider & Title
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        auto selectedShape = canvas.GetSelectedShape(session);
+        auto selectedConnector = canvas.GetSelectedConnector(session);
+
+        // 4. Thickness Presets: 0.5, 1.0, 1.5, 2.0, 3.0, 5.0 mm (with size-proportional dots on each button)
+        ImGui::TextDisabled("Thickness");
+        ImGui::Spacing();
+        static const float s_ShapeThicknessPresets[] = { 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 5.0f };
+        double curW = selectedShape ? selectedShape->strokeWidth : (selectedConnector ? selectedConnector->strokeWidth : canvas.shapeCreation.defaultStrokeWidth);
+
+        for (int t = 0; t < 6; t++) {
+            if (t > 0) ImGui::SameLine(0, 5.0f);
+            char szT[16];
+            snprintf(szT, sizeof(szT), "%.1f", s_ShapeThicknessPresets[t]);
+            bool isCurrent = std::abs(curW - s_ShapeThicknessPresets[t]) < 0.15;
+
+            ImVec2 btnPos = ImGui::GetCursorScreenPos();
+            float btnW = 32.0f;
+            float btnH = 38.0f;
+
+            if (isCurrent) {
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorItemSelected);
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorItemSelectedText);
+                ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPanel);
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+                ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+            }
+
+            std::string btnId = std::string("##shape_thick_btn_") + std::to_string(t);
+            if (ImGui::Button(btnId.c_str(), ImVec2(btnW, btnH))) {
+                double nw = s_ShapeThicknessPresets[t];
+                canvas.shapeCreation.defaultStrokeWidth = nw;
+                if (selectedShape) {
+                    selectedShape->strokeWidth = nw;
+                    selectedShape->UpdateBounds();
+                    if (session) canvas.SyncSelectionToSpatialIndex(session);
+                    canvas.selectionGizmo.RecalculateBounds();
+                } else if (selectedConnector) {
+                    selectedConnector->strokeWidth = nw;
+                    selectedConnector->UpdateBounds();
+                    if (session) canvas.SyncSelectionToSpatialIndex(session);
+                    canvas.selectionGizmo.RecalculateBounds();
+                }
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+            }
+
+            // Draw size indicator dot on the preset button (top portion)
+            ImDrawList* popDrawList = ImGui::GetWindowDrawList();
+            bool isDark = (theme.colorBg.x < 0.5f);
+            ImU32 dotCol = isDark ? IM_COL32(245, 248, 255, 230) : IM_COL32(22, 24, 28, 230);
+            float dotRadius = std::clamp(s_ShapeThicknessPresets[t] * 1.5f + 0.8f, 1.6f, 5.5f);
+            float dotX = btnPos.x + btnW * 0.5f;
+            float dotY = btnPos.y + 10.0f;
+            popDrawList->AddCircleFilled(ImVec2(dotX, dotY), dotRadius, dotCol);
+
+            // Draw thickness label text on the button (bottom portion)
+            ImVec2 txtSz = ImGui::CalcTextSize(szT);
+            float txtX = btnPos.x + (btnW - txtSz.x) * 0.5f;
+            float txtY = btnPos.y + btnH - txtSz.y - 3.0f;
+            ImU32 txtCol = isCurrent ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                     : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+            popDrawList->AddText(ImVec2(txtX, txtY), txtCol, szT);
+
+            ImGui::PopStyleColor(3);
+        }
+
+        // 5. 16-Color Quick Selection Palette Grid (same as pens)
+        ImGui::Spacing();
+        ImGui::TextDisabled("Color Palette");
+        ImGui::Spacing();
+
+        static const ImVec4 s_QuickColors[] = {
+            ImVec4(0.09f, 0.10f, 0.13f, 1.0f), // Black
+            ImVec4(0.35f, 0.38f, 0.45f, 1.0f), // Charcoal
+            ImVec4(0.10f, 0.35f, 0.86f, 1.0f), // Royal Blue
+            ImVec4(0.06f, 0.58f, 0.88f, 1.0f), // Sky Blue
+            ImVec4(0.06f, 0.65f, 0.45f, 1.0f), // Emerald Green
+            ImVec4(0.12f, 0.50f, 0.22f, 1.0f), // Forest Green
+            ImVec4(1.00f, 0.88f, 0.00f, 1.0f), // Yellow
+            ImVec4(0.96f, 0.55f, 0.08f, 1.0f), // Orange
+            ImVec4(0.88f, 0.15f, 0.15f, 1.0f), // Red
+            ImVec4(0.92f, 0.22f, 0.55f, 1.0f), // Pink
+            ImVec4(0.55f, 0.25f, 0.88f, 1.0f), // Purple
+            ImVec4(0.38f, 0.18f, 0.65f, 1.0f), // Indigo
+            ImVec4(0.60f, 0.40f, 0.25f, 1.0f), // Brown
+            ImVec4(0.00f, 0.75f, 0.75f, 1.0f), // Cyan
+            ImVec4(1.00f, 0.45f, 0.75f, 1.0f), // Neon Pink
+            ImVec4(0.85f, 0.87f, 0.92f, 1.0f)  // Off White
+        };
+
+        for (int i = 0; i < 16; i++) {
+            if (i > 0 && (i % 8) != 0) ImGui::SameLine(0, 5.0f);
+            ImGui::PushID(i + 8800);
+            if (FolioUI::ToolbarControls::RenderCircleButton("##shape_col_swatch", s_QuickColors[i], nullptr, theme, false, 20.0f)) {
+                BLRgba32 newCol(
+                    static_cast<uint8_t>(std::clamp(s_QuickColors[i].x * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(s_QuickColors[i].y * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(s_QuickColors[i].z * 255.0f, 0.0f, 255.0f)),
+                    255
+                );
+                canvas.shapeCreation.defaultOutlineColor = newCol;
+                if (selectedShape) {
+                    selectedShape->strokeColor = newCol;
+                } else if (selectedConnector) {
+                    selectedConnector->strokeColor = newCol;
+                }
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+            }
+            ImGui::PopID();
+        }
+
+        // 6. Line Style Selection in Popover (Continuous, Dashed, Dotted, Dash-Dot)
+        ImGui::Spacing();
+        ImGui::TextDisabled("Line Style");
+        ImGui::Spacing();
+
+        struct ShapePatternOption {
+            const char* name;
+            Folio::ShapeOutlineType pattern;
+        };
+        const ShapePatternOption s_Patterns[] = {
+            { "Solid",    Folio::ShapeOutlineType::Solid },
+            { "Dashed",   Folio::ShapeOutlineType::Dashed },
+            { "Dotted",   Folio::ShapeOutlineType::Dotted },
+            { "Dash-Dot", Folio::ShapeOutlineType::DashDot }
+        };
+
+        Folio::ShapeOutlineType curOutline = selectedShape ? selectedShape->outlineType
+                                           : (selectedConnector ? selectedConnector->outlineType : canvas.shapeCreation.defaultOutlineType);
+
+        for (int p = 0; p < 4; p++) {
+            if (p > 0) ImGui::SameLine(0, 5.0f);
+            bool isCurrent = (curOutline == s_Patterns[p].pattern);
+            if (isCurrent) {
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorItemSelected);
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorItemSelectedText);
+                ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPanel);
+                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+                ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+            }
+            ImVec2 styleBtnPos = ImGui::GetCursorScreenPos();
+            float styleBtnW = 48.0f;
+            float styleBtnH = 30.0f;
+            std::string btnId = std::string("##shape_style_btn_") + std::to_string(p);
+
+            if (ImGui::Button(btnId.c_str(), ImVec2(styleBtnW, styleBtnH))) {
+                canvas.shapeCreation.defaultOutlineType = s_Patterns[p].pattern;
+                if (selectedShape) {
+                    selectedShape->outlineType = s_Patterns[p].pattern;
+                } else if (selectedConnector) {
+                    selectedConnector->outlineType = s_Patterns[p].pattern;
+                }
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+            }
+
+            // Draw line preview pattern on button
+            ImDrawList* popDrawList = ImGui::GetWindowDrawList();
+            float lineY = styleBtnPos.y + styleBtnH * 0.5f;
+            float lineX1 = styleBtnPos.x + 6.0f;
+            float lineX2 = styleBtnPos.x + styleBtnW - 6.0f;
+            ImU32 strokeCol = isCurrent ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                        : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+            float traceThick = 2.0f;
+
+            if (s_Patterns[p].pattern == Folio::ShapeOutlineType::Solid) {
+                popDrawList->AddLine(ImVec2(lineX1, lineY), ImVec2(lineX2, lineY), strokeCol, traceThick);
+            } else if (s_Patterns[p].pattern == Folio::ShapeOutlineType::Dashed) {
+                float totalW = lineX2 - lineX1;
+                int numDashes = 3;
+                float gapW = 4.0f;
+                float dashW = (totalW - (numDashes - 1) * gapW) / numDashes;
+                for (int d = 0; d < numDashes; d++) {
+                    float dx1 = lineX1 + d * (dashW + gapW);
+                    float dx2 = dx1 + dashW;
+                    popDrawList->AddLine(ImVec2(dx1, lineY), ImVec2(dx2, lineY), strokeCol, traceThick);
+                }
+            } else if (s_Patterns[p].pattern == Folio::ShapeOutlineType::Dotted) {
+                int numDots = 4;
+                float span = lineX2 - lineX1;
+                for (int d = 0; d < numDots; d++) {
+                    float dotX = lineX1 + d * (span / (numDots - 1));
+                    popDrawList->AddCircleFilled(ImVec2(dotX, lineY), 1.8f, strokeCol);
+                }
+            } else if (s_Patterns[p].pattern == Folio::ShapeOutlineType::DashDot) {
+                float totalW = lineX2 - lineX1;
+                float segW = totalW * 0.35f;
+                popDrawList->AddLine(ImVec2(lineX1, lineY), ImVec2(lineX1 + segW, lineY), strokeCol, traceThick);
+                popDrawList->AddCircleFilled(ImVec2(lineX1 + totalW * 0.5f, lineY), 1.8f, strokeCol);
+                popDrawList->AddLine(ImVec2(lineX2 - segW, lineY), ImVec2(lineX2, lineY), strokeCol, traceThick);
+            }
+
+            ImGui::PopStyleColor(3);
+        }
+
+        // 7. Connector / Smart Arrow Options (visible if line/arrow active or connector selected)
+        bool isConnectorMode = (canvas.shapeCreation.shapeType == Folio::ShapeType::Line ||
+                                canvas.shapeCreation.shapeType == Folio::ShapeType::LineArrow ||
+                                selectedConnector != nullptr);
+        if (isConnectorMode) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::TextDisabled("Routing Style");
+            ImGui::Spacing();
+
+            static const char* s_Styles[] = { "Straight", "Curved", "Elbow" };
+            Folio::ConnectorStyle curStyle = selectedConnector ? selectedConnector->connectorStyle : canvas.shapeCreation.defaultConnectorStyle;
+            for (int s = 0; s < 3; s++) {
+                if (s > 0) ImGui::SameLine(0, 5.0f);
+                bool isCur = (static_cast<int>(curStyle) == s);
+                if (isCur) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorItemSelected);
+                    ImGui::PushStyleColor(ImGuiCol_Text, theme.colorItemSelectedText);
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPanel);
+                    ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+                }
+                std::string sBtnId = std::string(s_Styles[s]) + "##conn_style";
+                if (ImGui::Button(sBtnId.c_str(), ImVec2(66.0f, 26.0f))) {
+                    canvas.shapeCreation.defaultConnectorStyle = static_cast<Folio::ConnectorStyle>(s);
+                    if (selectedConnector) {
+                        selectedConnector->connectorStyle = static_cast<Folio::ConnectorStyle>(s);
+                        selectedConnector->UpdateBounds();
+                        if (session) canvas.SyncSelectionToSpatialIndex(session);
+                    }
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+                ImGui::PopStyleColor(2);
+            }
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("Arrow Cap");
+            ImGui::Spacing();
+
+            static const char* s_CapNames[] = { "None", "Triangle", "Stealth", "Open", "Circle" };
+            Folio::ArrowHeadType curCap = selectedConnector ? selectedConnector->endArrow : canvas.shapeCreation.defaultEndArrow;
+            for (int c = 0; c < 5; c++) {
+                if (c > 0 && c != 3) ImGui::SameLine(0, 5.0f);
+                bool isCur = (static_cast<int>(curCap) == c);
+                if (isCur) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorItemSelected);
+                    ImGui::PushStyleColor(ImGuiCol_Text, theme.colorItemSelectedText);
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPanel);
+                    ImGui::PushStyleColor(ImGuiCol_Text, theme.colorText);
+                }
+                std::string cBtnId = std::string(s_CapNames[c]) + "##conn_cap";
+                if (ImGui::Button(cBtnId.c_str(), ImVec2(66.0f, 24.0f))) {
+                    canvas.shapeCreation.defaultEndArrow = static_cast<Folio::ArrowHeadType>(c);
+                    if (selectedConnector) {
+                        selectedConnector->endArrow = static_cast<Folio::ArrowHeadType>(c);
+                        selectedConnector->UpdateBounds();
+                    }
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+                ImGui::PopStyleColor(2);
+            }
+        }
     }
 
     /**
@@ -339,10 +609,12 @@ public:
      * The main button displays the active shape's procedural vector icon and name.
      * Clicking the main button jumps directly into the Shape Format tab (RibbonTab::ShapeFormat)
      * and primes drawing mode for that shape.
-     * The chevron opens the quick-draw 4-column compact grid menu.
+     * Right-clicking or clicking the chevron opens the full geometry, thickness, color,
+     * line style, and smart connector options menu (identical to pen nib controls).
      */
     void RenderShapeSplitButton(const char* strId, CanvasEngine& canvas, InputStateMachine& inputSM,
-                                const ThemeManager& theme, bool isMini, bool jumpToFormatTab = true) {
+                                const ThemeManager& theme, bool isMini, bool jumpToFormatTab = true,
+                                DocumentSession* currentSession = nullptr) {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImVec2 totalSize = isMini ? ImVec2(54.0f, 32.0f) : ImVec2(68.0f, 58.0f);
@@ -365,6 +637,7 @@ public:
         bool chevronHovered = ImGui::IsItemHovered();
         bool chevronActive = ImGui::IsItemActive();
 
+        bool isRightClicked = (actionHovered || chevronHovered) && ImGui::IsMouseClicked(ImGuiMouseButton_Right);
         bool isHeld = actionActive || chevronActive;
         bool isActive = (inputSM.currentAction == InteractionState::DrawingShape);
         ImVec2 pMin = pos;
@@ -431,14 +704,14 @@ public:
         // Tooltip
         if ((actionHovered || chevronHovered) && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
             ImGui::BeginTooltip();
-            ImGui::Text("Active Shape: %s\nClick to enter Shape Format tab. Click arrow for quick shape grid.", label);
+            ImGui::Text("Active Shape: %s\nClick to draw shape. Right-click or arrow to customize color, weight, and style.", label);
             ImGui::EndTooltip();
         }
 
         // Action Click: jump to Shape Format tab and prime drawing tool
         if (actionClicked) {
             SyncShapePenColor(canvas);
-            canvas.StartShapeCreation(curShapeType, canvas.shapeCreation.lockDrawingMode);
+            canvas.StartShapeCreation(curShapeType, canvas.shapeCreation.lockDrawingMode, currentSession);
             inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
             inputSM.currentAction = InteractionState::DrawingShape;
             if (jumpToFormatTab) {
@@ -449,17 +722,17 @@ public:
         }
 
         std::string popupId = std::string("##popup_shape_grid_") + strId;
-        if (chevronClicked) {
+        if (chevronClicked || isRightClicked) {
             ImGui::OpenPopup(popupId.c_str());
         }
 
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
-        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
         ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
         ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
 
         if (ImGui::BeginPopup(popupId.c_str())) {
-            RenderShapeGridPalette(canvas, inputSM, theme);
+            RenderShapeGridPalette(canvas, inputSM, theme, currentSession);
             ImGui::EndPopup();
         }
 
@@ -474,7 +747,8 @@ public:
      * Inherits active pen color by default, with rich interactive hover halo and full popup picker.
      */
     void RenderShapeOutlineColorDisc(CanvasEngine& canvas, const ThemeManager& theme,
-                                     std::shared_ptr<Folio::ShapeObject> selectedShape, bool isMini) {
+                                     std::shared_ptr<Folio::ShapeObject> selectedShape, bool isMini,
+                                     std::shared_ptr<Folio::SmartArrowObject> selectedConnector = nullptr) {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImVec2 startPos = ImGui::GetCursorScreenPos();
         float btnSize = isMini ? 28.0f : 38.0f;
@@ -488,7 +762,7 @@ public:
         bool hovered = ImGui::IsItemHovered();
         bool pressed = ImGui::IsItemActive();
 
-        BLRgba32 curCol = selectedShape ? selectedShape->strokeColor : canvas.shapeCreation.defaultOutlineColor;
+        BLRgba32 curCol = selectedShape ? selectedShape->strokeColor : (selectedConnector ? selectedConnector->strokeColor : canvas.shapeCreation.defaultOutlineColor);
         ImVec4 colVec(curCol.r() / 255.0f, curCol.g() / 255.0f, curCol.b() / 255.0f, curCol.a() / 255.0f);
 
         ImVec2 center(btnPos.x + btnSize * 0.5f, btnPos.y + btnSize * 0.5f);
@@ -551,6 +825,10 @@ public:
                         selectedShape->strokeColor = c;
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
+                    } else if (selectedConnector) {
+                        selectedConnector->strokeColor = c;
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
                     }
                     ImGui::CloseCurrentPopup();
                 }
@@ -573,6 +851,10 @@ public:
                 canvas.shapeCreation.defaultOutlineColor = newCol;
                 if (selectedShape) {
                     selectedShape->strokeColor = newCol;
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                } else if (selectedConnector) {
+                    selectedConnector->strokeColor = newCol;
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                 }
@@ -1218,21 +1500,22 @@ public:
         // Fixed slot widths computed via FontRibbonBoldLarge so tabs NEVER shift when active tab changes!
         ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-        // Check for contextual selected shape and handle auto-tab navigation
+        // Check for contextual selected shape or connector and handle auto-tab navigation
         auto selectedShape = canvas.GetSelectedShape(session ? session : currentSession);
+        auto selectedConnector = canvas.GetSelectedConnector(session ? session : currentSession);
         static uint32_t s_lastSelectedShapeUid = 0;
-        uint32_t currentShapeUid = selectedShape ? selectedShape->uid : 0;
+        uint32_t currentShapeUid = selectedShape ? selectedShape->uid : (selectedConnector ? selectedConnector->uid : 0);
 
-        // Auto-switch to ShapeFormat tab ONLY when a shape is newly selected
-        if (selectedShape) {
+        // Auto-switch to ShapeFormat tab ONLY when a shape or connector is newly selected
+        if (selectedShape || selectedConnector) {
             if (s_lastSelectedShapeUid != currentShapeUid && activeTab != RibbonTab::ShapeFormat) {
                 previousTab = activeTab;
                 activeTab = RibbonTab::ShapeFormat;
                 tabTransitionTimer = 0.0f;
             }
         }
-        // If user is actively inking and no shape is selected, return to previous tab / Draw
-        if (inputSM.currentAction == InteractionState::Inking && activeTab == RibbonTab::ShapeFormat && !selectedShape) {
+        // If user is actively inking and no shape/connector is selected, return to previous tab / Draw
+        if (inputSM.currentAction == InteractionState::Inking && activeTab == RibbonTab::ShapeFormat && !selectedShape && !selectedConnector) {
             activeTab = (previousTab != RibbonTab::ShapeFormat) ? previousTab : RibbonTab::Draw;
             tabTransitionTimer = 0.0f;
         }
@@ -1257,8 +1540,8 @@ public:
         auto activePg = currentDocSession ? currentDocSession->GetActivePage() : nullptr;
         bool isDedicatedPdf = activePg && activePg->isDedicatedPdf;
 
-        // Keep Shape Format tab visible while on that tab, while drawing shapes, or while a shape is selected
-        bool showShapeFormat = (selectedShape != nullptr) || (activeTab == RibbonTab::ShapeFormat) || (inputSM.currentAction == InteractionState::DrawingShape);
+        // Keep Shape Format tab visible while on that tab, while drawing shapes, or while a shape/connector is selected
+        bool showShapeFormat = (selectedShape != nullptr) || (selectedConnector != nullptr) || (activeTab == RibbonTab::ShapeFormat) || (inputSM.currentAction == InteractionState::DrawingShape);
         if (showShapeFormat) {
             tabs.push_back({ "Shape Format", false, RibbonTab::ShapeFormat, true });
         }
@@ -2985,6 +3268,7 @@ public:
             }
             else if (activeTab == RibbonTab::ShapeFormat) {
                 auto selectedShape = canvas.GetSelectedShape(currentSession);
+                auto selectedConnector = canvas.GetSelectedConnector(currentSession);
 
                 // -------------------------------------------------------------
                 // SECTION 1: Mode & Shape Picker
@@ -3012,7 +3296,7 @@ public:
                     // 2. Lock to Grid / Snap to Grid Toggle
                     bool isGridLocked = canvas.shapeCreation.lockToGrid;
                     sec.AddLargeButton("btn_lock_to_grid", 0, isGridLocked ? "Grid: ON" : "Grid Snap",
-                        "Snap to Grid: Snaps shape creation, dragging, and corner coordinates to graph paper grid spacing",
+                        "Snap to Grid: Snaps all shape control points to background paper grid intervals",
                         isGridLocked,
                         [&]() {
                             canvas.shapeCreation.lockToGrid = !canvas.shapeCreation.lockToGrid;
@@ -3056,11 +3340,11 @@ public:
 
                     // 1. Circular Outline Color Disc (Inherits active pen by default)
                     sec.AddWidget([&]() {
-                        RenderShapeOutlineColorDisc(canvas, theme, selectedShape, isMini);
+                        RenderShapeOutlineColorDisc(canvas, theme, selectedShape, isMini, selectedConnector);
                     });
 
                     // 2. Outline Thickness
-                    double curW = selectedShape ? selectedShape->strokeWidth : canvas.shapeCreation.defaultStrokeWidth;
+                    double curW = selectedShape ? selectedShape->strokeWidth : (selectedConnector ? selectedConnector->strokeWidth : canvas.shapeCreation.defaultStrokeWidth);
                     char wStr[32];
                     std::snprintf(wStr, sizeof(wStr), "%.1f mm", curW);
 
@@ -3071,6 +3355,13 @@ public:
                             if (selectedShape) {
                                 selectedShape->strokeWidth = nw;
                                 selectedShape->UpdateBounds();
+                                canvas.SyncSelectionToSpatialIndex(currentSession);
+                                canvas.selectionGizmo.RecalculateBounds();
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            } else if (selectedConnector) {
+                                selectedConnector->strokeWidth = nw;
+                                selectedConnector->UpdateBounds();
                                 canvas.SyncSelectionToSpatialIndex(currentSession);
                                 canvas.selectionGizmo.RecalculateBounds();
                                 canvas.needsFullRebake = true;
@@ -3088,6 +3379,13 @@ public:
                                     canvas.selectionGizmo.RecalculateBounds();
                                     canvas.needsFullRebake = true;
                                     canvas.isDirty = true;
+                                } else if (selectedConnector) {
+                                    selectedConnector->strokeWidth = w;
+                                    selectedConnector->UpdateBounds();
+                                    canvas.SyncSelectionToSpatialIndex(currentSession);
+                                    canvas.selectionGizmo.RecalculateBounds();
+                                    canvas.needsFullRebake = true;
+                                    canvas.isDirty = true;
                                 }
                             };
                             menu.AddItem("0.5 mm (Thin)", 0, "", [=]() { setWidth(0.5); });
@@ -3100,47 +3398,118 @@ public:
                         false, ImVec2(68.0f, 58.0f)
                     );
 
-                    // 3. Rich Outline Style Dropdown (Solid, Dashed, Dotted, Dash-Dot, None)
-                    sec.AddWidget([&]() {
-                        RenderShapeOutlineStyleDropdown(canvas, theme, selectedShape, isMini, currentSession);
-                    });
+                    // 3. Outline Dash Style
+                    Folio::ShapeOutlineType curOutType = selectedShape ? selectedShape->outlineType : (selectedConnector ? selectedConnector->outlineType : canvas.shapeCreation.defaultOutlineType);
+                    const char* outName = (curOutType == Folio::ShapeOutlineType::Solid) ? "Solid" :
+                                          (curOutType == Folio::ShapeOutlineType::Dashed) ? "Dashed" :
+                                          (curOutType == Folio::ShapeOutlineType::Dotted) ? "Dotted" : "Dash-Dot";
+
+                    sec.AddSplitButton("btn_shape_dash", 0, outName, "Stroke Style: Choose solid, dashed, or dotted outlines", false,
+                        [&]() {
+                            Folio::ShapeOutlineType nw = (curOutType == Folio::ShapeOutlineType::Solid) ? Folio::ShapeOutlineType::Dashed :
+                                                         (curOutType == Folio::ShapeOutlineType::Dashed) ? Folio::ShapeOutlineType::Dotted :
+                                                         (curOutType == Folio::ShapeOutlineType::Dotted) ? Folio::ShapeOutlineType::DashDot : Folio::ShapeOutlineType::Solid;
+                            canvas.shapeCreation.defaultOutlineType = nw;
+                            if (selectedShape) {
+                                selectedShape->outlineType = nw;
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            } else if (selectedConnector) {
+                                selectedConnector->outlineType = nw;
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            }
+                        },
+                        [&](FolioUI::FlyoutMenuBuilder& menu) {
+                            menu.AddHeader("Outline Styles");
+                            auto setStyle = [&](Folio::ShapeOutlineType t) {
+                                canvas.shapeCreation.defaultOutlineType = t;
+                                if (selectedShape) {
+                                    selectedShape->outlineType = t;
+                                    canvas.needsFullRebake = true;
+                                    canvas.isDirty = true;
+                                } else if (selectedConnector) {
+                                    selectedConnector->outlineType = t;
+                                    canvas.needsFullRebake = true;
+                                    canvas.isDirty = true;
+                                }
+                            };
+                            menu.AddItem("Solid Line", 0, "", [=]() { setStyle(Folio::ShapeOutlineType::Solid); });
+                            menu.AddItem("Dashed Line", 0, "", [=]() { setStyle(Folio::ShapeOutlineType::Dashed); });
+                            menu.AddItem("Dotted Line", 0, "", [=]() { setStyle(Folio::ShapeOutlineType::Dotted); });
+                            menu.AddItem("Dash-Dot Pattern", 0, "", [=]() { setStyle(Folio::ShapeOutlineType::DashDot); });
+                        },
+                        false, ImVec2(68.0f, 58.0f)
+                    );
 
                     sec.Render();
                 }
 
                 // -------------------------------------------------------------
-                // SECTION 4: Geometry & Parameters (Shape-specific)
+                // SECTION 4: Shape / Connector Specific Options
                 // -------------------------------------------------------------
-                if (selectedShape) {
-                    if (selectedShape->shapeType == Folio::ShapeType::RoundedRectangle ||
-                        selectedShape->shapeType == Folio::ShapeType::Star ||
-                        selectedShape->shapeType == Folio::ShapeType::Hexagon ||
-                        selectedShape->shapeType == Folio::ShapeType::RegularPolygon ||
-                        selectedShape->shapeType == Folio::ShapeType::Line ||
-                        selectedShape->shapeType == Folio::ShapeType::LineArrow ||
-                        selectedShape->shapeType == Folio::ShapeType::Arrow ||
-                        selectedShape->shapeType == Folio::ShapeType::DoubleArrow) {
+                if (selectedConnector || (selectedShape && (selectedShape->shapeType == Folio::ShapeType::RoundedRectangle ||
+                                         selectedShape->shapeType == Folio::ShapeType::Star ||
+                                         selectedShape->shapeType == Folio::ShapeType::Hexagon ||
+                                         selectedShape->shapeType == Folio::ShapeType::RegularPolygon ||
+                                         selectedShape->shapeType == Folio::ShapeType::Line ||
+                                         selectedShape->shapeType == Folio::ShapeType::LineArrow ||
+                                         selectedShape->shapeType == Folio::ShapeType::Arrow ||
+                                         selectedShape->shapeType == Folio::ShapeType::DoubleArrow))) {
+                    FolioUI::ToolbarSectionBuilder sec("grp_shape_type_options", selectedConnector ? "Connector" : "Shape Options", theme, isMini);
+                    sec.AddSplitButton("btn_type_options", 0, "Adjust", "Geometry options and arrow styles", false,
+                        [&]() {},
+                        [&](FolioUI::FlyoutMenuBuilder& menu) {
+                            menu.AddCustom([&]() {
+                                ImGui::SetNextItemWidth(140.0f);
 
-                        FolioUI::ToolbarSectionBuilder sec("grp_shape_geom", "Geometry", theme, isMini);
-                        sec.AddSplitButton("btn_shape_params", 0, "Adjust", "Fine-tune shape geometry attributes (corner radius, polygon sides, arrow heads)", false,
-                            [&]() {},
-                            [&](FolioUI::FlyoutMenuBuilder& menu) {
-                                menu.AddHeader("Shape Parameters");
-                                menu.AddCustom([&]() {
+                                if (selectedConnector) {
+                                    static const char* s_styleNames[] = { "Straight", "Curved", "Elbow" };
+                                    int styleIdx = static_cast<int>(selectedConnector->connectorStyle);
+                                    if (ImGui::Combo("Routing Style", &styleIdx, s_styleNames, IM_ARRAYSIZE(s_styleNames))) {
+                                        selectedConnector->connectorStyle = static_cast<Folio::ConnectorStyle>(styleIdx);
+                                        canvas.shapeCreation.defaultConnectorStyle = selectedConnector->connectorStyle;
+                                        selectedConnector->UpdateBounds();
+                                        canvas.SyncSelectionToSpatialIndex(currentSession);
+                                        canvas.needsFullRebake = true;
+                                        canvas.isDirty = true;
+                                    }
+
+                                    static const char* s_arrowCapNames[] = { "None", "Triangle", "Stealth", "Open", "Circle" };
+                                    int startIdx = static_cast<int>(selectedConnector->startArrow);
+                                    if (ImGui::Combo("Start Cap", &startIdx, s_arrowCapNames, IM_ARRAYSIZE(s_arrowCapNames))) {
+                                        selectedConnector->startArrow = static_cast<Folio::ArrowHeadType>(startIdx);
+                                        selectedConnector->UpdateBounds();
+                                        canvas.needsFullRebake = true;
+                                        canvas.isDirty = true;
+                                    }
+                                    int endIdx = static_cast<int>(selectedConnector->endArrow);
+                                    if (ImGui::Combo("End Cap", &endIdx, s_arrowCapNames, IM_ARRAYSIZE(s_arrowCapNames))) {
+                                        selectedConnector->endArrow = static_cast<Folio::ArrowHeadType>(endIdx);
+                                        selectedConnector->UpdateBounds();
+                                        canvas.needsFullRebake = true;
+                                        canvas.isDirty = true;
+                                    }
+                                    float arrSize = static_cast<float>(selectedConnector->arrowHeadSize);
+                                    if (ImGui::SliderFloat("Cap Size", &arrSize, 1.5f, 15.0f, "%.1f mm")) {
+                                        selectedConnector->arrowHeadSize = static_cast<double>(arrSize);
+                                        selectedConnector->UpdateBounds();
+                                        canvas.needsFullRebake = true;
+                                        canvas.isDirty = true;
+                                    }
+                                    if (ImGui::Button("Set as Default Arrow", ImVec2(-1, 24.0f))) {
+                                        canvas.shapeCreation.defaultEndArrow = selectedConnector->endArrow;
+                                        canvas.shapeCreation.defaultConnectorStyle = selectedConnector->connectorStyle;
+                                    }
+                                } else if (selectedShape) {
                                     if (selectedShape->shapeType == Folio::ShapeType::RoundedRectangle) {
-                                        float cr = static_cast<float>(selectedShape->cornerRadius);
-                                        if (ImGui::SliderFloat("Corner Radius", &cr, 0.5f, 25.0f, "%.1f mm")) {
-                                            selectedShape->cornerRadius = cr;
+                                        float r = static_cast<float>(selectedShape->cornerRadius);
+                                        if (ImGui::SliderFloat("Radius", &r, 1.0f, 40.0f, "%.1f mm")) {
+                                            selectedShape->cornerRadius = static_cast<double>(r);
                                             canvas.needsFullRebake = true;
                                             canvas.isDirty = true;
                                         }
                                     } else if (selectedShape->shapeType == Folio::ShapeType::Star) {
-                                        int pts = static_cast<int>(selectedShape->param1);
-                                        if (ImGui::SliderInt("Points", &pts, 3, 16)) {
-                                            selectedShape->param1 = pts;
-                                            canvas.needsFullRebake = true;
-                                            canvas.isDirty = true;
-                                        }
                                         float ratio = static_cast<float>(selectedShape->param2);
                                         if (ImGui::SliderFloat("Depth", &ratio, 0.15f, 0.85f, "%.2f")) {
                                             selectedShape->param2 = ratio;
@@ -3158,7 +3527,9 @@ public:
                                             canvas.isDirty = true;
                                         }
                                     } else if (selectedShape->shapeType == Folio::ShapeType::Line ||
-                                               selectedShape->shapeType == Folio::ShapeType::LineArrow) {
+                                               selectedShape->shapeType == Folio::ShapeType::LineArrow ||
+                                               selectedShape->shapeType == Folio::ShapeType::Arrow ||
+                                               selectedShape->shapeType == Folio::ShapeType::DoubleArrow) {
                                         static const char* s_arrowCapNames[] = { "None", "Triangle", "Stealth", "Open", "Circle" };
                                         int startIdx = static_cast<int>(selectedShape->startArrow);
                                         if (ImGui::Combo("Start Cap", &startIdx, s_arrowCapNames, IM_ARRAYSIZE(s_arrowCapNames))) {
@@ -3200,12 +3571,12 @@ public:
                                             canvas.isDirty = true;
                                         }
                                     }
-                                });
-                            },
-                            false, ImVec2(68.0f, 58.0f)
-                        );
-                        sec.Render();
-                    }
+                                }
+                            });
+                        },
+                        false, ImVec2(68.0f, 58.0f)
+                    );
+                    sec.Render();
                 }
 
                 // -------------------------------------------------------------

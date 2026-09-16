@@ -17,6 +17,7 @@
 #include "core/objects/image_container.hpp"
 #include "core/objects/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
+#include "core/objects/connectors/smart_arrow_container.hpp"
 #include "core/storage/pdf_storage.hpp"
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
@@ -545,6 +546,10 @@ public:
         BLRgba32 defaultOutlineColor = BLRgba32(0x18, 0x1A, 0x20, 0xFF);
         double defaultStrokeWidth = 1.0;
         Folio::ArrowHeadType defaultEndArrow = Folio::ArrowHeadType::Triangle;
+        // Magnetic snap & smart connector state
+        bool isSnapped = false;
+        Point2D snapAnchorPoint{0.0, 0.0};
+        Folio::ConnectorStyle defaultConnectorStyle = Folio::ConnectorStyle::Straight;
     } shapeCreation;
 
     Point2D SnapToGridIfNeeded(const Point2D& pt) const {
@@ -555,12 +560,18 @@ public:
         );
     }
 
-    void StartShapeCreation(Folio::ShapeType type, bool lockMode = false) {
+    void StartShapeCreation(Folio::ShapeType type, bool lockMode = false, DocumentSession* session = nullptr) {
+        if (session) {
+            ClearSelection(session);
+        }
+        selectionGizmo.ClearSelection();
         shapeCreation.isActive = true;
         shapeCreation.isDragging = false;
         shapeCreation.ellipseStep = 0;
         shapeCreation.shapeType = type;
         shapeCreation.lockDrawingMode = lockMode;
+        shapeCreation.isSnapped = false;
+        isDirty = true;
         LOG_INFO(CanvasEngine, "Started shape creation mode for type=" + std::to_string(static_cast<int>(type)) +
                  (lockMode ? " [LOCKED]" : " [ONE-SHOT]"));
     }
@@ -569,11 +580,12 @@ public:
         shapeCreation.isActive = false;
         shapeCreation.isDragging = false;
         shapeCreation.ellipseStep = 0;
-        shapeCreation.lockDrawingMode = false; // Always disable lock drawing mode on quit/cancel
+        shapeCreation.lockDrawingMode = false;
+        shapeCreation.isSnapped = false;
         isDirty = true;
     }
 
-    void OnShapeDrawDown(float screenX, float screenY) {
+    void OnShapeDrawDown(float screenX, float screenY, DocumentSession* session = nullptr) {
         if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
             // Clicking during step 1 finalizes the ellipse; handled in OnShapeDrawUp.
             shapeCreation.isDragging = true;
@@ -587,11 +599,23 @@ public:
         shapeCreation.currentScreenY = screenY;
         Point2D rawStart = transform.ScreenToWorld(screenX, screenY);
         shapeCreation.startWorld = SnapToGridIfNeeded(rawStart);
+
+        // Magnetic snap for line/arrow start point
+        if ((shapeCreation.shapeType == Folio::ShapeType::Line || shapeCreation.shapeType == Folio::ShapeType::LineArrow) && session) {
+            if (auto pg = session->GetActivePage()) {
+                Point2D snapAnchor;
+                if (Folio::SmartArrowObject::FindSnapAnchor(shapeCreation.startWorld, pg->objects, snapAnchor, 6.0)) {
+                    shapeCreation.startWorld = snapAnchor;
+                }
+            }
+        }
+
         shapeCreation.currentWorld = shapeCreation.startWorld;
+        shapeCreation.isSnapped = false;
         isDirty = true;
     }
 
-    void OnShapeDrawMove(float screenX, float screenY) {
+    void OnShapeDrawMove(float screenX, float screenY, DocumentSession* session = nullptr) {
         shapeCreation.currentScreenX = screenX;
         shapeCreation.currentScreenY = screenY;
         Point2D rawWorld = transform.ScreenToWorld(screenX, screenY);
@@ -606,12 +630,28 @@ public:
             return;
         }
 
+        // Magnetic snap for line/arrow tip
+        if ((shapeCreation.shapeType == Folio::ShapeType::Line || shapeCreation.shapeType == Folio::ShapeType::LineArrow) && session) {
+            if (auto pg = session->GetActivePage()) {
+                Point2D snapAnchor;
+                if (Folio::SmartArrowObject::FindSnapAnchor(shapeCreation.currentWorld, pg->objects, snapAnchor, 6.0)) {
+                    shapeCreation.snapAnchorPoint = snapAnchor;
+                    shapeCreation.currentWorld = snapAnchor;
+                    shapeCreation.isSnapped = true;
+                } else {
+                    shapeCreation.isSnapped = false;
+                }
+            }
+        } else {
+            shapeCreation.isSnapped = false;
+        }
+
         if (shapeCreation.isDragging) {
             isDirty = true;
         }
     }
 
-    std::shared_ptr<Folio::ShapeObject> OnShapeDrawUp(DocumentSession* session) {
+    std::shared_ptr<CanvasObject> OnShapeDrawUp(DocumentSession* session) {
         if (!shapeCreation.isDragging && shapeCreation.ellipseStep == 0) return nullptr;
 
         if (!session) return nullptr;
@@ -649,6 +689,7 @@ public:
 
             shapeCreation.ellipseStep = 0;
             shapeCreation.isDragging = false;
+            shapeCreation.isSnapped = false;
             if (!shapeCreation.lockDrawingMode) {
                 shapeCreation.isActive = false;
             }
@@ -666,6 +707,7 @@ public:
             LOG_INFO(CanvasEngine, "Shape drag cancelled: drag distance below 2.5mm threshold - clearing selection");
             shapeCreation.isDragging = false;
             shapeCreation.ellipseStep = 0;
+            shapeCreation.isSnapped = false;
             ClearSelection(session);
             selectionGizmo.ClearSelection();
             needsFullRebake = true;
@@ -683,6 +725,47 @@ public:
             isDirty = true;
             LOG_INFO(CanvasEngine, "Ellipse Step 1: Major radius set to " + std::to_string(dragDist) + "mm. Move mouse to adjust thickness, click to place.");
             return nullptr;
+        }
+
+        // Handle Line and LineArrow promotion to SmartArrowObject with 2-point handles
+        if (shapeCreation.shapeType == Folio::ShapeType::Line ||
+            shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
+            auto arrow = std::make_shared<Folio::SmartArrowObject>(
+                shapeCreation.startWorld.x, shapeCreation.startWorld.y,
+                shapeCreation.currentWorld.x, shapeCreation.currentWorld.y
+            );
+            arrow->guuid = GUIDGenerator::GenerateV4();
+            arrow->uid = UIDGenerator::Next();
+            arrow->strokeColor = shapeCreation.defaultOutlineColor;
+            arrow->strokeWidth = shapeCreation.defaultStrokeWidth;
+            arrow->outlineType = shapeCreation.defaultOutlineType;
+            arrow->connectorStyle = shapeCreation.defaultConnectorStyle;
+            arrow->startArrow = Folio::ArrowHeadType::None;
+            arrow->endArrow = (shapeCreation.shapeType == Folio::ShapeType::LineArrow)
+                              ? shapeCreation.defaultEndArrow
+                              : Folio::ArrowHeadType::None;
+            arrow->arrowHeadSize = 4.0;
+            arrow->UpdateBounds();
+
+            activePage->AddObject(arrow);
+
+            ClearSelection(session);
+            arrow->isSelected = 1;
+            selectionGizmo.SetSelectedObjects(activePage->objects);
+
+            shapeCreation.isDragging = false;
+            shapeCreation.isSnapped = false;
+            if (!shapeCreation.lockDrawingMode) {
+                shapeCreation.isActive = false;
+            }
+            needsFullRebake = true;
+            isDirty = true;
+
+            LOG_INFO(CanvasEngine, "Created SmartArrowObject connector (uid=" + std::to_string(arrow->uid) +
+                     ", style=" + std::to_string(static_cast<int>(arrow->connectorStyle)) +
+                     ", from [" + std::to_string(arrow->x1) + "," + std::to_string(arrow->y1) + "] to [" +
+                     std::to_string(arrow->x2) + "," + std::to_string(arrow->y2) + "])");
+            return arrow;
         }
 
         double minX = 0.0, minY = 0.0, w = 0.0, h = 0.0;
@@ -704,13 +787,6 @@ public:
             minX = shapeCreation.startWorld.x - r;
             minY = shapeCreation.startWorld.y - r;
         }
-        else if (shapeCreation.shapeType == Folio::ShapeType::Line ||
-                 shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
-            minX = shapeCreation.startWorld.x;
-            minY = shapeCreation.startWorld.y;
-            w = shapeCreation.currentWorld.x - shapeCreation.startWorld.x;
-            h = shapeCreation.currentWorld.y - shapeCreation.startWorld.y;
-        }
         else {
             // Rectangle, RoundedRect, Triangle, RightTriangle, Star, etc. (bounding box drag)
             minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
@@ -730,9 +806,6 @@ public:
         if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
             shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
             shp->param1 = static_cast<double>(shapeCreation.polygonSides);
-        }
-        if (shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
-            shp->endArrow = shapeCreation.defaultEndArrow;
         }
         shp->UpdateBounds();
 
@@ -763,6 +836,18 @@ public:
         for (const auto& obj : activePage->objects) {
             if (obj && obj->isSelected && obj->type == ObjectType::Shape) {
                 return std::dynamic_pointer_cast<Folio::ShapeObject>(obj);
+            }
+        }
+        return nullptr;
+    }
+
+    std::shared_ptr<Folio::SmartArrowObject> GetSelectedConnector(DocumentSession* session) const {
+        if (!session) return nullptr;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return nullptr;
+        for (const auto& obj : activePage->objects) {
+            if (obj && obj->isSelected && obj->type == ObjectType::Connector) {
+                return std::dynamic_pointer_cast<Folio::SmartArrowObject>(obj);
             }
         }
         return nullptr;
@@ -1304,10 +1389,7 @@ public:
             }
             else if (shapeCreation.shapeType == Folio::ShapeType::Line ||
                      shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
-                minX = shapeCreation.startWorld.x;
-                minY = shapeCreation.startWorld.y;
-                w = shapeCreation.currentWorld.x - shapeCreation.startWorld.x;
-                h = shapeCreation.currentWorld.y - shapeCreation.startWorld.y;
+                // Handled in dedicated SmartArrowObject preview branch below
             }
             else {
                 minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
@@ -1316,33 +1398,65 @@ public:
                 h = std::max(0.5, std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y));
             }
 
-            double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
-                                         shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
-            if (dragDist >= 1.0 || (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
-                Folio::ShapeObject preview(shapeCreation.shapeType, minX, minY, w, h);
-                preview.fillType = shapeCreation.defaultFillType;
-                preview.fillColor = shapeCreation.defaultFillColor;
-                preview.outlineType = shapeCreation.defaultOutlineType;
-                preview.strokeColor = shapeCreation.defaultOutlineColor;
-                preview.strokeWidth = shapeCreation.defaultStrokeWidth;
-                if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
-                    shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
-                    preview.param1 = static_cast<double>(shapeCreation.polygonSides);
+            if (shapeCreation.shapeType == Folio::ShapeType::Line ||
+                shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
+                double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
+                                             shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+                if (dragDist >= 1.0) {
+                    Folio::SmartArrowObject preview(
+                        shapeCreation.startWorld.x, shapeCreation.startWorld.y,
+                        shapeCreation.currentWorld.x, shapeCreation.currentWorld.y
+                    );
+                    preview.strokeColor = shapeCreation.defaultOutlineColor;
+                    preview.strokeWidth = shapeCreation.defaultStrokeWidth;
+                    preview.outlineType = shapeCreation.defaultOutlineType;
+                    preview.connectorStyle = shapeCreation.defaultConnectorStyle;
+                    preview.startArrow = Folio::ArrowHeadType::None;
+                    preview.endArrow = (shapeCreation.shapeType == Folio::ShapeType::LineArrow)
+                                      ? shapeCreation.defaultEndArrow
+                                      : Folio::ArrowHeadType::None;
+                    preview.arrowHeadSize = 4.0;
+                    Viewport vp;
+                    vp.zoom = transform.zoom;
+                    preview.Render(compCtx, vp);
                 }
-                if (shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
-                    preview.endArrow = shapeCreation.defaultEndArrow;
-                }
+            } else {
+                double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
+                                             shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+                if (dragDist >= 1.0 || (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
+                    Folio::ShapeObject preview(shapeCreation.shapeType, minX, minY, w, h);
+                    preview.fillType = shapeCreation.defaultFillType;
+                    preview.fillColor = shapeCreation.defaultFillColor;
+                    preview.outlineType = shapeCreation.defaultOutlineType;
+                    preview.strokeColor = shapeCreation.defaultOutlineColor;
+                    preview.strokeWidth = shapeCreation.defaultStrokeWidth;
+                    if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
+                        shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
+                        preview.param1 = static_cast<double>(shapeCreation.polygonSides);
+                    }
 
-                Viewport vp;
-                vp.zoom = transform.zoom;
-                preview.Render(compCtx, vp);
+                    Viewport vp;
+                    vp.zoom = transform.zoom;
+                    preview.Render(compCtx, vp);
+                }
+            }
+
+            // Magnetic snap glow target indicator
+            if (shapeCreation.isSnapped) {
+                compCtx.save();
+                compCtx.set_stroke_style(BLRgba32(0x00, 0xBD, 0xB0, 0xE0));
+                compCtx.set_stroke_width(0.8);
+                compCtx.stroke_circle(shapeCreation.snapAnchorPoint.x, shapeCreation.snapAnchorPoint.y, 2.8);
+                compCtx.set_fill_style(BLRgba32(0x00, 0xE5, 0xFF, 0xFF));
+                compCtx.fill_circle(shapeCreation.snapAnchorPoint.x, shapeCreation.snapAnchorPoint.y, 1.2);
+                compCtx.restore();
             }
         }
 
         compCtx.restore();
 
-        // 3. Selection Gizmo Overlay Pass (Screen Coordinates)
-        if (selectionGizmo.HasSelection()) {
+        // 3. Selection Gizmo Overlay Pass (Screen Coordinates) - suppressed during active shape drawing
+        if (selectionGizmo.HasSelection() && !shapeCreation.isActive && !shapeCreation.isDragging) {
             selectionGizmo.Render(compCtx, transform);
         }
 

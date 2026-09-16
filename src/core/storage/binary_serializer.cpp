@@ -452,6 +452,24 @@ void BinarySerializer::SerializeObject(const std::shared_ptr<CanvasObject>& obj,
         writer.WriteU32(static_cast<uint32_t>(pdf->pageIndex));
         writer.WriteU32(static_cast<uint32_t>(pdf->totalPageCount));
         writer.WriteBool(pdf->isBackground);
+    } else if (obj->type == ObjectType::Connector) {
+        /**
+         * Connector / SmartArrowObject Serialization:
+         * Encodes endpoints (x1, y1, x2, y2), stroke styling, arrowhead configurations,
+         * and algorithmic routing style (Straight, Curved, Elbow).
+         */
+        auto conn = std::static_pointer_cast<SmartArrowObject>(obj);
+        writer.WriteDouble(conn->x1);
+        writer.WriteDouble(conn->y1);
+        writer.WriteDouble(conn->x2);
+        writer.WriteDouble(conn->y2);
+        writer.WriteU32(conn->strokeColor.value);
+        writer.WriteDouble(conn->strokeWidth);
+        writer.WriteU8(static_cast<uint8_t>(conn->outlineType));
+        writer.WriteU8(static_cast<uint8_t>(conn->startArrow));
+        writer.WriteU8(static_cast<uint8_t>(conn->endArrow));
+        writer.WriteDouble(conn->arrowHeadSize);
+        writer.WriteU8(static_cast<uint8_t>(conn->connectorStyle));
     } else {
         LOG_WARN(BinarySerializer, "Serializing generic object with type ID: " + std::to_string(static_cast<int>(obj->type)));
     }
@@ -638,6 +656,37 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
         shp->UpdateBounds();
         return shp;
 
+    } else if (type == ObjectType::Connector) {
+        /**
+         * Connector / SmartArrowObject Deserialization:
+         * Reconstitutes 2-point directed smart arrow, outline styling, endpoint arrowheads,
+         * and algorithmic routing path (Straight, Curved, Elbow).
+         */
+        auto conn = std::make_shared<SmartArrowObject>();
+        conn->guuid = objGuid;
+        conn->uid = UIDGenerator::Next();
+        conn->bounds = bounds;
+        conn->transform = transform;
+        conn->zOrder = zOrder;
+        conn->opacity = opacity;
+        conn->isVisible = isVisible ? 1 : 0;
+        conn->isLocked = isLocked ? 1 : 0;
+        conn->isSelectable = isSelectable ? 1 : 0;
+
+        conn->x1 = reader.ReadDouble();
+        conn->y1 = reader.ReadDouble();
+        conn->x2 = reader.ReadDouble();
+        conn->y2 = reader.ReadDouble();
+        conn->strokeColor.value = reader.ReadU32();
+        conn->strokeWidth = reader.ReadDouble();
+        conn->outlineType = static_cast<ShapeOutlineType>(reader.ReadU8());
+        conn->startArrow = static_cast<ArrowHeadType>(reader.ReadU8());
+        conn->endArrow = static_cast<ArrowHeadType>(reader.ReadU8());
+        conn->arrowHeadSize = reader.ReadDouble();
+        conn->connectorStyle = static_cast<ConnectorStyle>(reader.ReadU8());
+        conn->UpdateBounds();
+        return conn;
+
     } else if (type == ObjectType::PDF) {
         /**
          * PDF Container Page Deserialization:
@@ -671,11 +720,11 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
         pdf->totalPageCount = static_cast<int>(reader.ReadU32());
         pdf->isBackground = reader.ReadBool();
 
-        // Preserve exact deserialized dimensions in case they were resized by the user
+        // Restore natural aspect or cached size if present
         double savedW = pdf->worldWidth;
         double savedH = pdf->worldHeight;
         pdf->EnsurePageLoaded();
-        if (savedW > 0.0 && savedH > 0.0) {
+        if (savedW > 1.0 && savedH > 1.0) {
             pdf->worldWidth = savedW;
             pdf->worldHeight = savedH;
         }
