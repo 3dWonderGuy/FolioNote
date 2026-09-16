@@ -26,10 +26,13 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     // Space bar or middle mouse button transiently overrides the current tool with Panning
     if (mouse.middleButton || keyboard.space) {
         currentAction = InteractionState::Panning;
-    } else if (mouseTool.savedTool == InteractionState::DrawingShape || currentAction == InteractionState::DrawingShape) {
-        currentAction = InteractionState::DrawingShape;
     } else {
         currentAction = mouseTool.savedTool;
+    }
+
+    if (currentAction != InteractionState::DrawingShape && canvas.shapeCreation.lockDrawingMode) {
+        canvas.shapeCreation.lockDrawingMode = false;
+        canvas.shapeCreation.isActive = false;
     }
 
     if (oldAction != currentAction) {
@@ -224,26 +227,90 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         }
     }
     else if (currentAction == InteractionState::DrawingShape) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
-        if (justDown) {
-            canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY);
-            canvas.isDirty = true;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            canvas.CancelShapeCreation();
+            currentAction = InteractionState::Selecting;
+            SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
+            SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
+        } else if (justDown) {
+            bool hitGizmo = false;
+            if (canvas.selectionGizmo.HasSelection()) {
+                auto hit = canvas.selectionGizmo.HitTest(canvasLocalX, canvasLocalY, canvas.transform);
+                if (hit.hit) {
+                    hitGizmo = true;
+                    canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform);
+                }
+            }
+            if (!hitGizmo) {
+                canvas.OnShapeDrawDown(canvasLocalX, canvasLocalY);
+                canvas.isDirty = true;
+            }
         } else if (isMoving) {
-            if (canvas.shapeCreation.isDragging) {
+            if (canvas.selectionGizmo.isDragging) {
+                if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform)) {
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+            } else if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
                 canvas.OnShapeDrawMove(canvasLocalX, canvasLocalY);
                 canvas.isDirty = true;
             }
         } else if (justUp) {
-            if (canvas.shapeCreation.isDragging) {
+            if (canvas.selectionGizmo.isDragging) {
+                canvas.selectionGizmo.OnPointerUp();
+                canvas.SyncSelectionToSpatialIndex(&session);
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+            } else if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
                 canvas.OnShapeDrawUp(&session);
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
-                if (!canvas.shapeCreation.lockDrawingMode) {
-                    currentAction = InteractionState::Selecting;
-                    SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
-                    SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
+                if (canvas.shapeCreation.ellipseStep == 0) {
+                    if (!canvas.shapeCreation.lockDrawingMode) {
+                        currentAction = InteractionState::Selecting;
+                        SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
+                        SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
+                    }
                 }
             }
+        }
+
+        // Dynamically update mouse cursor: crosshair/pencil when drawing, or resize cursors if hovering over gizmo
+        if (canvas.selectionGizmo.HasSelection() && !canvas.shapeCreation.isDragging) {
+            auto hit = canvas.selectionGizmo.HitTest(canvasLocalX, canvasLocalY, canvas.transform);
+            if (hit.hit) {
+                switch (hit.role) {
+                    case HandleRole::TopLeft:
+                    case HandleRole::BottomRight:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
+                        break;
+                    case HandleRole::TopRight:
+                    case HandleRole::BottomLeft:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
+                        break;
+                    case HandleRole::TopCenter:
+                    case HandleRole::BottomCenter:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                        break;
+                    case HandleRole::LeftCenter:
+                    case HandleRole::RightCenter:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                        break;
+                    case HandleRole::Rotation:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                        break;
+                    case HandleRole::Body:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                        break;
+                    default:
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+                        break;
+                }
+            } else {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+            }
+        } else {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
         }
     }
     else if (currentAction == InteractionState::Panning && isMoving) {

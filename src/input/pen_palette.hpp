@@ -22,6 +22,7 @@ enum class StrokePattern : uint8_t {
     Solid = 0,
     Dashed,
     Dotted,
+    DashDot,        ///< Alternating dash and dot stroke pattern
     TexturedPencil
 };
 

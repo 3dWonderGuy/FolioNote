@@ -89,6 +89,7 @@ struct NotebookNav {
                 bool isPageSelected = (activeSec->activePageIndex == p);
                 if (ImGui::Selectable(page->title.c_str(), isPageSelected)) {
                     activeSec->activePageIndex = p;
+                    canvas.ClearSelection(&session);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                 }

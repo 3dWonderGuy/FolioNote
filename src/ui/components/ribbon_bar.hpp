@@ -125,6 +125,1016 @@ public:
         return std::abs(animatedHeight - GetTargetHeight()) > 0.5f;
     }
 
+    /**
+     * @brief Synchronizes canvas shape default outline color with the currently active inking pen preset.
+     * 
+     * By default, newly created vector shapes automatically inherit the outline color and opacity of the
+     * last used/active inking pen tool while keeping infill transparent (ShapeFillType::None), providing
+     * seamless continuity between freehand inking and geometric diagramming.
+     * 
+     * @param canvas Reference to CanvasEngine whose shapeCreation defaults will be updated.
+     */
+    void SyncShapePenColor(CanvasEngine& canvas) {
+        auto* activePreset = presetManager.GetActivePreset();
+        if (activePreset) {
+            uint8_t r = static_cast<uint8_t>(std::clamp(activePreset->color.x * 255.0f, 0.0f, 255.0f));
+            uint8_t g = static_cast<uint8_t>(std::clamp(activePreset->color.y * 255.0f, 0.0f, 255.0f));
+            uint8_t b = static_cast<uint8_t>(std::clamp(activePreset->color.z * 255.0f, 0.0f, 255.0f));
+            uint8_t a = static_cast<uint8_t>(std::clamp(activePreset->color.w * activePreset->opacity * 255.0f, 0.0f, 255.0f));
+            canvas.shapeCreation.defaultOutlineColor = BLRgba32(r, g, b, a);
+        }
+        canvas.shapeCreation.defaultFillType = Folio::ShapeFillType::None;
+    }
+
+    /**
+     * @brief Renders the compact 4-column vector shape selection grid palette.
+     * 
+     * Visual and Layout Organization:
+     *  - Section "Lines": Linear connectors (Line, Line Arrow) with custom 2-point endpoint drag handles.
+     *  - Section "Basic Shapes": 4-column grid of 2D geometric vector primitives:
+     *      Row 1: Rectangle, Rounded Rectangle, Circle (center-outward), Ellipse (2-step major/minor axis)
+     *      Row 2: Triangle (Isosceles), Right Triangle (90 deg), Regular Polygon (3-32 sides), Star (5-point)
+     *  - Interactive cells: 42x42 square buttons with embedded anti-aliased Blend2D/ImGui vector icons,
+     *    hover elevation highlights, active selection indicators, and descriptive tooltips.
+     * 
+     * Working Process:
+     *  - Creation Mode (Insert / Draw tabs): Selecting a shape synchronizes active pen color, initializes
+     *    shape type defaults, and transitions input state machine to InteractionState::DrawingShape.
+     *  - Switcher Mode (Shape Format tab): Selecting converts an existing selected shape's geometry,
+     *    recalculating boundary segments and re-baking the static canvas layer without raster distortion.
+     * 
+     * @param canvas Reference to CanvasEngine.
+     * @param inputSM Reference to InputStateMachine for updating device interaction mode.
+     * @param theme ThemeManager reference for colors and styling.
+     * @param selectedShape Currently selected shape object (if in Shape Format switcher mode).
+     * @param isSwitcher If true, switching changes existing selected shape geometry; if false, enters shape drawing mode.
+     */
+    /**
+     * @brief Helper to get the short display name for a given ShapeType.
+     */
+    static const char* GetShapeTypeName(Folio::ShapeType type) {
+        switch (type) {
+            case Folio::ShapeType::Rectangle: return "Rectangle";
+            case Folio::ShapeType::RoundedRectangle: return "Round Rect";
+            case Folio::ShapeType::Circle: return "Circle";
+            case Folio::ShapeType::Ellipse: return "Ellipse";
+            case Folio::ShapeType::Triangle: return "Triangle";
+            case Folio::ShapeType::RightTriangle: return "Right Tri";
+            case Folio::ShapeType::Star: return "Star";
+            case Folio::ShapeType::Line: return "Line";
+            case Folio::ShapeType::LineArrow: return "Arrow";
+            case Folio::ShapeType::Hexagon:
+            case Folio::ShapeType::RegularPolygon: return "Polygon";
+            case Folio::ShapeType::Heart: return "Heart";
+            case Folio::ShapeType::Cloud: return "Cloud";
+            default: return "Shape";
+        }
+    }
+
+    /**
+     * @brief Renders the compact 4-column vector shape selection grid palette.
+     * 
+     * Visual and Layout Organization:
+     *  - Section "Lines": Linear connectors (Line, Line Arrow) with custom 2-point endpoint drag handles.
+     *  - Section "Basic Shapes": 4-column grid of 2D geometric vector primitives:
+     *      Row 1: Rectangle, Rounded Rectangle, Circle (center-outward), Ellipse (2-step major/minor axis)
+     *      Row 2: Triangle (Isosceles), Right Triangle (90 deg), Regular Polygon (3-32 sides), Star (5-point)
+     *  - Interactive cells: 42x42 square buttons with embedded anti-aliased Blend2D/ImGui vector icons,
+     *    hover elevation highlights, active selection indicators, and descriptive tooltips.
+     * 
+     * NOTE: As requested by user, clicking any shape in the palette ALWAYS configures the active drawing
+     * tool to draw that shape and NEVER mutates an existing drawn shape, preventing accidental conversions.
+     * 
+     * @param canvas Reference to CanvasEngine.
+     * @param inputSM Reference to InputStateMachine for updating device interaction mode.
+     * @param theme ThemeManager reference for colors and styling.
+     */
+    void RenderShapeGridPalette(CanvasEngine& canvas, InputStateMachine& inputSM, const ThemeManager& theme) {
+        struct ShapeGridEntry {
+            Folio::ShapeType type;
+            const char* name;
+            const char* tooltip;
+        };
+
+        static const ShapeGridEntry s_lineEntries[] = {
+            { Folio::ShapeType::Line, "Line", "Line: Two-point linear segment with custom draggable endpoint handles" },
+            { Folio::ShapeType::LineArrow, "Arrow", "Line Arrow: Directed connector line with customizable arrowheads" }
+        };
+
+        static const ShapeGridEntry s_geomEntries[] = {
+            { Folio::ShapeType::Rectangle, "Rectangle", "Rectangle: Standard 4-corner box" },
+            { Folio::ShapeType::RoundedRectangle, "Round Rect", "Rounded Rectangle: Box with adjustable fillet radius" },
+            { Folio::ShapeType::Circle, "Circle", "Circle: Drags out symmetrically from center point" },
+            { Folio::ShapeType::Ellipse, "Ellipse", "Ellipse: Two-step precision drawing (major axis then minor thickness)" },
+            { Folio::ShapeType::Triangle, "Triangle", "Triangle: Isosceles triangle" },
+            { Folio::ShapeType::RightTriangle, "Right Triangle", "Right Triangle: 90-degree orthogonal triangle" },
+            { Folio::ShapeType::RegularPolygon, "Polygon", "Regular Polygon: Multi-sided polygon (slider adjustable 3 to 32 sides)" },
+            { Folio::ShapeType::Star, "Star", "Star: 5-point star" }
+        };
+
+        const ImVec2 btnSize(42.0f, 42.0f);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        auto renderCell = [&](const ShapeGridEntry& item, int idOffset) {
+            bool isCurrent = (canvas.shapeCreation.shapeType == item.type);
+
+            ImGui::PushID(static_cast<int>(item.type) + idOffset);
+            ImVec2 p0 = ImGui::GetCursorScreenPos();
+            ImVec2 p1(p0.x + btnSize.x, p0.y + btnSize.y);
+
+            if (ImGui::InvisibleButton("##shape_cell", btnSize)) {
+                SyncShapePenColor(canvas);
+                canvas.StartShapeCreation(item.type, canvas.shapeCreation.lockDrawingMode);
+                inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
+                inputSM.currentAction = InteractionState::DrawingShape;
+                ImGui::CloseCurrentPopup();
+            }
+
+            bool hovered = ImGui::IsItemHovered();
+
+            // Background fill
+            ImU32 bgCol = isCurrent ? ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.35f))
+                                    : (hovered ? ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.08f))
+                                               : ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.0f)));
+            dl->AddRectFilled(p0, p1, bgCol, 4.0f);
+
+            // Border stroke
+            if (isCurrent) {
+                dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.9f)), 4.0f, 0, 1.5f);
+            } else if (hovered) {
+                dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.2f)), 4.0f, 0, 1.0f);
+            }
+
+            // Vector Icon
+            ImVec2 iconMin(p0.x + 7.0f, p0.y + 7.0f);
+            ImVec2 iconMax(p1.x - 7.0f, p1.y - 7.0f);
+            ImU32 strokeCol = isCurrent ? ImGui::GetColorU32(ImVec4(0.18f, 0.65f, 1.0f, 1.0f)) : ImGui::GetColorU32(theme.colorText);
+            ImU32 fillCol = isCurrent ? ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.30f)) : ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.15f));
+
+            Folio::ShapeObject::DrawShapeIconImGui(dl, item.type, iconMin, iconMax, strokeCol, fillCol);
+
+            if (hovered) {
+                ImGui::SetTooltip("%s\n%s", item.name, item.tooltip);
+            }
+
+            ImGui::PopID();
+        };
+
+        // 1. Lines Section
+        ImGui::TextDisabled("Lines");
+        for (size_t i = 0; i < IM_ARRAYSIZE(s_lineEntries); ++i) {
+            if (i > 0) ImGui::SameLine(0.0f, 6.0f);
+            renderCell(s_lineEntries[i], 7100);
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // 2. Basic Shapes Section (4 Columns)
+        ImGui::TextDisabled("Basic Shapes");
+        for (size_t i = 0; i < IM_ARRAYSIZE(s_geomEntries); ++i) {
+            if (i % 4 != 0) ImGui::SameLine(0.0f, 6.0f);
+            renderCell(s_geomEntries[i], 7200);
+        }
+    }
+
+    /**
+     * @brief Renders an interactive vector shape split button.
+     * 
+     * The main button displays the active shape's procedural vector icon and name.
+     * Clicking the main button jumps directly into the Shape Format tab (RibbonTab::ShapeFormat)
+     * and primes drawing mode for that shape.
+     * The chevron opens the quick-draw 4-column compact grid menu.
+     */
+    void RenderShapeSplitButton(const char* strId, CanvasEngine& canvas, InputStateMachine& inputSM,
+                                const ThemeManager& theme, bool isMini, bool jumpToFormatTab = true) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImVec2 totalSize = isMini ? ImVec2(54.0f, 32.0f) : ImVec2(68.0f, 58.0f);
+        float chevronW = 16.0f;
+        float actionW = totalSize.x - chevronW;
+
+        Folio::ShapeType curShapeType = canvas.shapeCreation.shapeType;
+        const char* label = GetShapeTypeName(curShapeType);
+
+        ImGui::PushID(strId);
+
+        // 1. Action Zone (Left)
+        bool actionClicked = ImGui::InvisibleButton("##act_zone", ImVec2(actionW, totalSize.y));
+        bool actionHovered = ImGui::IsItemHovered();
+        bool actionActive = ImGui::IsItemActive();
+
+        // 2. Chevron Zone (Right)
+        ImGui::SameLine(0, 0);
+        bool chevronClicked = ImGui::InvisibleButton("##chev_zone", ImVec2(chevronW, totalSize.y));
+        bool chevronHovered = ImGui::IsItemHovered();
+        bool chevronActive = ImGui::IsItemActive();
+
+        bool isHeld = actionActive || chevronActive;
+        bool isActive = (inputSM.currentAction == InteractionState::DrawingShape);
+        ImVec2 pMin = pos;
+        ImVec2 pMax = ImVec2(pos.x + totalSize.x, pos.y + totalSize.y);
+        float rounding = theme.frameRounding;
+
+        if (isHeld) {
+            drawList->AddRectFilled(pMin, pMax, ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), rounding);
+            ImU32 borderCol = (theme.colorBg.x < 0.5f) ? IM_COL32(0, 150, 255, 255) : IM_COL32(0, 120, 215, 255);
+            drawList->AddRect(pMin, pMax, borderCol, rounding, 0, 1.8f);
+        } else if (isActive) {
+            ImU32 bgCol = ImGui::ColorConvertFloat4ToU32((actionHovered || chevronHovered) ? theme.colorItemHover : theme.colorItemSelected);
+            drawList->AddRectFilled(pMin, pMax, bgCol, rounding);
+            drawList->AddRect(pMin, pMax, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), rounding, 0, 1.0f);
+        } else if (actionHovered || chevronHovered) {
+            drawList->AddRectFilled(pMin, pMax, ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), rounding);
+        }
+
+        if (chevronHovered && !isActive && !isHeld) {
+            drawList->AddRectFilled(ImVec2(pos.x + actionW, pos.y), pMax,
+                ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected), rounding, ImDrawFlags_RoundCornersRight);
+        }
+
+        // Divider between action and chevron
+        drawList->AddLine(
+            ImVec2(pos.x + actionW, pos.y + 6.0f),
+            ImVec2(pos.x + actionW, pos.y + totalSize.y - 6.0f),
+            ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 1.0f
+        );
+
+        // Vector Shape Icon in Action Zone
+        float iconW = totalSize.y < 40.0f ? 18.0f : 24.0f;
+        float iconH = totalSize.y < 40.0f ? 18.0f : 24.0f;
+        float iconX = pos.x + (actionW - iconW) * 0.5f;
+        float iconY = totalSize.y < 40.0f ? pos.y + (totalSize.y - iconH) * 0.5f : pos.y + 5.0f;
+
+        ImVec2 iconMin(iconX, iconY);
+        ImVec2 iconMax(iconX + iconW, iconY + iconH);
+        ImU32 strokeCol = isActive ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                   : ImGui::ColorConvertFloat4ToU32(actionHovered ? theme.colorText : theme.colorItemText);
+        ImU32 fillCol = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.20f));
+
+        Folio::ShapeObject::DrawShapeIconImGui(drawList, curShapeType, iconMin, iconMax, strokeCol, fillCol);
+
+        // Label below icon
+        if (totalSize.y >= 40.0f && label) {
+            ImVec2 lblSize = ImGui::CalcTextSize(label);
+            float lblX = pos.x + (actionW - lblSize.x) * 0.5f;
+            float lblY = pos.y + totalSize.y - lblSize.y - 4.0f;
+            ImU32 textCol = isActive ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText)
+                                     : ImGui::ColorConvertFloat4ToU32(actionHovered ? theme.colorText : theme.colorTextMuted);
+            drawList->AddText(ImVec2(lblX, lblY), textCol, label);
+        }
+
+        // Chevron arrow
+        float chevCenterX = pos.x + actionW + chevronW * 0.5f;
+        float chevCenterY = pos.y + totalSize.y * 0.5f;
+        ImVec2 ch1(chevCenterX - 3.5f, chevCenterY - 2.0f);
+        ImVec2 ch2(chevCenterX + 3.5f, chevCenterY - 2.0f);
+        ImVec2 ch3(chevCenterX, chevCenterY + 2.5f);
+        drawList->AddTriangleFilled(ch1, ch2, ch3,
+            ImGui::ColorConvertFloat4ToU32(chevronHovered ? theme.colorText : theme.colorTextMuted));
+
+        // Tooltip
+        if ((actionHovered || chevronHovered) && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::BeginTooltip();
+            ImGui::Text("Active Shape: %s\nClick to enter Shape Format tab. Click arrow for quick shape grid.", label);
+            ImGui::EndTooltip();
+        }
+
+        // Action Click: jump to Shape Format tab and prime drawing tool
+        if (actionClicked) {
+            SyncShapePenColor(canvas);
+            canvas.StartShapeCreation(curShapeType, canvas.shapeCreation.lockDrawingMode);
+            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
+            inputSM.currentAction = InteractionState::DrawingShape;
+            if (jumpToFormatTab) {
+                previousTab = activeTab;
+                activeTab = RibbonTab::ShapeFormat;
+                tabTransitionTimer = 0.0f;
+            }
+        }
+
+        std::string popupId = std::string("##popup_shape_grid_") + strId;
+        if (chevronClicked) {
+            ImGui::OpenPopup(popupId.c_str());
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8.0f);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+
+        if (ImGui::BeginPopup(popupId.c_str())) {
+            RenderShapeGridPalette(canvas, inputSM, theme);
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+
+        ImGui::PopID();
+    }
+
+    /**
+     * @brief Renders the circular color swatch disc for vector shape Outline Color.
+     * Inherits active pen color by default, with rich interactive hover halo and full popup picker.
+     */
+    void RenderShapeOutlineColorDisc(CanvasEngine& canvas, const ThemeManager& theme,
+                                     std::shared_ptr<Folio::ShapeObject> selectedShape, bool isMini) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 startPos = ImGui::GetCursorScreenPos();
+        float btnSize = isMini ? 28.0f : 38.0f;
+        float btnY = startPos.y + (isMini ? 2.0f : (58.0f - btnSize) * 0.5f);
+        ImVec2 btnPos(startPos.x, btnY);
+
+        ImGui::SetCursorScreenPos(btnPos);
+        std::string popupId = "##shape_outline_color_popup";
+
+        bool clicked = ImGui::InvisibleButton("##shape_outline_color_btn", ImVec2(btnSize, btnSize));
+        bool hovered = ImGui::IsItemHovered();
+        bool pressed = ImGui::IsItemActive();
+
+        BLRgba32 curCol = selectedShape ? selectedShape->strokeColor : canvas.shapeCreation.defaultOutlineColor;
+        ImVec4 colVec(curCol.r() / 255.0f, curCol.g() / 255.0f, curCol.b() / 255.0f, curCol.a() / 255.0f);
+
+        ImVec2 center(btnPos.x + btnSize * 0.5f, btnPos.y + btnSize * 0.5f);
+        float outerRadius = (btnSize * 0.5f) - 1.0f;
+        float innerRadius = outerRadius - 3.0f;
+
+        if (pressed) {
+            ImU32 darkOutline = (theme.colorBg.x < 0.5f) ? IM_COL32(10, 11, 14, 255) : IM_COL32(38, 42, 50, 240);
+            drawList->AddCircleFilled(center, outerRadius + 1.0f, ImGui::ColorConvertFloat4ToU32(theme.colorItemHover));
+            drawList->AddCircle(center, outerRadius + 1.0f, darkOutline, 0, 1.8f);
+        } else if (hovered) {
+            drawList->AddCircleFilled(center, outerRadius + 1.0f, ImGui::ColorConvertFloat4ToU32(theme.colorItemHover));
+            drawList->AddCircle(center, outerRadius + 1.0f, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 0, 1.0f);
+        } else {
+            drawList->AddCircle(center, outerRadius, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 0, 1.0f);
+        }
+
+        drawList->AddCircleFilled(center, innerRadius, ImGui::ColorConvertFloat4ToU32(colVec));
+        drawList->AddCircle(center, innerRadius, IM_COL32(255, 255, 255, 60), 0, 1.0f);
+
+        if (hovered && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted("Outline Color: Click to change border color");
+            ImGui::EndTooltip();
+        }
+
+        if (clicked) {
+            ImGui::OpenPopup(popupId.c_str());
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+
+        if (ImGui::BeginPopup(popupId.c_str())) {
+            ImGui::TextUnformatted("Outline Color");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            static const BLRgba32 s_palette[] = {
+                BLRgba32(0x18, 0x1A, 0x20, 0xFF), // Dark charcoal
+                BLRgba32(0x00, 0x78, 0xD4, 0xFF), // Accent Blue
+                BLRgba32(0x10, 0x7C, 0x41, 0xFF), // Green
+                BLRgba32(0xD8, 0x3B, 0x01, 0xFF), // Orange
+                BLRgba32(0xE8, 0x11, 0x23, 0xFF), // Red
+                BLRgba32(0x5C, 0x2D, 0x91, 0xFF), // Purple
+                BLRgba32(0x00, 0x82, 0x72, 0xFF), // Teal
+                BLRgba32(0xFF, 0xFF, 0xFF, 0xFF)  // White
+            };
+
+            for (int i = 0; i < 8; ++i) {
+                if (i > 0) ImGui::SameLine(0, 4.0f);
+                ImGui::PushID(i + 3100);
+                const auto& c = s_palette[i];
+                ImVec4 cv(c.r() / 255.0f, c.g() / 255.0f, c.b() / 255.0f, c.a() / 255.0f);
+                if (ImGui::ColorButton("##strk_btn", cv, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24))) {
+                    canvas.shapeCreation.defaultOutlineColor = c;
+                    if (selectedShape) {
+                        selectedShape->strokeColor = c;
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            float arr[4] = { colVec.x, colVec.y, colVec.z, colVec.w };
+            if (ImGui::ColorPicker4("##outline_color_picker", arr,
+                ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_PickerHueBar)) {
+                BLRgba32 newCol(
+                    static_cast<uint8_t>(std::clamp(arr[0] * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(arr[1] * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(arr[2] * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(arr[3] * 255.0f, 0.0f, 255.0f))
+                );
+                canvas.shapeCreation.defaultOutlineColor = newCol;
+                if (selectedShape) {
+                    selectedShape->strokeColor = newCol;
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+            }
+
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
+    /**
+     * @brief Renders the circular color swatch disc for vector shape Infill Color.
+     * Supports transparent / "No Fill" indicator, semi-transparent presets, and full picker.
+     */
+    void RenderShapeInfillColorDisc(CanvasEngine& canvas, const ThemeManager& theme,
+                                    std::shared_ptr<Folio::ShapeObject> selectedShape, bool isMini) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 startPos = ImGui::GetCursorScreenPos();
+        float btnSize = isMini ? 28.0f : 38.0f;
+        float btnY = startPos.y + (isMini ? 2.0f : (58.0f - btnSize) * 0.5f);
+        ImVec2 btnPos(startPos.x, btnY);
+
+        ImGui::SetCursorScreenPos(btnPos);
+        std::string popupId = "##shape_infill_color_popup";
+
+        bool clicked = ImGui::InvisibleButton("##shape_infill_color_btn", ImVec2(btnSize, btnSize));
+        bool hovered = ImGui::IsItemHovered();
+        bool pressed = ImGui::IsItemActive();
+
+        Folio::ShapeFillType curFillType = selectedShape ? selectedShape->fillType : canvas.shapeCreation.defaultFillType;
+        BLRgba32 curCol = selectedShape ? selectedShape->fillColor : canvas.shapeCreation.defaultFillColor;
+        ImVec4 colVec(curCol.r() / 255.0f, curCol.g() / 255.0f, curCol.b() / 255.0f, curCol.a() / 255.0f);
+
+        ImVec2 center(btnPos.x + btnSize * 0.5f, btnPos.y + btnSize * 0.5f);
+        float outerRadius = (btnSize * 0.5f) - 1.0f;
+        float innerRadius = outerRadius - 3.0f;
+
+        if (pressed) {
+            ImU32 darkOutline = (theme.colorBg.x < 0.5f) ? IM_COL32(10, 11, 14, 255) : IM_COL32(38, 42, 50, 240);
+            drawList->AddCircleFilled(center, outerRadius + 1.0f, ImGui::ColorConvertFloat4ToU32(theme.colorItemHover));
+            drawList->AddCircle(center, outerRadius + 1.0f, darkOutline, 0, 1.8f);
+        } else if (hovered) {
+            drawList->AddCircleFilled(center, outerRadius + 1.0f, ImGui::ColorConvertFloat4ToU32(theme.colorItemHover));
+            drawList->AddCircle(center, outerRadius + 1.0f, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 0, 1.0f);
+        } else {
+            drawList->AddCircle(center, outerRadius, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 0, 1.0f);
+        }
+
+        if (curFillType == Folio::ShapeFillType::None) {
+            // Transparent / No Fill indicator: white/dark neutral circle with a clean diagonal red slash
+            ImU32 baseBg = (theme.colorBg.x < 0.5f) ? IM_COL32(40, 44, 52, 255) : IM_COL32(240, 242, 245, 255);
+            drawList->AddCircleFilled(center, innerRadius, baseBg);
+            // Diagonal red slash
+            float slashD = innerRadius * 0.7071f;
+            drawList->AddLine(
+                ImVec2(center.x - slashD, center.y + slashD),
+                ImVec2(center.x + slashD, center.y - slashD),
+                IM_COL32(232, 17, 35, 240), 2.0f
+            );
+        } else {
+            drawList->AddCircleFilled(center, innerRadius, ImGui::ColorConvertFloat4ToU32(colVec));
+            drawList->AddCircle(center, innerRadius, IM_COL32(255, 255, 255, 60), 0, 1.0f);
+        }
+
+        if (hovered && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(curFillType == Folio::ShapeFillType::None ? "Infill Color: None (Transparent)" : "Infill Color: Click to change fill");
+            ImGui::EndTooltip();
+        }
+
+        if (clicked) {
+            ImGui::OpenPopup(popupId.c_str());
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+
+        if (ImGui::BeginPopup(popupId.c_str())) {
+            ImGui::TextUnformatted("Infill Color & Style");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Quick Fill Style Buttons
+            if (ImGui::Button("No Fill (Transparent)", ImVec2(160, 24))) {
+                canvas.shapeCreation.defaultFillType = Folio::ShapeFillType::None;
+                if (selectedShape) {
+                    selectedShape->fillType = Folio::ShapeFillType::None;
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Solid Fill", ImVec2(90, 24))) {
+                canvas.shapeCreation.defaultFillType = Folio::ShapeFillType::Solid;
+                if (selectedShape) {
+                    selectedShape->fillType = Folio::ShapeFillType::Solid;
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            static const BLRgba32 s_palette[] = {
+                BLRgba32(0x00, 0x78, 0xD4, 0x40), // Translucent Accent Blue
+                BLRgba32(0x10, 0x7C, 0x41, 0x40), // Green
+                BLRgba32(0xD8, 0x3B, 0x01, 0x40), // Orange
+                BLRgba32(0xE8, 0x11, 0x23, 0x40), // Red
+                BLRgba32(0x5C, 0x2D, 0x91, 0x40), // Purple
+                BLRgba32(0x00, 0x82, 0x72, 0x40), // Teal
+                BLRgba32(0xFF, 0xB9, 0x00, 0x40), // Yellow
+                BLRgba32(0x50, 0x50, 0x50, 0x40), // Grey
+                // Solid row
+                BLRgba32(0x00, 0x78, 0xD4, 0xFF),
+                BLRgba32(0x10, 0x7C, 0x41, 0xFF),
+                BLRgba32(0xD8, 0x3B, 0x01, 0xFF),
+                BLRgba32(0xE8, 0x11, 0x23, 0xFF),
+                BLRgba32(0x5C, 0x2D, 0x91, 0xFF),
+                BLRgba32(0x00, 0x82, 0x72, 0xFF),
+                BLRgba32(0xFF, 0xB9, 0x00, 0xFF),
+                BLRgba32(0x20, 0x20, 0x20, 0xFF)
+            };
+
+            for (int i = 0; i < 16; ++i) {
+                if (i > 0 && i % 8 != 0) ImGui::SameLine(0, 4.0f);
+                ImGui::PushID(i + 2100);
+                const auto& c = s_palette[i];
+                ImVec4 cv(c.r() / 255.0f, c.g() / 255.0f, c.b() / 255.0f, c.a() / 255.0f);
+                if (ImGui::ColorButton("##fill_btn", cv, ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24))) {
+                    canvas.shapeCreation.defaultFillColor = c;
+                    canvas.shapeCreation.defaultFillType = (c.a() < 0xFF) ? Folio::ShapeFillType::SemiTransparent : Folio::ShapeFillType::Solid;
+                    if (selectedShape) {
+                        selectedShape->fillColor = c;
+                        selectedShape->fillType = canvas.shapeCreation.defaultFillType;
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            float arr[4] = { colVec.x, colVec.y, colVec.z, colVec.w };
+            if (ImGui::ColorPicker4("##infill_color_picker", arr,
+                ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_PickerHueBar)) {
+                BLRgba32 newCol(
+                    static_cast<uint8_t>(std::clamp(arr[0] * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(arr[1] * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(arr[2] * 255.0f, 0.0f, 255.0f)),
+                    static_cast<uint8_t>(std::clamp(arr[3] * 255.0f, 0.0f, 255.0f))
+                );
+                canvas.shapeCreation.defaultFillColor = newCol;
+                if (canvas.shapeCreation.defaultFillType == Folio::ShapeFillType::None) {
+                    canvas.shapeCreation.defaultFillType = (newCol.a() < 0xFF) ? Folio::ShapeFillType::SemiTransparent : Folio::ShapeFillType::Solid;
+                }
+                if (selectedShape) {
+                    selectedShape->fillColor = newCol;
+                    if (selectedShape->fillType == Folio::ShapeFillType::None) {
+                        selectedShape->fillType = canvas.shapeCreation.defaultFillType;
+                    }
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+            }
+
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
+    /**
+     * @brief Renders the Outline Style dropdown button and interactive menu (Solid, Dashed, Dotted, Dash-Dot, None).
+     * Provides rich graphical preview lines for each option matching the drawing pen style menu.
+     */
+    void RenderShapeOutlineStyleDropdown(CanvasEngine& canvas, const ThemeManager& theme,
+                                         std::shared_ptr<Folio::ShapeObject> selectedShape, bool isMini, DocumentSession* currentSession) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 startPos = ImGui::GetCursorScreenPos();
+        float btnW = isMini ? 42.0f : 74.0f;
+        float btnH = isMini ? 32.0f : 58.0f;
+        ImVec2 btnPos(startPos.x, startPos.y);
+
+        ImGui::SetCursorScreenPos(btnPos);
+        std::string popupId = "##shape_outline_style_popup";
+
+        bool clicked = ImGui::InvisibleButton("##shape_outline_style_btn", ImVec2(btnW, btnH));
+        bool hovered = ImGui::IsItemHovered();
+        bool pressed = ImGui::IsItemActive();
+
+        Folio::ShapeOutlineType curOut = selectedShape ? selectedShape->outlineType : canvas.shapeCreation.defaultOutlineType;
+        BLRgba32 curCol = selectedShape ? selectedShape->strokeColor : canvas.shapeCreation.defaultOutlineColor;
+        ImU32 inkU32 = ImGui::ColorConvertFloat4ToU32(ImVec4(curCol.r() / 255.0f, curCol.g() / 255.0f, curCol.b() / 255.0f, 1.0f));
+
+        if (pressed) {
+            drawList->AddRectFilled(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected), 6.0f);
+            drawList->AddRect(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.2f);
+        } else if (hovered) {
+            drawList->AddRectFilled(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), 6.0f);
+            drawList->AddRect(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.0f);
+        } else {
+            drawList->AddRect(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.0f);
+        }
+
+        // Graphical preview on the button
+        float previewY = btnPos.y + (isMini ? btnH * 0.5f : 16.0f);
+        float px1 = btnPos.x + 8.0f;
+        float px2 = btnPos.x + btnW - 8.0f;
+        float pThick = 2.5f;
+
+        if (curOut == Folio::ShapeOutlineType::Solid) {
+            drawList->AddLine(ImVec2(px1, previewY), ImVec2(px2, previewY), inkU32, pThick);
+        } else if (curOut == Folio::ShapeOutlineType::Dashed) {
+            float seg = 10.0f, gap = 5.0f;
+            drawList->AddLine(ImVec2(px1, previewY), ImVec2(px1 + seg, previewY), inkU32, pThick);
+            drawList->AddLine(ImVec2(px1 + seg + gap, previewY), ImVec2(px2, previewY), inkU32, pThick);
+        } else if (curOut == Folio::ShapeOutlineType::Dotted) {
+            float dotR = 2.0f;
+            float span = px2 - px1;
+            for (int d = 0; d <= 3; d++) {
+                drawList->AddCircleFilled(ImVec2(px1 + d * (span / 3.0f), previewY), dotR, inkU32);
+            }
+        } else if (curOut == Folio::ShapeOutlineType::DashDot) {
+            float seg = 14.0f;
+            drawList->AddLine(ImVec2(px1, previewY), ImVec2(px1 + seg, previewY), inkU32, pThick);
+            drawList->AddCircleFilled(ImVec2(px1 + seg + 6.0f, previewY), 2.0f, inkU32);
+            drawList->AddLine(ImVec2(px1 + seg + 12.0f, previewY), ImVec2(px2, previewY), inkU32, pThick);
+        } else {
+            // None / borderless
+            drawList->AddLine(ImVec2(px1, previewY), ImVec2(px2, previewY), IM_COL32(232, 17, 35, 180), 1.8f);
+            drawList->AddLine(ImVec2((px1 + px2) * 0.5f - 4.0f, previewY - 4.0f), ImVec2((px1 + px2) * 0.5f + 4.0f, previewY + 4.0f), IM_COL32(232, 17, 35, 240), 2.0f);
+        }
+
+        // Label below preview
+        if (!isMini) {
+            const char* sLabel = "Solid";
+            if (curOut == Folio::ShapeOutlineType::Solid) sLabel = "Solid";
+            else if (curOut == Folio::ShapeOutlineType::Dashed) sLabel = "Dashed";
+            else if (curOut == Folio::ShapeOutlineType::Dotted) sLabel = "Dotted";
+            else if (curOut == Folio::ShapeOutlineType::DashDot) sLabel = "Dash-Dot";
+            else if (curOut == Folio::ShapeOutlineType::None) sLabel = "None";
+
+            ImGui::PushFont(FolioTheme::FontRibbonSection ? FolioTheme::FontRibbonSection : FolioTheme::FontRegular);
+            ImVec2 txtSz = ImGui::CalcTextSize(sLabel);
+            float txtX = btnPos.x + (btnW - txtSz.x) * 0.5f;
+            float txtY = btnPos.y + btnH - txtSz.y - 4.0f;
+            drawList->AddText(ImVec2(txtX, txtY), ImGui::ColorConvertFloat4ToU32(theme.colorText), sLabel);
+            ImGui::PopFont();
+        }
+
+        if (hovered && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::BeginTooltip();
+            const char* outDesc = (curOut == Folio::ShapeOutlineType::Dotted) ? "Dotted Outline" :
+                                  (curOut == Folio::ShapeOutlineType::Dashed) ? "Dashed Outline" :
+                                  (curOut == Folio::ShapeOutlineType::DashDot) ? "Dash-Dot Outline" :
+                                  (curOut == Folio::ShapeOutlineType::None) ? "No Outline (Borderless)" : "Solid Outline";
+            ImGui::Text("Outline Pattern: %s", outDesc);
+            ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
+            ImGui::TextUnformatted("Click to select border stroke pattern");
+            ImGui::PopStyleColor();
+            ImGui::EndTooltip();
+        }
+
+        if (clicked) {
+            ImGui::OpenPopup(popupId.c_str());
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+
+        if (ImGui::BeginPopup(popupId.c_str())) {
+            ImGui::TextUnformatted("Select Outline Style");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            struct OutlineItem {
+                const char* name;
+                Folio::ShapeOutlineType type;
+                const char* desc;
+            };
+            static const OutlineItem s_OutItems[] = {
+                { "Solid Line",   Folio::ShapeOutlineType::Solid,   "Continuous unbroken stroke" },
+                { "Dashed Line",  Folio::ShapeOutlineType::Dashed,  "Evenly spaced line dashes" },
+                { "Dotted Line",  Folio::ShapeOutlineType::Dotted,  "Crisp circular dots trace" },
+                { "Dash-Dot",     Folio::ShapeOutlineType::DashDot, "Alternating dash and dot" },
+                { "None",         Folio::ShapeOutlineType::None,    "Borderless / invisible outline" }
+            };
+
+            for (int i = 0; i < 5; i++) {
+                bool isSelected = (curOut == s_OutItems[i].type);
+                ImGui::PushID(i + 4000);
+
+                ImVec2 itemPos = ImGui::GetCursorScreenPos();
+                float itemW = 210.0f;
+                float itemH = 34.0f;
+                bool itemClicked = ImGui::InvisibleButton("##out_row", ImVec2(itemW, itemH));
+                bool itemHovered = ImGui::IsItemHovered();
+
+                ImDrawList* popDl = ImGui::GetWindowDrawList();
+                if (isSelected) {
+                    popDl->AddRectFilled(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                        ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected), 6.0f);
+                    popDl->AddRect(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                        ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.2f);
+                } else if (itemHovered) {
+                    popDl->AddRectFilled(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                        ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), 6.0f);
+                }
+
+                // Graphical preview line
+                float sampleY = itemPos.y + itemH * 0.5f;
+                float sx1 = itemPos.x + 10.0f;
+                float sx2 = itemPos.x + 55.0f;
+                ImU32 sCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : inkU32;
+
+                if (s_OutItems[i].type == Folio::ShapeOutlineType::Solid) {
+                    popDl->AddLine(ImVec2(sx1, sampleY), ImVec2(sx2, sampleY), sCol, 3.0f);
+                } else if (s_OutItems[i].type == Folio::ShapeOutlineType::Dashed) {
+                    float dW = 12.0f, gW = 6.0f;
+                    popDl->AddLine(ImVec2(sx1, sampleY), ImVec2(sx1 + dW, sampleY), sCol, 3.0f);
+                    popDl->AddLine(ImVec2(sx1 + dW + gW, sampleY), ImVec2(sx2, sampleY), sCol, 3.0f);
+                } else if (s_OutItems[i].type == Folio::ShapeOutlineType::Dotted) {
+                    for (int d = 0; d < 4; d++) {
+                        popDl->AddCircleFilled(ImVec2(sx1 + d * 14.0f, sampleY), 2.2f, sCol);
+                    }
+                } else if (s_OutItems[i].type == Folio::ShapeOutlineType::DashDot) {
+                    float dW = 14.0f;
+                    popDl->AddLine(ImVec2(sx1, sampleY), ImVec2(sx1 + dW, sampleY), sCol, 3.0f);
+                    popDl->AddCircleFilled(ImVec2(sx1 + dW + 6.0f, sampleY), 2.2f, sCol);
+                    popDl->AddLine(ImVec2(sx1 + dW + 12.0f, sampleY), ImVec2(sx2, sampleY), sCol, 3.0f);
+                } else {
+                    // None
+                    popDl->AddLine(ImVec2(sx1, sampleY), ImVec2(sx2, sampleY), IM_COL32(232, 17, 35, 180), 2.0f);
+                    popDl->AddLine(ImVec2((sx1 + sx2) * 0.5f - 4.0f, sampleY - 4.0f), ImVec2((sx1 + sx2) * 0.5f + 4.0f, sampleY + 4.0f), IM_COL32(232, 17, 35, 240), 2.0f);
+                }
+
+                // Label text & description
+                ImU32 textCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+                popDl->AddText(ImVec2(itemPos.x + 65.0f, itemPos.y + 3.0f), textCol, s_OutItems[i].name);
+
+                ImU32 descCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted);
+                popDl->AddText(ImVec2(itemPos.x + 65.0f, itemPos.y + 18.0f), descCol, s_OutItems[i].desc);
+
+                if (itemClicked) {
+                    canvas.shapeCreation.defaultOutlineType = s_OutItems[i].type;
+                    if (selectedShape) {
+                        selectedShape->outlineType = s_OutItems[i].type;
+                        selectedShape->UpdateBounds();
+                        if (currentSession) canvas.SyncSelectionToSpatialIndex(currentSession);
+                        canvas.selectionGizmo.RecalculateBounds();
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::PopID();
+            }
+
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
+    /**
+     * @brief Renders the Infill Style & Drafting Texture dropdown button and popup menu.
+     * Supports Solid, Translucent, Drafting Diagonal (///), Drafting Cross-Hatch (XXX),
+     * Horizontal (---), Vertical (|||), Stipple (dots), and None.
+     */
+    void RenderShapeInfillStyleDropdown(CanvasEngine& canvas, const ThemeManager& theme,
+                                        std::shared_ptr<Folio::ShapeObject> selectedShape, bool isMini, DocumentSession* currentSession) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 startPos = ImGui::GetCursorScreenPos();
+        float btnW = isMini ? 42.0f : 84.0f;
+        float btnH = isMini ? 32.0f : 58.0f;
+        ImVec2 btnPos(startPos.x, startPos.y);
+
+        ImGui::SetCursorScreenPos(btnPos);
+        std::string popupId = "##shape_infill_style_popup";
+
+        bool clicked = ImGui::InvisibleButton("##shape_infill_style_btn", ImVec2(btnW, btnH));
+        bool hovered = ImGui::IsItemHovered();
+        bool pressed = ImGui::IsItemActive();
+
+        Folio::ShapeFillType curFill = selectedShape ? selectedShape->fillType : canvas.shapeCreation.defaultFillType;
+        BLRgba32 curCol = selectedShape ? selectedShape->fillColor : canvas.shapeCreation.defaultFillColor;
+        ImVec4 colVec(curCol.r() / 255.0f, curCol.g() / 255.0f, curCol.b() / 255.0f, 1.0f);
+        ImU32 fillU32 = ImGui::ColorConvertFloat4ToU32(colVec);
+
+        if (pressed) {
+            drawList->AddRectFilled(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected), 6.0f);
+            drawList->AddRect(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.2f);
+        } else if (hovered) {
+            drawList->AddRectFilled(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), 6.0f);
+            drawList->AddRect(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.0f);
+        } else {
+            drawList->AddRect(btnPos, ImVec2(btnPos.x + btnW, btnPos.y + btnH), ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.0f);
+        }
+
+        // Swatch Box preview on button
+        float bx1 = btnPos.x + (btnW - 28.0f) * 0.5f;
+        float by1 = btnPos.y + (isMini ? (btnH - 18.0f) * 0.5f : 8.0f);
+        float bx2 = bx1 + 28.0f;
+        float by2 = by1 + 18.0f;
+
+        // Draw swatch border
+        drawList->AddRect(ImVec2(bx1, by1), ImVec2(bx2, by2), ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 3.0f);
+
+        // Helper lambda to render infill swatch graphics
+        auto drawSwatch = [&](ImDrawList* dl, ImVec2 p1, ImVec2 p2, Folio::ShapeFillType ft, ImU32 col) {
+            dl->PushClipRect(p1, p2, true);
+            if (ft == Folio::ShapeFillType::None) {
+                // Diagonal red slash
+                dl->AddLine(ImVec2(p1.x + 2, p2.y - 2), ImVec2(p2.x - 2, p1.y + 2), IM_COL32(232, 17, 35, 240), 2.0f);
+            } else if (ft == Folio::ShapeFillType::Solid) {
+                dl->AddRectFilled(p1, p2, col, 2.0f);
+            } else if (ft == Folio::ShapeFillType::SemiTransparent) {
+                ImVec4 tcol = ImGui::ColorConvertU32ToFloat4(col);
+                tcol.w = 0.35f;
+                dl->AddRectFilled(p1, p2, ImGui::ColorConvertFloat4ToU32(tcol), 2.0f);
+            } else if (ft == Folio::ShapeFillType::HatchDiagonal) {
+                for (float off = -30.0f; off < 50.0f; off += 6.0f) {
+                    dl->AddLine(ImVec2(p1.x + off, p2.y), ImVec2(p1.x + off + 20.0f, p1.y), col, 1.5f);
+                }
+            } else if (ft == Folio::ShapeFillType::HatchCross) {
+                for (float off = -30.0f; off < 50.0f; off += 7.0f) {
+                    dl->AddLine(ImVec2(p1.x + off, p2.y), ImVec2(p1.x + off + 20.0f, p1.y), col, 1.3f);
+                    dl->AddLine(ImVec2(p1.x + off, p1.y), ImVec2(p1.x + off + 20.0f, p2.y), col, 1.3f);
+                }
+            } else if (ft == Folio::ShapeFillType::HatchHorizontal) {
+                for (float y = p1.y + 3.0f; y < p2.y; y += 4.5f) {
+                    dl->AddLine(ImVec2(p1.x, y), ImVec2(p2.x, y), col, 1.4f);
+                }
+            } else if (ft == Folio::ShapeFillType::HatchVertical) {
+                for (float x = p1.x + 3.0f; x < p2.x; x += 4.5f) {
+                    dl->AddLine(ImVec2(x, p1.y), ImVec2(x, p2.y), col, 1.4f);
+                }
+            } else if (ft == Folio::ShapeFillType::HatchDots) {
+                for (float y = p1.y + 3.0f; y < p2.y; y += 5.0f) {
+                    for (float x = p1.x + 3.0f; x < p2.x; x += 5.0f) {
+                        dl->AddCircleFilled(ImVec2(x, y), 1.2f, col);
+                    }
+                }
+            } else {
+                // Gradient
+                dl->AddRectFilledMultiColor(p1, p2, col, col, IM_COL32(0, 196, 255, 120), IM_COL32(0, 196, 255, 120));
+            }
+            dl->PopClipRect();
+        };
+
+        drawSwatch(drawList, ImVec2(bx1, by1), ImVec2(bx2, by2), curFill, fillU32);
+
+        // Label below preview
+        if (!isMini) {
+            const char* sLabel = "Solid";
+            switch (curFill) {
+                case Folio::ShapeFillType::None: sLabel = "No Fill"; break;
+                case Folio::ShapeFillType::Solid: sLabel = "Solid"; break;
+                case Folio::ShapeFillType::SemiTransparent: sLabel = "Translucent"; break;
+                case Folio::ShapeFillType::HatchDiagonal: sLabel = "Diagonal"; break;
+                case Folio::ShapeFillType::HatchCross: sLabel = "Cross-Hatch"; break;
+                case Folio::ShapeFillType::HatchHorizontal: sLabel = "Horizontal"; break;
+                case Folio::ShapeFillType::HatchVertical: sLabel = "Vertical"; break;
+                case Folio::ShapeFillType::HatchDots: sLabel = "Stipple"; break;
+                case Folio::ShapeFillType::LinearGradient: sLabel = "Linear Grad"; break;
+                case Folio::ShapeFillType::RadialGradient: sLabel = "Radial Grad"; break;
+                default: break;
+            }
+
+            ImGui::PushFont(FolioTheme::FontRibbonSection ? FolioTheme::FontRibbonSection : FolioTheme::FontRegular);
+            ImVec2 txtSz = ImGui::CalcTextSize(sLabel);
+            float txtX = btnPos.x + (btnW - txtSz.x) * 0.5f;
+            float txtY = btnPos.y + btnH - txtSz.y - 4.0f;
+            drawList->AddText(ImVec2(txtX, txtY), ImGui::ColorConvertFloat4ToU32(theme.colorText), sLabel);
+            ImGui::PopFont();
+        }
+
+        if (hovered && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::BeginTooltip();
+            ImGui::Text("Infill Style: %s", (curFill == Folio::ShapeFillType::None) ? "No Fill (Transparent)" :
+                                            (curFill == Folio::ShapeFillType::HatchDiagonal) ? "Drafting Diagonal (///)" :
+                                            (curFill == Folio::ShapeFillType::HatchCross) ? "Drafting Cross-Hatch (XXX)" :
+                                            (curFill == Folio::ShapeFillType::HatchHorizontal) ? "Horizontal Lines (---)" :
+                                            (curFill == Folio::ShapeFillType::HatchVertical) ? "Vertical Lines (|||)" :
+                                            (curFill == Folio::ShapeFillType::HatchDots) ? "Drafting Stipple (Dots)" :
+                                            (curFill == Folio::ShapeFillType::SemiTransparent) ? "Translucent Wash" : "Solid Fill");
+            ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
+            ImGui::TextUnformatted("Click to select drafting hatches, textures, or solid infill");
+            ImGui::PopStyleColor();
+            ImGui::EndTooltip();
+        }
+
+        if (clicked) {
+            ImGui::OpenPopup(popupId.c_str());
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 10.0f);
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, theme.colorPanel);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme.colorBorder);
+
+        if (ImGui::BeginPopup(popupId.c_str())) {
+            ImGui::TextUnformatted("Select Infill Style & Drafting Texture");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            struct InfillItem {
+                const char* name;
+                Folio::ShapeFillType type;
+                const char* desc;
+            };
+            static const InfillItem s_FillItems[] = {
+                { "No Fill",              Folio::ShapeFillType::None,            "Completely transparent interior" },
+                { "Solid Infill",         Folio::ShapeFillType::Solid,           "Opaque solid color fill" },
+                { "Translucent Infill",   Folio::ShapeFillType::SemiTransparent, "Soft translucent color wash" },
+                { "Drafting Diagonal",    Folio::ShapeFillType::HatchDiagonal,   "45-deg parallel drafting hatch lines (///)" },
+                { "Drafting Cross-Hatch", Folio::ShapeFillType::HatchCross,      "Intersecting 45-deg drafting grid (XXX)" },
+                { "Horizontal Lines",     Folio::ShapeFillType::HatchHorizontal, "Parallel horizontal drafting lines (---)" },
+                { "Vertical Lines",       Folio::ShapeFillType::HatchVertical,   "Parallel vertical drafting lines (|||)" },
+                { "Drafting Stipple",     Folio::ShapeFillType::HatchDots,       "Fine dotted grain texture (sand/concrete)" },
+                { "Linear Gradient",      Folio::ShapeFillType::LinearGradient,  "Smooth two-stop directional blend" },
+                { "Radial Gradient",      Folio::ShapeFillType::RadialGradient,  "Concentric center-outward blend" }
+            };
+
+            for (int i = 0; i < 10; i++) {
+                bool isSelected = (curFill == s_FillItems[i].type);
+                ImGui::PushID(i + 5000);
+
+                ImVec2 itemPos = ImGui::GetCursorScreenPos();
+                float itemW = 260.0f;
+                float itemH = 36.0f;
+                bool itemClicked = ImGui::InvisibleButton("##infill_row", ImVec2(itemW, itemH));
+                bool itemHovered = ImGui::IsItemHovered();
+
+                ImDrawList* popDl = ImGui::GetWindowDrawList();
+                if (isSelected) {
+                    popDl->AddRectFilled(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                        ImGui::ColorConvertFloat4ToU32(theme.colorItemSelected), 6.0f);
+                    popDl->AddRect(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                        ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 6.0f, 0, 1.2f);
+                } else if (itemHovered) {
+                    popDl->AddRectFilled(itemPos, ImVec2(itemPos.x + itemW, itemPos.y + itemH),
+                        ImGui::ColorConvertFloat4ToU32(theme.colorItemHover), 6.0f);
+                }
+
+                // Swatch preview box on left
+                ImVec2 sw1(itemPos.x + 8.0f, itemPos.y + 6.0f);
+                ImVec2 sw2(sw1.x + 28.0f, sw1.y + 24.0f);
+                popDl->AddRect(sw1, sw2, ImGui::ColorConvertFloat4ToU32(theme.colorBorder), 3.0f);
+
+                ImU32 rowCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : fillU32;
+                drawSwatch(popDl, sw1, sw2, s_FillItems[i].type, rowCol);
+
+                // Label text & description
+                ImU32 textCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+                popDl->AddText(ImVec2(itemPos.x + 44.0f, itemPos.y + 3.0f), textCol, s_FillItems[i].name);
+
+                ImU32 descCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted);
+                popDl->AddText(ImVec2(itemPos.x + 44.0f, itemPos.y + 19.0f), descCol, s_FillItems[i].desc);
+
+                if (itemClicked) {
+                    canvas.shapeCreation.defaultFillType = s_FillItems[i].type;
+                    if (selectedShape) {
+                        selectedShape->fillType = s_FillItems[i].type;
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::PopID();
+            }
+
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
     void Render(float width, AppViewMode& outViewMode, CanvasEngine& canvas, InputStateMachine& inputSM, const ThemeManager& theme, DocumentSession* session = nullptr) {
         if (session) currentSession = session;
         float dt = ImGui::GetIO().DeltaTime;
@@ -151,17 +1161,18 @@ public:
         static uint32_t s_lastSelectedShapeUid = 0;
         uint32_t currentShapeUid = selectedShape ? selectedShape->uid : 0;
 
+        // Auto-switch to ShapeFormat tab ONLY when a shape is newly selected
         if (selectedShape) {
             if (s_lastSelectedShapeUid != currentShapeUid && activeTab != RibbonTab::ShapeFormat) {
                 previousTab = activeTab;
                 activeTab = RibbonTab::ShapeFormat;
                 tabTransitionTimer = 0.0f;
             }
-        } else {
-            if (activeTab == RibbonTab::ShapeFormat) {
-                activeTab = (previousTab != RibbonTab::ShapeFormat) ? previousTab : RibbonTab::Draw;
-                tabTransitionTimer = 0.0f;
-            }
+        }
+        // If user is actively inking and no shape is selected, return to previous tab / Draw
+        if (inputSM.currentAction == InteractionState::Inking && activeTab == RibbonTab::ShapeFormat && !selectedShape) {
+            activeTab = (previousTab != RibbonTab::ShapeFormat) ? previousTab : RibbonTab::Draw;
+            tabTransitionTimer = 0.0f;
         }
         s_lastSelectedShapeUid = currentShapeUid;
 
@@ -184,7 +1195,9 @@ public:
         auto activePg = currentDocSession ? currentDocSession->GetActivePage() : nullptr;
         bool isDedicatedPdf = activePg && activePg->isDedicatedPdf;
 
-        if (selectedShape != nullptr || activeTab == RibbonTab::ShapeFormat) {
+        // Keep Shape Format tab visible while on that tab, while drawing shapes, or while a shape is selected
+        bool showShapeFormat = (selectedShape != nullptr) || (activeTab == RibbonTab::ShapeFormat) || (inputSM.currentAction == InteractionState::DrawingShape);
+        if (showShapeFormat) {
             tabs.push_back({ "Shape Format", false, RibbonTab::ShapeFormat, true });
         }
         if (isDedicatedPdf || activeTab == RibbonTab::PdfTools) {
@@ -251,6 +1264,10 @@ public:
                             isCollapsedPopupOpen = false;
                         } else {
                             // Open floating popup for this tab without moving the canvas
+                            if (tab.tabEnum != RibbonTab::ShapeFormat) {
+                                canvas.shapeCreation.lockDrawingMode = false;
+                                canvas.shapeCreation.isActive = false;
+                            }
                             previousTab = activeTab;
                             activeTab = tab.tabEnum;
                             isCollapsedPopupOpen = true;
@@ -267,6 +1284,10 @@ public:
                             ToggleCollapse();
                         } else {
                             if (activeTab != tab.tabEnum) {
+                                if (tab.tabEnum != RibbonTab::ShapeFormat) {
+                                    canvas.shapeCreation.lockDrawingMode = false;
+                                    canvas.shapeCreation.isActive = false;
+                                }
                                 previousTab = activeTab;
                                 activeTab = tab.tabEnum;
                                 tabTransitionTimer = 0.0f; // Smooth fade-in
@@ -752,56 +1773,9 @@ public:
                 // -------------------------------------------------------------
                 {
                     FolioUI::ToolbarSectionBuilder sec("grp_insert_shapes_tab", "Shapes", theme, isMini);
-                    sec.AddSplitButton("btn_insert_shapes_tab", 0, "Shapes", "Insert geometric vector shape", false,
-                        [&]() {
-                            canvas.StartShapeCreation(Folio::ShapeType::Rectangle, canvas.shapeCreation.lockDrawingMode);
-                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
-                            inputSM.currentAction = InteractionState::DrawingShape;
-                        },
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Insert 2D Vector Shape");
-                            menu.AddCustom([&]() {
-                                struct ShapeItem {
-                                    Folio::ShapeType type;
-                                    const char* name;
-                                };
-                                static const ShapeItem s_items[] = {
-                                    { Folio::ShapeType::Rectangle, "Rectangle" },
-                                    { Folio::ShapeType::RoundedRectangle, "Rounded Rect" },
-                                    { Folio::ShapeType::Ellipse, "Ellipse / Circle" },
-                                    { Folio::ShapeType::Triangle, "Triangle" },
-                                    { Folio::ShapeType::Diamond, "Diamond" },
-                                    { Folio::ShapeType::Star, "Star (5-Point)" },
-                                    { Folio::ShapeType::Arrow, "Arrow" },
-                                    { Folio::ShapeType::DoubleArrow, "Double Arrow" },
-                                    { Folio::ShapeType::Hexagon, "Hexagon" },
-                                    { Folio::ShapeType::Line, "Line" }
-                                };
-
-                                for (const auto& item : s_items) {
-                                    ImGui::PushID(static_cast<int>(item.type) + 500);
-                                    ImVec2 p0 = ImGui::GetCursorScreenPos();
-                                    float rowHeight = 32.0f;
-                                    float menuW = 210.0f;
-                                    if (ImGui::Selectable("##shape_select_tab", false, 0, ImVec2(menuW, rowHeight))) {
-                                        canvas.StartShapeCreation(item.type, canvas.shapeCreation.lockDrawingMode);
-                                        inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
-                                        inputSM.currentAction = InteractionState::DrawingShape;
-                                        ImGui::CloseCurrentPopup();
-                                    }
-                                    ImDrawList* dl = ImGui::GetWindowDrawList();
-                                    ImVec2 iconMin(p0.x + 8.0f, p0.y + 5.0f);
-                                    ImVec2 iconMax(p0.x + 30.0f, p0.y + 27.0f);
-                                    Folio::ShapeObject::DrawShapeIconImGui(dl, item.type, iconMin, iconMax,
-                                        ImGui::GetColorU32(theme.colorText),
-                                        ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.25f)));
-
-                                    dl->AddText(ImVec2(p0.x + 38.0f, p0.y + 7.0f), ImGui::GetColorU32(theme.colorText), item.name);
-                                    ImGui::PopID();
-                                }
-                            });
-                        }, false, ImVec2(64.0f, 58.0f)
-                    );
+                    sec.AddWidget([&]() {
+                        RenderShapeSplitButton("btn_insert_shapes_tab", canvas, inputSM, theme, isMini, true);
+                    });
                     sec.Render();
                 }
 
@@ -1355,6 +2329,11 @@ public:
                                 for (int d = 0; d <= 3; d++) {
                                     drawList->AddCircleFilled(ImVec2(px1 + d * (span / 3.0f), previewY), dotR, inkU32);
                                 }
+                            } else if (activePreset->strokePattern == StrokePattern::DashDot) {
+                                float seg = 12.0f;
+                                drawList->AddLine(ImVec2(px1, previewY), ImVec2(px1 + seg, previewY), inkU32, pThick);
+                                drawList->AddCircleFilled(ImVec2(px1 + seg + 5.0f, previewY), 2.0f, inkU32);
+                                drawList->AddLine(ImVec2(px1 + seg + 10.0f, previewY), ImVec2(px2, previewY), inkU32, pThick);
                             } else {
                                 // Textured
                                 float dotR = 1.6f;
@@ -1371,6 +2350,7 @@ public:
                                 if (activePreset->strokePattern == StrokePattern::Solid) sLabel = "Solid";
                                 else if (activePreset->strokePattern == StrokePattern::Dashed) sLabel = "Dashed";
                                 else if (activePreset->strokePattern == StrokePattern::Dotted) sLabel = "Dotted";
+                                else if (activePreset->strokePattern == StrokePattern::DashDot) sLabel = "Dash-Dot";
                                 else if (activePreset->strokePattern == StrokePattern::TexturedPencil) sLabel = "Texture";
 
                                 ImGui::PushFont(FolioTheme::FontRibbonSection ? FolioTheme::FontRibbonSection : FolioTheme::FontRegular);
@@ -1385,10 +2365,11 @@ public:
                                 ImGui::BeginTooltip();
                                 const char* patDesc = (activePreset->strokePattern == StrokePattern::Dotted) ? "Dotted Line" :
                                                       (activePreset->strokePattern == StrokePattern::Dashed) ? "Dashed Line" :
+                                                      (activePreset->strokePattern == StrokePattern::DashDot) ? "Dash-Dot Line" :
                                                       (activePreset->strokePattern == StrokePattern::TexturedPencil) ? "Textured Line" : "Continuous (Solid) Line";
                                 ImGui::Text("Line Style: %s", patDesc);
                                 ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
-                                ImGui::TextUnformatted("Click to choose Continuous, Dashed, or Dotted style");
+                                ImGui::TextUnformatted("Click to choose Continuous, Dashed, Dotted, or Dash-Dot style");
                                 ImGui::PopStyleColor();
                                 ImGui::EndTooltip();
                             }
@@ -1417,11 +2398,12 @@ public:
                                     { "Continuous", StrokePattern::Solid,          "Solid unbroken stroke" },
                                     { "Dashed",     StrokePattern::Dashed,         "Evenly spaced line dashes" },
                                     { "Dotted",     StrokePattern::Dotted,         "Crisp round dots trace" },
+                                    { "Dash-Dot",   StrokePattern::DashDot,        "Alternating dash and dot" },
                                     { "Textured",   StrokePattern::TexturedPencil, "Pencil textured grain" }
                                 };
 
                                 bool styleChanged = false;
-                                for (int i = 0; i < 4; i++) {
+                                for (int i = 0; i < 5; i++) {
                                     bool isSelected = (activePreset->strokePattern == s_Items[i].pattern);
                                     ImGui::PushID(i);
 
@@ -1459,6 +2441,11 @@ public:
                                         for (int d = 0; d < 4; d++) {
                                             popDl->AddCircleFilled(ImVec2(sx1 + d * 13.0f, sampleY), 2.2f, sCol);
                                         }
+                                    } else if (s_Items[i].pattern == StrokePattern::DashDot) {
+                                        float segW = 14.0f;
+                                        popDl->AddLine(ImVec2(sx1, sampleY), ImVec2(sx1 + segW, sampleY), sCol, 3.0f);
+                                        popDl->AddCircleFilled(ImVec2(sx1 + segW + 6.0f, sampleY), 2.2f, sCol);
+                                        popDl->AddLine(ImVec2(sx1 + segW + 12.0f, sampleY), ImVec2(sx2, sampleY), sCol, 3.0f);
                                     } else {
                                         for (int d = 0; d < 6; d++) {
                                             float jy = ((d % 2 == 0) ? -1.0f : 1.0f);
@@ -1646,56 +2633,9 @@ public:
                 if (SettingsManager::Instance().IsSectionVisible("sec_shapes")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_shapes", "Shapes", theme, isMini);
 
-                    sec.AddSplitButton("shapes_picker", 0, "Shapes", "Insert geometric vector shape", false,
-                        [&]() {
-                            canvas.StartShapeCreation(Folio::ShapeType::Rectangle, canvas.shapeCreation.lockDrawingMode);
-                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
-                            inputSM.currentAction = InteractionState::DrawingShape;
-                        },
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Insert 2D Vector Shape");
-                            menu.AddCustom([&]() {
-                                struct ShapeItem {
-                                    Folio::ShapeType type;
-                                    const char* name;
-                                };
-                                static const ShapeItem s_items[] = {
-                                    { Folio::ShapeType::Rectangle, "Rectangle" },
-                                    { Folio::ShapeType::RoundedRectangle, "Rounded Rect" },
-                                    { Folio::ShapeType::Ellipse, "Ellipse / Circle" },
-                                    { Folio::ShapeType::Triangle, "Triangle" },
-                                    { Folio::ShapeType::Diamond, "Diamond" },
-                                    { Folio::ShapeType::Star, "Star (5-Point)" },
-                                    { Folio::ShapeType::Arrow, "Arrow" },
-                                    { Folio::ShapeType::DoubleArrow, "Double Arrow" },
-                                    { Folio::ShapeType::Hexagon, "Hexagon" },
-                                    { Folio::ShapeType::Line, "Line" }
-                                };
-
-                                for (const auto& item : s_items) {
-                                    ImGui::PushID(static_cast<int>(item.type));
-                                    ImVec2 p0 = ImGui::GetCursorScreenPos();
-                                    float rowHeight = 32.0f;
-                                    float menuW = 210.0f;
-                                    if (ImGui::Selectable("##shape_select", false, 0, ImVec2(menuW, rowHeight))) {
-                                        canvas.StartShapeCreation(item.type, canvas.shapeCreation.lockDrawingMode);
-                                        inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
-                                        inputSM.currentAction = InteractionState::DrawingShape;
-                                        ImGui::CloseCurrentPopup();
-                                    }
-                                    ImDrawList* dl = ImGui::GetWindowDrawList();
-                                    ImVec2 iconMin(p0.x + 8.0f, p0.y + 5.0f);
-                                    ImVec2 iconMax(p0.x + 30.0f, p0.y + 27.0f);
-                                    Folio::ShapeObject::DrawShapeIconImGui(dl, item.type, iconMin, iconMax,
-                                        ImGui::GetColorU32(theme.colorText),
-                                        ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.25f)));
-
-                                    dl->AddText(ImVec2(p0.x + 38.0f, p0.y + 7.0f), ImGui::GetColorU32(theme.colorText), item.name);
-                                    ImGui::PopID();
-                                }
-                            });
-                        }, false, ImVec2(64.0f, 58.0f)
-                    );
+                    sec.AddWidget([&]() {
+                        RenderShapeSplitButton("shapes_picker", canvas, inputSM, theme, isMini, true);
+                    });
 
                     sec.AddLargeButton("auto_shapes", 0, "Auto", "Automatic Shapes: Snaps freehand geometric sketches into clean vector shapes", autoShapesEnabled,
                         [&]() {
@@ -2007,80 +2947,22 @@ public:
                         false, ImVec2(76.0f, 58.0f)
                     );
 
-                    // 2. Shape Switcher / Current Shape Type
-                    const char* shapeTypeName = "Rectangle";
-                    Folio::ShapeType curType = selectedShape ? selectedShape->shapeType : canvas.shapeCreation.shapeType;
-                    switch (curType) {
-                        case Folio::ShapeType::Rectangle: shapeTypeName = "Rectangle"; break;
-                        case Folio::ShapeType::RoundedRectangle: shapeTypeName = "Round Rect"; break;
-                        case Folio::ShapeType::Ellipse: shapeTypeName = "Ellipse"; break;
-                        case Folio::ShapeType::Triangle: shapeTypeName = "Triangle"; break;
-                        case Folio::ShapeType::Diamond: shapeTypeName = "Diamond"; break;
-                        case Folio::ShapeType::Star: shapeTypeName = "Star"; break;
-                        case Folio::ShapeType::Arrow: shapeTypeName = "Arrow"; break;
-                        case Folio::ShapeType::DoubleArrow: shapeTypeName = "Dbl Arrow"; break;
-                        case Folio::ShapeType::Hexagon: shapeTypeName = "Hexagon"; break;
-                        case Folio::ShapeType::Line: shapeTypeName = "Line"; break;
-                        default: break;
-                    }
-
-                    sec.AddSplitButton("btn_shape_type_switch", 0, shapeTypeName, "Convert selected shape or pick active draw shape", false,
+                    // 2. Lock to Grid / Snap to Grid Toggle
+                    bool isGridLocked = canvas.shapeCreation.lockToGrid;
+                    sec.AddLargeButton("btn_lock_to_grid", 0, isGridLocked ? "Grid: ON" : "Grid Snap",
+                        "Snap to Grid: Snaps shape creation, dragging, and corner coordinates to graph paper grid spacing",
+                        isGridLocked,
                         [&]() {
-                            canvas.StartShapeCreation(curType, canvas.shapeCreation.lockDrawingMode);
-                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::DrawingShape);
-                            inputSM.currentAction = InteractionState::DrawingShape;
+                            canvas.shapeCreation.lockToGrid = !canvas.shapeCreation.lockToGrid;
+                            LOG_INFO(CanvasEngine, std::string("Snap to Grid mode set to: ") + (canvas.shapeCreation.lockToGrid ? "ENABLED" : "DISABLED"));
                         },
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Switch Shape Geometry");
-                            menu.AddCustom([&]() {
-                                struct ShapeItem {
-                                    Folio::ShapeType type;
-                                    const char* name;
-                                };
-                                static const ShapeItem s_shapeItems[] = {
-                                    { Folio::ShapeType::Rectangle, "Rectangle" },
-                                    { Folio::ShapeType::RoundedRectangle, "Rounded Rect" },
-                                    { Folio::ShapeType::Ellipse, "Ellipse / Circle" },
-                                    { Folio::ShapeType::Triangle, "Triangle" },
-                                    { Folio::ShapeType::Diamond, "Diamond" },
-                                    { Folio::ShapeType::Star, "Star (5-Point)" },
-                                    { Folio::ShapeType::Arrow, "Arrow" },
-                                    { Folio::ShapeType::DoubleArrow, "Double Arrow" },
-                                    { Folio::ShapeType::Hexagon, "Hexagon" },
-                                    { Folio::ShapeType::Line, "Line" }
-                                };
-
-                                for (const auto& item : s_shapeItems) {
-                                    ImGui::PushID(static_cast<int>(item.type) + 8000);
-                                    ImVec2 p0 = ImGui::GetCursorScreenPos();
-                                    float rowHeight = 32.0f;
-                                    float menuW = 210.0f;
-                                    if (ImGui::Selectable("##switch_shape", false, 0, ImVec2(menuW, rowHeight))) {
-                                        canvas.shapeCreation.shapeType = item.type;
-                                        if (selectedShape) {
-                                            selectedShape->shapeType = item.type;
-                                            selectedShape->UpdateBounds();
-                                            canvas.SyncSelectionToSpatialIndex(currentSession);
-                                            canvas.selectionGizmo.RecalculateBounds();
-                                            canvas.needsFullRebake = true;
-                                            canvas.isDirty = true;
-                                        }
-                                        ImGui::CloseCurrentPopup();
-                                    }
-                                    ImDrawList* dl = ImGui::GetWindowDrawList();
-                                    ImVec2 iconMin(p0.x + 8.0f, p0.y + 5.0f);
-                                    ImVec2 iconMax(p0.x + 30.0f, p0.y + 27.0f);
-                                    Folio::ShapeObject::DrawShapeIconImGui(dl, item.type, iconMin, iconMax,
-                                        ImGui::GetColorU32(theme.colorText),
-                                        ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.25f)));
-
-                                    dl->AddText(ImVec2(p0.x + 38.0f, p0.y + 7.0f), ImGui::GetColorU32(theme.colorText), item.name);
-                                    ImGui::PopID();
-                                }
-                            });
-                        },
-                        false, ImVec2(80.0f, 58.0f)
+                        false, ImVec2(76.0f, 58.0f)
                     );
+
+                    // 3. Active Shape Picker
+                    sec.AddWidget([&]() {
+                        RenderShapeSplitButton("btn_shape_type_switch", canvas, inputSM, theme, isMini, false);
+                    });
 
                     sec.Render();
                 }
@@ -2091,116 +2973,15 @@ public:
                 {
                     FolioUI::ToolbarSectionBuilder sec("grp_shape_fill", "Shape Fill", theme, isMini);
 
-                    Folio::ShapeFillType curFill = selectedShape ? selectedShape->fillType : canvas.shapeCreation.defaultFillType;
-                    const char* fillLabel = "Solid";
-                    switch (curFill) {
-                        case Folio::ShapeFillType::None: fillLabel = "No Fill"; break;
-                        case Folio::ShapeFillType::Solid: fillLabel = "Solid"; break;
-                        case Folio::ShapeFillType::SemiTransparent: fillLabel = "Translucent"; break;
-                        case Folio::ShapeFillType::LinearGradient: fillLabel = "Linear Grad"; break;
-                        case Folio::ShapeFillType::RadialGradient: fillLabel = "Radial Grad"; break;
-                        case Folio::ShapeFillType::HatchDiagonal: fillLabel = "Hatch Diag"; break;
-                        case Folio::ShapeFillType::HatchCross: fillLabel = "Hatch Cross"; break;
-                        default: break;
-                    }
+                    // 1. Circular Infill Color Disc
+                    sec.AddWidget([&]() {
+                        RenderShapeInfillColorDisc(canvas, theme, selectedShape, isMini);
+                    });
 
-                    sec.AddSplitButton("btn_shape_fill_type", 0, fillLabel, "Fill Style: None, Solid, Translucent, Gradient, or Hatch pattern", false,
-                        [&]() {
-                            Folio::ShapeFillType nextFill = (curFill == Folio::ShapeFillType::SemiTransparent) ? Folio::ShapeFillType::Solid :
-                                                           (curFill == Folio::ShapeFillType::Solid) ? Folio::ShapeFillType::None :
-                                                           Folio::ShapeFillType::SemiTransparent;
-                            canvas.shapeCreation.defaultFillType = nextFill;
-                            if (selectedShape) {
-                                selectedShape->fillType = nextFill;
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
-                            }
-                        },
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Infill Style");
-                            auto setFill = [&](Folio::ShapeFillType ft) {
-                                canvas.shapeCreation.defaultFillType = ft;
-                                if (selectedShape) {
-                                    selectedShape->fillType = ft;
-                                    canvas.needsFullRebake = true;
-                                    canvas.isDirty = true;
-                                }
-                            };
-                            menu.AddItem("None (Transparent)", 0, "", [=]() { setFill(Folio::ShapeFillType::None); });
-                            menu.AddItem("Solid Infill", 0, "", [=]() { setFill(Folio::ShapeFillType::Solid); });
-                            menu.AddItem("Semi-Transparent (Translucent)", 0, "", [=]() { setFill(Folio::ShapeFillType::SemiTransparent); });
-                            menu.AddItem("Linear Gradient", 0, "", [=]() { setFill(Folio::ShapeFillType::LinearGradient); });
-                            menu.AddItem("Radial Gradient", 0, "", [=]() { setFill(Folio::ShapeFillType::RadialGradient); });
-                        },
-                        false, ImVec2(78.0f, 58.0f)
-                    );
-
-                    sec.AddSplitButton("btn_shape_fill_color", 0, "Fill Color", "Change shape infill color and transparency", false,
-                        [&]() {},
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Theme Fill Colors");
-                            menu.AddCustom([&]() {
-                                static const BLRgba32 s_palette[] = {
-                                    BLRgba32(0x00, 0x78, 0xD4, 0x40), // Accent Blue
-                                    BLRgba32(0x10, 0x7C, 0x41, 0x40), // Green
-                                    BLRgba32(0xD8, 0x3B, 0x01, 0x40), // Orange
-                                    BLRgba32(0xE8, 0x11, 0x23, 0x40), // Red
-                                    BLRgba32(0x5C, 0x2D, 0x91, 0x40), // Purple
-                                    BLRgba32(0x00, 0x82, 0x72, 0x40), // Teal
-                                    BLRgba32(0xFF, 0xB9, 0x00, 0x40), // Yellow
-                                    BLRgba32(0x50, 0x50, 0x50, 0x40), // Grey
-                                    // Solid row
-                                    BLRgba32(0x00, 0x78, 0xD4, 0xFF),
-                                    BLRgba32(0x10, 0x7C, 0x41, 0xFF),
-                                    BLRgba32(0xD8, 0x3B, 0x01, 0xFF),
-                                    BLRgba32(0xE8, 0x11, 0x23, 0xFF),
-                                    BLRgba32(0x5C, 0x2D, 0x91, 0xFF),
-                                    BLRgba32(0x00, 0x82, 0x72, 0xFF),
-                                    BLRgba32(0xFF, 0xB9, 0x00, 0xFF),
-                                    BLRgba32(0x20, 0x20, 0x20, 0xFF)
-                                };
-
-                                for (int i = 0; i < 16; ++i) {
-                                    if (i > 0 && i % 8 != 0) ImGui::SameLine(0, 4.0f);
-                                    ImGui::PushID(i + 2000);
-                                    const auto& c = s_palette[i];
-                                    ImVec4 col(c.r() / 255.0f, c.g() / 255.0f, c.b() / 255.0f, c.a() / 255.0f);
-                                    if (ImGui::ColorButton("##fill_btn", col, ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24))) {
-                                        canvas.shapeCreation.defaultFillColor = c;
-                                        if (selectedShape) {
-                                            selectedShape->fillColor = c;
-                                            canvas.needsFullRebake = true;
-                                            canvas.isDirty = true;
-                                        }
-                                        ImGui::CloseCurrentPopup();
-                                    }
-                                    ImGui::PopID();
-                                }
-
-                                ImGui::Spacing();
-                                ImGui::Separator();
-                                ImGui::Spacing();
-
-                                BLRgba32 activeFill = selectedShape ? selectedShape->fillColor : canvas.shapeCreation.defaultFillColor;
-                                float colArr[4] = { activeFill.r() / 255.0f, activeFill.g() / 255.0f, activeFill.b() / 255.0f, activeFill.a() / 255.0f };
-                                if (ImGui::ColorEdit4("Custom Fill", colArr, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_DisplayRGB)) {
-                                    BLRgba32 newCol(
-                                        static_cast<uint32_t>(colArr[0] * 255.0f),
-                                        static_cast<uint32_t>(colArr[1] * 255.0f),
-                                        static_cast<uint32_t>(colArr[2] * 255.0f),
-                                        static_cast<uint32_t>(colArr[3] * 255.0f)
-                                    );
-                                    canvas.shapeCreation.defaultFillColor = newCol;
-                                    if (selectedShape) {
-                                        selectedShape->fillColor = newCol;
-                                        canvas.needsFullRebake = true;
-                                        canvas.isDirty = true;
-                                    }
-                                }
-                            });
-                        },
-                        false, ImVec2(68.0f, 58.0f)
-                    );
+                    // 2. Infill Style & Drafting Texture Dropdown
+                    sec.AddWidget([&]() {
+                        RenderShapeInfillStyleDropdown(canvas, theme, selectedShape, isMini, currentSession);
+                    });
 
                     sec.Render();
                 }
@@ -2211,107 +2992,12 @@ public:
                 {
                     FolioUI::ToolbarSectionBuilder sec("grp_shape_outline", "Outline", theme, isMini);
 
-                    Folio::ShapeOutlineType curOut = selectedShape ? selectedShape->outlineType : canvas.shapeCreation.defaultOutlineType;
-                    const char* outLabel = "Solid";
-                    switch (curOut) {
-                        case Folio::ShapeOutlineType::None: outLabel = "No Outline"; break;
-                        case Folio::ShapeOutlineType::Solid: outLabel = "Solid"; break;
-                        case Folio::ShapeOutlineType::Dashed: outLabel = "Dashed"; break;
-                        case Folio::ShapeOutlineType::Dotted: outLabel = "Dotted"; break;
-                        case Folio::ShapeOutlineType::DashDot: outLabel = "Dash-Dot"; break;
-                        default: break;
-                    }
+                    // 1. Circular Outline Color Disc (Inherits active pen by default)
+                    sec.AddWidget([&]() {
+                        RenderShapeOutlineColorDisc(canvas, theme, selectedShape, isMini);
+                    });
 
-                    sec.AddSplitButton("btn_shape_out_style", 0, outLabel, "Outline Pattern: Solid, Dashed, Dotted, or None", false,
-                        [&]() {
-                            Folio::ShapeOutlineType nextOut = (curOut == Folio::ShapeOutlineType::Solid) ? Folio::ShapeOutlineType::Dashed :
-                                                             (curOut == Folio::ShapeOutlineType::Dashed) ? Folio::ShapeOutlineType::Dotted :
-                                                             (curOut == Folio::ShapeOutlineType::Dotted) ? Folio::ShapeOutlineType::None :
-                                                             Folio::ShapeOutlineType::Solid;
-                            canvas.shapeCreation.defaultOutlineType = nextOut;
-                            if (selectedShape) {
-                                selectedShape->outlineType = nextOut;
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
-                            }
-                        },
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Outline Style");
-                            auto setOut = [&](Folio::ShapeOutlineType ot) {
-                                canvas.shapeCreation.defaultOutlineType = ot;
-                                if (selectedShape) {
-                                    selectedShape->outlineType = ot;
-                                    canvas.needsFullRebake = true;
-                                    canvas.isDirty = true;
-                                }
-                            };
-                            menu.AddItem("None", 0, "", [=]() { setOut(Folio::ShapeOutlineType::None); });
-                            menu.AddItem("Solid Line", 0, "", [=]() { setOut(Folio::ShapeOutlineType::Solid); });
-                            menu.AddItem("Dashed Line", 0, "", [=]() { setOut(Folio::ShapeOutlineType::Dashed); });
-                            menu.AddItem("Dotted Line", 0, "", [=]() { setOut(Folio::ShapeOutlineType::Dotted); });
-                            menu.AddItem("Dash-Dot Line", 0, "", [=]() { setOut(Folio::ShapeOutlineType::DashDot); });
-                        },
-                        false, ImVec2(78.0f, 58.0f)
-                    );
-
-                    sec.AddSplitButton("btn_shape_stroke_color", 0, "Outline Col", "Change outline border color", false,
-                        [&]() {},
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Outline Palette");
-                            menu.AddCustom([&]() {
-                                static const BLRgba32 s_strokePalette[] = {
-                                    BLRgba32(0x18, 0x1A, 0x20, 0xFF), // Dark charcoal
-                                    BLRgba32(0x00, 0x78, 0xD4, 0xFF), // Accent Blue
-                                    BLRgba32(0x10, 0x7C, 0x41, 0xFF), // Green
-                                    BLRgba32(0xD8, 0x3B, 0x01, 0xFF), // Orange
-                                    BLRgba32(0xE8, 0x11, 0x23, 0xFF), // Red
-                                    BLRgba32(0x5C, 0x2D, 0x91, 0xFF), // Purple
-                                    BLRgba32(0x00, 0x82, 0x72, 0xFF), // Teal
-                                    BLRgba32(0xFF, 0xFF, 0xFF, 0xFF)  // White
-                                };
-
-                                for (int i = 0; i < 8; ++i) {
-                                    if (i > 0) ImGui::SameLine(0, 4.0f);
-                                    ImGui::PushID(i + 3000);
-                                    const auto& c = s_strokePalette[i];
-                                    ImVec4 col(c.r() / 255.0f, c.g() / 255.0f, c.b() / 255.0f, c.a() / 255.0f);
-                                    if (ImGui::ColorButton("##strk_btn", col, ImGuiColorEditFlags_NoTooltip, ImVec2(24, 24))) {
-                                        canvas.shapeCreation.defaultOutlineColor = c;
-                                        if (selectedShape) {
-                                            selectedShape->strokeColor = c;
-                                            canvas.needsFullRebake = true;
-                                            canvas.isDirty = true;
-                                        }
-                                        ImGui::CloseCurrentPopup();
-                                    }
-                                    ImGui::PopID();
-                                }
-
-                                ImGui::Spacing();
-                                ImGui::Separator();
-                                ImGui::Spacing();
-
-                                BLRgba32 activeStroke = selectedShape ? selectedShape->strokeColor : canvas.shapeCreation.defaultOutlineColor;
-                                float colArr[4] = { activeStroke.r() / 255.0f, activeStroke.g() / 255.0f, activeStroke.b() / 255.0f, activeStroke.a() / 255.0f };
-                                if (ImGui::ColorEdit4("Custom Outline", colArr, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_DisplayRGB)) {
-                                    BLRgba32 newCol(
-                                        static_cast<uint32_t>(colArr[0] * 255.0f),
-                                        static_cast<uint32_t>(colArr[1] * 255.0f),
-                                        static_cast<uint32_t>(colArr[2] * 255.0f),
-                                        static_cast<uint32_t>(colArr[3] * 255.0f)
-                                    );
-                                    canvas.shapeCreation.defaultOutlineColor = newCol;
-                                    if (selectedShape) {
-                                        selectedShape->strokeColor = newCol;
-                                        canvas.needsFullRebake = true;
-                                        canvas.isDirty = true;
-                                    }
-                                }
-                            });
-                        },
-                        false, ImVec2(68.0f, 58.0f)
-                    );
-
+                    // 2. Outline Thickness
                     double curW = selectedShape ? selectedShape->strokeWidth : canvas.shapeCreation.defaultStrokeWidth;
                     char wStr[32];
                     std::snprintf(wStr, sizeof(wStr), "%.1f mm", curW);
@@ -2330,8 +3016,8 @@ public:
                             }
                         },
                         [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddHeader("Border Thickness");
-                            auto setW = [&](double w) {
+                            menu.AddHeader("Line Thickness");
+                            auto setWidth = [&](double w) {
                                 canvas.shapeCreation.defaultStrokeWidth = w;
                                 if (selectedShape) {
                                     selectedShape->strokeWidth = w;
@@ -2342,14 +3028,20 @@ public:
                                     canvas.isDirty = true;
                                 }
                             };
-                            menu.AddItem("Thin (0.5 mm)", 0, "", [=]() { setW(0.5); });
-                            menu.AddItem("Normal (1.0 mm)", 0, "", [=]() { setW(1.0); });
-                            menu.AddItem("Medium (2.0 mm)", 0, "", [=]() { setW(2.0); });
-                            menu.AddItem("Thick (3.0 mm)", 0, "", [=]() { setW(3.0); });
-                            menu.AddItem("Extra Thick (5.0 mm)", 0, "", [=]() { setW(5.0); });
+                            menu.AddItem("0.5 mm (Thin)", 0, "", [=]() { setWidth(0.5); });
+                            menu.AddItem("1.0 mm (Standard)", 0, "", [=]() { setWidth(1.0); });
+                            menu.AddItem("1.5 mm (Medium)", 0, "", [=]() { setWidth(1.5); });
+                            menu.AddItem("2.0 mm (Thick)", 0, "", [=]() { setWidth(2.0); });
+                            menu.AddItem("3.0 mm (Heavy)", 0, "", [=]() { setWidth(3.0); });
+                            menu.AddItem("5.0 mm (Extra Bold)", 0, "", [=]() { setWidth(5.0); });
                         },
                         false, ImVec2(68.0f, 58.0f)
                     );
+
+                    // 3. Rich Outline Style Dropdown (Solid, Dashed, Dotted, Dash-Dot, None)
+                    sec.AddWidget([&]() {
+                        RenderShapeOutlineStyleDropdown(canvas, theme, selectedShape, isMini, currentSession);
+                    });
 
                     sec.Render();
                 }
@@ -2360,11 +3052,15 @@ public:
                 if (selectedShape) {
                     if (selectedShape->shapeType == Folio::ShapeType::RoundedRectangle ||
                         selectedShape->shapeType == Folio::ShapeType::Star ||
+                        selectedShape->shapeType == Folio::ShapeType::Hexagon ||
+                        selectedShape->shapeType == Folio::ShapeType::RegularPolygon ||
+                        selectedShape->shapeType == Folio::ShapeType::Line ||
+                        selectedShape->shapeType == Folio::ShapeType::LineArrow ||
                         selectedShape->shapeType == Folio::ShapeType::Arrow ||
                         selectedShape->shapeType == Folio::ShapeType::DoubleArrow) {
 
                         FolioUI::ToolbarSectionBuilder sec("grp_shape_geom", "Geometry", theme, isMini);
-                        sec.AddSplitButton("btn_shape_params", 0, "Adjust", "Fine-tune shape geometry attributes (corner radius, star points, arrow head)", false,
+                        sec.AddSplitButton("btn_shape_params", 0, "Adjust", "Fine-tune shape geometry attributes (corner radius, polygon sides, arrow heads)", false,
                             [&]() {},
                             [&](FolioUI::FlyoutMenuBuilder& menu) {
                                 menu.AddHeader("Shape Parameters");
@@ -2388,6 +3084,50 @@ public:
                                             selectedShape->param2 = ratio;
                                             canvas.needsFullRebake = true;
                                             canvas.isDirty = true;
+                                        }
+                                    } else if (selectedShape->shapeType == Folio::ShapeType::Hexagon ||
+                                               selectedShape->shapeType == Folio::ShapeType::RegularPolygon) {
+                                        int sides = static_cast<int>(selectedShape->param1);
+                                        if (sides < 3) sides = 6;
+                                        if (ImGui::SliderInt("Sides", &sides, 3, 32)) {
+                                            selectedShape->param1 = static_cast<double>(sides);
+                                            canvas.shapeCreation.polygonSides = sides;
+                                            canvas.needsFullRebake = true;
+                                            canvas.isDirty = true;
+                                        }
+                                    } else if (selectedShape->shapeType == Folio::ShapeType::Line ||
+                                               selectedShape->shapeType == Folio::ShapeType::LineArrow) {
+                                        static const char* s_arrowCapNames[] = { "None", "Triangle", "Stealth", "Open", "Circle" };
+                                        int startIdx = static_cast<int>(selectedShape->startArrow);
+                                        if (ImGui::Combo("Start Cap", &startIdx, s_arrowCapNames, IM_ARRAYSIZE(s_arrowCapNames))) {
+                                            selectedShape->startArrow = static_cast<Folio::ArrowHeadType>(startIdx);
+                                            if (selectedShape->startArrow != Folio::ArrowHeadType::None || selectedShape->endArrow != Folio::ArrowHeadType::None) {
+                                                selectedShape->shapeType = Folio::ShapeType::LineArrow;
+                                            } else {
+                                                selectedShape->shapeType = Folio::ShapeType::Line;
+                                            }
+                                            canvas.needsFullRebake = true;
+                                            canvas.isDirty = true;
+                                        }
+                                        int endIdx = static_cast<int>(selectedShape->endArrow);
+                                        if (ImGui::Combo("End Cap", &endIdx, s_arrowCapNames, IM_ARRAYSIZE(s_arrowCapNames))) {
+                                            selectedShape->endArrow = static_cast<Folio::ArrowHeadType>(endIdx);
+                                            if (selectedShape->startArrow != Folio::ArrowHeadType::None || selectedShape->endArrow != Folio::ArrowHeadType::None) {
+                                                selectedShape->shapeType = Folio::ShapeType::LineArrow;
+                                            } else {
+                                                selectedShape->shapeType = Folio::ShapeType::Line;
+                                            }
+                                            canvas.needsFullRebake = true;
+                                            canvas.isDirty = true;
+                                        }
+                                        float arrSize = static_cast<float>(selectedShape->arrowHeadSize);
+                                        if (ImGui::SliderFloat("Cap Size", &arrSize, 1.5f, 15.0f, "%.1f mm")) {
+                                            selectedShape->arrowHeadSize = static_cast<double>(arrSize);
+                                            canvas.needsFullRebake = true;
+                                            canvas.isDirty = true;
+                                        }
+                                        if (ImGui::Button("Set as Default Arrow", ImVec2(-1, 24.0f))) {
+                                            canvas.shapeCreation.defaultEndArrow = selectedShape->endArrow;
                                         }
                                     } else if (selectedShape->shapeType == Folio::ShapeType::Arrow ||
                                                selectedShape->shapeType == Folio::ShapeType::DoubleArrow) {

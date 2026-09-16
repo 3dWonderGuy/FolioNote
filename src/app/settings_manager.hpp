@@ -113,6 +113,7 @@ public:
             case StrokePattern::Solid:          return "Solid";
             case StrokePattern::Dashed:         return "Dashed";
             case StrokePattern::Dotted:         return "Dotted";
+            case StrokePattern::DashDot:        return "DashDot";
             case StrokePattern::TexturedPencil: return "TexturedPencil";
             default:                            return "Solid";
         }
@@ -121,6 +122,7 @@ public:
     static StrokePattern StringToStrokePattern(const std::string& str) {
         if (str == "Dashed")         return StrokePattern::Dashed;
         if (str == "Dotted")         return StrokePattern::Dotted;
+        if (str == "DashDot")        return StrokePattern::DashDot;
         if (str == "TexturedPencil") return StrokePattern::TexturedPencil;
         return StrokePattern::Solid;
     }

@@ -266,6 +266,11 @@ size_t BinarySerializer::EstimatePageByteSize(const CanvasPage& page) {
         } else if (obj->type == ObjectType::Image) {
             auto img = std::static_pointer_cast<ImageObject>(obj);
             estimatedBytes += 64 + img->imagePath.size() + img->embeddedData.size();
+        } else if (obj->type == ObjectType::Shape) {
+            estimatedBytes += 80;
+        } else if (obj->type == ObjectType::PDF) {
+            auto pdf = std::static_pointer_cast<PdfContainer>(obj);
+            estimatedBytes += 64 + pdf->pdfPath.size() + pdf->originalFileName.size() + pdf->resolvedDiskPath.size();
         }
     }
     return estimatedBytes;
@@ -427,6 +432,26 @@ void BinarySerializer::SerializeObject(const std::shared_ptr<CanvasObject>& obj,
         writer.WriteDouble(shp->cornerRadius);
         writer.WriteDouble(shp->param1);
         writer.WriteDouble(shp->param2);
+    } else if (obj->type == ObjectType::PDF) {
+        /**
+         * PDF Container Page Serialization:
+         * Encodes world coordinate placement (worldX, worldY, worldWidth, worldHeight),
+         * relative or absolute document path, original filename for UI display,
+         * resolved direct disk path, external linking flag, page index, total page count,
+         * and background lock mode flag.
+         */
+        auto pdf = std::static_pointer_cast<PdfContainer>(obj);
+        writer.WriteDouble(pdf->worldX);
+        writer.WriteDouble(pdf->worldY);
+        writer.WriteDouble(pdf->worldWidth);
+        writer.WriteDouble(pdf->worldHeight);
+        writer.WriteString(pdf->pdfPath);
+        writer.WriteString(pdf->originalFileName);
+        writer.WriteString(pdf->resolvedDiskPath);
+        writer.WriteBool(pdf->isExternalLink);
+        writer.WriteU32(static_cast<uint32_t>(pdf->pageIndex));
+        writer.WriteU32(static_cast<uint32_t>(pdf->totalPageCount));
+        writer.WriteBool(pdf->isBackground);
     } else {
         LOG_WARN(BinarySerializer, "Serializing generic object with type ID: " + std::to_string(static_cast<int>(obj->type)));
     }
@@ -612,6 +637,50 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
         shp->param2 = reader.ReadDouble();
         shp->UpdateBounds();
         return shp;
+
+    } else if (type == ObjectType::PDF) {
+        /**
+         * PDF Container Page Deserialization:
+         * Reconstructs the placed PDF page on the canvas.
+         * 1. Restores base canvas object attributes (GUID, bounds, transform, zOrder, opacity, visibility, selectable).
+         * 2. Reads world geometry (worldX, worldY, worldWidth, worldHeight) and document linkage.
+         * 3. Triggers raster decoding via EnsurePageLoaded() so the rendered Blend2D surface
+         *    is immediately cached and ready for viewport rendering.
+         * 4. Preserves deserialized dimensions (supporting user resizing) and updates bounding box.
+         */
+        auto pdf = std::make_shared<PdfContainer>();
+        pdf->guuid = objGuid;
+        pdf->uid = UIDGenerator::Next();
+        pdf->bounds = bounds;
+        pdf->transform = transform;
+        pdf->zOrder = zOrder;
+        pdf->opacity = opacity;
+        pdf->isVisible = isVisible ? 1 : 0;
+        pdf->isLocked = isLocked ? 1 : 0;
+        pdf->isSelectable = isSelectable ? 1 : 0;
+
+        pdf->worldX = reader.ReadDouble();
+        pdf->worldY = reader.ReadDouble();
+        pdf->worldWidth = reader.ReadDouble();
+        pdf->worldHeight = reader.ReadDouble();
+        pdf->pdfPath = reader.ReadString();
+        pdf->originalFileName = reader.ReadString();
+        pdf->resolvedDiskPath = reader.ReadString();
+        pdf->isExternalLink = reader.ReadBool();
+        pdf->pageIndex = static_cast<int>(reader.ReadU32());
+        pdf->totalPageCount = static_cast<int>(reader.ReadU32());
+        pdf->isBackground = reader.ReadBool();
+
+        // Preserve exact deserialized dimensions in case they were resized by the user
+        double savedW = pdf->worldWidth;
+        double savedH = pdf->worldHeight;
+        pdf->EnsurePageLoaded();
+        if (savedW > 0.0 && savedH > 0.0) {
+            pdf->worldWidth = savedW;
+            pdf->worldHeight = savedH;
+        }
+        pdf->UpdateBounds();
+        return pdf;
     }
 
     LOG_WARN(BinarySerializer, "Skipping unrecognized object type: " + std::to_string(static_cast<int>(type)));

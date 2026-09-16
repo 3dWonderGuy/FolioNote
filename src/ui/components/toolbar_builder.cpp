@@ -934,6 +934,14 @@ bool ToolbarControls::RenderPenNibControl(
                 float dotX = traceX1 + d * (span / (numDots - 1));
                 drawList->AddCircleFilled(ImVec2(dotX, traceY), dotR, inkCol);
             }
+        } else if (preset.strokePattern == StrokePattern::DashDot) {
+            // Alternating dash and dot
+            float totalW = traceX2 - traceX1;
+            float segW = totalW * 0.38f;
+            float dotR = std::clamp(traceThick * 0.55f, 1.4f, 2.8f);
+            drawList->AddLine(ImVec2(traceX1, traceY), ImVec2(traceX1 + segW, traceY), inkCol, traceThick);
+            drawList->AddCircleFilled(ImVec2(traceX1 + segW + totalW * 0.18f, traceY), dotR, inkCol);
+            drawList->AddLine(ImVec2(traceX1 + segW + totalW * 0.36f, traceY), ImVec2(traceX2, traceY), inkCol, traceThick);
         } else {
             // Textured / pencil stippled trace
             int numDots = (size.y < 45.0f) ? 6 : 8;
@@ -1090,10 +1098,11 @@ bool ToolbarControls::RenderPenNibControl(
         const PatternOption s_Patterns[] = {
             { "Continuous", StrokePattern::Solid },
             { "Dashed",     StrokePattern::Dashed },
-            { "Dotted",     StrokePattern::Dotted }
+            { "Dotted",     StrokePattern::Dotted },
+            { "Dash-Dot",   StrokePattern::DashDot }
         };
 
-        for (int p = 0; p < 3; p++) {
+        for (int p = 0; p < 4; p++) {
             if (p > 0) ImGui::SameLine(0, 6.0f);
             bool isCurrent = (preset.strokePattern == s_Patterns[p].pattern);
             if (isCurrent) {
@@ -1126,12 +1135,18 @@ bool ToolbarControls::RenderPenNibControl(
                 float segW = 12.0f, gW = 6.0f;
                 popDrawList->AddLine(ImVec2(lineX1, lineY), ImVec2(lineX1 + segW, lineY), prevCol, 2.5f);
                 popDrawList->AddLine(ImVec2(lineX1 + segW + gW, lineY), ImVec2(lineX2, lineY), prevCol, 2.5f);
-            } else {
+            } else if (s_Patterns[p].pattern == StrokePattern::Dotted) {
                 float dotR = 2.0f;
                 float span = lineX2 - lineX1;
                 for (int d = 0; d <= 4; d++) {
                     popDrawList->AddCircleFilled(ImVec2(lineX1 + d * (span / 4.0f), lineY), dotR, prevCol);
                 }
+            } else {
+                // Dash-Dot preview
+                float segW = 14.0f;
+                popDrawList->AddLine(ImVec2(lineX1, lineY), ImVec2(lineX1 + segW, lineY), prevCol, 2.5f);
+                popDrawList->AddCircleFilled(ImVec2(lineX1 + segW + 6.0f, lineY), 2.0f, prevCol);
+                popDrawList->AddLine(ImVec2(lineX1 + segW + 12.0f, lineY), ImVec2(lineX2, lineY), prevCol, 2.5f);
             }
             ImVec2 txtSz = ImGui::CalcTextSize(s_Patterns[p].name);
             float txtX = styleBtnPos.x + (styleBtnW - txtSz.x) * 0.5f;

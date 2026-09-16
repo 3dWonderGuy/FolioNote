@@ -268,6 +268,22 @@ public:
             return;
         }
 
+        // Custom handles rendering if single selected object provides them (e.g. Line & Arrow draggable endpoints)
+        if (selectedObjects.size() == 1) {
+            std::vector<GizmoHandle> customHandles;
+            if (selectedObjects[0]->GetCustomGizmoHandles(customHandles, transform)) {
+                for (const auto& h : customHandles) {
+                    Point2D screen = transform.WorldToScreen(h.worldPos.x, h.worldPos.y);
+                    float hx = static_cast<float>(screen.x);
+                    float hy = static_cast<float>(screen.y);
+                    bool isHandleActive = (activeRole == HandleRole::Custom && activeCustomId == h.customId);
+                    DrawHandle(ctx, hx, hy, isHandleActive);
+                }
+                ctx.restore();
+                return;
+            }
+        }
+
         // Standard Axis-Aligned 8-point Bounding Box Rendering
         Point2D sMin = transform.WorldToScreen(bounds.minX, bounds.minY);
         Point2D sMax = transform.WorldToScreen(bounds.maxX, bounds.maxY);
@@ -578,6 +594,16 @@ public:
                 double currDistY = currentWorld.y - anchor.y;
                 if (dragStartWorld.y < anchor.y) currDistY = -currDistY;
                 sy = std::max(0.05, currDistY / initDistY);
+            }
+
+            // Aspect-Ratio Lock for Corner Grips (TopLeft, TopRight, BottomRight, BottomLeft)
+            // When both scaleX and scaleY are active, it is a corner handle.
+            // Ratio lock ensures the width-to-height ratio does not change while sizing.
+            if (scaleX && scaleY) {
+                double s = (std::abs(sx - 1.0) > std::abs(sy - 1.0)) ? sx : sy;
+                s = std::max(0.05, s);
+                sx = s;
+                sy = s;
             }
 
             BLMatrix2D scaleMatrix = BLMatrix2D::make_identity();

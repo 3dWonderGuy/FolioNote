@@ -10,6 +10,7 @@
 #include "core/objects/text_box.hpp"
 #include "core/objects/image_container.hpp"
 #include "core/objects/shape_container.hpp"
+#include "core/objects/pdf_container.hpp"
 
 namespace Folio {
 
