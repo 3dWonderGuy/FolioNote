@@ -581,27 +581,26 @@ public:
             double sy = 1.0;
 
             if (scaleX) {
-                double initDistX = std::abs(dragStartWorld.x - anchor.x);
-                if (initDistX < 0.5) initDistX = initW;
-                double currDistX = currentWorld.x - anchor.x;
-                if (dragStartWorld.x < anchor.x) currDistX = -currDistX;
-                sx = std::max(0.05, currDistX / initDistX);
+                // Vector along X from anchor to current cursor vs anchor to initial handle
+                double signedDistX = currentWorld.x - anchor.x;
+                if (dragStartWorld.x < anchor.x) signedDistX = -signedDistX;
+                sx = std::clamp(signedDistX / initW, 0.05, 50.0);
             }
 
             if (scaleY) {
-                double initDistY = std::abs(dragStartWorld.y - anchor.y);
-                if (initDistY < 0.5) initDistY = initH;
-                double currDistY = currentWorld.y - anchor.y;
-                if (dragStartWorld.y < anchor.y) currDistY = -currDistY;
-                sy = std::max(0.05, currDistY / initDistY);
+                // Vector along Y from anchor to current cursor vs anchor to initial handle
+                double signedDistY = currentWorld.y - anchor.y;
+                if (dragStartWorld.y < anchor.y) signedDistY = -signedDistY;
+                sy = std::clamp(signedDistY / initH, 0.05, 50.0);
             }
 
             // Aspect-Ratio Lock for Corner Grips (TopLeft, TopRight, BottomRight, BottomLeft)
             // When both scaleX and scaleY are active, it is a corner handle.
             // Ratio lock ensures the width-to-height ratio does not change while sizing.
             if (scaleX && scaleY) {
-                double s = (std::abs(sx - 1.0) > std::abs(sy - 1.0)) ? sx : sy;
-                s = std::max(0.05, s);
+                // Uniform scale factor preserving aspect ratio without axis flipping or runaway jumps
+                double s = 0.5 * (sx + sy);
+                s = std::clamp(s, 0.05, 50.0);
                 sx = s;
                 sy = s;
             }
@@ -645,6 +644,13 @@ public:
         LOG_INFO(CanvasEngine, "Selection Gizmo drag completed (operation=" + std::string(roleStr) +
                  ", finalBounds=[" + std::to_string(bounds.minX) + ", " + std::to_string(bounds.minY) +
                  " to " + std::to_string(bounds.maxX) + ", " + std::to_string(bounds.maxY) + "])");
+
+        // Bake transforms into intrinsic coordinates for objects that support it (e.g. ShapeObject)
+        for (auto& obj : selectedObjects) {
+            if (obj) {
+                obj->BakeTransform();
+            }
+        }
 
         isDragging = false;
         activeRole = HandleRole::None;

@@ -140,8 +140,9 @@ public:
             uint8_t r = static_cast<uint8_t>(std::clamp(activePreset->color.x * 255.0f, 0.0f, 255.0f));
             uint8_t g = static_cast<uint8_t>(std::clamp(activePreset->color.y * 255.0f, 0.0f, 255.0f));
             uint8_t b = static_cast<uint8_t>(std::clamp(activePreset->color.z * 255.0f, 0.0f, 255.0f));
-            uint8_t a = static_cast<uint8_t>(std::clamp(activePreset->color.w * activePreset->opacity * 255.0f, 0.0f, 255.0f));
-            canvas.shapeCreation.defaultOutlineColor = BLRgba32(r, g, b, a);
+            // Shape outline is always 100% opaque: pen opacity/translucency must NOT bleed into shape borders.
+            // Alpha is forced to 255 regardless of the active pen's opacity setting.
+            canvas.shapeCreation.defaultOutlineColor = BLRgba32(r, g, b, 0xFF);
         }
         canvas.shapeCreation.defaultFillType = Folio::ShapeFillType::None;
     }
@@ -250,26 +251,59 @@ public:
                 ImGui::CloseCurrentPopup();
             }
 
-            bool hovered = ImGui::IsItemHovered();
+            bool hovered  = ImGui::IsItemHovered();
+            bool pressed  = ImGui::IsItemActive(); // True while mouse/pen is held down
 
+            // ---------------------------------------------------------------
             // Background fill
-            ImU32 bgCol = isCurrent ? ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.35f))
-                                    : (hovered ? ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.08f))
-                                               : ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.0f)));
+            // State priority: pressed > current > hovered > idle
+            // Pressed: vivid accent fill (tactile confirmation)
+            // Current: softer accent tint (active selection indicator)
+            // Hovered: subtle blue tint (clear hover feedback)
+            // Idle:    transparent
+            // ---------------------------------------------------------------
+            ImU32 bgCol;
+            if (pressed) {
+                bgCol = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.65f));
+            } else if (isCurrent) {
+                bgCol = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.35f));
+            } else if (hovered) {
+                bgCol = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.18f));
+            } else {
+                bgCol = ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+            }
             dl->AddRectFilled(p0, p1, bgCol, 4.0f);
 
-            // Border stroke
-            if (isCurrent) {
+            // Border stroke: accent ring on selected/hovered, none on idle
+            if (isCurrent || pressed) {
                 dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.9f)), 4.0f, 0, 1.5f);
             } else if (hovered) {
-                dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.2f)), 4.0f, 0, 1.0f);
+                dl->AddRect(p0, p1, ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.45f)), 4.0f, 0, 1.0f);
             }
 
-            // Vector Icon
-            ImVec2 iconMin(p0.x + 7.0f, p0.y + 7.0f);
-            ImVec2 iconMax(p1.x - 7.0f, p1.y - 7.0f);
-            ImU32 strokeCol = isCurrent ? ImGui::GetColorU32(ImVec4(0.18f, 0.65f, 1.0f, 1.0f)) : ImGui::GetColorU32(theme.colorText);
-            ImU32 fillCol = isCurrent ? ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.30f)) : ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.15f));
+            // 1px Y downshift on press gives tactile "click" feel
+            float iconOffY = pressed ? 1.0f : 0.0f;
+
+            // Vector Icon - color shifts with state for clear affordance
+            ImVec2 iconMin(p0.x + 7.0f, p0.y + 7.0f + iconOffY);
+            ImVec2 iconMax(p1.x - 7.0f, p1.y - 7.0f + iconOffY);
+
+            ImU32 strokeCol, fillCol;
+            if (pressed) {
+                // Bright white icon on press for contrast against vivid blue bg
+                strokeCol = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                fillCol   = ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
+            } else if (isCurrent) {
+                strokeCol = ImGui::GetColorU32(ImVec4(0.18f, 0.65f, 1.0f, 1.0f));
+                fillCol   = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.30f));
+            } else if (hovered) {
+                // Bright accent on hover so icon pops clearly
+                strokeCol = ImGui::GetColorU32(ImVec4(0.18f, 0.65f, 1.0f, 0.95f));
+                fillCol   = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.20f));
+            } else {
+                strokeCol = ImGui::GetColorU32(theme.colorText);
+                fillCol   = ImGui::GetColorU32(ImVec4(0.0f, 0.47f, 0.83f, 0.15f));
+            }
 
             Folio::ShapeObject::DrawShapeIconImGui(dl, item.type, iconMin, iconMax, strokeCol, fillCol);
 
@@ -890,11 +924,25 @@ public:
                 }
 
                 // Label text & description
-                ImU32 textCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorText);
-                popDl->AddText(ImVec2(itemPos.x + 65.0f, itemPos.y + 3.0f), textCol, s_OutItems[i].name);
+                // Dynamically center the two-line text block (name + desc) vertically within the item row.
+                // Math: totalTextH = nameSz.y + descSz.y + 2px gap
+                //       startY = itemPos.y + (itemH - totalTextH) * 0.5
+                {
+                    ImGui::PushFont(nullptr); // use default ImGui font
+                    ImVec2 nameSz = ImGui::CalcTextSize(s_OutItems[i].name);
+                    ImVec2 descSz = ImGui::CalcTextSize(s_OutItems[i].desc);
+                    ImGui::PopFont();
+                    float gap      = 2.0f;
+                    float totalH   = nameSz.y + descSz.y + gap;
+                    float startY   = itemPos.y + (itemH - totalH) * 0.5f;
+                    float textX    = itemPos.x + 65.0f;
 
-                ImU32 descCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted);
-                popDl->AddText(ImVec2(itemPos.x + 65.0f, itemPos.y + 18.0f), descCol, s_OutItems[i].desc);
+                    ImU32 textCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+                    popDl->AddText(ImVec2(textX, startY), textCol, s_OutItems[i].name);
+
+                    ImU32 descCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted);
+                    popDl->AddText(ImVec2(textX, startY + nameSz.y + gap), descCol, s_OutItems[i].desc);
+                }
 
                 if (itemClicked) {
                     canvas.shapeCreation.defaultOutlineType = s_OutItems[i].type;
@@ -1109,11 +1157,25 @@ public:
                 drawSwatch(popDl, sw1, sw2, s_FillItems[i].type, rowCol);
 
                 // Label text & description
-                ImU32 textCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorText);
-                popDl->AddText(ImVec2(itemPos.x + 44.0f, itemPos.y + 3.0f), textCol, s_FillItems[i].name);
+                // Dynamically center the two-line text block (name + desc) vertically within the item row.
+                // Math: totalTextH = nameSz.y + descSz.y + 2px gap
+                //       startY = itemPos.y + (itemH - totalTextH) * 0.5
+                {
+                    ImGui::PushFont(nullptr); // use default ImGui font
+                    ImVec2 nameSz = ImGui::CalcTextSize(s_FillItems[i].name);
+                    ImVec2 descSz = ImGui::CalcTextSize(s_FillItems[i].desc);
+                    ImGui::PopFont();
+                    float gap      = 2.0f;
+                    float totalH   = nameSz.y + descSz.y + gap;
+                    float startY   = itemPos.y + (itemH - totalH) * 0.5f;
+                    float textX    = itemPos.x + 44.0f;
 
-                ImU32 descCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted);
-                popDl->AddText(ImVec2(itemPos.x + 44.0f, itemPos.y + 19.0f), descCol, s_FillItems[i].desc);
+                    ImU32 textCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorText);
+                    popDl->AddText(ImVec2(textX, startY), textCol, s_FillItems[i].name);
+
+                    ImU32 descCol = isSelected ? ImGui::ColorConvertFloat4ToU32(theme.colorItemSelectedText) : ImGui::ColorConvertFloat4ToU32(theme.colorTextMuted);
+                    popDl->AddText(ImVec2(textX, startY + nameSz.y + gap), descCol, s_FillItems[i].desc);
+                }
 
                 if (itemClicked) {
                     canvas.shapeCreation.defaultFillType = s_FillItems[i].type;
