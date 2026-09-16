@@ -13,13 +13,24 @@ class CanvasTransform;
 
 /**
  * @brief Enumeration of all possible object types in the canvas.
- * InkContainer - is for pen/mouse strokes
- * Text - is for text boxes
- * Image - is for images
- * Video - is for videos
- * PDF - is for pdf files
- * Table - is for tables
- * AttachmentFile is for attached files
+ *
+ * Each entry maps 1:1 to a concrete class in core/objects/:
+ *   InkContainer   → ink_container.hpp         (pen/stylus/mouse strokes)
+ *   Text           → text/text_box.hpp          (rich text box)
+ *   Image          → image_container.hpp        (raster image)
+ *   Video          → media/video_container.hpp  (video file or YouTube embed)
+ *   PDF            → pdf_container.hpp          (PDF page view)
+ *   Table          → table_container.hpp        (row/column table — Phase 2)
+ *   AttachmentFile → attachment_container.hpp   (linked external file chip)
+ *   Shape          → primitives/shape_container.hpp (closed 2D vector shape)
+ *   Connector      → connectors/smart_arrow_container.hpp (line/arrow with endpoint handles)
+ *   Audio          → media/audio_container.hpp  (audio file link chip)
+ *   Link           → links/link_object.hpp      (URL or cross-note anchor chip)
+ *   MathLaTeX      → (future: LaTeX equation renderer)
+ *   Frame          → (future: grouped frame container)
+ *
+ * Scalability: add new types here and in binary_serializer.hpp dispatch.
+ * No changes to the engine dispatch loop are needed — it is polymorphic.
  */
 enum class ObjectType {
     InkContainer,
@@ -30,11 +41,13 @@ enum class ObjectType {
     Table,
     AttachmentFile,
     Shape,
-    Connector,
+    Connector,     ///< SmartArrowObject — 2-point line/arrow connector
     Audio,
+    Link,          ///< LinkObject — URL or folio:// cross-note anchor chip
     MathLaTeX,
     Frame,
 };
+
 
 /**
  * @brief Base class for all drawable objects on the canvas. This class provides a common interface for different types of objects,
@@ -93,6 +106,11 @@ public:
     /********************************************* */
 
     virtual void ApplyTransform(const BLMatrix2D& matrix) = 0;
+
+    /**
+     * @brief Bakes current affine transform matrix into intrinsic geometry coordinates (e.g. at the end of a drag).
+     */
+    virtual void BakeTransform() {}
 
     /********************************************* */
     // Rendering
