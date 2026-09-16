@@ -119,9 +119,11 @@ enum class PdfSidebarTab : uint8_t {
 };
 
 enum class PdfToolMode : uint8_t {
-    Highlight = 0,
-    Select,
-    Eraser
+    Highlight = 0,    // Text-snapping highlighter
+    Select,           // Text selection (copy, quote to notes, export)
+    Eraser,           // Stroke and text highlight eraser
+    Pen,              // Freehand ink drawing with active pen preset
+    FreeHighlight     // Freehand highlighter ink drawing
 };
 
 class PdfViewerPage {
@@ -130,14 +132,106 @@ public:
 
     std::string currentPdfPath;
     int totalPages = 0;
+    float scrollX = 0.0f;
+    float maxScrollX = 0.0f;
     float scrollY = 0.0f;
     float maxScrollY = 0.0f;
     float zoomScale = 1.25f; // 1.25 = 125% zoom
     int activePageIndex = 0;
     bool currentInvertState = false;
 
-    // Active tool mode (Highlight is text-snapping highlighter, Eraser removes highlights)
+    // Horizontal scrollbar and middle-click pan telemetry
+    bool isDraggingHScrollbar = false;
+    float scrollbarGrabOffsetX = 0.0f;
+    bool isMiddlePanning = false;
+    ImVec2 middlePanLastPos{0.0f, 0.0f};
+
+    // Active tool mode (Highlight is text-snapping highlighter, Eraser removes highlights and ink)
     PdfToolMode activeTool = PdfToolMode::Highlight;
+
+    // Dedicated PDF content area hover telemetry
+    bool isPdfContentHovered = false;
+
+    // -------------------------------------------------------------------------
+    // LIVE FREEHAND INKING TELEMETRY ON PDF PAGES
+    // -------------------------------------------------------------------------
+    struct LivePdfPoint {
+        double worldX = 0.0;   // In world millimeters (continuous document coordinates)
+        double worldY = 0.0;   // In world millimeters (continuous document coordinates)
+        float pressure = 1.0f; // Pen pressure (0.0 to 1.0)
+        double timeSec = 0.0;  // Timestamp in seconds
+    };
+    bool isLiveDrawing = false;
+    int liveDrawingPageIndex = -1;
+    std::vector<LivePdfPoint> livePdfStroke;
+    PenTool livePenTool;
+
+    /**
+     * @brief Computes the cumulative vertical offset in millimeters of page @p pageIndex.
+     * 
+     * Mathematical derivation:
+     *   PageTopMm(0) = 0.0
+     *   PageTopMm(k) = sum_{i=0}^{k-1} (pageDimensions[i].heightMm + GAP_MM)
+     * where GAP_MM = 24.0px / (96.0px/25.4mm) = 6.35mm.
+     * 
+     * @param pageIndex 0-based PDF page index.
+     * @return Cumulative top position in millimeters from the top of the PDF document.
+     */
+    [[nodiscard]] double GetPageTopMm(int pageIndex) const noexcept {
+        double top = 0.0;
+        constexpr double GAP_MM = 24.0 / (96.0 / 25.4); // 6.35mm
+        for (int i = 0; i < pageIndex && i < static_cast<int>(pageDimensions.size()); ++i) {
+            top += (pageDimensions[i].heightMm + GAP_MM);
+        }
+        return top;
+    }
+
+    /**
+     * @brief Converts screen pixel coordinates on page @p pageIndex into world millimeters.
+     * 
+     * Mathematical projection:
+     *   scale = 1.0 / pxPerMm
+     *   worldX = (screenX - pMin.x) * scale
+     *   worldY = GetPageTopMm(pageIndex) + (screenY - pMin.y) * scale
+     * 
+     * @param pageIndex 0-based PDF page index.
+     * @param screenX Screen X in pixels.
+     * @param screenY Screen Y in pixels.
+     * @param pMin Top-left pixel coordinate of page rectangle on screen.
+     * @param pxPerMm Pixels per millimeter conversion factor including zoom.
+     * @return Point2D in world millimeters.
+     */
+    [[nodiscard]] Point2D ScreenToPageMm(int pageIndex, float screenX, float screenY, ImVec2 pMin, float pxPerMm) const noexcept {
+        double scale = 1.0 / static_cast<double>(pxPerMm);
+        double localX = static_cast<double>(screenX - pMin.x) * scale;
+        double localY = static_cast<double>(screenY - pMin.y) * scale;
+        return Point2D{ localX, GetPageTopMm(pageIndex) + localY };
+    }
+
+    /**
+     * @brief Converts world millimeter coordinates to screen pixel coordinates on page @p pageIndex.
+     * 
+     * Mathematical projection:
+     *   localX = worldX
+     *   localY = worldY - GetPageTopMm(pageIndex)
+     *   screenX = pMin.x + localX * pxPerMm
+     *   screenY = pMin.y + localY * pxPerMm
+     * 
+     * @param pageIndex 0-based PDF page index.
+     * @param worldX World X in millimeters.
+     * @param worldY World Y in millimeters.
+     * @param pMin Top-left pixel coordinate of page rectangle on screen.
+     * @param pxPerMm Pixels per millimeter conversion factor including zoom.
+     * @return ImVec2 on-screen pixel position.
+     */
+    [[nodiscard]] ImVec2 PageMmToScreen(int pageIndex, double worldX, double worldY, ImVec2 pMin, float pxPerMm) const noexcept {
+        double localX = worldX;
+        double localY = worldY - GetPageTopMm(pageIndex);
+        return ImVec2(
+            pMin.x + static_cast<float>(localX * static_cast<double>(pxPerMm)),
+            pMin.y + static_cast<float>(localY * static_cast<double>(pxPerMm))
+        );
+    }
 
     // Active highlighter color index into GetHighlightColorPresets()
     int activeHighlightColorIdx = 0; // Default: Sunshine Yellow
@@ -202,6 +296,60 @@ public:
         ImVec2 clickPos;
     } contextMenuState;
 
+    // Persistent Text Highlights (Mapped by PDF page index)
+    std::unordered_map<int, std::vector<TextHighlightSpan>> docHighlights;
+    std::string lastSyncedHighlights;
+
+    // -------------------------------------------------------------------------
+    // MULTI-DOCUMENT IN-MEMORY WORKING SET TELEMETRY
+    // -------------------------------------------------------------------------
+    /**
+     * @struct PdfDocSessionState
+     * @brief Retains the active in-memory viewport and decoded rendering cache for a PDF document.
+     * 
+     * Mathematical projection:
+     *   PageX_screen = (contentW > pageW ? (contentW - pageW) * 0.5 : 15.0) - scrollX
+     *   PageY_screen = PageTop_px - scrollY
+     * 
+     * When switching between multiple PDF documents, this working set preserves each document's
+     * independent zoom scale, horizontal scroll, vertical scroll, and active page index.
+     * If a document has not been viewed for longer than the absence timeout (60,000ms),
+     * its heavy textures are evicted from GPU/CPU RAM and its viewport is homed to default.
+     */
+    struct PdfDocSessionState {
+        std::string filePath;
+        float scrollX = 0.0f;
+        float scrollY = 0.0f;
+        float maxScrollX = 0.0f;
+        float maxScrollY = 0.0f;
+        float zoomScale = 1.25f;
+        int activePageIndex = 0;
+        uint64_t lastAccessTimeMs = 0;
+        bool isLoaded = false;
+        std::vector<PdfPageDimension> pageDimensions;
+        std::vector<PdfOutlineItem> docOutline;
+        bool isOutlineLoaded = false;
+        std::vector<PdfUserBookmark> userBookmarks;
+        std::unordered_map<int, std::vector<TextHighlightSpan>> docHighlights;
+        std::unordered_map<int, CachedPdfViewerPage> pageCache;
+        std::unordered_map<int, CachedThumbnail> thumbnailCache;
+
+        void EvictTextures() {
+            for (auto& [idx, p] : pageCache) p.DestroyTexture();
+            pageCache.clear();
+            for (auto& [idx, t] : thumbnailCache) t.DestroyTexture();
+            thumbnailCache.clear();
+        }
+
+        void HomeViewport() noexcept {
+            scrollX = 0.0f;
+            scrollY = 0.0f;
+            zoomScale = 1.25f;
+            activePageIndex = 0;
+        }
+    };
+    std::unordered_map<std::string, PdfDocSessionState> documentWorkingSet;
+
     // Caches & Dimensions
     std::vector<PdfPageDimension> pageDimensions;
     std::unordered_map<int, CachedPdfViewerPage> pageCache;
@@ -232,6 +380,10 @@ public:
             s_activeInstance = nullptr;
         }
         ClearCache();
+        for (auto& [path, state] : documentWorkingSet) {
+            state.EvictTextures();
+        }
+        documentWorkingSet.clear();
     }
 
     static PdfViewerPage* GetActiveInstance() {
@@ -288,6 +440,98 @@ public:
         }
     }
 
+    /**
+     * @brief Deserializes tab-separated text highlight spans into the in-memory docHighlights list.
+     * Format: <pageIndex>\t<color>\t<startChar>\t<endChar>\t<minX>\t<minY>\t<maxX>\t<maxY>\t<text>\n
+     * @param data Serialized string retrieved from SQLite database record.
+     */
+    void LoadHighlightsFromString(const std::string& data) {
+        docHighlights.clear();
+        if (data.empty()) {
+            for (auto& [idx, p] : pageCache) {
+                p.textHighlights.clear();
+            }
+            return;
+        }
+        std::istringstream stream(data);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (line.empty()) continue;
+            std::istringstream ls(line);
+            std::string token;
+            std::vector<std::string> tokens;
+            while (std::getline(ls, token, '\t')) {
+                tokens.push_back(token);
+            }
+            if (tokens.size() >= 8) {
+                try {
+                    TextHighlightSpan span;
+                    span.pageIndex = std::stoi(tokens[0]);
+                    span.color = static_cast<ImU32>(std::stoul(tokens[1]));
+                    span.startChar = std::stoi(tokens[2]);
+                    span.endChar = std::stoi(tokens[3]);
+                    span.boundsMm.minX = std::stod(tokens[4]);
+                    span.boundsMm.minY = std::stod(tokens[5]);
+                    span.boundsMm.maxX = std::stod(tokens[6]);
+                    span.boundsMm.maxY = std::stod(tokens[7]);
+                    if (tokens.size() >= 9) {
+                        span.text = tokens[8];
+                    }
+                    docHighlights[span.pageIndex].push_back(span);
+                } catch (...) {}
+            }
+        }
+        for (auto& [idx, p] : pageCache) {
+            auto it = docHighlights.find(idx);
+            if (it != docHighlights.end()) {
+                p.textHighlights = it->second;
+            } else {
+                p.textHighlights.clear();
+            }
+        }
+    }
+
+    /**
+     * @brief Serializes the in-memory docHighlights list into a compact tab/newline string.
+     * @return Formatted string for SQLite persistence in 'pages.dedicated_pdf_highlights'.
+     */
+    std::string SaveHighlightsToString() const {
+        std::ostringstream ss;
+        for (const auto& [pIdx, hlList] : docHighlights) {
+            for (const auto& hl : hlList) {
+                ss << hl.pageIndex << '\t'
+                   << hl.color << '\t'
+                   << hl.startChar << '\t'
+                   << hl.endChar << '\t'
+                   << hl.boundsMm.minX << '\t'
+                   << hl.boundsMm.minY << '\t'
+                   << hl.boundsMm.maxX << '\t'
+                   << hl.boundsMm.maxY << '\t';
+                std::string cleanText = hl.text;
+                std::replace(cleanText.begin(), cleanText.end(), '\n', ' ');
+                std::replace(cleanText.begin(), cleanText.end(), '\r', ' ');
+                std::replace(cleanText.begin(), cleanText.end(), '\t', ' ');
+                ss << cleanText << '\n';
+            }
+        }
+        return ss.str();
+    }
+
+    /**
+     * @brief Flushes text highlights to the active CanvasPage metadata and commits async to SQLite.
+     * Ensures highlights are persistently stored across page reorders and session reloads.
+     */
+    void SyncHighlightsToPage(DocumentSession& session) {
+        auto activePage = session.GetActivePage();
+        if (activePage) {
+            activePage->dedicatedPdfHighlights = SaveHighlightsToString();
+            lastSyncedHighlights = activePage->dedicatedPdfHighlights;
+            activePage->isModified = true;
+            session.workspace.FlushActiveNotebookAsync();
+            LOG_INFO(PdfStorage, "Synced text highlights to page metadata.");
+        }
+    }
+
     void ToggleSidebar() {
         isSidebarOpen = !isSidebarOpen;
     }
@@ -318,6 +562,7 @@ public:
         docOutline.clear();
         isOutlineLoaded = false;
         pageDimensions.clear();
+        docHighlights.clear();
         totalPages = 0;
     }
 
@@ -332,7 +577,11 @@ public:
 
         ClearCache();
         currentPdfPath = filePath;
+        scrollX = 0.0f;
+        maxScrollX = 0.0f;
         scrollY = 0.0f;
+        zoomScale = 1.25f;
+        activePageIndex = 0;
         selectedPageIndex = -1;
         currentSelection.Clear();
         hudInactivityTimer = 2.5f;
@@ -407,6 +656,12 @@ public:
         entry.heightMm = res.heightMm;
         entry.links = std::move(res.links);
         entry.isInverted = invert;
+
+        // Populate persistent text highlights for this page index
+        auto hlIt = docHighlights.find(pageIdx);
+        if (hlIt != docHighlights.end()) {
+            entry.textHighlights = hlIt->second;
+        }
 
         // Generate OpenGL texture for blitting
         glGenTextures(1, &entry.glTexture);
@@ -585,13 +840,85 @@ public:
         if (!activePage || !activePage->isDedicatedPdf) return;
 
         std::string diskPath = PdfStorage::ResolveDiskPath(activePage->dedicatedPdfPath, &session);
+        uint64_t nowMs = SDL_GetTicks();
+
         if (currentPdfPath != diskPath && !diskPath.empty()) {
-            LoadDocument(diskPath);
-            LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
-            lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
-        } else if (lastSyncedBookmarks != activePage->dedicatedPdfBookmarks) {
-            LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
-            lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
+            // Save outgoing document session state
+            if (!currentPdfPath.empty()) {
+                auto& outState = documentWorkingSet[currentPdfPath];
+                outState.filePath = currentPdfPath;
+                outState.scrollX = scrollX;
+                outState.scrollY = scrollY;
+                outState.maxScrollX = maxScrollX;
+                outState.maxScrollY = maxScrollY;
+                outState.zoomScale = zoomScale;
+                outState.activePageIndex = activePageIndex;
+                outState.lastAccessTimeMs = nowMs;
+                outState.isLoaded = (!isLoading && totalPages > 0);
+                outState.pageDimensions = std::move(pageDimensions);
+                outState.docOutline = std::move(docOutline);
+                outState.isOutlineLoaded = isOutlineLoaded;
+                outState.userBookmarks = std::move(userBookmarks);
+                outState.docHighlights = std::move(docHighlights);
+                outState.pageCache = std::move(pageCache);
+                outState.thumbnailCache = std::move(thumbnailCache);
+            }
+
+            // Working-set maintenance: evict textures and home viewports of documents absent for >60,000ms
+            constexpr uint64_t WORKING_SET_TIMEOUT_MS = 60000;
+            for (auto& [path, docState] : documentWorkingSet) {
+                if (path != diskPath && (nowMs - docState.lastAccessTimeMs > WORKING_SET_TIMEOUT_MS)) {
+                    docState.EvictTextures();
+                    docState.HomeViewport();
+                    docState.isLoaded = false;
+                }
+            }
+
+            // Check if incoming document has an active, valid session in working set
+            auto itWs = documentWorkingSet.find(diskPath);
+            if (itWs != documentWorkingSet.end() && itWs->second.isLoaded && (nowMs - itWs->second.lastAccessTimeMs <= WORKING_SET_TIMEOUT_MS)) {
+                // Restore existing session immediately with preserved viewport
+                currentPdfPath = diskPath;
+                scrollX = itWs->second.scrollX;
+                scrollY = itWs->second.scrollY;
+                maxScrollX = itWs->second.maxScrollX;
+                maxScrollY = itWs->second.maxScrollY;
+                zoomScale = itWs->second.zoomScale;
+                activePageIndex = itWs->second.activePageIndex;
+                pageDimensions = std::move(itWs->second.pageDimensions);
+                totalPages = static_cast<int>(pageDimensions.size());
+                docOutline = std::move(itWs->second.docOutline);
+                isOutlineLoaded = itWs->second.isOutlineLoaded;
+                userBookmarks = std::move(itWs->second.userBookmarks);
+                docHighlights = std::move(itWs->second.docHighlights);
+                pageCache = std::move(itWs->second.pageCache);
+                thumbnailCache = std::move(itWs->second.thumbnailCache);
+                isLoading = false;
+                itWs->second.lastAccessTimeMs = nowMs;
+
+                // Sync bookmarks & highlights if modified
+                LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
+                lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
+                LoadHighlightsFromString(activePage->dedicatedPdfHighlights);
+                lastSyncedHighlights = activePage->dedicatedPdfHighlights;
+                LOG_INFO(PdfStorage, "Restored in-memory document session with preserved viewport: " + diskPath);
+            } else {
+                // Not in working set or expired: load afresh with homed viewport
+                LoadDocument(diskPath);
+                LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
+                lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
+                LoadHighlightsFromString(activePage->dedicatedPdfHighlights);
+                lastSyncedHighlights = activePage->dedicatedPdfHighlights;
+            }
+        } else {
+            if (lastSyncedBookmarks != activePage->dedicatedPdfBookmarks) {
+                LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
+                lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
+            }
+            if (lastSyncedHighlights != activePage->dedicatedPdfHighlights) {
+                LoadHighlightsFromString(activePage->dedicatedPdfHighlights);
+                lastSyncedHighlights = activePage->dedicatedPdfHighlights;
+            }
         }
 
         // Check if background worker finished loading PDF structure
@@ -678,7 +1005,32 @@ public:
                 hudInactivityTimer = 2.5f;
             }
 
-            // Zoom Anchoring towards Mouse Cursor (Eliminates page drift during Ctrl+Wheel)
+            // Expose content hover state to input state machine so pointer events are not suppressed
+            isPdfContentHovered = isMouseInContent && !isDraggingScrollbar && !isDraggingHScrollbar &&
+                (hudInactivityTimer <= 0.0f || !(mousePos.x >= hudZoneMinX && mousePos.x <= hudZoneMaxX && mousePos.y >= hudZoneMinY && mousePos.y <= hudZoneMaxY));
+            sm.isPdfCanvasHovered = isPdfContentHovered;
+
+            constexpr float PAGE_GAP_PX = 24.0f;
+            float pxPerMm = (96.0f / 25.4f) * zoomScale;
+
+            // Compute document layout bounds for both vertical and horizontal scroll limits
+            float maxDocW_px = 0.0f;
+            float totalDocH_px = 40.0f;
+            for (int i = 0; i < totalPages; ++i) {
+                double mmW = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].widthMm : 210.0;
+                double mmH = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].heightMm : 297.0;
+                float w_px = static_cast<float>(mmW * pxPerMm);
+                float h_px = static_cast<float>(mmH * pxPerMm);
+                if (w_px > maxDocW_px) maxDocW_px = w_px;
+                totalDocH_px += h_px + PAGE_GAP_PX;
+            }
+
+            maxScrollX = std::max(0.0f, maxDocW_px + 30.0f - contentW);
+            scrollX = std::clamp(scrollX, 0.0f, maxScrollX);
+            maxScrollY = std::max(0.0f, totalDocH_px - viewH);
+            scrollY = std::clamp(scrollY, 0.0f, maxScrollY);
+
+            // Zoom Anchoring towards Mouse Cursor in 2D (Eliminates page drift during Ctrl+Wheel)
             if (isMouseInContent && std::abs(io.MouseWheel) > 0.01f) {
                 if (io.KeyCtrl) {
                     float oldZoom = zoomScale;
@@ -688,8 +1040,36 @@ public:
                     float docY = scrollY + mouseYRel;
                     float newDocY = docY * (zoomScale / oldZoom);
                     scrollY = std::clamp(newDocY - mouseYRel, 0.0f, maxScrollY);
+
+                    float mouseXRel = mousePos.x - contentX;
+                    float docX = scrollX + mouseXRel;
+                    float newDocX = docX * (zoomScale / oldZoom);
+                    scrollX = std::clamp(newDocX - mouseXRel, 0.0f, maxScrollX);
+                } else if (io.KeyShift) {
+                    scrollX = std::clamp(scrollX - io.MouseWheel * 80.0f, 0.0f, maxScrollX);
                 } else {
                     scrollY = std::clamp(scrollY - io.MouseWheel * 80.0f, 0.0f, maxScrollY);
+                }
+            }
+            if (isMouseInContent && std::abs(io.MouseWheelH) > 0.01f) {
+                scrollX = std::clamp(scrollX - io.MouseWheelH * 80.0f, 0.0f, maxScrollX);
+            }
+
+            // Middle-mouse drag 2D panning across content
+            if (isMouseInContent && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+                isMiddlePanning = true;
+                middlePanLastPos = mousePos;
+            }
+            if (isMiddlePanning) {
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+                    ImVec2 delta = ImVec2(mousePos.x - middlePanLastPos.x, mousePos.y - middlePanLastPos.y);
+                    scrollX = std::clamp(scrollX - delta.x, 0.0f, maxScrollX);
+                    scrollY = std::clamp(scrollY - delta.y, 0.0f, maxScrollY);
+                    middlePanLastPos = mousePos;
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                    hudInactivityTimer = 2.5f;
+                } else {
+                    isMiddlePanning = false;
                 }
             }
 
@@ -700,9 +1080,7 @@ public:
             ImVec2 contentClipMax(contentX + contentW, origin.y + viewH);
             dl->PushClipRect(contentClipMin, contentClipMax, true);
 
-            constexpr float PAGE_GAP_PX = 24.0f;
             float currentY = 20.0f - scrollY;
-            float pxPerMm = (96.0f / 25.4f) * zoomScale;
 
             int currentVisiblePage = 0;
             ImVec2 selectedBoxMin(0.0f, 0.0f), selectedBoxMax(0.0f, 0.0f);
@@ -718,8 +1096,8 @@ public:
                 // Check visibility against viewport window
                 if (currentY + pageH_px > 0.0f && currentY < viewH) {
                     currentVisiblePage = i;
-                    float pageX = (contentW - pageW_px) * 0.5f;
-                    if (pageX < 15.0f) pageX = 15.0f;
+                    float baseX = (contentW > pageW_px) ? (contentW - pageW_px) * 0.5f : 15.0f;
+                    float pageX = baseX - scrollX;
 
                     ImVec2 pMin(contentX + pageX, origin.y + currentY);
                     ImVec2 pMax(pMin.x + pageW_px, pMin.y + pageH_px);
@@ -804,12 +1182,58 @@ public:
 
                         if (delHlIdx >= 0 && delHlIdx < static_cast<int>(cached->textHighlights.size())) {
                             cached->textHighlights.erase(cached->textHighlights.begin() + delHlIdx);
+                            docHighlights[i] = cached->textHighlights;
+                            SyncHighlightsToPage(session);
                             toastMessage = "Highlight erased";
                             toastTimer = 1.5f;
                             selectedPageIndex = -1;
                             currentSelection.Clear();
                             isSelectingText = false;
                             erasedHighlight = true;
+                        }
+
+                        // -------------------------------------------------------------
+                        // 1B-2. RENDER PERSISTENT INK STROKES OVER PDF PAGE
+                        // -------------------------------------------------------------
+                        double pageTopMm = GetPageTopMm(i);
+                        AABB pageAabb{ -50.0, pageTopMm - 5.0, mmW + 50.0, pageTopMm + mmH + 5.0 };
+                        std::vector<uint32_t> inkUids = activePage->spatialIndex.Query(pageAabb);
+
+                        for (uint32_t uid : inkUids) {
+                            auto obj = activePage->FindObjectByUid(uid);
+                            if (!obj || !obj->isVisible || obj->type != ObjectType::InkContainer) continue;
+                            auto ink = std::static_pointer_cast<InkContainer>(obj);
+
+                            for (const auto& strk : ink->strokes) {
+                                float alpha = ink->isHighlighter ? 0.45f : (strk.color.a() / 255.0f);
+                                ImU32 strokeCol = ImGui::ColorConvertFloat4ToU32(
+                                    ImVec4(strk.color.r() / 255.0f, strk.color.g() / 255.0f, strk.color.b() / 255.0f, alpha)
+                                );
+                                for (const auto& seg : strk.segments) {
+                                    ImVec2 pt0 = PageMmToScreen(i, seg.p0.x, seg.p0.y, pMin, pxPerMm);
+                                    ImVec2 pt1 = PageMmToScreen(i, seg.p1.x, seg.p1.y, pMin, pxPerMm);
+                                    float thick = static_cast<float>(seg.width * pxPerMm);
+                                    if (thick < 1.0f) thick = 1.0f;
+                                    dl->AddLine(pt0, pt1, strokeCol, thick);
+                                }
+                            }
+                        }
+
+                        // -------------------------------------------------------------
+                        // 1B-3. RENDER LIVE IN-PROGRESS DRAWING STROKE
+                        // -------------------------------------------------------------
+                        if (isLiveDrawing && liveDrawingPageIndex == i && livePdfStroke.size() >= 2) {
+                            float alpha = (livePenTool.penType == PenType::Highlighter) ? 0.45f : (livePenTool.color.a() / 255.0f);
+                            ImU32 liveCol = ImGui::ColorConvertFloat4ToU32(
+                                ImVec4(livePenTool.color.r() / 255.0f, livePenTool.color.g() / 255.0f, livePenTool.color.b() / 255.0f, alpha)
+                            );
+                            for (size_t p = 1; p < livePdfStroke.size(); ++p) {
+                                ImVec2 pt0 = PageMmToScreen(i, livePdfStroke[p - 1].worldX, livePdfStroke[p - 1].worldY, pMin, pxPerMm);
+                                ImVec2 pt1 = PageMmToScreen(i, livePdfStroke[p].worldX, livePdfStroke[p].worldY, pMin, pxPerMm);
+                                float thick = static_cast<float>(livePenTool.baseSize * livePdfStroke[p].pressure * pxPerMm);
+                                if (thick < 1.0f) thick = 1.0f;
+                                dl->AddLine(pt0, pt1, liveCol, thick);
+                            }
                         }
 
                         // -------------------------------------------------------------
@@ -837,24 +1261,93 @@ public:
                         }
 
                         // -------------------------------------------------------------
-                        // 1C. TEXT INTERACTION & PRECISE DRAG SELECTION
+                        // 1C. POINTER INTERACTION: DRAWING, ERASING, OR TEXT SELECTION
                         // -------------------------------------------------------------
-                        if (isHovered && !erasedHighlight) {
-                            int hitChar = cached->textLayer.HitTestChar(mouseLocalMmX, mouseLocalMmY, 3.0);
-                            if (hitChar >= 0 && !isSelectingText) {
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
-                            }
+                        bool isErasing = (activeTool == PdfToolMode::Eraser || sm.IsEraserMode());
+                        bool isDrawing = (activeTool == PdfToolMode::Pen || activeTool == PdfToolMode::FreeHighlight || sm.IsDrawingMode());
+                        bool isTextSelect = (activeTool == PdfToolMode::Select || activeTool == PdfToolMode::Highlight);
 
-                            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyCtrl) {
-                                if (hitChar >= 0) {
-                                    selectedPageIndex = i;
-                                    currentSelection.startChar = hitChar;
-                                    currentSelection.endChar = hitChar;
-                                    currentSelection.hasSelection = true;
-                                    isSelectingText = true;
-                                } else {
-                                    selectedPageIndex = -1;
-                                    currentSelection.Clear();
+                        // Stylus hardware barrel overrides:
+                        if (sm.ActiveDevice == DeviceType::Stylus) {
+                            if (sm.stylusButtons == StylusButtonState::BarrelPressed) {
+                                isErasing = true;
+                                isDrawing = false;
+                                isTextSelect = false;
+                            } else if (sm.stylusButtons == StylusButtonState::Barrel2Pressed) {
+                                isTextSelect = true;
+                                isDrawing = false;
+                                isErasing = false;
+                            }
+                        }
+
+                        if (isHovered && !erasedHighlight) {
+                            if (isDrawing) {
+                                ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+                                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyCtrl) {
+                                    isLiveDrawing = true;
+                                    liveDrawingPageIndex = i;
+                                    livePdfStroke.clear();
+                                    livePenTool = sm.palette.GetActivePen();
+                                    if (activeTool == PdfToolMode::FreeHighlight) {
+                                        livePenTool.penType = PenType::Highlighter;
+                                        livePenTool.color = BLRgba32(255, 235, 59, 115);
+                                        livePenTool.baseSize = 6.0;
+                                    }
+                                    Point2D wPt = ScreenToPageMm(i, mousePos.x, mousePos.y, pMin, pxPerMm);
+                                    float pressure = (sm.ActiveDevice == DeviceType::Stylus) ? sm.pen.pressure : 1.0f;
+                                    livePdfStroke.push_back({ wPt.x, wPt.y, pressure, sm.latestEventTimeSec });
+                                }
+                            }
+                            else if (isErasing) {
+                                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                                if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                                    Point2D wPt = ScreenToPageMm(i, mousePos.x, mousePos.y, pMin, pxPerMm);
+                                    double r = std::max(1.5, static_cast<double>(sm.eraserRadiusMm));
+                                    AABB eraseBox{ wPt.x - r, wPt.y - r, wPt.x + r, wPt.y + r };
+                                    auto hitUids = activePage->spatialIndex.Query(eraseBox);
+                                    bool removedAny = false;
+                                    for (uint32_t uid : hitUids) {
+                                        auto obj = activePage->FindObjectByUid(uid);
+                                        if (obj && obj->type == ObjectType::InkContainer && obj->HitTestCircle(wPt.x, wPt.y, r)) {
+                                            activePage->RemoveObject(obj);
+                                            removedAny = true;
+                                        }
+                                    }
+                                    if (removedAny) {
+                                        activePage->isModified = true;
+                                    }
+                                }
+                            }
+                            else if (isTextSelect) {
+                                int hitChar = cached->textLayer.HitTestChar(mouseLocalMmX, mouseLocalMmY, 3.0);
+                                if (hitChar >= 0 && !isSelectingText) {
+                                    ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+                                }
+
+                                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyCtrl) {
+                                    if (hitChar >= 0) {
+                                        selectedPageIndex = i;
+                                        currentSelection.startChar = hitChar;
+                                        currentSelection.endChar = hitChar;
+                                        currentSelection.hasSelection = true;
+                                        isSelectingText = true;
+                                    } else {
+                                        selectedPageIndex = -1;
+                                        currentSelection.Clear();
+                                    }
+                                }
+                            }
+                        }
+
+                        // Continuous inking movement
+                        if (isLiveDrawing && liveDrawingPageIndex == i && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                            Point2D wPt = ScreenToPageMm(i, mousePos.x, mousePos.y, pMin, pxPerMm);
+                            float pressure = (sm.ActiveDevice == DeviceType::Stylus) ? sm.pen.pressure : 1.0f;
+                            if (!livePdfStroke.empty()) {
+                                double dx = wPt.x - livePdfStroke.back().worldX;
+                                double dy = wPt.y - livePdfStroke.back().worldY;
+                                if (dx * dx + dy * dy > 0.01) {
+                                    livePdfStroke.push_back({ wPt.x, wPt.y, pressure, sm.latestEventTimeSec });
                                 }
                             }
                         }
@@ -932,6 +1425,26 @@ public:
 
             // Pointer release handling
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                if (isLiveDrawing) {
+                    if (livePdfStroke.size() >= 2 && activePage) {
+                        std::vector<Segment1D> segments;
+                        segments.reserve(livePdfStroke.size() - 1);
+                        for (size_t s = 1; s < livePdfStroke.size(); ++s) {
+                            Segment1D seg;
+                            seg.p0 = Point2D{ livePdfStroke[s - 1].worldX, livePdfStroke[s - 1].worldY };
+                            seg.p1 = Point2D{ livePdfStroke[s].worldX, livePdfStroke[s].worldY };
+                            float widthMm = static_cast<float>(livePenTool.baseSize * livePdfStroke[s].pressure);
+                            seg.width = std::max(0.2f, widthMm);
+                            segments.push_back(seg);
+                        }
+                        session.CommitStroke(std::move(segments), livePenTool);
+                        activePage->isModified = true;
+                    }
+                    livePdfStroke.clear();
+                    isLiveDrawing = false;
+                    liveDrawingPageIndex = -1;
+                }
+
                 if (isSelectingText && currentSelection.hasSelection && selectedPageIndex >= 0) {
                     if (activeTool == PdfToolMode::Highlight) {
                         auto it = pageCache.find(selectedPageIndex);
@@ -947,7 +1460,9 @@ public:
                                 span.text = selText;
                                 span.pageIndex = selectedPageIndex;
                                 it->second.textHighlights.push_back(span);
+                                docHighlights[selectedPageIndex].push_back(span);
                             }
+                            SyncHighlightsToPage(session);
                             toastMessage = "Text highlighted";
                             toastTimer = 1.5f;
                             selectedPageIndex = -1;
@@ -1017,6 +1532,8 @@ public:
                     float newThumbY = mousePos.y - scrollbarGrabOffsetY;
                     float newRatio = (newThumbY - sbY) / (sbH - thumbH);
                     scrollY = std::clamp(newRatio * maxScrollY, 0.0f, maxScrollY);
+                } else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    isDraggingScrollbar = false;
                 }
 
                 ImU32 thumbColor = (isDraggingScrollbar || isThumbHovered)
@@ -1024,6 +1541,60 @@ public:
                     : IM_COL32(85, 95, 115, 180);
 
                 dl->AddRectFilled(thumbMin, thumbMax, thumbColor, 5.0f);
+            }
+
+            // =========================================================================
+            // 2B. INTERACTIVE HORIZONTAL SCROLLBAR (BOTTOM EDGE OF CONTENT VIEWPORT)
+            // =========================================================================
+            constexpr float HSCROLLBAR_H = 12.0f;
+            float hsbX = contentX + 4.0f;
+            float hsbY = origin.y + viewH - HSCROLLBAR_H - 2.0f;
+            float hsbW = contentW - (maxScrollY > 0.0f ? (SCROLLBAR_W + 8.0f) : 8.0f);
+
+            if (maxScrollX > 0.0f) {
+                ImVec2 htrackMin(hsbX, hsbY);
+                ImVec2 htrackMax(hsbX + hsbW, hsbY + HSCROLLBAR_H);
+                dl->AddRectFilled(htrackMin, htrackMax, IM_COL32(18, 20, 26, 120), 6.0f);
+
+                float totalContentW = maxScrollX + contentW;
+                float thumbW = std::clamp(hsbW * (contentW / totalContentW), 32.0f, hsbW);
+                float thumbX = hsbX + (scrollX / maxScrollX) * (hsbW - thumbW);
+
+                ImVec2 hthumbMin(thumbX, hsbY + 1.0f);
+                ImVec2 hthumbMax(thumbX + thumbW, hsbY + HSCROLLBAR_H - 1.0f);
+
+                bool isHThumbHovered = (mousePos.x >= hthumbMin.x && mousePos.x <= hthumbMax.x &&
+                                        mousePos.y >= hthumbMin.y && mousePos.y <= hthumbMax.y);
+                bool isHTrackHovered = (mousePos.x >= htrackMin.x && mousePos.x <= htrackMax.x &&
+                                        mousePos.y >= htrackMin.y && mousePos.y <= htrackMax.y);
+
+                if (isHTrackHovered || isDraggingHScrollbar) {
+                    hudInactivityTimer = 2.5f;
+                }
+
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && isHThumbHovered) {
+                    isDraggingHScrollbar = true;
+                    scrollbarGrabOffsetX = mousePos.x - thumbX;
+                } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && isHTrackHovered) {
+                    float clickRatio = (mousePos.x - hsbX - thumbW * 0.5f) / (hsbW - thumbW);
+                    scrollX = std::clamp(clickRatio * maxScrollX, 0.0f, maxScrollX);
+                    isDraggingHScrollbar = true;
+                    scrollbarGrabOffsetX = thumbW * 0.5f;
+                }
+
+                if (isDraggingHScrollbar && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    float newThumbX = mousePos.x - scrollbarGrabOffsetX;
+                    float newRatio = (newThumbX - hsbX) / (hsbW - thumbW);
+                    scrollX = std::clamp(newRatio * maxScrollX, 0.0f, maxScrollX);
+                } else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    isDraggingHScrollbar = false;
+                }
+
+                ImU32 hthumbColor = (isDraggingHScrollbar || isHThumbHovered)
+                    ? IM_COL32(130, 145, 170, 240)
+                    : IM_COL32(85, 95, 115, 180);
+
+                dl->AddRectFilled(hthumbMin, hthumbMax, hthumbColor, 5.0f);
             }
 
             // =========================================================================
@@ -1382,6 +1953,8 @@ public:
                             auto it = pageCache.find(targetPage);
                             if (it != pageCache.end() && contextMenuState.highlightIndex < static_cast<int>(it->second.textHighlights.size())) {
                                 it->second.textHighlights.erase(it->second.textHighlights.begin() + contextMenuState.highlightIndex);
+                                docHighlights[targetPage] = it->second.textHighlights;
+                                SyncHighlightsToPage(session);
                                 toastMessage = "Highlight erased";
                                 toastTimer = 1.5f;
                             }
@@ -1398,6 +1971,8 @@ public:
                                 auto it = pageCache.find(targetPage);
                                 if (it != pageCache.end() && contextMenuState.highlightIndex < static_cast<int>(it->second.textHighlights.size())) {
                                     it->second.textHighlights[contextMenuState.highlightIndex].color = currentInvertState ? hlPresets[c].darkColor : hlPresets[c].lightColor;
+                                    docHighlights[targetPage] = it->second.textHighlights;
+                                    SyncHighlightsToPage(session);
                                     activeHighlightColorIdx = c;
                                     toastMessage = std::string("Color changed to ") + hlPresets[c].name;
                                     toastTimer = 1.5f;
@@ -1476,7 +2051,9 @@ public:
                                         span.text = selText;
                                         span.pageIndex = selectedPageIndex;
                                         it->second.textHighlights.push_back(span);
+                                        docHighlights[selectedPageIndex].push_back(span);
                                     }
+                                    SyncHighlightsToPage(session);
                                     selectedPageIndex = -1;
                                     currentSelection.Clear();
                                     toastMessage = std::string("Highlighted in ") + hlPresetsSel[c].name;
@@ -1504,7 +2081,9 @@ public:
                                     span.text = selText;
                                     span.pageIndex = selectedPageIndex;
                                     it->second.textHighlights.push_back(span);
+                                    docHighlights[selectedPageIndex].push_back(span);
                                 }
+                                SyncHighlightsToPage(session);
                                 selectedPageIndex = -1;
                                 currentSelection.Clear();
                                 toastMessage = "Text highlighted";
@@ -1589,11 +2168,14 @@ public:
             // Sized generously (340x42px) with ample margin between the text and buttons
             // so buttons never overflow the pill container.
             if (hudInactivityTimer > 0.0f) {
+                // HUD pill dimensions: 340 px wide, 42 px tall
+                // Wide enough to fit "999/999 • 999%" text + 3 zoom buttons with no overflow.
+                constexpr float hudW = 340.0f;
+                constexpr float hudH = 42.0f;
                 float hudAlpha = std::clamp(hudInactivityTimer / 0.4f, 0.0f, 1.0f);
 
-                float hudW = 340.0f;
-                float hudH = 42.0f;
-                ImVec2 hudPos(contentX + (contentW - hudW) * 0.5f, origin.y + viewH - hudH - 16.0f);
+                float hudMarginBottom = (maxScrollX > 0.0f) ? (hudH + 26.0f) : (hudH + 16.0f);
+                ImVec2 hudPos(contentX + (contentW - hudW) * 0.5f, origin.y + viewH - hudMarginBottom);
 
                 if (mousePos.x >= hudPos.x && mousePos.x <= hudPos.x + hudW &&
                     mousePos.y >= hudPos.y && mousePos.y <= hudPos.y + hudH) {

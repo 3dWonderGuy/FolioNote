@@ -249,10 +249,10 @@ public:
             RenderPagesOnlyLayout(height, session, canvas, theme);
         }
 
-        RenderRenameModal(activeNb, canvas, theme);
+        RenderRenameModal(session, canvas, theme);
         RenderPasswordModal(activeNb, canvas, theme);
-        RenderSectionSettingsModal(activeNb, canvas, theme);
-        RenderPageSettingsModal(activeNb, canvas, theme);
+        RenderSectionSettingsModal(session, canvas, theme);
+        RenderPageSettingsModal(session, canvas, theme);
 
         ImGui::End();
         ImGui::PopStyleVar(8);
@@ -265,7 +265,8 @@ private:
     // 4. ATOMIC SUB-COMPONENTS
     // ========================================================================
 
-    void RenderRenameModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas, const ThemeManager& theme) {
+    void RenderRenameModal(DocumentSession& session, CanvasEngine& canvas, const ThemeManager& theme) {
+        auto activeNb = session.workspace.GetActiveNotebook();
         if (openRenamePopup) {
             ImGui::OpenPopup("RenameModal##Nav");
             openRenamePopup = false;
@@ -323,6 +324,7 @@ private:
                         }
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
+                        session.workspace.FlushActiveNotebookAsync();
                     }
                     ImGui::CloseCurrentPopup();
                 }
@@ -448,7 +450,8 @@ private:
         }
     }
 
-    void RenderSectionSettingsModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas, const ThemeManager& theme) {
+    void RenderSectionSettingsModal(DocumentSession& session, CanvasEngine& canvas, const ThemeManager& theme) {
+        auto activeNb = session.workspace.GetActiveNotebook();
         if (openSectionSettingsModal) {
             ImGui::OpenPopup("SectionSettingsModal##Nav");
             openSectionSettingsModal = false;
@@ -588,6 +591,7 @@ private:
                     }
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    session.workspace.FlushActiveNotebookAsync();
                     ImGui::CloseCurrentPopup();
                 }
 
@@ -601,7 +605,8 @@ private:
         }
     }
 
-    void RenderPageSettingsModal(const std::shared_ptr<Notebook>& activeNb, CanvasEngine& canvas, const ThemeManager& theme) {
+    void RenderPageSettingsModal(DocumentSession& session, CanvasEngine& canvas, const ThemeManager& theme) {
+        auto activeNb = session.workspace.GetActiveNotebook();
         if (openPageSettingsModal) {
             ImGui::OpenPopup("PageSettingsModal##Nav");
             openPageSettingsModal = false;
@@ -768,6 +773,8 @@ private:
                     canvas.currentPaperStyle = pageSettingsPaperStyle;
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    // Persist page title/nesting changes to SQLite immediately
+                    session.workspace.FlushActiveNotebookAsync();
                     ImGui::CloseCurrentPopup();
                 }
 
@@ -1281,6 +1288,8 @@ private:
                     group->isCollapsed = false;
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    // Persist section-to-group structural change to SQLite
+                    session.workspace.FlushActiveNotebookAsync();
                 }
                 if (const ImGuiPayload* pGrp = ImGui::AcceptDragDropPayload("NAV_GROUP_DND")) {
                     size_t srcG = *(const size_t*)pGrp->Data;
@@ -1293,6 +1302,8 @@ private:
                     activeNb->MoveSectionGroup(srcG, targetG);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    // Persist group reorder to SQLite
+                    session.workspace.FlushActiveNotebookAsync();
                 }
                 ImVec2 itemMin = ImGui::GetItemRectMin();
                 ImVec2 itemMax = ImGui::GetItemRectMax();
@@ -1342,11 +1353,13 @@ private:
                     activeNb->MoveSectionGroup(g, g - 1);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    session.workspace.FlushActiveNotebookAsync();
                 }
                 if (ImGui::MenuItem("Move Down", nullptr, false, g + 1 < activeNb->sectionGroups.size())) {
                     activeNb->MoveSectionGroup(g, g + 1);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    session.workspace.FlushActiveNotebookAsync();
                 }
                 ImGui::EndPopup();
             }
@@ -1431,6 +1444,8 @@ private:
                             group->isCollapsed = false;
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
+                            // Persist child section reorder/move to SQLite
+                            session.workspace.FlushActiveNotebookAsync();
                             dndDroppedOnChild = true;
                         }
                         ImVec2 itemMin = ImGui::GetItemRectMin();
@@ -1487,6 +1502,7 @@ private:
                             group->sections.insert(group->sections.begin() + cs - 1, moved);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
+                            session.workspace.FlushActiveNotebookAsync();
                         }
                         if (ImGui::MenuItem("Move Down", nullptr, false, cs + 1 < group->sections.size())) {
                             auto moved = group->sections[cs];
@@ -1494,6 +1510,7 @@ private:
                             group->sections.insert(group->sections.begin() + cs + 1, moved);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
+                            session.workspace.FlushActiveNotebookAsync();
                         }
                         if (ImGui::MenuItem("Move to Root Sections")) {
                             pendingMoveToRootGuid = sec->guid;
@@ -1572,6 +1589,7 @@ private:
                             activeNb->MoveSectionToRoot(pendingMoveToRootGuid);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
+                            session.workspace.FlushActiveNotebookAsync();
                             ImGui::CloseCurrentPopup();
                             ImGui::EndPopup();
                             ImGui::PopID();
@@ -1586,6 +1604,7 @@ private:
                             }
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
+                            session.workspace.FlushActiveNotebookAsync();
                             ImGui::CloseCurrentPopup();
                             ImGui::EndPopup();
                             ImGui::PopID();
@@ -1679,6 +1698,8 @@ private:
                     }
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    // Persist root-section reorder to SQLite
+                    session.workspace.FlushActiveNotebookAsync();
                     dndDroppedOnRoot = true;
                 }
                 ImVec2 itemMin = ImGui::GetItemRectMin();
@@ -1729,11 +1750,13 @@ private:
                     activeNb->MoveSection(s, s - 1);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    session.workspace.FlushActiveNotebookAsync();
                 }
                 if (ImGui::MenuItem("Move Down", nullptr, false, s + 1 < activeNb->sections.size())) {
                     activeNb->MoveSection(s, s + 1);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    session.workspace.FlushActiveNotebookAsync();
                 }
                 if (!activeNb->sectionGroups.empty()) {
                     if (ImGui::BeginMenu("Move to Group")) {
@@ -1812,6 +1835,8 @@ private:
                     }
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
+                    // Persist section-to-group move to SQLite
+                    session.workspace.FlushActiveNotebookAsync();
                     ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                     ImGui::PopID();
@@ -1832,6 +1857,8 @@ private:
                 activeNb->MoveSectionToRoot(draggedGuid);
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
+                // Persist root move to SQLite
+                session.workspace.FlushActiveNotebookAsync();
             }
             ImGui::EndDragDropTarget();
         }
@@ -1959,6 +1986,8 @@ private:
                         activeSec->MovePage(srcIdx, targetIdx);
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
+                        // Persist page reorder to SQLite
+                        session.workspace.FlushActiveNotebookAsync();
                     }
                     ImVec2 itemMin = ImGui::GetItemRectMin();
                     ImVec2 itemMax = ImGui::GetItemRectMax();
@@ -2019,11 +2048,13 @@ private:
                         activeSec->MovePage(p, p - 1);
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
+                        session.workspace.FlushActiveNotebookAsync();
                     }
                     if (ImGui::MenuItem("Move Down", nullptr, false, p + 1 < activeSec->pages.size())) {
                         activeSec->MovePage(p, p + 1);
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
+                        session.workspace.FlushActiveNotebookAsync();
                     }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Copy Page")) {
@@ -2057,6 +2088,8 @@ private:
                         activeSec->MovePage(srcIdx, activeSec->pages.size() - 1);
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
+                        // Persist bottom-drop page reorder to SQLite
+                        session.workspace.FlushActiveNotebookAsync();
                     }
                 }
                 ImGui::EndDragDropTarget();

@@ -97,6 +97,7 @@ struct DBPageRecord {
     bool isDedicatedPdf = false;///< True if this page is a dedicated standalone PDF reader canvas
     std::string dedicatedPdfPath;///< Persistent relative package path or absolute disk path to backing PDF
     std::string dedicatedPdfBookmarks;///< Serialized user bookmarks for this dedicated PDF page
+    std::string dedicatedPdfHighlights;///< Serialized text highlight spans for this dedicated PDF page
 };
 
 /**
@@ -213,6 +214,7 @@ public:
      * @param isDedicatedPdf Whether this page is a dedicated continuous PDF viewer page.
      * @param dedicatedPdfPath Relative package path or external disk path to the PDF document.
      * @param dedicatedPdfBookmarks Serialized user bookmarks JSON / string.
+     * @param dedicatedPdfHighlights Serialized text highlights JSON / string.
      * @return true if upsert succeeded; false otherwise.
      */
     bool SavePageMetadata(const std::string& pageGuid, const std::string& sectionGuid, 
@@ -221,7 +223,8 @@ public:
                           bool hasBlob, const std::string& parentPageGuid = "",
                           int32_t nestingLevel = 0, bool isCollapsed = false,
                           bool isDedicatedPdf = false, const std::string& dedicatedPdfPath = "",
-                          const std::string& dedicatedPdfBookmarks = "");
+                          const std::string& dedicatedPdfBookmarks = "",
+                          const std::string& dedicatedPdfHighlights = "");
 
     /**
      * @brief Deletes a page's metadata record from SQLite.
@@ -232,6 +235,19 @@ public:
      * @brief Retrieves all page metadata records for a given section, ordered by sortOrder ascending.
      */
     std::vector<DBPageRecord> LoadPagesMetadata(const std::string& sectionGuid);
+
+    /**
+     * @brief Lightweight update of a single page's sort_order column only.
+     *
+     * Called when a page is reordered in the nav panel but has no dirty canvas content,
+     * so a full SavePageAsync (blob re-serialisation) would be wasteful.
+     *
+     * @param pageGuid  GUID of the page whose position changed.
+     * @param sortOrder New 0-indexed position within its section.
+     * @return true on success.
+     */
+    bool UpdatePageSortOrder(const std::string& pageGuid, int32_t sortOrder);
+
 
     /**
      * @brief Forces SQLite to execute a WAL checkpoint, merging WAL journal pages back into the main database file.

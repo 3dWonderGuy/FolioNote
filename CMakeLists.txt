@@ -16,7 +16,12 @@ endif()
 if(MSVC)
     set(CMAKE_OBJECT_PATH_MAX 1024)
     set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
-    add_compile_options(/FS)
+    # /FS    — force synchronous PDB writes (needed for parallel builds)
+    # /bigobj — raise COFF section limit from 65,535 to ~16M sections.
+    #           Required because FolioNote's large header-only architecture
+    #           causes main.cpp's translation unit to exceed the default limit
+    #           (MSVC error C1128).
+    add_compile_options(/FS /bigobj)
 endif()
 
 # System OpenGL

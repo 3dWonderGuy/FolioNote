@@ -78,7 +78,7 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     // 1. Determine which device is "Active" (Arbitration).
     // 2. Decide the user's intent (Inking, Eraser, Panning, etc).
     // 3. Dispatch the high-level semantic events to the Canvas and Document.
-    bool imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !wasCanvasImageHovered);
+    bool imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !(wasCanvasImageHovered || stateMachine.isPdfCanvasHovered));
     
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         if (event.button.which != SDL_TOUCH_MOUSEID && event.button.which != SDL_PEN_MOUSEID) {
