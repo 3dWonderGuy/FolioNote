@@ -412,6 +412,7 @@ public:
      */
     static BLPattern CreateHatchPattern(ShapeFillType type,
                                         const BLRgba32& color,
+                                        double strokeWidth,
                                         double spacingMm = 3.0);
 
     /**

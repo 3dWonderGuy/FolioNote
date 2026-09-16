@@ -28,6 +28,7 @@
 #include <algorithm>
 
 #include "core/objects/primitives/shape_container.hpp"
+#include "core/objects/primitives/path_dasher.hpp"
 #include "core/engine/canvas_transform.hpp"  // for Viewport
 
 // Prevent MSVC min/max macro conflicts with <algorithm>
@@ -436,7 +437,15 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
 
         } else if (fillType >= ShapeFillType::HatchDiagonal &&
                    fillType <= ShapeFillType::HatchDots) {
-            BLPattern hatch = CreateHatchPattern(fillType, fillColor);
+            // Dynamic scale: decrease number of lines if shape is very small
+            double minDim = std::min(worldWidth, worldHeight);
+            double dynamicSpacing = 3.0; // Default spacing
+            if (minDim > 0 && minDim < 20.0) {
+                // If the shape is smaller than 20mm, increase spacing relatively so lines don't bleed
+                dynamicSpacing = 3.0 * (20.0 / minDim); 
+            }
+            
+            BLPattern hatch = CreateHatchPattern(fillType, fillColor, strokeWidth, dynamicSpacing);
             ctx.set_fill_style(hatch);
             ctx.fill_path(path);
         }
@@ -458,31 +467,19 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
         double det         = std::abs(transform.m00 * transform.m11
                                      - transform.m01 * transform.m10);
         double scaleFactor = (det > 1e-6) ? std::sqrt(det) : 1.0;
-        ctx.set_stroke_width(strokeWidth / scaleFactor);
+        double effWidth    = strokeWidth / scaleFactor;
+        ctx.set_stroke_width(effWidth);
         ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
         ctx.set_stroke_join(BL_STROKE_JOIN_ROUND);
 
-        // Dash/dot arrays for non-solid outlines
-        if (outlineType == ShapeOutlineType::Dashed) {
-            BLArray<double> dashes;
-            dashes.append(strokeWidth * 4.0);
-            dashes.append(strokeWidth * 2.0);
-            ctx.set_stroke_dash_array(dashes);
-        } else if (outlineType == ShapeOutlineType::Dotted) {
-            BLArray<double> dashes;
-            dashes.append(strokeWidth * 1.2);
-            dashes.append(strokeWidth * 2.0);
-            ctx.set_stroke_dash_array(dashes);
-        } else if (outlineType == ShapeOutlineType::DashDot) {
-            BLArray<double> dashes;
-            dashes.append(strokeWidth * 4.0);
-            dashes.append(strokeWidth * 2.0);
-            dashes.append(strokeWidth * 1.2);
-            dashes.append(strokeWidth * 2.0);
-            ctx.set_stroke_dash_array(dashes);
+        if (outlineType == ShapeOutlineType::Solid) {
+            ctx.stroke_path(path);
+        } else {
+            BLPath dashedPath;
+            PathDasher::BuildDashedPath(path, dashedPath, outlineType, effWidth);
+            ctx.stroke_path(dashedPath);
         }
 
-        ctx.stroke_path(path);
         ctx.restore();
     }
 
@@ -510,6 +507,7 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
  */
 BLPattern ShapeObject::CreateHatchPattern(ShapeFillType type,
                                            const BLRgba32& color,
+                                           double strokeWidth,
                                            double spacingMm) {
     constexpr int sz = 32;
     BLImage   img(sz, sz, BL_FORMAT_PRGB32);
@@ -520,7 +518,8 @@ BLPattern ShapeObject::CreateHatchPattern(ShapeFillType type,
     if (strokeCol.a() == 0) strokeCol = BLRgba32(0x18, 0x1A, 0x20, 0xFF);
 
     ictx.set_stroke_style(strokeCol);
-    ictx.set_stroke_width(2.0);
+    // Use the outline's strokeWidth, clamped to a reasonable minimum to prevent disappearing lines
+    ictx.set_stroke_width(std::max(0.5, strokeWidth));
     ictx.set_stroke_caps(BL_STROKE_CAP_SQUARE);
 
     if (type == ShapeFillType::HatchDiagonal || type == ShapeFillType::HatchCross) {

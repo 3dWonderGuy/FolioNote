@@ -13,6 +13,7 @@
 #include <SDL3/SDL.h>
 #include "core/document/document_session.hpp"
 #include "core/document/canvas_page.hpp"
+#include "core/engine/live_layer_pipeline.hpp"
 #include "core/render/pdf_renderer.hpp"
 #include "core/render/pdf_text_layer.hpp"
 #include "input/input_state_machine.hpp"
@@ -152,19 +153,7 @@ public:
     // Dedicated PDF content area hover telemetry
     bool isPdfContentHovered = false;
 
-    // -------------------------------------------------------------------------
-    // LIVE FREEHAND INKING TELEMETRY ON PDF PAGES
-    // -------------------------------------------------------------------------
-    struct LivePdfPoint {
-        double worldX = 0.0;   // In world millimeters (continuous document coordinates)
-        double worldY = 0.0;   // In world millimeters (continuous document coordinates)
-        float pressure = 1.0f; // Pen pressure (0.0 to 1.0)
-        double timeSec = 0.0;  // Timestamp in seconds
-    };
-    bool isLiveDrawing = false;
-    int liveDrawingPageIndex = -1;
-    std::vector<LivePdfPoint> livePdfStroke;
-    PenTool livePenTool;
+
 
     /**
      * @brief Computes the cumulative vertical offset in millimeters of page @p pageIndex.
@@ -1206,9 +1195,19 @@ public:
 
                             for (const auto& strk : ink->strokes) {
                                 float alpha = ink->isHighlighter ? 0.45f : (strk.color.a() / 255.0f);
-                                ImU32 strokeCol = ImGui::ColorConvertFloat4ToU32(
-                                    ImVec4(strk.color.r() / 255.0f, strk.color.g() / 255.0f, strk.color.b() / 255.0f, alpha)
-                                );
+                                ImVec4 baseCol(strk.color.r() / 255.0f, strk.color.g() / 255.0f, strk.color.b() / 255.0f, alpha);
+                                // Mathematical contrast inversion for dark mode: dark ink becomes light, colored ink preserves hue
+                                if (currentInvertState) {
+                                    float maxC = std::max({ baseCol.x, baseCol.y, baseCol.z });
+                                    float minC = std::min({ baseCol.x, baseCol.y, baseCol.z });
+                                    float lightness = (maxC + minC) * 0.5f;
+                                    if (lightness < 0.25f) {
+                                        baseCol.x = 1.0f - baseCol.x;
+                                        baseCol.y = 1.0f - baseCol.y;
+                                        baseCol.z = 1.0f - baseCol.z;
+                                    }
+                                }
+                                ImU32 strokeCol = ImGui::ColorConvertFloat4ToU32(baseCol);
                                 for (const auto& seg : strk.segments) {
                                     ImVec2 pt0 = PageMmToScreen(i, seg.p0.x, seg.p0.y, pMin, pxPerMm);
                                     ImVec2 pt1 = PageMmToScreen(i, seg.p1.x, seg.p1.y, pMin, pxPerMm);
@@ -1219,22 +1218,7 @@ public:
                             }
                         }
 
-                        // -------------------------------------------------------------
-                        // 1B-3. RENDER LIVE IN-PROGRESS DRAWING STROKE
-                        // -------------------------------------------------------------
-                        if (isLiveDrawing && liveDrawingPageIndex == i && livePdfStroke.size() >= 2) {
-                            float alpha = (livePenTool.penType == PenType::Highlighter) ? 0.45f : (livePenTool.color.a() / 255.0f);
-                            ImU32 liveCol = ImGui::ColorConvertFloat4ToU32(
-                                ImVec4(livePenTool.color.r() / 255.0f, livePenTool.color.g() / 255.0f, livePenTool.color.b() / 255.0f, alpha)
-                            );
-                            for (size_t p = 1; p < livePdfStroke.size(); ++p) {
-                                ImVec2 pt0 = PageMmToScreen(i, livePdfStroke[p - 1].worldX, livePdfStroke[p - 1].worldY, pMin, pxPerMm);
-                                ImVec2 pt1 = PageMmToScreen(i, livePdfStroke[p].worldX, livePdfStroke[p].worldY, pMin, pxPerMm);
-                                float thick = static_cast<float>(livePenTool.baseSize * livePdfStroke[p].pressure * pxPerMm);
-                                if (thick < 1.0f) thick = 1.0f;
-                                dl->AddLine(pt0, pt1, liveCol, thick);
-                            }
-                        }
+
 
                         // -------------------------------------------------------------
                         // RIGHT-CLICK CONTEXT MENU DETECTION ON THIS PAGE
@@ -1281,24 +1265,7 @@ public:
                         }
 
                         if (isHovered && !erasedHighlight) {
-                            if (isDrawing) {
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
-                                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyCtrl) {
-                                    isLiveDrawing = true;
-                                    liveDrawingPageIndex = i;
-                                    livePdfStroke.clear();
-                                    livePenTool = sm.palette.GetActivePen();
-                                    if (activeTool == PdfToolMode::FreeHighlight) {
-                                        livePenTool.penType = PenType::Highlighter;
-                                        livePenTool.color = BLRgba32(255, 235, 59, 115);
-                                        livePenTool.baseSize = 6.0;
-                                    }
-                                    Point2D wPt = ScreenToPageMm(i, mousePos.x, mousePos.y, pMin, pxPerMm);
-                                    float pressure = (sm.ActiveDevice == DeviceType::Stylus) ? sm.pen.pressure : 1.0f;
-                                    livePdfStroke.push_back({ wPt.x, wPt.y, pressure, sm.latestEventTimeSec });
-                                }
-                            }
-                            else if (isErasing) {
+                            if (isErasing) {
                                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                                 if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
                                     Point2D wPt = ScreenToPageMm(i, mousePos.x, mousePos.y, pMin, pxPerMm);
@@ -1335,19 +1302,6 @@ public:
                                         selectedPageIndex = -1;
                                         currentSelection.Clear();
                                     }
-                                }
-                            }
-                        }
-
-                        // Continuous inking movement
-                        if (isLiveDrawing && liveDrawingPageIndex == i && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                            Point2D wPt = ScreenToPageMm(i, mousePos.x, mousePos.y, pMin, pxPerMm);
-                            float pressure = (sm.ActiveDevice == DeviceType::Stylus) ? sm.pen.pressure : 1.0f;
-                            if (!livePdfStroke.empty()) {
-                                double dx = wPt.x - livePdfStroke.back().worldX;
-                                double dy = wPt.y - livePdfStroke.back().worldY;
-                                if (dx * dx + dy * dy > 0.01) {
-                                    livePdfStroke.push_back({ wPt.x, wPt.y, pressure, sm.latestEventTimeSec });
                                 }
                             }
                         }
@@ -1425,25 +1379,7 @@ public:
 
             // Pointer release handling
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                if (isLiveDrawing) {
-                    if (livePdfStroke.size() >= 2 && activePage) {
-                        std::vector<Segment1D> segments;
-                        segments.reserve(livePdfStroke.size() - 1);
-                        for (size_t s = 1; s < livePdfStroke.size(); ++s) {
-                            Segment1D seg;
-                            seg.p0 = Point2D{ livePdfStroke[s - 1].worldX, livePdfStroke[s - 1].worldY };
-                            seg.p1 = Point2D{ livePdfStroke[s].worldX, livePdfStroke[s].worldY };
-                            float widthMm = static_cast<float>(livePenTool.baseSize * livePdfStroke[s].pressure);
-                            seg.width = std::max(0.2f, widthMm);
-                            segments.push_back(seg);
-                        }
-                        session.CommitStroke(std::move(segments), livePenTool);
-                        activePage->isModified = true;
-                    }
-                    livePdfStroke.clear();
-                    isLiveDrawing = false;
-                    liveDrawingPageIndex = -1;
-                }
+
 
                 if (isSelectingText && currentSelection.hasSelection && selectedPageIndex >= 0) {
                     if (activeTool == PdfToolMode::Highlight) {

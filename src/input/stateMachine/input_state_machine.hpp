@@ -171,6 +171,10 @@ public:
         }
     }
 
+    [[nodiscard]] bool IsShapeDrawingActive() const noexcept {
+        return currentAction == InteractionState::DrawingShape;
+    }
+
     void SetToolForDevice(DeviceType device, InteractionState tool) noexcept {
         switch (device) {
             case DeviceType::Stylus: stylusTool.savedTool = tool; break;

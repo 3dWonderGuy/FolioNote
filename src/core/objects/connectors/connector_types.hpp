@@ -46,13 +46,13 @@ enum class ArrowHeadType : uint8_t {
 /**
  * @brief Routing / path style for multi-point smart connectors.
  *
- * Currently only Straight (direct line segment) is implemented.
- * Curved and Elbow are reserved for phase 2 connector routing.
+ * Supports Straight (direct segment), Curved (smooth cubic S-curve),
+ * and Elbow (orthogonal Manhattan right-angle routing).
  */
 enum class ConnectorStyle : uint8_t {
-    Straight = 0,  ///< Direct 2-point line segment (currently the only mode)
-    Curved   = 1,  ///< Cubic bezier routing (reserved — not yet implemented)
-    Elbow    = 2,  ///< Right-angle elbow routing (reserved — not yet implemented)
+    Straight = 0,  ///< Direct 2-point line segment 
+    Curved   = 1,  ///< Cubic bezier routing 
+    Elbow    = 2,  ///< Right-angle elbow routing
 };
 
 } // namespace Folio
