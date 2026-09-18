@@ -50,6 +50,7 @@ AppSupportURL={#MyAppURL}/issues
 AppUpdatesURL={#MyAppURL}/releases
 DefaultDirName={autopf}\{#MyAppName}
 UsePreviousAppDir=yes
+ChangesAssociations=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline dialog
@@ -124,15 +125,29 @@ Root: HKA; Subkey: "Software\Classes\FolioNote.NotebookPackage\shell\open\comman
 ; Option to launch FolioNote immediately following setup
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
-; Register the "Print to FolioNote" virtual printer if task is selected
-; Uses Windows built-in 'Microsoft Print To PDF' driver with 'FILE:' port for Chromium/Edge sandbox compatibility.
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue)) {{ Add-Printer -Name 'Print to FolioNote' -DriverName 'Microsoft Print To PDF' -PortName 'FILE:' }}; Set-Printer -Name 'Print to FolioNote' -Comment 'Virtual PDF printer for importing documents into FolioNote' -ErrorAction SilentlyContinue; Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue"""; StatusMsg: "Configuring 'Print to FolioNote' virtual printer..."; Tasks: printtofolionote; Flags: runhidden
-
 [UninstallRun]
 ; Clean up "Print to FolioNote" virtual printer on uninstallation
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (Get-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue) {{ Remove-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue }}; Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue"""; StatusMsg: "Removing 'Print to FolioNote' virtual printer..."; RunOnceId: "RemovePrintToFolioNote"; Flags: runhidden
 
 [Code]
+// ==============================================================================
+// VIRTUAL PRINTER REGISTRATION PROCEDURE
+// ==============================================================================
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if WizardIsTaskSelected('printtofolionote') then
+    begin
+      Exec('powershell.exe',
+           '-NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Printer -Name ''Print to FolioNote'' -ErrorAction SilentlyContinue)) { Add-Printer -Name ''Print to FolioNote'' -DriverName ''Microsoft Print To PDF'' -PortName ''FILE:'' }; Set-Printer -Name ''Print to FolioNote'' -Comment ''Virtual PDF printer for importing documents into FolioNote''; Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue"',
+           '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
+  end;
+end;
+
 // ==============================================================================
 // HELPER: CHECK IF FOLIONOTE EXECUTABLE IS RUNNING
 // ==============================================================================
