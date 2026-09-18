@@ -169,7 +169,8 @@ public:
      * 1. Resolves global app directory root and creates subdirectories (Libraries/, config/, cache/, exports/).
      * 2. Configures and registers primary default library bundle (Libraries/Default.foliolib).
      * 3. Restores registered custom libraries from `config/settings.json`.
-     * 4. Scans disk directories and refreshes notebook catalogs for all registered libraries.
+     * 4. Auto-discovers any physical `.foliolib` library bundles inside the app's default `Libraries/` directory.
+     * 5. Scans disk directories and refreshes notebook catalogs for all registered libraries.
      *
      * @param globalAppRoot Absolute path to the global application directory (e.g. Documents/FolioNote).
      */
@@ -200,10 +201,14 @@ public:
     bool AddLibrary(const std::string& name, const std::string& path);
 
     /**
-     * @brief Unregisters a custom library from the application.
+     * @brief Unregisters an external custom library from the application.
+     *
+     * Safety Invariant:
+     * - Protects all internal libraries residing inside the default `FolioNote/Libraries/` folder from being unlinked.
+     * - Only unlinks external custom libraries stored outside the default library directory.
      *
      * @param index Zero-based index into the `libraries` vector.
-     * @return true if successfully unregistered, false if index is out of bounds or is default.
+     * @return true if successfully unregistered; false if index is out of bounds or points to an internal library.
      */
     bool RemoveLibrary(size_t index);
 
