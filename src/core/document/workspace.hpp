@@ -55,23 +55,37 @@ public:
     // -------------------------------------------------------------------------
 
     /**
-     * @brief Scans a directory for existing .notebook folders or creates a default demo notebook.
-     * @param directoryPath Target directory on disk containing notebook packages.
+     * @brief Scans for notebook packages inside .foliolib library bundles within the workspace.
+     * 
+     * INVARIANT ENFORCEMENT:
+     * - The global application folder (e.g. Documents/FolioNote) is NOT a library itself.
+     * - All notebooks MUST reside inside a ".foliolib" bundle directory (e.g. Libraries/Default.foliolib).
+     * - If no notebooks exist, generates a default DemoBook inside Default.foliolib.
+     * - If any legacy notebooks exist loose at the root, migrates them into Default.foliolib.
+     *
+     * @param directoryPath Global application document directory path (e.g. Documents/FolioNote).
      */
     void LoadWorkspace(const std::string& directoryPath) {
         notebooks.clear();
         bool foundAny = false;
 
         std::filesystem::path dir(directoryPath);
-        while (!dir.empty() && (dir.extension() == ".notebook" || dir.filename().string().find(".notebook") != std::string::npos)) {
+        while (!dir.empty() && (dir.extension() == ".notebook" || dir.extension() == ".foliolib" || dir.filename().string().find(".notebook") != std::string::npos)) {
             dir = dir.parent_path();
         }
         workspaceDirectory = dir.empty() ? directoryPath : dir.string();
 
         std::error_code ec;
-        if (std::filesystem::exists(directoryPath, ec) && std::filesystem::is_directory(directoryPath, ec)) {
-            // 1. Scan the directory for existing .notebook folders
-            for (const auto& entry : std::filesystem::directory_iterator(directoryPath, ec)) {
+        std::filesystem::path appRoot(workspaceDirectory);
+        std::filesystem::path librariesDir = appRoot / "Libraries";
+        std::filesystem::path defaultLib = librariesDir / "Default.foliolib";
+
+        std::filesystem::create_directories(defaultLib, ec);
+
+        // Helper lambda to scan a .foliolib bundle for .notebook packages
+        auto scanLibraryFolder = [this, &foundAny, &ec](const std::filesystem::path& libPath) {
+            if (!std::filesystem::exists(libPath, ec) || !std::filesystem::is_directory(libPath, ec)) return;
+            for (const auto& entry : std::filesystem::directory_iterator(libPath, ec)) {
                 if (std::filesystem::is_directory(entry.status()) && entry.path().extension() == ".notebook") {
                     if (auto nb = repository.LoadNotebookHierarchy(entry.path().string())) {
                         notebooks.push_back(nb);
@@ -79,20 +93,62 @@ public:
                     }
                 }
             }
+        };
+
+        // 1. Scan the default library bundle: FolioNote/Libraries/Default.foliolib
+        scanLibraryFolder(defaultLib);
+
+        // 2. Scan any other .foliolib bundles or unpacked library folders inside FolioNote/Libraries/
+        if (std::filesystem::exists(librariesDir, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(librariesDir, ec)) {
+                if (std::filesystem::is_directory(entry.status())) {
+                    if (entry.path().extension() == ".foliolib" || std::filesystem::exists(entry.path() / "library.meta", ec)) {
+                        if (entry.path() != defaultLib) {
+                            scanLibraryFolder(entry.path());
+                        }
+                    }
+                }
+            }
         }
 
-        // 2. Auto-generate default notebook if none exist
+        // 3. Scan any libraries residing directly in appRoot
+        if (std::filesystem::exists(appRoot, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(appRoot, ec)) {
+                if (std::filesystem::is_directory(entry.status())) {
+                    if (entry.path().extension() == ".foliolib" || std::filesystem::exists(entry.path() / "library.meta", ec)) {
+                        scanLibraryFolder(entry.path());
+                    }
+                }
+            }
+        }
+
+        // 4. Migration: If any legacy .notebook was stored loose directly in appRoot, move it into Default.foliolib
+        if (std::filesystem::exists(appRoot, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(appRoot, ec)) {
+                if (std::filesystem::is_directory(entry.status()) && entry.path().extension() == ".notebook") {
+                    std::filesystem::path migratedPath = defaultLib / entry.path().filename();
+                    if (!std::filesystem::exists(migratedPath, ec)) {
+                        std::filesystem::rename(entry.path(), migratedPath, ec);
+                        if (!ec) {
+                            if (auto nb = repository.LoadNotebookHierarchy(migratedPath.string())) {
+                                notebooks.push_back(nb);
+                                foundAny = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Auto-generate default DemoBook inside Default.foliolib if no notebooks exist anywhere
         if (!foundAny) {
-            std::filesystem::create_directories(directoryPath, ec);
-            std::string demoPath = (std::filesystem::path(directoryPath) / "DemoBook.notebook").string();
+            std::string demoPath = (defaultLib / "DemoBook.notebook").string();
             
-            // Create in memory
             auto demoNb = std::make_shared<Notebook>("DemoBook", ImVec4(0.20f, 0.48f, 0.92f, 1.0f));
             demoNb->filePath = demoPath;
 
-            // Immediately create physical package folder + SQLite file and write initial schema
             if (repository.OpenNotebookPackage(demoPath)) {
-                repository.SaveNotebookAsync(demoNb); // Writes metadata + default section + blank page
+                repository.SaveNotebookAsync(demoNb);
             }
 
             notebooks.push_back(demoNb);
