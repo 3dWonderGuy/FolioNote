@@ -49,6 +49,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
 AppUpdatesURL={#MyAppURL}/releases
 DefaultDirName={autopf}\{#MyAppName}
+UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline dialog
@@ -130,3 +131,98 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Com
 [UninstallRun]
 ; Clean up "Print to FolioNote" virtual printer on uninstallation
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (Get-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue) {{ Remove-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue }}; Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue"""; StatusMsg: "Removing 'Print to FolioNote' virtual printer..."; RunOnceId: "RemovePrintToFolioNote"; Flags: runhidden
+
+[Code]
+// ==============================================================================
+// HELPER: CHECK IF FOLIONOTE EXECUTABLE IS RUNNING
+// ==============================================================================
+function IsProcessRunning(const FileName: String): Boolean;
+var
+  FSWbemLocator: Variant;
+  FWMIService: Variant;
+  FWbemObjectSet: Variant;
+begin
+  Result := False;
+  try
+    FSWbemLocator := CreateOleObject('WbemScripting.SWbemLocator');
+    FWMIService := FSWbemLocator.ConnectServer('.', 'root\CIMV2');
+    FWbemObjectSet := FWMIService.ExecQuery(Format('SELECT * FROM Win32_Process WHERE Name = "%s"', [FileName]));
+    Result := (FWbemObjectSet.Count > 0);
+  except
+    Result := False;
+  end;
+end;
+
+// ==============================================================================
+// 1. NIGHTLY / EXPERIMENTAL BUILD WARNING PROMPT
+// ==============================================================================
+procedure InitializeWizard();
+var
+  VerStr: String;
+begin
+  VerStr := '{#MyAppVersion}';
+  // If version contains nightly, alpha, beta, or dev, present experimental warning dialog
+  if (Pos('nightly', LowerCase(VerStr)) > 0) or (Pos('alpha', LowerCase(VerStr)) > 0) or (Pos('beta', LowerCase(VerStr)) > 0) or (Pos('dev', LowerCase(VerStr)) > 0) then
+  begin
+    MsgBox('⚠️ WARNING: NIGHTLY / EXPERIMENTAL BUILD (' + VerStr + ')' + #13#10 + #13#10 +
+           'This build is compiled automatically for testing and evaluation purposes.' + #13#10 +
+           'Features may be incomplete, unstable, or contain experimental code changes.' + #13#10 + #13#10 +
+           'Please back up your important notes and notebook documents before proceeding.', 
+           mbInformation, MB_OK);
+  end;
+end;
+
+// ==============================================================================
+// 2. USER PROMPT FOR RUNNING APP & PREVIOUS VERSION UNINSTALLATION
+// ==============================================================================
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+  UninstallString: String;
+  AppGuid: String;
+  UserChoice: Integer;
+begin
+  Result := True;
+
+  // 1. Check if FolioNote.exe is currently running and ask user to save & close it
+  while IsProcessRunning('{#MyAppExeName}') do
+  begin
+    UserChoice := MsgBox('FolioNote is currently running.' + #13#10 + #13#10 +
+                         'Please save your work and close FolioNote before continuing installation.' + #13#10 + #13#10 +
+                         'Click [Retry] after closing FolioNote, or [Cancel] to abort setup.',
+                         mbConfirmation, MB_RETRYCANCEL);
+    if UserChoice = IDCANCEL then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+
+  // 2. Detect previous version registry entry
+  AppGuid := '{C8D49E22-5B90-4824-B831-75A0E63198AE}';
+  if RegQueryStringValue(HKLM64, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + AppGuid + '_is1', 'UninstallString', UninstallString) or
+     RegQueryStringValue(HKCU64, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + AppGuid + '_is1', 'UninstallString', UninstallString) or
+     RegQueryStringValue(HKLM32, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + AppGuid + '_is1', 'UninstallString', UninstallString) or
+     RegQueryStringValue(HKCU32, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + AppGuid + '_is1', 'UninstallString', UninstallString) then
+  begin
+    UninstallString := RemoveQuotes(UninstallString);
+    if FileExists(UninstallString) then
+    begin
+      // Ask user for permission before uninstalling previous version
+      UserChoice := MsgBox('A previous version of FolioNote was detected on this computer.' + #13#10 + #13#10 +
+                           'Would you like to uninstall the previous version before installing this update?' + #13#10 + #13#10 +
+                           '(Note: Your saved notebooks, notes, and libraries will remain safe and untouched).' + #13#10 + #13#10 +
+                           'Click [Yes] to remove previous version, [No] to install over it, or [Cancel] to abort.',
+                           mbConfirmation, MB_YESNOCANCEL);
+      if UserChoice = IDYES then
+      begin
+        Exec(UninstallString, '/SILENT /NORESTART /SUPPRESSMSGBOXES', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      end
+      else if UserChoice = IDCANCEL then
+      begin
+        Result := False;
+        Exit;
+      end;
+    end;
+  end;
+end;

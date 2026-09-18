@@ -131,6 +131,18 @@ jobs:
           # Copy installer executable to root so artifact and release remain flat
           Copy-Item "dist-installer/*.exe" -Destination "." -Force
 
+      - name: Sign Executable & Installer via SignPath (3dwonderguy)
+        uses: signpath/github-action-submit-signing-request@v1
+        if: (startsWith(github.ref, 'refs/tags/') || github.event_name == 'release') && secrets.SIGNPATH_API_TOKEN != ''
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: 'folionote'
+          signing-policy-slug: 'release-signing'
+          github-artifact-name: 'FolioNote-Windows-Build'
+          wait-for-completion: 'true'
+          output-directory: '.'
+
       - name: Upload Artifacts to GitHub Actions
         uses: actions/upload-artifact@v4
         with:

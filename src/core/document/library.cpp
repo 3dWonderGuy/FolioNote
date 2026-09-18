@@ -311,6 +311,32 @@ void LibraryManager::Init(const std::string& globalAppRoot) {
     // 5. Restore custom libraries from config/settings.json
     LoadConfig();
 
+    // 6. Auto-discover any physical .foliolib bundles inside the app's default Libraries/ folder
+    std::string librariesDir = FileManager::GetLibrariesDirectory();
+    auto libEntries = FileManager::ListEntries(librariesDir, FOLIO_LIBRARY_EXTENSION);
+    for (const auto& entry : libEntries) {
+        if (entry.type == FileType::Directory && IsLibraryFolder(entry.fullPath)) {
+            bool alreadyRegistered = false;
+            for (const auto& existing : libraries) {
+                if (FileManager::AreEquivalent(existing.rootPath, entry.fullPath)) {
+                    alreadyRegistered = true;
+                    break;
+                }
+            }
+            if (!alreadyRegistered) {
+                LibraryInfo autoLib;
+                autoLib.id = "lib_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+                autoLib.name = ExtractLibraryNameFromPath(entry.fullPath);
+                autoLib.rootPath = entry.fullPath;
+                autoLib.isDefault = false;
+                autoLib.isAccessible = true;
+                ScanLibraryNotebooks(autoLib);
+                libraries.push_back(autoLib);
+                LOG_INFO(LibraryManager, "Auto-discovered library folder in app root: '" + entry.fullPath + "'");
+            }
+        }
+    }
+
     // 7. Refresh all library catalogs
     RefreshAll();
 
@@ -459,6 +485,14 @@ bool LibraryManager::RemoveLibrary(size_t index) {
 
     if (libraries[index].isDefault) {
         LOG_WARN(LibraryManager, "RemoveLibrary rejected: Cannot unregister the default primary library.");
+        return false;
+    }
+
+    // Protect built-in libraries residing inside the app's default Libraries/ folder
+    std::string defaultLibDir = FileManager::GetLibrariesDirectory();
+    std::string libParent = FileManager::GetParentPath(libraries[index].rootPath);
+    if (FileManager::AreEquivalent(libParent, defaultLibDir)) {
+        LOG_WARN(LibraryManager, "RemoveLibrary rejected: Cannot unregister internal library inside default Libraries directory: '" + libraries[index].rootPath + "'");
         return false;
     }
 
