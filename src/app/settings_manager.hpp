@@ -10,6 +10,7 @@
 #include "imgui.h"
 #include "input/pen_palette.hpp"
 #include "utils/file_loader.hpp"
+#include "utils/logger.hpp"
 
 #if defined(__ANDROID__)
 #include <SDL3/SDL.h>
