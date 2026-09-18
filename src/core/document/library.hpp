@@ -1,3 +1,27 @@
+/**
+ * =========================================================================================
+ * @file library.hpp
+ * @brief Manages notebook storage libraries, directory scanning, and notebook creation.
+ * =========================================================================================
+ *
+ * ARCHITECTURAL ROLE:
+ * - A Library is a root filesystem folder containing one or more `.notebook` packages.
+ * - The LibraryManager tracks:
+ *     1. Default primary library (typically `<Documents>/FolioNote`).
+ *     2. Custom user-added secondary libraries (e.g. secondary drives, shared folders, OneDrive).
+ *     3. Standalone loose notebooks opened from arbitrary filesystem paths.
+ * - Manages disk operations:
+ *     - Scans directory paths to discover `.notebook` packages (`ScanLibraryNotebooks`).
+ *     - Prevents recursion errors by sanitizing paths so a library never roots inside a notebook (`SanitizeLibraryRoot`).
+ *     - Creates new notebook packages on disk with SQLite initialization (`CreateNewNotebook`).
+ *     - Deep-copies entire notebook packages including `.ink` vector files (`SaveAsCopy`).
+ *     - Persists user library configurations across sessions (`config/libraries.cfg`).
+ *
+ * POTENTIAL FUTURE ENHANCEMENTS:
+ * - Cloud Library Sync: Integration with WebDAV, OneDrive, Google Drive, or Nextcloud.
+ * - Auto-Watch File Changes: Use OS filesystem watcher to auto-reload notebooks modified externally.
+ */
+
 #pragma once
 #include <string>
 #include <vector>
@@ -10,21 +34,37 @@
 #include "core/storage/page_repository.hpp"
 #include "utils/logger.hpp"
 
+/**
+ * @struct LibraryInfo
+ * @brief Metadata for a recognized notebook library directory on the filesystem.
+ */
 struct LibraryInfo {
-    std::string id;
-    std::string name;
-    std::string rootPath;
-    bool isDefault = false;
-    std::vector<std::string> notebookPaths;
+    std::string id;                         ///< Unique in-memory identifier (e.g. "default_main", "lib_1")
+    std::string name;                       ///< User-visible display label (e.g. "Main Library", "School Notes")
+    std::string rootPath;                   ///< Absolute directory path containing .notebook packages
+    bool isDefault = false;                 ///< True if this is the primary non-removable default documents library
+    std::vector<std::string> notebookPaths; ///< Cached absolute paths to all .notebook packages discovered in this root
 };
 
+/**
+ * @class LibraryManager
+ * @brief Manages discovering, loading, creating, and duplicating notebooks across multiple root directories.
+ */
 class LibraryManager {
 public:
-    std::vector<LibraryInfo> libraries;
-    std::vector<std::string> standaloneNotebookPaths;
-    std::string defaultLibraryPath;
+    std::vector<LibraryInfo> libraries;               ///< All registered library roots
+    std::vector<std::string> standaloneNotebookPaths; ///< Loose .notebook files opened directly outside libraries
+    std::string defaultLibraryPath;                  ///< Sanitized path to the default Documents/FolioNote root
 
-    // Helper to sanitize any path so it is never pointing to or inside a .notebook folder
+    /**
+     * @brief Sanitizes any filesystem path to ensure it never points to or inside a .notebook package folder.
+     * 
+     * If a path points inside a .notebook folder, climbs up to its parent.
+     * If the resulting path is empty or invalid, falls back to the system Documents folder.
+     *
+     * @param inputPath Raw user or config directory path.
+     * @return Cleaned, safe library directory path.
+     */
     static std::string SanitizeLibraryRoot(const std::string& inputPath) {
         std::filesystem::path root(inputPath);
         while (!root.empty() && (root.extension() == ".notebook" || root.filename().string().find(".notebook") != std::string::npos)) {

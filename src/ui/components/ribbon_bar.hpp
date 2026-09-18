@@ -188,6 +188,10 @@ public:
             case Folio::ShapeType::RegularPolygon: return "Polygon";
             case Folio::ShapeType::Heart: return "Heart";
             case Folio::ShapeType::Cloud: return "Cloud";
+            case Folio::ShapeType::SineWave: return "Sine Wave";
+            case Folio::ShapeType::SquareWave: return "Square Wave";
+            case Folio::ShapeType::TriangleWave: return "Triangle Wave";
+            case Folio::ShapeType::RightTriangleWave: return "Right Tri Wave";
             default: return "Shape";
         }
     }
@@ -230,7 +234,11 @@ public:
             { Folio::ShapeType::Triangle, "Triangle", "Triangle: Isosceles triangle" },
             { Folio::ShapeType::RightTriangle, "Right Triangle", "Right Triangle: 90-degree orthogonal triangle" },
             { Folio::ShapeType::RegularPolygon, "Polygon", "Regular Polygon: Multi-sided polygon (slider adjustable 3 to 32 sides)" },
-            { Folio::ShapeType::Star, "Star", "Star: 5-point star" }
+            { Folio::ShapeType::Star, "Star", "Star: 5-point star" },
+            { Folio::ShapeType::SineWave, "Sine Wave", "Sine Wave: Harmonic sinusoidal waveform; stretch length to adjust frequency, stretch height to adjust amplitude" },
+            { Folio::ShapeType::SquareWave, "Square Wave", "Square Wave: Digital pulse train waveform; stretch length to adjust frequency, stretch height to adjust amplitude" },
+            { Folio::ShapeType::TriangleWave, "Triangle Wave", "Triangle Wave: Symmetric linear triangular waveform; stretch length to adjust frequency, stretch height to adjust amplitude" },
+            { Folio::ShapeType::RightTriangleWave, "Right Tri Wave", "Right Triangle Wave: Sawtooth waveform with switchable right angle; stretch length to adjust frequency, stretch height to adjust amplitude" }
         };
 
         const ImVec2 btnSize(42.0f, 42.0f);
@@ -3452,6 +3460,10 @@ public:
                                          selectedShape->shapeType == Folio::ShapeType::Star ||
                                          selectedShape->shapeType == Folio::ShapeType::Hexagon ||
                                          selectedShape->shapeType == Folio::ShapeType::RegularPolygon ||
+                                         selectedShape->shapeType == Folio::ShapeType::SineWave ||
+                                         selectedShape->shapeType == Folio::ShapeType::SquareWave ||
+                                         selectedShape->shapeType == Folio::ShapeType::TriangleWave ||
+                                         selectedShape->shapeType == Folio::ShapeType::RightTriangleWave ||
                                          selectedShape->shapeType == Folio::ShapeType::Line ||
                                          selectedShape->shapeType == Folio::ShapeType::LineArrow ||
                                          selectedShape->shapeType == Folio::ShapeType::Arrow ||
@@ -3523,6 +3535,31 @@ public:
                                         if (ImGui::SliderInt("Sides", &sides, 3, 32)) {
                                             selectedShape->param1 = static_cast<double>(sides);
                                             canvas.shapeCreation.polygonSides = sides;
+                                            canvas.needsFullRebake = true;
+                                            canvas.isDirty = true;
+                                        }
+                                    } else if (selectedShape->shapeType == Folio::ShapeType::SineWave ||
+                                               selectedShape->shapeType == Folio::ShapeType::SquareWave ||
+                                               selectedShape->shapeType == Folio::ShapeType::TriangleWave) {
+                                        float cycles = static_cast<float>(selectedShape->param1);
+                                        if (cycles < 0.5f) cycles = 3.0f;
+                                        if (ImGui::SliderFloat("Cycles", &cycles, 1.0f, 20.0f, "%.1f")) {
+                                            selectedShape->param1 = static_cast<double>(cycles);
+                                            canvas.needsFullRebake = true;
+                                            canvas.isDirty = true;
+                                        }
+                                    } else if (selectedShape->shapeType == Folio::ShapeType::RightTriangleWave) {
+                                        float cycles = static_cast<float>(selectedShape->param1);
+                                        if (cycles < 0.5f) cycles = 3.0f;
+                                        if (ImGui::SliderFloat("Cycles", &cycles, 1.0f, 20.0f, "%.1f")) {
+                                            selectedShape->param1 = static_cast<double>(cycles);
+                                            canvas.needsFullRebake = true;
+                                            canvas.isDirty = true;
+                                        }
+                                        static const char* s_sideNames[] = { "Right", "Left" };
+                                        int sideIdx = (selectedShape->param2 < 0.5) ? 0 : 1;
+                                        if (ImGui::Combo("Right Angle Side", &sideIdx, s_sideNames, IM_ARRAYSIZE(s_sideNames))) {
+                                            selectedShape->param2 = (sideIdx == 0) ? 0.0 : 1.0;
                                             canvas.needsFullRebake = true;
                                             canvas.isDirty = true;
                                         }

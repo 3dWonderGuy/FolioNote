@@ -84,14 +84,16 @@ public:
         }
 
         std::error_code ec;
-        if (!diskPath.empty() && !std::filesystem::exists(diskPath, ec) && !fallbackDir.empty()) {
-            std::filesystem::path resolved = std::filesystem::path(fallbackDir) / pdfPath;
+        auto diskFsPath = Utf8ToPath(diskPath);
+        if (!diskPath.empty() && !std::filesystem::exists(diskFsPath, ec) && !fallbackDir.empty()) {
+            std::filesystem::path resolved = Utf8ToPath(fallbackDir) / Utf8ToPath(pdfPath);
             if (std::filesystem::exists(resolved, ec)) {
-                diskPath = resolved.string();
+                diskPath = PathToUtf8(resolved);
                 const_cast<PdfContainer*>(this)->resolvedDiskPath = diskPath;
+                diskFsPath = resolved;
             }
         }
-        if (diskPath.empty() || !std::filesystem::exists(diskPath, ec)) {
+        if (diskPath.empty() || !std::filesystem::exists(diskFsPath, ec)) {
             return;
         }
 

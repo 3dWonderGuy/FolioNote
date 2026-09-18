@@ -18,10 +18,9 @@ if(MSVC)
     set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
     # /FS    — force synchronous PDB writes (needed for parallel builds)
     # /bigobj — raise COFF section limit from 65,535 to ~16M sections.
-    #           Required because FolioNote's large header-only architecture
-    #           causes main.cpp's translation unit to exceed the default limit
-    #           (MSVC error C1128).
-    add_compile_options(/FS /bigobj)
+    # /utf-8  — set both source and execution character sets to UTF-8 so that
+    #           std::string and std::filesystem::path handle Unicode/non-ASCII characters seamlessly.
+    add_compile_options(/FS /bigobj /utf-8)
 endif()
 
 # System OpenGL

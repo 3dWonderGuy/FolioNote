@@ -7,12 +7,93 @@
 #include <filesystem>
 #include "utils/logger.hpp"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+namespace Folio {
+
+/**
+ * @brief Converts a UTF-8 encoded string to a native std::filesystem::path.
+ *
+ * Unicode Conversion Mechanics on Windows:
+ * Standard C++ `std::filesystem::path(const std::string&)` assumes the native narrow
+ * encoding (the system ANSI code page CP_ACP, e.g. Windows-1252), NOT UTF-8.
+ * Passing UTF-8 strings containing multi-byte characters (such as copyright ©,
+ * registered trademark ®, accented letters, CJK characters, or emoji) directly to
+ * `std::filesystem::path` results in mojibake. For example, the UTF-8 sequence
+ * `0xC2 0xAE` ('®') gets misparsed as two ANSI characters ('Â®'), causing Windows
+ * kernel file APIs (GetFileAttributesW, CreateFileW) to return ERROR_FILE_NOT_FOUND (2).
+ *
+ * This function converts the UTF-8 string to a wide std::wstring via Win32 MultiByteToWideChar(CP_UTF8),
+ * which is then used to construct the std::filesystem::path natively with complete Unicode fidelity.
+ * On Linux, macOS, and Android where file paths are natively UTF-8, direct path construction is used.
+ *
+ * @param utf8Str UTF-8 encoded string representing a disk or relative path.
+ * @return std::filesystem::path correctly representing the path.
+ */
+inline std::filesystem::path Utf8ToPath(const std::string& utf8Str) {
+    if (utf8Str.empty()) return std::filesystem::path();
+#if defined(_WIN32)
+    int sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), static_cast<int>(utf8Str.size()), nullptr, 0);
+    if (sizeNeeded <= 0) return std::filesystem::path(utf8Str);
+    std::wstring wstr(static_cast<size_t>(sizeNeeded), 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), static_cast<int>(utf8Str.size()), &wstr[0], sizeNeeded);
+    return std::filesystem::path(std::move(wstr));
+#else
+    return std::filesystem::path(utf8Str);
+#endif
+}
+
+/**
+ * @brief Converts a std::filesystem::path to a UTF-8 encoded std::string.
+ *
+ * Unicode Conversion Mechanics on Windows:
+ * Standard `path.string()` on Windows converts the path's wide characters back into the
+ * native ANSI code page (CP_ACP), replacing any non-ANSI Unicode characters with '?'
+ * or corrupting bytes.
+ *
+ * This function converts the wide path (path.wstring()) into a UTF-8 encoded std::string
+ * via Win32 WideCharToMultiByte(CP_UTF8), preserving all characters and diacritics.
+ * On POSIX systems, `path.string()` is already UTF-8 and is returned directly.
+ *
+ * @param p The filesystem path to convert.
+ * @return UTF-8 encoded std::string.
+ */
+inline std::string PathToUtf8(const std::filesystem::path& p) {
+#if defined(_WIN32)
+    const std::wstring& wstr = p.native();
+    if (wstr.empty()) return std::string();
+    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), static_cast<int>(wstr.size()), nullptr, 0, nullptr, nullptr);
+    if (sizeNeeded <= 0) return p.string();
+    std::string str(static_cast<size_t>(sizeNeeded), 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), static_cast<int>(wstr.size()), &str[0], sizeNeeded, nullptr, nullptr);
+    return str;
+#else
+    return p.string();
+#endif
+}
+
+} // namespace Folio
+
 /**
  * @class FileLoader
  * @brief Helper utility for loading and streaming cross-platform application files
  */
 class FileLoader {
 public:
+    static inline std::filesystem::path Utf8ToPath(const std::string& utf8Str) {
+        return Folio::Utf8ToPath(utf8Str);
+    }
+    static inline std::string PathToUtf8(const std::filesystem::path& p) {
+        return Folio::PathToUtf8(p);
+    }
 
     /**
      * @brief Reads an entire file into a raw binary buffer (std::vector<uint8_t>).
@@ -118,13 +199,13 @@ public:
      * 
      * WHEN TO USE IT:
      * Use this for writing text files such as JSON configuration and settings files.
-     * @param assetRelativePath - The path to the file to write.
+     * @param assetRelativePath - The path to the file to write (UTF-8 encoded).
      * @param content - The text content to write.
      * @return true if the file was written successfully, false otherwise.
      */
     static bool WriteString(const std::string& assetRelativePath, const std::string& content) {
         std::error_code ec;
-        std::filesystem::path dirPath = std::filesystem::path(assetRelativePath).parent_path();
+        std::filesystem::path dirPath = Folio::Utf8ToPath(assetRelativePath).parent_path();
         if (!dirPath.empty() && !std::filesystem::exists(dirPath, ec)) {
             std::filesystem::create_directories(dirPath, ec);
         }
@@ -138,24 +219,61 @@ public:
 
     /**
      * @brief Computes a fast 64-bit content hash (FNV-1a) and file size for any file on disk.
+     *
+     * Mathematical Algorithm (64-bit FNV-1a):
+     * - Offset basis: 14695981039346656037 (0xcbf29ce484222325)
+     * - Prime multiplier: 1099511628211 (0x100000001b3)
+     * - State update: hash = (hash ^ byte) * prime (mod 2^64)
+     *
+     * Working Process:
+     * 1. Opens file stream via SDL_IOFromFile.
+     * 2. On Windows, if SDL_IOFromFile is unable to open a Unicode file path, falls back
+     *    to wide-character `_wfopen` via Folio::Utf8ToPath.
+     * 3. Streams data in 64KB blocks, updating the running FNV-1a hash and cumulative byte count.
+     * 4. Closes file handle safely and returns status.
+     *
+     * @param filePath Full UTF-8 path to the file on disk.
+     * @param outHash Output parameter receiving the 64-bit FNV-1a hash.
+     * @param outSize Output parameter receiving total file size in bytes.
+     * @return true if file was read and hashed successfully; false if inaccessible.
      */
     static bool ComputeFileHash64(const std::string& filePath, uint64_t& outHash, uint64_t& outSize) {
         outHash = 14695981039346656037ULL;
         outSize = 0;
         SDL_IOStream* stream = SDL_IOFromFile(filePath.c_str(), "rb");
-        if (!stream) return false;
-
-        uint8_t buffer[65536];
-        size_t bytesRead = 0;
-        while ((bytesRead = SDL_ReadIO(stream, buffer, sizeof(buffer))) > 0) {
-            outSize += bytesRead;
-            for (size_t i = 0; i < bytesRead; ++i) {
-                outHash ^= buffer[i];
-                outHash *= 1099511628211ULL;
+        if (stream) {
+            uint8_t buffer[65536];
+            size_t bytesRead = 0;
+            while ((bytesRead = SDL_ReadIO(stream, buffer, sizeof(buffer))) > 0) {
+                outSize += bytesRead;
+                for (size_t i = 0; i < bytesRead; ++i) {
+                    outHash ^= buffer[i];
+                    outHash *= 1099511628211ULL;
+                }
             }
+            SDL_CloseIO(stream);
+            return true;
         }
-        SDL_CloseIO(stream);
-        return true;
+
+#if defined(_WIN32)
+        // Fallback for Windows non-ASCII/Unicode paths
+        FILE* fp = _wfopen(Folio::Utf8ToPath(filePath).wstring().c_str(), L"rb");
+        if (fp) {
+            uint8_t buffer[65536];
+            size_t bytesRead = 0;
+            while ((bytesRead = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
+                outSize += bytesRead;
+                for (size_t i = 0; i < bytesRead; ++i) {
+                    outHash ^= buffer[i];
+                    outHash *= 1099511628211ULL;
+                }
+            }
+            fclose(fp);
+            return true;
+        }
+#endif
+
+        return false;
     }
 
     /**

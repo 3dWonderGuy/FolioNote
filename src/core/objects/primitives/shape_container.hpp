@@ -38,6 +38,7 @@
 
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/primitives/shape_types.hpp"
+#include "core/objects/primitives/wave_shapes.hpp"
 #include "core/objects/connectors/connector_types.hpp"
 #include "core/spatial/aabb.hpp"
 
@@ -390,6 +391,22 @@ public:
                 drawList->AddRect(ImVec2(x0 + 2.0f, center.y), ImVec2(x1 - 2.0f, y1), strokeCol, 4.0f, 0, thickness);
                 break;
             }
+            case ShapeType::SineWave: {
+                WaveShapeGenerator::DrawSineWaveIconImGui(drawList, pMin, pMax, strokeCol, thickness);
+                break;
+            }
+            case ShapeType::SquareWave: {
+                WaveShapeGenerator::DrawSquareWaveIconImGui(drawList, pMin, pMax, strokeCol, thickness);
+                break;
+            }
+            case ShapeType::TriangleWave: {
+                WaveShapeGenerator::DrawTriangleWaveIconImGui(drawList, pMin, pMax, strokeCol, thickness);
+                break;
+            }
+            case ShapeType::RightTriangleWave: {
+                WaveShapeGenerator::DrawRightTriangleWaveIconImGui(drawList, pMin, pMax, strokeCol, true, thickness);
+                break;
+            }
             default: {
                 drawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), fillCol, 2.0f);
                 drawList->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), strokeCol, 2.0f, 0, thickness);
@@ -405,15 +422,24 @@ public:
      * wraps it in a BLPattern with BL_EXTEND_MODE_REPEAT and a scale transform
      * so the visible line spacing is spacingMm world millimeters.
      *
-     * @param type      Hatch variant (HatchDiagonal, HatchCross, etc.)
-     * @param color     Line/dot color for the pattern.
-     * @param spacingMm World-space spacing between lines in millimeters.
+     * Infill Math & Geometry Rules:
+     * - Line Thickness: Exactly half (1/2) of the outline strokeWidth.
+     * - Pitch & Gap: Doubled line spacing:
+     *     gap = pitch - infillWorldWidth >= 5.0 * infillWorldWidth  =>  pitch >= 6.0 * infillWorldWidth.
+     * - For 45-degree diagonal lines: d_perp = spacingMm / (2 * sqrt(2)) => spacingMm >= pitch * 2 * sqrt(2).
+     * - For horizontal/vertical lines: pitch = spacingMm.
+     * - For dots: axis spacing = 0.5 * spacingMm => spacingMm >= pitch * 2.
+     *
+     * @param type        Hatch variant (HatchDiagonal, HatchCross, etc.)
+     * @param color       Line/dot color for the pattern.
+     * @param strokeWidth Outline stroke thickness in world mm (infill width will be strokeWidth * 0.5).
+     * @param spacingMm   Nominal world-space spacing between lines in millimeters (default 6.0mm).
      * @return Fully configured BLPattern ready to use as a fill style.
      */
     static BLPattern CreateHatchPattern(ShapeFillType type,
                                         const BLRgba32& color,
                                         double strokeWidth,
-                                        double spacingMm = 3.0);
+                                        double spacingMm = 6.0);
 
     /**
      * @brief Draws a directional arrowhead at a line endpoint.

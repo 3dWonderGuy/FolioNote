@@ -1,3 +1,35 @@
+; ==============================================================================
+; FolioNote Inno Setup Installation Script
+; ==============================================================================
+; 
+; GENERAL WORKING PROCESS & SYSTEM INTEGRATION:
+; ---------------------------------------------
+; This script packages the FolioNote modern digital notebook application into a
+; professional Windows installer (.exe). In addition to deploying the main
+; application binary and its runtime dependencies (SDL3, Blend2D, PDFium), the
+; installer is responsible for core system integrations:
+;
+; 1. Local Virtual Printer Integration ("Print to FolioNote"):
+;    - Registers a system printer named "Print to FolioNote" using Windows' built-in
+;      "Microsoft Print To PDF" driver (ntprint.inf) and the 'PORTPROMPT:' port.
+;    - This enables any Windows software (browsers, Word, Adobe, CAD) to print
+;      documents directly into FolioNote.
+;    - Enabled by default in the installation tasks.
+;
+; 2. Shell & Context Menu Integration:
+;    - Creates an Explorer context menu item under SystemFileAssociations\.pdf
+;      allowing users to right-click any PDF and select "Import into FolioNote".
+;    - Adds a Windows "Send to" shortcut in {usersendto}\FolioNote.
+;
+; 3. Dedicated Imports Directory:
+;    - Pre-creates the user imports directory at {userdocs}\FolioNote\Imports
+;      with appropriate read/write permissions for incoming print and import jobs.
+;
+; 4. Clean Uninstallation:
+;    - Fully reverses all integrations, removes registry associations, shortcuts,
+;      and deregisters the "Print to FolioNote" virtual printer from the Windows Spooler.
+; ==============================================================================
+
 #define MyAppName "FolioNote"
 #ifndef MyAppVersion
   #define MyAppVersion "0.1.0-alpha"
@@ -7,6 +39,7 @@
 #define MyAppExeName "FolioNote.exe"
 
 [Setup]
+; Unique application GUID for Windows Add/Remove Programs registry tracking
 AppId={{C8D49E22-5B90-4824-B831-75A0E63198AE}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -31,35 +64,53 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
+; Desktop shortcut (optional, unchecked by default)
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "printtofolionote"; Description: "Install 'Print to FolioNote' virtual printer (allows printing documents directly into FolioNote)"; GroupDescription: "System Integration:"; Flags: unchecked
+
+; Virtual Printer installation (checked by default as requested for full application capabilities)
+Name: "printtofolionote"; Description: "Install 'Print to FolioNote' virtual printer (allows printing documents directly into FolioNote)"; GroupDescription: "System Integration:"
+
+; Context menu shell integration (checked by default)
+Name: "contextmenu"; Description: "Add 'Import into FolioNote' to Windows Explorer right-click menu for PDF files"; GroupDescription: "System Integration:"
+
+[Dirs]
+; Ensure the dedicated user Imports directory exists for virtual printer spools and file imports
+Name: "{userdocs}\FolioNote\Imports"; Permissions: users-full
 
 [Files]
 ; Main Executable
 Source: "..\dist\FolioNote\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
-; Runtime DLLs (SDL3.dll, blend2d.dll, etc.)
+; Runtime DLLs (SDL3.dll, blend2d.dll, pdfium.dll, etc.)
 Source: "..\dist\FolioNote\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
-; Optional asset and config directories
+; Application assets, configurations, and license agreement
 Source: "..\dist\FolioNote\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Permissions: users-readexec
 Source: "..\dist\FolioNote\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\dist\FolioNote\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
+; Start Menu and Desktop shortcuts
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
+; Windows Explorer "Send to" integration: Allows Right-Click -> Send To -> FolioNote
+Name: "{usersendto}\FolioNote"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--import"
+
+[Registry]
+; Windows Explorer Context Menu: "Import into FolioNote" for any PDF document
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\FolioNote"; ValueType: string; ValueName: ""; ValueData: "Import into FolioNote"; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\FolioNote"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\FolioNote\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --import ""%1"""; Tasks: contextmenu
+
 [Run]
-; Main Executable
+; Option to launch FolioNote immediately following setup
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
-; Register "Print to FolioNote" virtual printer if task is selected
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue)) {{ Add-Printer -Name 'Print to FolioNote' -DriverName 'Microsoft Print To PDF' -PortName 'PORTPROMPT:' }}"""; StatusMsg: "Configuring 'Print to FolioNote' virtual printer..."; Tasks: printtofolionote; Flags: runhidden
+; Register the "Print to FolioNote" virtual printer if task is selected
+; Uses Windows built-in 'Microsoft Print To PDF' driver. Double braces {{ and }} escape Inno Setup macro syntax.
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue)) {{ Add-Printer -Name 'Print to FolioNote' -DriverName 'Microsoft Print To PDF' -PortName 'PORTPROMPT:' }}; Set-Printer -Name 'Print to FolioNote' -Comment 'Virtual PDF printer for importing documents into FolioNote' -ErrorAction SilentlyContinue"""; StatusMsg: "Configuring 'Print to FolioNote' virtual printer..."; Tasks: printtofolionote; Flags: runhidden
 
 [UninstallRun]
-; Clean up "Print to FolioNote" printer on uninstallation
+; Clean up "Print to FolioNote" virtual printer on uninstallation
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (Get-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue) {{ Remove-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue }}"""; StatusMsg: "Removing 'Print to FolioNote' virtual printer..."; RunOnceId: "RemovePrintToFolioNote"; Flags: runhidden
-
-
-

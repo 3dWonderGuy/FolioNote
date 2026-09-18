@@ -1,9 +1,43 @@
+/**
+ * @file main.cpp
+ * @brief Application entry point and CLI orchestration for FolioNote.
+ *
+ * GENERAL WORKING PROCESS & ARCHITECTURE:
+ * ---------------------------------------
+ * 1. CLI Dispatch & Headless Utility Mode:
+ *    FolioNote supports headless command-line execution for administrative system
+ *    integrations (such as virtual printer installation and query) as well as document
+ *    import dispatching.
+ *    - Headless printer configuration: Invoked by installers or automated scripts via
+ *      `--install-printer`, `--uninstall-printer`, or `--check-printer`. These exit
+ *      immediately with process code 0 (success) or 1 (failure) without initializing
+ *      the graphical subsystem.
+ *    - Direct document import: When launched via Explorer context menu ("Import into FolioNote"),
+ *      SendTo shortcut, or direct shell command (`--import <file.pdf>` or bare `.pdf` path),
+ *      the path is captured and forwarded into the GUI application lifecycle.
+ *
+ * 2. GUI Engine Initialization:
+ *    If no headless termination flags were requested, the program instantiates the core
+ *    `Application` instance and executes `app.Init(title, width, height, initialImportPath)`.
+ *    - Initializes SDL3 video, custom modern window framing, and OpenGL 3.3 / GLES 3.0 context.
+ *    - Connects database storage, themes, input devices, and canvas subsystems.
+ *    - If an initial import path was provided, copies/stages the document into the dedicated
+ *      user imports directory (`Documents/FolioNote/Imports`) and immediately presents the
+ *      interactive `PdfImportModal` prompting the user where to place it in the notebook.
+ *
+ * 3. Event Loop Execution:
+ *    Delegates runtime execution to `app.Run()`, maintaining 120Hz/60Hz adaptive frame pacing
+ *    and continuous input state machine evaluation until the application terminates.
+ */
+
 #include "app/app.hpp"
 #include <SDL3/SDL_main.h>
 
 #include "utils/printer_installer.hpp"
 #include <iostream>
+#include <string>
 #include <string_view>
+#include <filesystem>
 
 #if defined(__ANDROID__)
 #include <android/log.h>
@@ -26,10 +60,27 @@ int main(int argc, char* argv[])
     ALOG("FolioNote started successfully on Android!");
 #endif
 
-    // Process CLI arguments for headless setup and integration tasks
+    // Initial PDF import target requested via command-line or shell integration
+    std::string initialImportPath = "";
+
+    // -------------------------------------------------------------------------
+    // CLI ARGUMENT PARSING & SYSTEM COMMAND DISPATCH
+    // -------------------------------------------------------------------------
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if (arg == "--install-printer") {
+
+        if (arg == "--help" || arg == "-h") {
+            std::cout << "FolioNote Modern Digital Notebook\n"
+                      << "Usage: FolioNote [options] [document.pdf]\n\n"
+                      << "Options:\n"
+                      << "  --import <path>       Import a PDF document into FolioNote\n"
+                      << "  --install-printer     Register 'Print to FolioNote' virtual printer (requires Admin UAC)\n"
+                      << "  --uninstall-printer   Remove 'Print to FolioNote' virtual printer (requires Admin UAC)\n"
+                      << "  --check-printer       Verify if 'Print to FolioNote' virtual printer is installed\n"
+                      << "  -h, --help            Display this command-line help message\n"
+                      << std::endl;
+            return 0;
+        } else if (arg == "--install-printer") {
             std::cout << "[FolioNote] Installing 'Print to FolioNote' virtual printer (requesting admin access)..." << std::endl;
             bool ok = Folio::PrinterInstaller::InstallPrinterElevated();
             std::cout << "[FolioNote] Virtual printer installation " << (ok ? "succeeded." : "failed or was cancelled.") << std::endl;
@@ -43,15 +94,22 @@ int main(int argc, char* argv[])
             bool installed = Folio::PrinterInstaller::IsPrinterInstalled();
             std::cout << "[FolioNote] 'Print to FolioNote' printer is " << (installed ? "installed." : "not installed.") << std::endl;
             return installed ? 0 : 1;
+        } else if (arg == "--import" && i + 1 < argc) {
+            initialImportPath = argv[++i];
+        } else if (arg.size() >= 4 && (arg.substr(arg.size() - 4) == ".pdf" || arg.substr(arg.size() - 4) == ".PDF")) {
+            initialImportPath = std::string(arg);
         }
     }
 
+    // -------------------------------------------------------------------------
+    // APPLICATION LIFECYCLE INITIALIZATION
+    // -------------------------------------------------------------------------
     Application app;
-    if (!app.Init("FolioNote", 1920, 1080)) {
+    if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
         return -1;
     }
 
     app.Run();
     app.Shutdown();
     return 0;
-}
+}

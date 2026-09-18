@@ -50,6 +50,10 @@ enum class ShapeType : uint8_t {
     RightTriangle   = 13,  ///< 90-degree orthogonal triangle (right angle bottom-left)
     LineArrow       = 14,  ///< Linear connector with directional arrowheads
     RegularPolygon  = 15,  ///< N-sided regular polygon (param1 = side count, 3..32)
+    SineWave          = 16,  ///< Continuous sine wave along horizontal axis (param1 = cycles)
+    SquareWave        = 17,  ///< Alternating square wave / pulse train (param1 = cycles)
+    TriangleWave      = 18,  ///< Symmetric triangle wave (param1 = cycles)
+    RightTriangleWave = 19,  ///< Right triangle / sawtooth wave (param1 = cycles, param2 = 0: right angle right, 1: right angle left)
 };
 
 // =============================================================================

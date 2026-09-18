@@ -533,6 +533,147 @@ public:
         ScrollToPage(activePageIndex + 1);
     }
 
+    /**
+     * @brief Performs smooth, drift-free zoom anchored at an arbitrary screen coordinate.
+     * 
+     * MATHEMATICAL FOUNDATION & WORKING PROCESS:
+     * 1. Vertical Layout & Cursor Pinning:
+     *    In continuous multi-page PDF rendering, the document Y coordinate of a point on page i is:
+     *      Y_doc(z) = TopMargin(20px) + i * PageGap(24px) + CumHeight(i, z) + localMmY * pxPerMm(z)
+     *    Notice that TopMargin (20px) and inter-page gaps (24px) are constant screen-pixel offsets
+     *    that DO NOT scale with zoom. Only millimeter dimensions scale: pxPerMm(z) = (96.0 / 25.4) * z.
+     *    By resolving the exact page index i and local millimeter Y coordinate under the anchor
+     *    (anchorScreenX, anchorScreenY) before zooming, we can project the exact new document coordinate
+     *    after zooming to targetZoom, setting scrollY such that the point under the cursor remains pinned
+     *    to the exact same screen pixel with zero drift.
+     * 
+     * 2. Horizontal Layout & Scoped Centering / Panning:
+     *    - When the document fits within viewport width (maxDocW_px + 30px <= contentW):
+     *      The document is centered horizontally: pageX = (contentW - pageW_px) * 0.5f.
+     *      Side-to-side scrolling is disabled (maxScrollX = 0, scrollX = 0), and horizontal scrollbar is hidden.
+     *      Zooming while fitted expands symmetrically from the center without any horizontal wobble.
+     *    - When zoomed in so the document is wider than viewport width (maxDocW_px + 30px > contentW):
+     *      Horizontal scrolling is enabled (maxScrollX > 0, horizontal scrollbar appears).
+     *      Zooming anchors directly to anchorScreenX in document millimeter space, ensuring that when zooming
+     *      in on a detail on the far right (or left) of the document, that feature stays pinned under the cursor.
+     *    - Boundary Transition: At maxDocW_px + 30px == contentW, the wider-layout position exactly matches
+     *      the centered position: 15px + (maxDocW - pageW)*0.5 - 0 == (contentW - pageW)*0.5.
+     *      Thus, transitions between centered and wider layouts have ZERO pixel jump.
+     * 
+     * @param targetZoom    Desired new zoom scale (clamped to [0.4, 4.0]).
+     * @param anchorScreenX Screen X coordinate of the zoom anchor (typically mouse cursor or viewport center).
+     * @param anchorScreenY Screen Y coordinate of the zoom anchor.
+     * @param contentX      Screen X coordinate of the content viewport left edge.
+     * @param contentW      Available content viewport width (excluding sidebar).
+     * @param originY       Screen Y coordinate of the content viewport top edge.
+     * @param viewH         Available content viewport height.
+     */
+    void ZoomAtPoint(float targetZoom, float anchorScreenX, float anchorScreenY,
+                     float contentX, float contentW, float originY, float viewH) {
+        float oldZoom = zoomScale;
+        float newZoom = std::clamp(targetZoom, 0.4f, 4.0f);
+        if (std::abs(newZoom - oldZoom) < 0.0001f) return;
+
+        constexpr float TOP_MARGIN_PX = 20.0f;
+        constexpr float PAGE_GAP_PX   = 24.0f;
+        constexpr float SCALE_DPI     = 96.0f / 25.4f;
+
+        float oldPxPerMm = SCALE_DPI * oldZoom;
+        float newPxPerMm = SCALE_DPI * newZoom;
+
+        // Compute document millimeter width
+        float maxDocW_mm = 0.0f;
+        for (int i = 0; i < totalPages; ++i) {
+            double mmW = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].widthMm : 210.0;
+            if (static_cast<float>(mmW) > maxDocW_mm) maxDocW_mm = static_cast<float>(mmW);
+        }
+        if (maxDocW_mm < 10.0f) maxDocW_mm = 210.0f;
+
+        float oldMaxDocW_px = maxDocW_mm * oldPxPerMm;
+        float newMaxDocW_px = maxDocW_mm * newPxPerMm;
+
+        // ---------------------------------------------------------------------
+        // 1. VERTICAL ANCHORING (Exact millimeter projection preserving fixed gaps)
+        // ---------------------------------------------------------------------
+        float anchorRelY = anchorScreenY - originY;
+        float oldDocY = scrollY + anchorRelY;
+
+        // Find which page index i and local millimeter Y the anchor falls into
+        int anchorPageIdx = 0;
+        double anchorLocalMmY = 0.0;
+        double cumMmH = 0.0;
+        float curPageTopDocY = TOP_MARGIN_PX;
+
+        for (int i = 0; i < totalPages; ++i) {
+            double mmH = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].heightMm : 297.0;
+            float pageH_px = static_cast<float>(mmH * oldPxPerMm);
+            if (oldDocY <= curPageTopDocY + pageH_px + (PAGE_GAP_PX * 0.5f) || i == totalPages - 1) {
+                anchorPageIdx = i;
+                anchorLocalMmY = std::clamp(static_cast<double>(oldDocY - curPageTopDocY) / oldPxPerMm, 0.0, mmH);
+                break;
+            }
+            cumMmH += mmH;
+            curPageTopDocY += pageH_px + PAGE_GAP_PX;
+        }
+
+        // Reconstruct cumulative millimeter height up to anchorPageIdx for the new zoom
+        double cumMmH_anchor = 0.0;
+        for (int i = 0; i < anchorPageIdx && i < static_cast<int>(pageDimensions.size()); ++i) {
+            cumMmH_anchor += pageDimensions[i].heightMm;
+        }
+
+        float newPageTopDocY = TOP_MARGIN_PX + (anchorPageIdx * PAGE_GAP_PX) + static_cast<float>(cumMmH_anchor * newPxPerMm);
+        float newDocY = newPageTopDocY + static_cast<float>(anchorLocalMmY * newPxPerMm);
+        float newScrollY = newDocY - anchorRelY;
+
+        // Calculate new maximum vertical scroll limit
+        float newTotalDocH_px = 40.0f;
+        for (int i = 0; i < totalPages; ++i) {
+            double mmH = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].heightMm : 297.0;
+            newTotalDocH_px += static_cast<float>(mmH * newPxPerMm) + PAGE_GAP_PX;
+        }
+        float newMaxScrollY = std::max(0.0f, newTotalDocH_px - viewH);
+        scrollY = std::clamp(newScrollY, 0.0f, newMaxScrollY);
+
+        // ---------------------------------------------------------------------
+        // 2. HORIZONTAL ANCHORING (Smooth transition between centered and wider layout)
+        // ---------------------------------------------------------------------
+        float newMaxScrollX = std::max(0.0f, newMaxDocW_px + 30.0f - contentW);
+        float oldMaxScrollX = std::max(0.0f, oldMaxDocW_px + 30.0f - contentW);
+
+        if (newMaxScrollX <= 0.0f) {
+            // Document fits within content width: lock horizontal scroll at 0 and center page
+            scrollX = 0.0f;
+        } else {
+            // Document is wider than viewport: anchor around anchorScreenX
+            float anchorRelX = anchorScreenX - contentX;
+            float newScrollX = 0.0f;
+
+            if (oldMaxScrollX > 0.0f) {
+                // Was already wider: anchor in document space from 15px left margin
+                float oldDocX = scrollX + anchorRelX;
+                float scalingX = oldDocX - 15.0f;
+                float newDocX = 15.0f + scalingX * (newZoom / oldZoom);
+                newScrollX = newDocX - anchorRelX;
+            } else {
+                // Transitioning from centered to wider: calculate cursor offset from page left edge
+                float oldPageScreenLeft = contentX + (contentW - oldMaxDocW_px) * 0.5f;
+                float offsetFromPageLeft = anchorScreenX - oldPageScreenLeft;
+                float newOffsetFromPageLeft = offsetFromPageLeft * (newZoom / oldZoom);
+                // Under wider layout, page left is at contentX + 15.0f - scrollX
+                newScrollX = 15.0f + newOffsetFromPageLeft - anchorRelX;
+            }
+
+            scrollX = std::clamp(newScrollX, 0.0f, newMaxScrollX);
+        }
+
+        // Apply updated states
+        zoomScale = newZoom;
+        maxScrollX = newMaxScrollX;
+        maxScrollY = newMaxScrollY;
+        hudInactivityTimer = 2.5f;
+    }
+
     void SetZoomScale(float z) {
         zoomScale = std::clamp(z, 0.4f, 4.0f);
         hudInactivityTimer = 2.5f;
@@ -575,9 +716,8 @@ public:
         currentSelection.Clear();
         hudInactivityTimer = 2.5f;
 
-        std::filesystem::path p(filePath);
         loadingDocPath = filePath;
-        loadingDocName = p.filename().string();
+        loadingDocName = PathToUtf8(Utf8ToPath(filePath).filename());
         isLoading = true;
         loadingFinished.store(false);
         loadingFailed.store(false);
@@ -999,49 +1139,33 @@ public:
                 (hudInactivityTimer <= 0.0f || !(mousePos.x >= hudZoneMinX && mousePos.x <= hudZoneMaxX && mousePos.y >= hudZoneMinY && mousePos.y <= hudZoneMaxY));
             sm.isPdfCanvasHovered = isPdfContentHovered;
 
-            constexpr float PAGE_GAP_PX = 24.0f;
-            float pxPerMm = (96.0f / 25.4f) * zoomScale;
-
-            // Compute document layout bounds for both vertical and horizontal scroll limits
-            float maxDocW_px = 0.0f;
-            float totalDocH_px = 40.0f;
-            for (int i = 0; i < totalPages; ++i) {
-                double mmW = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].widthMm : 210.0;
-                double mmH = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].heightMm : 297.0;
-                float w_px = static_cast<float>(mmW * pxPerMm);
-                float h_px = static_cast<float>(mmH * pxPerMm);
-                if (w_px > maxDocW_px) maxDocW_px = w_px;
-                totalDocH_px += h_px + PAGE_GAP_PX;
-            }
-
-            maxScrollX = std::max(0.0f, maxDocW_px + 30.0f - contentW);
-            scrollX = std::clamp(scrollX, 0.0f, maxScrollX);
-            maxScrollY = std::max(0.0f, totalDocH_px - viewH);
-            scrollY = std::clamp(scrollY, 0.0f, maxScrollY);
-
-            // Zoom Anchoring towards Mouse Cursor in 2D (Eliminates page drift during Ctrl+Wheel)
+            // =========================================================================
+            // 0. VIEWPORT INPUT HANDLING (CURSOR-ANCHORED ZOOM & ISOLATED PAN/SCROLL)
+            // =========================================================================
+            // Ctrl + MouseWheel / Pinch-to-zoom triggers mathematical 2D cursor-anchored zoom.
+            // Shift + MouseWheel triggers horizontal scroll (when unlocked).
+            // Standard MouseWheel triggers vertical document scroll.
+            // When document fits viewport width, horizontal scrolling is strictly disabled.
             if (isMouseInContent && std::abs(io.MouseWheel) > 0.01f) {
                 if (io.KeyCtrl) {
-                    float oldZoom = zoomScale;
-                    zoomScale = std::clamp(zoomScale + io.MouseWheel * 0.12f, 0.4f, 4.0f);
-
-                    float mouseYRel = mousePos.y - origin.y;
-                    float docY = scrollY + mouseYRel;
-                    float newDocY = docY * (zoomScale / oldZoom);
-                    scrollY = std::clamp(newDocY - mouseYRel, 0.0f, maxScrollY);
-
-                    float mouseXRel = mousePos.x - contentX;
-                    float docX = scrollX + mouseXRel;
-                    float newDocX = docX * (zoomScale / oldZoom);
-                    scrollX = std::clamp(newDocX - mouseXRel, 0.0f, maxScrollX);
+                    float factor = std::pow(1.12f, io.MouseWheel);
+                    float targetZoom = std::clamp(zoomScale * factor, 0.4f, 4.0f);
+                    ZoomAtPoint(targetZoom, mousePos.x, mousePos.y, contentX, contentW, origin.y, viewH);
                 } else if (io.KeyShift) {
-                    scrollX = std::clamp(scrollX - io.MouseWheel * 80.0f, 0.0f, maxScrollX);
+                    if (maxScrollX > 0.0f) {
+                        scrollX = std::clamp(scrollX - io.MouseWheel * 80.0f, 0.0f, maxScrollX);
+                    }
                 } else {
                     scrollY = std::clamp(scrollY - io.MouseWheel * 80.0f, 0.0f, maxScrollY);
                 }
             }
-            if (isMouseInContent && std::abs(io.MouseWheelH) > 0.01f) {
-                scrollX = std::clamp(scrollX - io.MouseWheelH * 80.0f, 0.0f, maxScrollX);
+
+            // Dedicated horizontal wheel (trackpad tilt or multi-directional scroll)
+            // Suppressed when Ctrl is held to prevent touchpad pinch gestures from introducing horizontal drift.
+            if (isMouseInContent && !io.KeyCtrl && std::abs(io.MouseWheelH) > 0.01f) {
+                if (maxScrollX > 0.0f) {
+                    scrollX = std::clamp(scrollX - io.MouseWheelH * 80.0f, 0.0f, maxScrollX);
+                }
             }
 
             // Middle-mouse drag 2D panning across content
@@ -1052,7 +1176,9 @@ public:
             if (isMiddlePanning) {
                 if (ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
                     ImVec2 delta = ImVec2(mousePos.x - middlePanLastPos.x, mousePos.y - middlePanLastPos.y);
-                    scrollX = std::clamp(scrollX - delta.x, 0.0f, maxScrollX);
+                    if (maxScrollX > 0.0f) {
+                        scrollX = std::clamp(scrollX - delta.x, 0.0f, maxScrollX);
+                    }
                     scrollY = std::clamp(scrollY - delta.y, 0.0f, maxScrollY);
                     middlePanLastPos = mousePos;
                     ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
@@ -1061,6 +1187,29 @@ public:
                     isMiddlePanning = false;
                 }
             }
+
+            constexpr float PAGE_GAP_PX = 24.0f;
+            float pxPerMm = (96.0f / 25.4f) * zoomScale;
+
+            // Compute document layout bounds for both vertical and horizontal scroll limits
+            float maxDocW_px = 0.0f;
+            float totalDocH_px = 60.0f; // 20px top padding + 40px bottom padding
+            for (int i = 0; i < totalPages; ++i) {
+                double mmW = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].widthMm : 210.0;
+                double mmH = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].heightMm : 297.0;
+                float w_px = static_cast<float>(mmW * pxPerMm);
+                float h_px = static_cast<float>(mmH * pxPerMm);
+                if (w_px > maxDocW_px) maxDocW_px = w_px;
+                totalDocH_px += h_px + PAGE_GAP_PX;
+            }
+
+            // Horizontal scroll range: 0 when document fits within viewport width (locking side-to-side movement)
+            maxScrollX = std::max(0.0f, maxDocW_px + 30.0f - contentW);
+            scrollX = std::clamp(scrollX, 0.0f, maxScrollX);
+
+            // Vertical scroll range
+            maxScrollY = std::max(0.0f, totalDocH_px - viewH);
+            scrollY = std::clamp(scrollY, 0.0f, maxScrollY);
 
             // =========================================================================
             // 1. MAIN DOCUMENT VIEWPORT (CENTERED PAGES, CLIPPED TO CONTENT BOUNDS)
@@ -1085,8 +1234,14 @@ public:
                 // Check visibility against viewport window
                 if (currentY + pageH_px > 0.0f && currentY < viewH) {
                     currentVisiblePage = i;
-                    float baseX = (contentW > pageW_px) ? (contentW - pageW_px) * 0.5f : 15.0f;
-                    float pageX = baseX - scrollX;
+                    float pageX = 0.0f;
+                    if (maxScrollX <= 0.0f) {
+                        // Document fits viewport width: center horizontally, side-to-side scrolling disabled
+                        pageX = (contentW - pageW_px) * 0.5f;
+                    } else {
+                        // Document is wider than viewport: anchor from 15px left margin with smooth scrollX offset
+                        pageX = 15.0f + (maxDocW_px - pageW_px) * 0.5f - scrollX;
+                    }
 
                     ImVec2 pMin(contentX + pageX, origin.y + currentY);
                     ImVec2 pMax(pMin.x + pageW_px, pMin.y + pageH_px);
@@ -1360,7 +1515,7 @@ public:
             }
 
             activePageIndex = currentVisiblePage;
-            maxScrollY = std::max(0.0f, (currentY + scrollY) - viewH + 60.0f);
+            maxScrollY = std::max(0.0f, (currentY + scrollY + 40.0f) - viewH);
 
             // Pop Content Viewport Clipping
             dl->PopClipRect();
@@ -2150,15 +2305,26 @@ public:
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, hudAlpha));
 
                 if (ImGui::Button("-##ZoomOut", ImVec2(btnW, 26.0f))) {
-                    SetZoomScale(zoomScale - 0.15f);
+                    float anchorX = contentX + contentW * 0.5f;
+                    float anchorY = origin.y + viewH * 0.5f;
+                    ZoomAtPoint(zoomScale - 0.15f, anchorX, anchorY, contentX, contentW, origin.y, viewH);
                 }
                 ImGui::SameLine(0.0f, btnGap);
                 if (ImGui::Button("+##ZoomIn", ImVec2(btnW, 26.0f))) {
-                    SetZoomScale(zoomScale + 0.15f);
+                    float anchorX = contentX + contentW * 0.5f;
+                    float anchorY = origin.y + viewH * 0.5f;
+                    ZoomAtPoint(zoomScale + 0.15f, anchorX, anchorY, contentX, contentW, origin.y, viewH);
                 }
                 ImGui::SameLine(0.0f, btnGap);
                 if (ImGui::Button("Fit##ZoomFit", ImVec2(fitBtnW, 26.0f))) {
-                    SetZoomScale(1.0f);
+                    float maxMmW = 210.0f;
+                    for (const auto& d : pageDimensions) {
+                        if (static_cast<float>(d.widthMm) > maxMmW) maxMmW = static_cast<float>(d.widthMm);
+                    }
+                    float fitScale = (contentW > 40.0f) ? static_cast<float>((contentW - 30.0f) / (maxMmW * (96.0f / 25.4f))) : 1.0f;
+                    float anchorX = contentX + contentW * 0.5f;
+                    float anchorY = origin.y + viewH * 0.5f;
+                    ZoomAtPoint(fitScale, anchorX, anchorY, contentX, contentW, origin.y, viewH);
                 }
                 ImGui::PopStyleColor(3);
                 ImGui::PopStyleVar(2);
