@@ -36,12 +36,14 @@ namespace Folio {
         NavPanel,
         SettingsManager,
         PdfStorage,
-        LibraryManager
+        LibraryManager,
+        FileManager
     };
 
     // Helper to convert LogSource enum values into strings
     inline const char* LogSourceToString(LogSource source) {
         switch (source) {
+            case LogSource::FileManager:       return "FileManager";
             case LogSource::FileLoader:        return "FileLoader";
             case LogSource::FileSaver:         return "FileSaver";
             case LogSource::CanvasEngine:      return "CanvasEngine";
