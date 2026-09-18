@@ -35,6 +35,18 @@ struct PenPreset {
 
 using PenPresetSetting = PenPreset;
 
+/**
+ * @struct LibrarySettingEntry
+ * @brief Persistent configuration entry for a registered library bundle (.foliolib).
+ * Stored inside config/settings.json to restore registered libraries across sessions.
+ */
+struct LibrarySettingEntry {
+    std::string id;         ///< Unique ID (e.g. "default_main", "lib_1726640000")
+    std::string name;       ///< User-visible display label (e.g. "Main Library", "School")
+    std::string rootPath;   ///< Absolute filesystem path to the .foliolib directory bundle
+    bool isDefault = false; ///< True if this is the non-removable default documents library
+};
+
 class SettingsManager {
 public:
     static SettingsManager& Instance() {
@@ -80,6 +92,13 @@ public:
     std::string pdfSpoolFolderPath = "";
     bool autoIngestPrintedPdfs = true;
     int defaultPdfImportMode = 0; // 0 = LocalCopy, 1 = ExternalLink
+
+    // ==========================================================================
+    // Library Management State
+    // ==========================================================================
+    // Tracks registered .foliolib bundles. Every notebook must reside inside a .foliolib.
+    std::string defaultLibraryFolder = "";                     ///< Path to the primary .foliolib bundle
+    std::vector<LibrarySettingEntry> registeredLibraries;       ///< All user-registered .foliolib library bundles
 
     // Has settings been loaded from disk
     bool isLoaded = false;
@@ -296,6 +315,25 @@ public:
                 if (jPdf.contains("defaultImportMode")) defaultPdfImportMode = jPdf["defaultImportMode"].get<int>();
             }
 
+            // 5. Library Management Settings
+            if (j.contains("libraries") && j["libraries"].is_object()) {
+                const auto& jLib = j["libraries"];
+                if (jLib.contains("defaultLibraryFolder")) {
+                    defaultLibraryFolder = jLib["defaultLibraryFolder"].get<std::string>();
+                }
+                if (jLib.contains("registeredLibraries") && jLib["registeredLibraries"].is_array()) {
+                    registeredLibraries.clear();
+                    for (const auto& entry : jLib["registeredLibraries"]) {
+                        LibrarySettingEntry lib;
+                        if (entry.contains("id")) lib.id = entry["id"].get<std::string>();
+                        if (entry.contains("name")) lib.name = entry["name"].get<std::string>();
+                        if (entry.contains("rootPath")) lib.rootPath = entry["rootPath"].get<std::string>();
+                        if (entry.contains("isDefault")) lib.isDefault = entry["isDefault"].get<bool>();
+                        registeredLibraries.push_back(lib);
+                    }
+                }
+            }
+
             isLoaded = true;
             return true;
         } catch (const std::exception& ex) {
@@ -376,6 +414,22 @@ public:
                 { "spoolFolderPath", pdfSpoolFolderPath },
                 { "autoIngestPrintedPdfs", autoIngestPrintedPdfs },
                 { "defaultImportMode", defaultPdfImportMode }
+            };
+
+            // Library section
+            nlohmann::json jLibs = nlohmann::json::array();
+            for (const auto& lib : registeredLibraries) {
+                jLibs.push_back({
+                    { "id", lib.id },
+                    { "name", lib.name },
+                    { "rootPath", lib.rootPath },
+                    { "isDefault", lib.isDefault }
+                });
+            }
+
+            j["libraries"] = {
+                { "defaultLibraryFolder", defaultLibraryFolder },
+                { "registeredLibraries", jLibs }
             };
 
             return FileLoader::WriteString(filepath, j.dump(2));
