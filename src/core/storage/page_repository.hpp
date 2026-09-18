@@ -290,8 +290,6 @@ public:
     void SaveNotebookAsync(std::shared_ptr<Notebook> notebook) {
         if (!notebook || !dbManager || !dbManager->IsOpen()) return;
 
-        notebook->SaveTimeMetadata();
-
         // -----------------------------------------------------------------------------
         // Step 1: Save Top-Level Notebook Metadata
         // -----------------------------------------------------------------------------
@@ -526,7 +524,6 @@ public:
             LoadPage(activePage);
         }
 
-        notebook->InitSessionTimer();
         return notebook;
     }
 
