@@ -82,7 +82,8 @@ public:
             L"-NoProfile -ExecutionPolicy Bypass -Command \""
             L"$pName = '" + printerName + L"'; "
             L"if (-not (Get-Printer -Name $pName -ErrorAction SilentlyContinue)) { "
-            L"  Add-Printer -Name $pName -DriverName 'Microsoft Print To PDF' -PortName 'PORTPROMPT:' "
+            L"  Add-Printer -Name $pName -DriverName 'Microsoft Print To PDF' -PortName 'FILE:'; "
+            L"  Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue "
             L"}\"";
 
         SHELLEXECUTEINFOW sei = { sizeof(sei) };

@@ -14,6 +14,12 @@
 #include "app/theme_manager.hpp"
 #include "core/document/document_session.hpp"
 #include "core/document/library.hpp"
+
+using Folio::LibraryInfo;
+using Folio::LibraryManager;
+using Folio::FOLIO_LIBRARY_EXTENSION;
+using Folio::FOLIO_NOTEBOOK_EXTENSION;
+using Folio::FOLIO_LIBRARY_MARKER_FILE;
 #include "core/export/export_manager.hpp"
 #include "core/import/import_manager.hpp"
 #include "core/engine/canvas_engine.hpp"
@@ -1428,16 +1434,6 @@ private:
 
         ImGui::Dummy(ImVec2(0.0f, cardHeight + 20.0f));
 
-        // Format helpers
-        auto FormatTimeDuration = [](uint64_t totalSec) -> std::string {
-            uint64_t hours = totalSec / 3600;
-            uint64_t mins = (totalSec % 3600) / 60;
-            uint64_t secs = totalSec % 60;
-            if (hours > 0) return std::to_string(hours) + "h " + std::to_string(mins) + "m";
-            if (mins > 0) return std::to_string(mins) + "m " + std::to_string(secs) + "s";
-            return std::to_string(secs) + "s";
-        };
-
         auto RenderMetricCard = [&](const char* title, const std::string& val, float width, const char* subtitle = nullptr) {
             ImVec2 mMin = ImGui::GetCursorScreenPos();
             float h = subtitle ? 76.0f : 70.0f;
@@ -1491,10 +1487,6 @@ private:
         RenderMetricCard("Global Objects", std::to_string(totalObjects), mWidth, "Canvas Entities");
         ImGui::SameLine(0.0f, 16.0f);
         RenderMetricCard("Ink Strokes", std::to_string(totalStrokes), mWidth, "Vector Paths");
-        ImGui::SameLine(0.0f, 16.0f);
-        RenderMetricCard("Session Time", FormatTimeDuration(activeNb->GetSessionSeconds()), mWidth, "Active Session");
-        ImGui::SameLine(0.0f, 16.0f);
-        RenderMetricCard("Lifetime Time", FormatTimeDuration(activeNb->GetTotalLifetimeSeconds()), mWidth + 40.0f, "All-Time on Notebook");
 
         // Overview statistics are complete and self-contained
     }

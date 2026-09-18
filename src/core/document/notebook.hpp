@@ -106,50 +106,6 @@ public:
         auto defaultSec = std::make_shared<Section>("New Section 1");
         activeSectionGuid = defaultSec->guid;
         sections.push_back(defaultSec);
-        sessionStartTimestamp = SDL_GetTicks();
-    }
-
-    // -------------------------------------------------------------------------
-    // Time Tracking Telemetry (Session & Lifetime)
-    // -------------------------------------------------------------------------
-    uint64_t lifetimeTimeSpentSeconds = 0;                              ///< Cumulative all-time editing time in seconds
-    uint64_t sessionStartTimestamp = 0;                                 ///< SDL_GetTicks() timestamp when notebook was mounted
-
-    void InitSessionTimer() {
-        sessionStartTimestamp = SDL_GetTicks();
-        LoadTimeMetadata();
-    }
-
-    void LoadTimeMetadata() {
-        if (filePath.empty()) return;
-        std::error_code ec;
-        std::filesystem::path timeFile = std::filesystem::path(filePath) / "time.meta";
-        if (std::filesystem::exists(timeFile, ec)) {
-            std::ifstream in(timeFile);
-            if (in >> lifetimeTimeSpentSeconds) {
-                // loaded successfully
-            }
-        }
-    }
-
-    void SaveTimeMetadata() {
-        if (filePath.empty()) return;
-        std::error_code ec;
-        std::filesystem::path timeFile = std::filesystem::path(filePath) / "time.meta";
-        std::ofstream out(timeFile);
-        if (out) {
-            out << GetTotalLifetimeSeconds();
-        }
-    }
-
-    [[nodiscard]] uint64_t GetSessionSeconds() const {
-        if (sessionStartTimestamp == 0) return 0;
-        uint64_t now = SDL_GetTicks();
-        return (now >= sessionStartTimestamp) ? ((now - sessionStartTimestamp) / 1000) : 0;
-    }
-
-    [[nodiscard]] uint64_t GetTotalLifetimeSeconds() const {
-        return lifetimeTimeSpentSeconds + GetSessionSeconds();
     }
 
     // -------------------------------------------------------------------------
