@@ -73,7 +73,7 @@ struct LibraryInfo {
     std::vector<std::string> notebookPaths; ///< Absolute paths to all discovered .notebook packages inside this bundle
 
     /**
-     * @brief Quick check who owns what notebooks, (if this notebook belogns to this library bundle)
+     * @brief Quick check who owns what notebooks (if this notebook belongs to this library bundle)
      * @param nbPath Absolute path to a .notebook package.
      * @return true if nbPath resides directly within this library's rootPath.
      */
@@ -218,6 +218,7 @@ public:
      * @return Pointer to LibraryInfo if found, or nullptr.
      */
     [[nodiscard]] LibraryInfo* FindLibraryById(const std::string& libId);
+    [[nodiscard]] const LibraryInfo* FindLibraryById(const std::string& libId) const;
 
     /**
      * @brief Resolves a LibraryInfo pointer by matching its root directory path.
@@ -225,6 +226,7 @@ public:
      * @return Pointer to LibraryInfo if found, or nullptr.
      */
     [[nodiscard]] LibraryInfo* FindLibraryByPath(const std::string& bundlePath);
+    [[nodiscard]] const LibraryInfo* FindLibraryByPath(const std::string& bundlePath) const;
 
     // =====================================================================================
     // NOTEBOOK ROUTING & CREATION (Enforcing Notebooks-in-Libraries Invariant)

@@ -518,6 +518,13 @@ LibraryInfo* LibraryManager::FindLibraryById(const std::string& libId) {
     return nullptr;
 }
 
+const LibraryInfo* LibraryManager::FindLibraryById(const std::string& libId) const {
+    for (const auto& lib : libraries) {
+        if (lib.id == libId) return &lib;
+    }
+    return nullptr;
+}
+
 /**
  * @brief Resolves a LibraryInfo pointer by matching its root directory path.
  * @param bundlePath Target filesystem path.
@@ -533,6 +540,15 @@ LibraryInfo* LibraryManager::FindLibraryByPath(const std::string& bundlePath) {
     return nullptr;
 }
 
+const LibraryInfo* LibraryManager::FindLibraryByPath(const std::string& bundlePath) const {
+    for (const auto& lib : libraries) {
+        if (FileManager::AreEquivalent(lib.rootPath, bundlePath)) {
+            return &lib;
+        }
+    }
+    return nullptr;
+}
+
 // =========================================================================================
 // LibraryManager: Notebook Routing & Creation
 // =========================================================================================
@@ -544,7 +560,7 @@ LibraryInfo* LibraryManager::FindLibraryByPath(const std::string& bundlePath) {
  * 1. Library Invariant: Every notebook MUST reside inside a library. If `targetLibraryPath`
  *    is invalid or empty, routing automatically falls back to `defaultLibraryPath`.
  * 2. Collision Avoidance: Automatically disambiguates collisions (e.g. "Notes (1).notebook").
- * 3. Immediate Usability: Synchronously initializes the SQLite `structure.db` schema via
+ * 3. Immediate Usability: Synchronously initializes the SQLite `pages.db` schema via
  *    `PageRepository`, guaranteeing the package is immediately ready for reading/writing.
  *
  * @param name Display title of the notebook.
