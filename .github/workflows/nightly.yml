@@ -2,11 +2,8 @@ name: Nightly Build & Pre-Release
 
 on:
   schedule:
-    # Runs at 02:00 UTC daily
-    - cron: '0 2 * * *'
-  push:
-    branches:
-      - develop
+    # Runs at 12:00 AM Central Time (05:00 UTC daily)
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       branch:
@@ -132,13 +129,15 @@ jobs:
           }
           Write-Host "Compiled installer successfully: $($installers[0].FullName)"
 
+          # Copy installer executable to root so upload-artifact keeps it flat alongside portable zip
+          Copy-Item "dist-installer/*.exe" -Destination "." -Force
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: FolioNote-Windows-Nightly
           path: |
-            dist-installer/*.exe
+            FolioNote-Setup-*.exe
             FolioNote-Windows-Portable.zip
           retention-days: 7
 
@@ -301,6 +300,15 @@ jobs:
         with:
           name: FolioNote-Android-APK
           path: release-artifacts
+
+      - name: Prepare Release Assets
+        shell: bash
+        run: |
+          # Flatten any nested subfolders inside release-artifacts so action-gh-release never skips them
+          find release-artifacts -mindepth 2 -type f -exec mv -t release-artifacts/ {} +
+          find release-artifacts -mindepth 1 -type d -exec rm -rf {} +
+          echo "Final release artifacts:"
+          ls -la release-artifacts/
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2

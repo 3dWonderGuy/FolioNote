@@ -1,14 +1,25 @@
 #pragma once
+/**
+ * @file ink_container.hpp
+ * @brief Persistent canvas entity holding baked vector ink strokes.
+ *
+ * InkContainer inherits from CanvasObject and manages one or more finished vector strokes
+ * grouped together. It provides:
+ *  - Accurate world-space AABB bounding box calculation (taking stroke width & transforms into account)
+ *  - Point-to-segment distance hit-testing (for selection and eraser tools)
+ *  - Fast batch-rendered vector drawing via Blend2D with non-zero winding rules
+ *  - Incremental dirty-flag tracking to avoid redundant rasterization
+ *  - Eraser slicing / segment division into child fragment containers
+ */
+
 #include <vector>
 #include <memory>
-#include <algorithm>
-#include <cmath>
 #include <blend2d/blend2d.h>
+
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
 #include "core/engine/stroke_smoother.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
-#include "core/engine/stroke_collision.hpp"
+#include "input/pen_palette.hpp"
 
 /**
  * @brief Baked vector stroke data representing a single stroke (pen down -> pen up).
@@ -17,28 +28,21 @@
  * rasterization, alongside centerline points and segments for hit-testing and geometric editing.
  */
 struct Stroke {
-    std::vector<Segment1D> segments;  ///< Ordered series of line segments (for backward-compat & hit-testing)
-    std::vector<Point2D> centerline;  ///< Original smoothed centerline points with pressure & time
-    BLPath outlinePath;               ///< Closed 2D vector polygon contour for rasterization
-    BLRgba32 color{0xFFFFFFFF};       ///< 32-bit RGBA color
-    double baseWidth = 3.0;           ///< Nominal baseline width in world millimeters (mm)
-    StrokePattern pattern = StrokePattern::Solid; ///< Line pattern (Solid, Dashed, Dotted, Textured)
+    std::vector<Segment1D> segments;               ///< Ordered series of line segments (for hit-testing and geometric slicing)
+    std::vector<Point2D>   centerline;             ///< Original smoothed centerline points with pressure & time telemetry
+    BLPath                 outlinePath;            ///< Closed 2D vector polygon contour for rasterization
+    BLRgba32               color{0xFFFFFFFF};      ///< 32-bit RGBA color
+    double                 baseWidth = 3.0;        ///< Nominal baseline width in world millimeters (mm)
+    StrokePattern          pattern = StrokePattern::Solid; ///< Line pattern (Solid, Dashed, Dotted)
 };
 
 /**
  * @brief Persistent canvas entity holding baked vector ink strokes.
- * 
- * InkContainer inherits from CanvasObject and represents one or more finished strokes
- * grouped together. It handles:
- *  - Accurate world-space AABB bounding box calculation (taking stroke width & transforms into account)
- *  - Point-to-segment distance hit-testing (for selection and eraser tools)
- *  - Fast batch-rendered vector drawing via Blend2D
- *  - Incremental dirty-flag tracking to avoid redundant rasterization
  */
 class InkContainer final : public CanvasObject {
 public:
     std::vector<Stroke> strokes;       ///< List of strokes contained within this container
-    bool isHighlighter = false;        ///< If true, drawn with semi-transparent highlighter blending
+    bool isHighlighter = false;        ///< If true, drawn with semi-transparent highlighter blending (MULTIPLY op)
 
     /**
      * @brief Incremental rendering dirty flag.
@@ -50,20 +54,18 @@ public:
     /**
      * @brief Marks this container as needing a full rasterization pass on the next frame.
      */
-    void InvalidateCache() { renderDirty = true; }
+    void InvalidateCache();
 
-    InkContainer() {
-        type = ObjectType::InkContainer;
-    }
+    /**
+     * @brief Constructs an empty ink container with ObjectType::InkContainer.
+     */
+    InkContainer();
 
     /**
      * @brief Appends a finished vector stroke to this container and updates bounding box.
+     * @param stroke Finished stroke to add
      */
-    void AddStroke(const Stroke& stroke) {
-        strokes.push_back(stroke);
-        renderDirty = true;  // Mark dirty so the static cache composites this stroke
-        UpdateBounds();
-    }
+    void AddStroke(const Stroke& stroke);
 
     // =========================================================================
     // 1. BOUNDS & SPATIAL QUERIES
@@ -73,150 +75,55 @@ public:
      * @brief Computes the Axis-Aligned Bounding Box (AABB) in world coordinates.
      * 
      * Algorithm:
-     * 1. Iterates through every segment of every stroke in local coordinates.
+     * 1. Iterates through every segment or pre-baked 2D outline path in local coordinates.
      * 2. Accounts for the visual thickness of each segment by adding/subtracting half-width (radius).
-     * 3. Transforms the 4 corners of the local bounding box using the container's affine matrix.
-     * 4. Encapsulates transformed corners into a world-space AABB with padding.
+     * 3. Transforms the 4 corners of the local bounding box using the container's affine matrix:
+     *      p' = [m00*x + m10*y + m20, m01*x + m11*y + m21]^T
+     * 4. Enclosing AABB derived from min/max extrema with a 2.0 mm antialiasing safety margin.
      */
-    void UpdateBounds() override {
-        if (strokes.empty()) {
-            bounds = AABB{};
-            return;
-        }
-
-        double minX = 1e20, minY = 1e20, maxX = -1e20, maxY = -1e20;
-
-        // Step 1: Find local min/max extents from 2D outline paths or segments
-        for (const auto& stroke : strokes) {
-            if (!stroke.outlinePath.is_empty()) {
-                BLBox box;
-                if (stroke.outlinePath.get_bounding_box(&box) == BL_SUCCESS) {
-                    minX = std::min(minX, box.x0);
-                    minY = std::min(minY, box.y0);
-                    maxX = std::max(maxX, box.x1);
-                    maxY = std::max(maxY, box.y1);
-                }
-            } else {
-                for (const auto& seg : stroke.segments) {
-                    double hw = seg.width * 0.5; // Stroke radius around the centerline
-                    minX = std::min({minX, seg.p0.x - hw, seg.p1.x - hw});
-                    minY = std::min({minY, seg.p0.y - hw, seg.p1.y - hw});
-                    maxX = std::max({maxX, seg.p0.x + hw, seg.p1.x + hw});
-                    maxY = std::max({maxY, seg.p0.y + hw, seg.p1.y + hw});
-                }
-            }
-        }
-
-        if (minX > maxX || minY > maxY) {
-            bounds = AABB{};
-            return;
-        }
-
-        // Step 2: Map the 4 local bounding corners through the object's affine transform
-        double pad = 2.0; // 2mm safety margin to ensure antialiasing fringes are never clipped
-        BLPoint corners[4] = {
-            transform.map_point(minX - pad, minY - pad),
-            transform.map_point(maxX + pad, minY - pad),
-            transform.map_point(minX - pad, maxY + pad),
-            transform.map_point(maxX + pad, maxY + pad)
-        };
-
-        // Step 3: Compute the enclosing world-space AABB from the transformed corners
-        bounds = AABB{
-            std::min({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
-            std::min({corners[0].y, corners[1].y, corners[2].y, corners[3].y}),
-            std::max({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
-            std::max({corners[0].y, corners[1].y, corners[2].y, corners[3].y})
-        };
-    }
+    void UpdateBounds() override;
 
     /**
      * @brief Performs precise geometric hit testing for a world-space point (e.g., stylus or eraser).
+     *
+     * 2-Tier Culling Strategy:
+     * - Tier 1: AABB broadphase bounding box test in world coordinates.
+     * - Tier 2: Inverted affine mapping into local space followed by:
+     *     a. BLPath::hit_test with BL_FILL_RULE_NON_ZERO.
+     *     b. StrokeCollisionEngine segment-to-point distance check (tolerance 1.5 mm).
+     *
+     * @param worldX Query X in world millimeters
+     * @param worldY Query Y in world millimeters
+     * @return true if point hits any stroke
      */
-    bool HitTest(double worldX, double worldY) const override {
-        // Tier 1: Stroke-level AABB Broadphase Culling
-        if (!bounds.Contains(worldX, worldY)) return false;
-
-        // Map query point from world space into object local space
-        BLMatrix2D invTransform;
-        BLMatrix2D::invert(invTransform, transform);
-        BLPoint localPt = invTransform.map_point(worldX, worldY);
-
-        // Tier 2: On-the-fly register-only narrowphase
-        for (const auto& stroke : strokes) {
-            if (!stroke.outlinePath.is_empty()) {
-                BLHitTest hit = stroke.outlinePath.hit_test(BLPoint{localPt.x, localPt.y}, BL_FILL_RULE_NON_ZERO);
-                if (hit == BL_HIT_TEST_IN) return true;
-            }
-
-            auto hit = StrokeCollisionEngine::HitTestStroke(stroke.segments, localPt.x, localPt.y, 1.5);
-            if (hit.hit) return true;
-        }
-        return false;
-    }
+    bool HitTest(double worldX, double worldY) const override;
 
     /**
      * @brief Evaluates whether any stroke segment intersects an eraser circle of radiusMm.
+     *
+     * @param worldX Eraser circle center X in world millimeters
+     * @param worldY Eraser circle center Y in world millimeters
+     * @param radiusMm Eraser circle radius in world millimeters
+     * @return true if circle overlaps any stroke
      */
-    bool HitTestCircle(double worldX, double worldY, double radiusMm) const override {
-        AABB queryBox(worldX - radiusMm, worldY - radiusMm, worldX + radiusMm, worldY + radiusMm);
-        if (!bounds.Intersects(queryBox)) return false;
-
-        BLMatrix2D invTransform;
-        BLMatrix2D::invert(invTransform, transform);
-        BLPoint localPt = invTransform.map_point(worldX, worldY);
-        double scale = std::hypot(transform.m00, transform.m01);
-        double localRadius = (scale > 1e-6) ? (radiusMm / scale) : radiusMm;
-
-        for (const auto& stroke : strokes) {
-            auto hit = StrokeCollisionEngine::HitTestStroke(stroke.segments, localPt.x, localPt.y, localRadius);
-            if (hit.hit) return true;
-
-            if (!stroke.outlinePath.is_empty()) {
-                BLHitTest blHit = stroke.outlinePath.hit_test(BLPoint{localPt.x, localPt.y}, BL_FILL_RULE_NON_ZERO);
-                if (blHit == BL_HIT_TEST_IN) return true;
-            }
-        }
-        return false;
-    }
+    bool HitTestCircle(double worldX, double worldY, double radiusMm) const override;
 
     /**
      * @brief Evaluates whether any stroke segment intersects a continuous swept capsule from w0 to w1.
      * Prevents fast-moving eraser skips / tunneling with continuous swept-line collision.
+     *
+     * @param w0 Segment start in world coordinates
+     * @param w1 Segment end in world coordinates
+     * @param radiusMm Capsule radius in world millimeters
+     * @return true if swept capsule intersects any stroke
      */
-    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const override {
-        AABB sweptBox(
-            std::min(w0.x, w1.x) - radiusMm,
-            std::min(w0.y, w1.y) - radiusMm,
-            std::max(w0.x, w1.x) + radiusMm,
-            std::max(w0.y, w1.y) + radiusMm
-        );
-        if (!bounds.Intersects(sweptBox)) return false;
-
-        BLMatrix2D invTransform;
-        BLMatrix2D::invert(invTransform, transform);
-        BLPoint local0 = invTransform.map_point(w0.x, w0.y);
-        BLPoint local1 = invTransform.map_point(w1.x, w1.y);
-        Point2D lw0{ local0.x, local0.y };
-        Point2D lw1{ local1.x, local1.y };
-
-        double scale = std::hypot(transform.m00, transform.m01);
-        double localRadius = (scale > 1e-6) ? (radiusMm / scale) : radiusMm;
-
-        for (const auto& stroke : strokes) {
-            if (StrokeCollisionEngine::HitTestStrokeSwept(stroke.segments, lw0, lw1, localRadius)) {
-                return true;
-            }
-        }
-        return false;
-    }
+    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const override;
 
     /**
      * @brief Checks if this container intersects a selection bounding box (e.g. lasso or marquee selection).
+     * @param selectionBounds Selection rectangle in world millimeters
      */
-    bool Intersects(const AABB& selectionBounds) const override {
-        return bounds.Intersects(selectionBounds);
-    }
+    bool Intersects(const AABB& selectionBounds) const override;
 
     // =========================================================================
     // 2. GEOMETRY & TRANSFORMS
@@ -224,12 +131,9 @@ public:
 
     /**
      * @brief Applies a post-multiplication affine transform matrix (translate, scale, rotate).
+     * @param matrix 2D affine transformation matrix
      */
-    void ApplyTransform(const BLMatrix2D& matrix) override {
-        transform.post_transform(matrix);
-        renderDirty = true;
-        UpdateBounds();
-    }
+    void ApplyTransform(const BLMatrix2D& matrix) override;
 
     // =========================================================================
     // 3. VECTOR RENDERING PASS
@@ -238,83 +142,17 @@ public:
     /**
      * @brief Renders the vector strokes into the given Blend2D context using 2D closed polygon outlines.
      * 
-     * Renders using BL_FILL_RULE_NON_ZERO. This guarantees that self-overlapping loops
-     * (e.g. cursive writing, signatures) fill cleanly as a single unified solid silhouette
-     * without dark overlapping seams or hollow cutouts.
+     * Pipeline:
+     * 1. Viewport frustum culling: rejects completely off-screen containers.
+     * 2. Graphics context state isolation: save() / apply_transform() / restore().
+     * 3. Winding Rule: BL_FILL_RULE_NON_ZERO ensures self-overlapping loops fuse into a solid silhouette.
+     * 4. Composition Mode: BL_COMP_OP_MULTIPLY for highlighters, BL_COMP_OP_SRC_OVER for opaque pens.
+     * 5. Fast-Path: Renders cached 2D closed polygon outline (BLPath) with zero seams.
+     *
+     * @param ctx Blend2D raster context
+     * @param viewport Active canvas viewport for frustum culling
      */
-    void Render(BLContext& ctx, const Viewport& viewport) const override {
-        // 1. VISIBILITY & CULLING
-        // Check if the container is meant to be visible. If it's fully transparent or hidden,
-        // we skip drawing to save CPU/GPU cycles.
-        if (!isVisible || opacity <= 0.0f) return;
-        
-        // Frustum Culling: If the container's bounding box doesn't overlap the current camera
-        // view (viewport.bounds), it's completely off-screen and we can skip rendering it.
-        if (!bounds.Intersects(viewport.bounds)) return; // Viewport frustum culling
-
-        renderDirty = false;  // Mark clean: strokes have been rasterized
-
-        // 2. CONTEXT SETUP & TRANSFORM
-        // We save the global graphics state so that applying our specific transform 
-        // (position/rotation/scale) doesn't affect other objects drawn after this one.
-        ctx.save();
-        ctx.apply_transform(transform);
-
-        // 3. FILL RULE (CRUCIAL FOR INK)
-        // We use BL_FILL_RULE_NON_ZERO instead of the default Even-Odd rule.
-        // This is mathematically required so that when a single stroke loops back over itself 
-        // (like in cursive writing or scribbling), the overlapping sections fuse together into 
-        // a unified solid silhouette instead of canceling each other out to create empty "holes".
-        ctx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
-
-        for (const auto& stroke : strokes) {
-            if (stroke.outlinePath.is_empty() && stroke.segments.empty()) continue;
-
-            // 4. MATERIAL SIMULATION (HIGHLIGHTER VS PEN)
-            // Configure blend mode & color
-            if (isHighlighter) {
-                // Highlighters use MULTIPLY blend mode so dark ink/text underneath is preserved.
-                ctx.set_comp_op(BL_COMP_OP_MULTIPLY);
-                ctx.set_fill_style(BLRgba32(stroke.color.r(), stroke.color.g(), stroke.color.b(), 0xFF));
-            } else {
-                // Regular pens use their opaque base color and cover everything beneath them.
-                ctx.set_comp_op(BL_COMP_OP_SRC_OVER);
-                ctx.set_fill_style(stroke.color);
-            }
-
-            // 5. RENDERING: HIGH-FIDELITY OUTLINE FAST-PATH
-            // Calculating precise variable-width brush geometry is expensive.
-            // If we have a pre-calculated 2D polygon outline (stroke.outlinePath), 
-            // we use it. This achieves zero seams and requires only one fast draw call.
-            if (!stroke.outlinePath.is_empty()) {
-                ctx.fill_path(stroke.outlinePath);
-            } else {
-                // 6. FALLBACK RENDERING
-                // Fallback for legacy strokes or brand new strokes whose outline hasn't been built yet.
-                if (stroke.segments.size() == 1) {
-                    // Just draw a single thick line with round caps if it's only one segment long.
-                    ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
-                    ctx.set_stroke_width(stroke.segments[0].width);
-                    ctx.stroke_line(stroke.segments[0].p0.x, stroke.segments[0].p0.y, stroke.segments[0].p1.x, stroke.segments[0].p1.y);
-                } else {
-                    // Generate the variable-width outline on the fly. This is a bit slower but guarantees 
-                    // it renders correctly until the outline is permanently cached.
-                    std::vector<StrokeOutlineBuilder::InputPoint> pts;
-                    pts.reserve(stroke.segments.size() + 1);
-                    pts.push_back({ stroke.segments[0].p0.x, stroke.segments[0].p0.y, stroke.segments[0].width });
-                    for (const auto& seg : stroke.segments) {
-                        pts.push_back({ seg.p1.x, seg.p1.y, seg.width });
-                    }
-                    BLPath fallbackOutline = StrokeOutlineBuilder::BuildOutline(pts);
-                    ctx.fill_path(fallbackOutline);
-                }
-            }
-        }
-
-        // 7. CLEANUP
-        // Restore the graphics context to its previous state (popping the transform we applied).
-        ctx.restore();
-    }
+    void Render(BLContext& ctx, const Viewport& viewport) const override;
 
     // =========================================================================
     // 4. DUPLICATION & PERSISTENCE
@@ -323,208 +161,34 @@ public:
     /**
      * @brief Deep-copies this InkContainer entity.
      */
-    std::unique_ptr<CanvasObject> Clone() const override {
-        auto clone = std::make_unique<InkContainer>();
-        clone->uid = this->uid;
-        clone->type = this->type;
-        clone->bounds = this->bounds;
-        clone->transform = this->transform;
-        clone->zOrder = this->zOrder;
-        clone->opacity = this->opacity;
-        clone->isVisible = this->isVisible;
-        clone->isLocked = this->isLocked;
-        clone->isSelectable = this->isSelectable;
-        clone->isSelected = this->isSelected;
-        clone->isTemporary = this->isTemporary;
-        clone->strokes = this->strokes;
-        clone->isHighlighter = this->isHighlighter;
-        clone->renderDirty = true;
-        return clone;
-    }
+    std::unique_ptr<CanvasObject> Clone() const override;
 
-    // currenlty there is centerlized system
-
-    void Serialize(Serializer& /*writer*/) const override {
-        // Reserved for binary serialization
-    }
-
-    void Deserialize(Deserializer& /*reader*/) override {
-        // Reserved for binary deserialization
-    }
+    void Serialize(Serializer& writer) const override;
+    void Deserialize(Deserializer& reader) override;
 
     // =========================================================================
-    // 5. FUTURE ROADMAP / EXTENSION STUBS
+    // 5. ERASER SLICING
     // =========================================================================
 
-    // --- True "Slice" / Point Eraser (Segment Splitting) ---
     /**
      * @brief Erases segments within an eraser radius and slices affected strokes into surviving sub-strokes.
+     *
+     * Math:
+     * - Maps eraser circle to local coordinates using inverted affine matrix.
+     * - Radius scaled by 1 / hypot(m00, m01).
+     * - Splits segments into sub-chains and rebuilds clean 2D closed polygon contours.
+     *
      * @param worldX Eraser center X in world mm
      * @param worldY Eraser center Y in world mm
      * @param radius Eraser circle radius in world mm
-     * @param outNewFragments Optional destination list for newly spawned split fragment containers.
+     * @param[out] outNewFragments Receives newly spawned split fragment containers
      * @return true if any stroke was modified or sliced
      */
     bool SliceStrokeAt(double worldX, double worldY, double radius,
-                       std::vector<std::shared_ptr<InkContainer>>& outNewFragments) {
-        if (strokes.empty()) return false;
-
-        // Broadphase test: if eraser circle AABB does not intersect container bounds, early exit
-        AABB eraserAABB(worldX - radius, worldY - radius, worldX + radius, worldY + radius);
-        if (!bounds.Intersects(eraserAABB)) return false;
-
-        // Transform eraser circle into local object space
-        BLMatrix2D invTransform;
-        BLMatrix2D::invert(invTransform, transform);
-        BLPoint localCenter = invTransform.map_point(worldX, worldY);
-
-        double scale = std::hypot(transform.m00, transform.m01);
-        double localRadius = (scale > 1e-6) ? (radius / scale) : radius;
-
-        std::vector<Stroke> newStrokes;
-        bool anyModified = false;
-
-        for (const auto& stroke : strokes) {
-            std::vector<std::vector<Segment1D>> subChains;
-            bool strokeModified = StrokeSlicer::SliceSegments(
-                stroke.segments, localCenter.x, localCenter.y, localRadius, subChains);
-
-            if (strokeModified) {
-                anyModified = true;
-                for (size_t subIdx = 0; subIdx < subChains.size(); ++subIdx) {
-                    auto& subChain = subChains[subIdx];
-                    if (subChain.empty()) continue;
-
-                    Stroke newStroke;
-                    newStroke.color = stroke.color;
-                    newStroke.baseWidth = stroke.baseWidth;
-                    newStroke.pattern = stroke.pattern;
-                    newStroke.segments = std::move(subChain);
-
-                    // Re-bake clean 2D closed polygon outline (BLPath) for each surviving sub-stroke
-                    std::vector<StrokeOutlineBuilder::InputPoint> pts;
-                    pts.reserve(newStroke.segments.size() + 1);
-                    pts.push_back({ newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width });
-                    for (const auto& s : newStroke.segments) {
-                        pts.push_back({ s.p1.x, s.p1.y, s.width });
-                    }
-                    newStroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, CapType::Round, newStroke.pattern);
-
-                    // First surviving fragment stays in this container; additional fragments become separate objects
-                    if (newStrokes.empty() && subIdx == 0) {
-                        newStrokes.push_back(std::move(newStroke));
-                    } else {
-                        auto fragContainer = std::make_shared<InkContainer>();
-                        fragContainer->transform = this->transform;
-                        fragContainer->isHighlighter = this->isHighlighter;
-                        fragContainer->AddStroke(newStroke);
-                        outNewFragments.push_back(fragContainer);
-                    }
-                }
-            } else {
-                newStrokes.push_back(stroke);
-            }
-        }
-
-        if (anyModified) {
-            strokes = std::move(newStrokes);
-            renderDirty = true;
-            UpdateBounds();
-            return true;
-        }
-
-        return false;
-    }
-
-    bool SliceStrokeAt(double worldX, double worldY, double radius) {
-        std::vector<std::shared_ptr<InkContainer>> dummy;
-        return SliceStrokeAt(worldX, worldY, radius, dummy);
-    }
-
-    // --- Post-Selection Editing (Recolor, Resize, Reorder) ---
-    /**
-     * @brief Batch recolors all strokes within this container.
-     */
-    void SetColor(BLRgba32 /*newColor*/) {
-        // Reserved: Recolor all contained strokes and mark dirty
-    }
+                       std::vector<std::shared_ptr<InkContainer>>& outNewFragments);
 
     /**
-     * @brief Uniformly scales stroke thickness across all strokes in this container.
+     * @brief Overload without fragment output list (discards split sub-fragments).
      */
-    void ScaleThickness(float /*factor*/) {
-        // Reserved: Rescale baseWidth and segment widths, then UpdateBounds()
-    }
-
-    /**
-     * @brief Incrementally brings this container forward in the layer hierarchy.
-     */
-    void BringForward() {
-        // Reserved: Increment zOrder relative to neighbor objects
-    }
-
-    /**
-     * @brief Incrementally sends this container backward in the layer hierarchy.
-     */
-    void SendBackward() {
-        // Reserved: Decrement zOrder relative to neighbor objects
-    }
-
-    /**
-     * @brief Moves this container to the top-most z-order.
-     */
-    void BringToFront() {
-        // Reserved: Assign maximum zOrder
-    }
-
-    /**
-     * @brief Moves this container to the bottom-most z-order.
-     */
-    void SendToBack() {
-        // Reserved: Assign minimum zOrder
-    }
-
-    // --- Selection Visuals & Transform Handles ---
-    /**
-     * @brief Renders selection bounding box, contour glow, and resize/rotation handles.
-     */
-    void RenderSelectionHandles(BLContext& /*ctx*/, const Viewport& /*viewport*/) const {
-        // Reserved: Interactive marquee boundary and rotation/scale gizmo rendering
-    }
-
-    // --- Curve Fitting / Bézier Simplification (RDP + Catmull-Rom) ---
-    /**
-     * @brief Simplifies linear segments using Ramer-Douglas-Peucker (RDP) and fits cubic Bézier curves.
-     * @param tolerance Error threshold in mm for point reduction
-     */
-    void SimplifyCurves(double /*tolerance*/ = 0.2) {
-        // Reserved: Ramer-Douglas-Peucker segment reduction + Catmull-Rom to Bézier fitting
-    }
-
-    // --- Shape Recognition / Snap-to-Geometry ("Hold to Snap") ---
-    enum class DetectedShapeType {
-        None,
-        Line,
-        Rectangle,
-        Circle,
-        Ellipse,
-        Triangle
-    };
-
-    /**
-     * @brief Evaluates whether stroke geometry matches a canonical shape and snaps to perfect vector primitives.
-     */
-    DetectedShapeType DetectAndSnapShape(double /*tolerance*/ = 0.8) {
-        // Reserved: Geometric shape classifier (straight ruler, circle, rectangle fitting)
-        return DetectedShapeType::None;
-    }
-
-    // --- Stroke Replay / Time-Lapse Telemetry ---
-    /**
-     * @brief Replays stroke progression over time for tutorials or animated note playback.
-     * @param normalizedProgress Playback progress between 0.0f (start) and 1.0f (complete)
-     */
-    void RenderPlayback(BLContext& /*ctx*/, const Viewport& /*viewport*/, float /*normalizedProgress*/) const {
-        // Reserved: Interpolate segment chain based on timestamp telemetry
-    }
+    bool SliceStrokeAt(double worldX, double worldY, double radius);
 };

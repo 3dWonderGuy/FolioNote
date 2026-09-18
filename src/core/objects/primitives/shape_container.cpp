@@ -187,12 +187,47 @@ void ShapeObject::BuildPath(BLPath& path) const {
             break;
         }
         // -----------------------------------------------------------------------
+        // -----------------------------------------------------------------------
         case ShapeType::Cloud: {
             // Rounded rect base + two ellipse bumps on top
             double r = (std::min)(w, h) * 0.25;
             path.add_round_rect(BLRoundRect(x, y + h * 0.3, w, h * 0.7, r, r));
             path.add_ellipse(BLEllipse(x + w * 0.3,  y + h * 0.4,  w * 0.25, h * 0.35));
             path.add_ellipse(BLEllipse(x + w * 0.65, y + h * 0.35, w * 0.28, h * 0.38));
+            break;
+        }
+        // -----------------------------------------------------------------------
+        case ShapeType::SineWave: {
+            // Continuous harmonic sinusoidal wave
+            // param1 stores cycle count (default 3.0 periods)
+            double cycles = (param1 > 0.05) ? param1 : 3.0;
+            WaveShapeGenerator::BuildSineWavePath(path, x, y, w, h, cycles);
+            break;
+        }
+        // -----------------------------------------------------------------------
+        case ShapeType::SquareWave: {
+            // Orthogonal digital pulse train square wave
+            // param1 stores cycle count (default 3.0 periods)
+            double cycles = (param1 > 0.05) ? param1 : 3.0;
+            WaveShapeGenerator::BuildSquareWavePath(path, x, y, w, h, cycles, 0.5);
+            break;
+        }
+        // -----------------------------------------------------------------------
+        case ShapeType::TriangleWave: {
+            // Symmetric linear triangle wave
+            // param1 stores cycle count (default 3.0 periods)
+            double cycles = (param1 > 0.05) ? param1 : 3.0;
+            WaveShapeGenerator::BuildTriangleWavePath(path, x, y, w, h, cycles);
+            break;
+        }
+        // -----------------------------------------------------------------------
+        case ShapeType::RightTriangleWave: {
+            // Right triangle / sawtooth wave
+            // param1 stores cycle count (default 3.0 periods)
+            // param2 switches the right angle side: 0.0 = right-angle on right, 1.0 = right-angle on left
+            double cycles = (param1 > 0.05) ? param1 : 3.0;
+            bool rightAngleOnRight = (param2 < 0.5);
+            WaveShapeGenerator::BuildRightTriangleWavePath(path, x, y, w, h, cycles, rightAngleOnRight);
             break;
         }
         // -----------------------------------------------------------------------
@@ -437,15 +472,43 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
 
         } else if (fillType >= ShapeFillType::HatchDiagonal &&
                    fillType <= ShapeFillType::HatchDots) {
-            // Dynamic scale: decrease number of lines if shape is very small
+            // Stroke width invariance: compensate for active scale transform
+            double det         = std::abs(transform.m00 * transform.m11
+                                         - transform.m01 * transform.m10);
+            double scaleFactor = (det > 1e-6) ? std::sqrt(det) : 1.0;
+            double effWidth    = strokeWidth / scaleFactor;
+
+            // Infill lines are half (1/2) of the outline thickness
+            double infillWorldWidth = (std::max)(0.15, effWidth * 0.5);
+
+            // Doubled spacing requirement:
+            // Clear gap between lines: gap = pitch - infillWorldWidth >= 5.0 * infillWorldWidth.
+            // Therefore, minimum perpendicular pitch: pitch >= 6.0 * infillWorldWidth.
+            double minPitch = 6.0 * infillWorldWidth;
+            double basePitch = (std::max)(5.0, minPitch);
+
+            // Dynamic scale: increase pitch if shape is very small to avoid dense bleeding
             double minDim = std::min(worldWidth, worldHeight);
-            double dynamicSpacing = 3.0; // Default spacing
             if (minDim > 0 && minDim < 20.0) {
-                // If the shape is smaller than 20mm, increase spacing relatively so lines don't bleed
-                dynamicSpacing = 3.0 * (20.0 / minDim); 
+                basePitch *= (20.0 / minDim);
             }
-            
-            BLPattern hatch = CreateHatchPattern(fillType, fillColor, strokeWidth, dynamicSpacing);
+
+            // Convert desired perpendicular line pitch to BLPattern tile spacingMm:
+            // For 45-degree diagonal lines: d_perp = spacingMm / (2 * sqrt(2)) => spacingMm = pitch * 2 * sqrt(2).
+            // For horizontal/vertical lines: pitch = spacingMm.
+            // For dots: axis spacing = 0.5 * spacingMm => spacingMm = pitch * 2.
+            double dynamicSpacing = basePitch;
+            if (fillType == ShapeFillType::HatchDiagonal || fillType == ShapeFillType::HatchCross) {
+                dynamicSpacing = basePitch * (2.0 * 1.414213562373);
+            } else if (fillType == ShapeFillType::HatchDots) {
+                dynamicSpacing = basePitch * 2.0;
+            }
+
+            // Alpha enforcement: textured infill is ALWAYS 100% solid, fully opaque (never translucent)
+            BLRgba32 solidFillColor = fillColor;
+            solidFillColor.setA(255);
+
+            BLPattern hatch = CreateHatchPattern(fillType, solidFillColor, effWidth, dynamicSpacing);
             ctx.set_fill_style(hatch);
             ctx.fill_path(path);
         }
@@ -509,43 +572,84 @@ BLPattern ShapeObject::CreateHatchPattern(ShapeFillType type,
                                            const BLRgba32& color,
                                            double strokeWidth,
                                            double spacingMm) {
-    constexpr int sz = 32;
+    // Use high-resolution 256×256 tile to eliminate pixelation and bilinear magnification blur
+    constexpr int sz = 256;
     BLImage   img(sz, sz, BL_FORMAT_PRGB32);
     BLContext ictx(img);
     ictx.clear_all();
 
+    // Alpha enforcement: infill patterns are ALWAYS 100% solid, fully opaque (never translucent)
     BLRgba32 strokeCol = color;
-    if (strokeCol.a() == 0) strokeCol = BLRgba32(0x18, 0x1A, 0x20, 0xFF);
-
+    strokeCol.setA(255);
     ictx.set_stroke_style(strokeCol);
-    // Use the outline's strokeWidth, clamped to a reasonable minimum to prevent disappearing lines
-    ictx.set_stroke_width(std::max(0.5, strokeWidth));
-    ictx.set_stroke_caps(BL_STROKE_CAP_SQUARE);
+
+    // Infill lines are specified to be exactly half (0.5) of the outline thickness.
+    // The 256×256 image tile is scaled by scale = effectiveSpacingMm / sz in world space.
+    // Therefore, a desired world line width W_world = strokeWidth * 0.5 requires a
+    // pixel stroke width on the tile of: W_px = W_world / scale = (strokeWidth * 0.5) * (sz / effectiveSpacingMm).
+    double infillWorldWidth = (std::max)(0.15, strokeWidth * 0.5);
+
+    // Enforce doubled spacing requirement:
+    // Pitch between lines must satisfy: pitch = gap + infillWorldWidth >= 6.0 * infillWorldWidth.
+    double minPitch = 6.0 * infillWorldWidth;
+    double effectiveSpacingMm = spacingMm;
 
     if (type == ShapeFillType::HatchDiagonal || type == ShapeFillType::HatchCross) {
-        ictx.stroke_line(0, 0, sz, sz);
-        ictx.stroke_line(0, sz * 0.5, sz * 0.5, sz);
-        ictx.stroke_line(sz * 0.5, 0, sz, sz * 0.5);
+        // Perpendicular line distance for 45° lines is d_perp = spacingMm / (2 * sqrt(2)).
+        // Enforcing d_perp >= minPitch yields spacingMm >= minPitch * 2 * sqrt(2).
+        double minSpacing = minPitch * (2.0 * 1.414213562373);
+        effectiveSpacingMm = (std::max)(effectiveSpacingMm, minSpacing);
+    } else if (type == ShapeFillType::HatchDots) {
+        // Dot spacing along grid axes is 0.5 * spacingMm => spacingMm >= minPitch * 2.
+        double minSpacing = minPitch * 2.0;
+        effectiveSpacingMm = (std::max)(effectiveSpacingMm, minSpacing);
+    } else {
+        // HatchHorizontal, HatchVertical: pitch = spacingMm.
+        effectiveSpacingMm = (std::max)(effectiveSpacingMm, minPitch);
+    }
+
+    double scale = effectiveSpacingMm / static_cast<double>(sz);
+    double infillPixelWidth = (std::max)(1.0, infillWorldWidth / scale);
+
+    ictx.set_stroke_width(infillPixelWidth);
+    ictx.set_stroke_caps(BL_STROKE_CAP_SQUARE);
+    ictx.set_stroke_join(BL_STROKE_JOIN_MITER_BEVEL);
+
+    // Continuous boundary wrapping:
+    // When stroking lines across a tiling box, lines that touch the borders must extend
+    // beyond the [0, sz] boundary by at least 1 tile period. This guarantees that stroke
+    // width is not truncated at tile boundaries, eliminating blurred or faded seam artifacts.
+    const double d = sz * 0.5;
+
+    if (type == ShapeFillType::HatchDiagonal || type == ShapeFillType::HatchCross) {
+        // 45-degree diagonal lines: y = x + k * d (for k = -2, -1, 0, 1, 2)
+        // All lines are stroked from x = -sz to x = 2*sz so ends wrap seamlessly across boundaries.
+        for (int k = -2; k <= 2; ++k) {
+            double offset = k * d;
+            ictx.stroke_line(-sz, -sz + offset, sz * 2.0, sz * 2.0 + offset);
+        }
     }
     if (type == ShapeFillType::HatchCross) {
-        ictx.stroke_line(0, sz, sz, 0);
-        ictx.stroke_line(0, sz * 0.5, sz * 0.5, 0);
-        ictx.stroke_line(sz * 0.5, sz, sz, sz * 0.5);
+        // Perpendicular 45-degree diagonal lines: y = -x + c (for c = 0, d, 2d, 3d, 4d)
+        for (int k = 0; k <= 4; ++k) {
+            double c = k * d;
+            ictx.stroke_line(-sz, sz + c, sz * 2.0, -2.0 * sz + c);
+        }
     }
     if (type == ShapeFillType::HatchHorizontal) {
-        ictx.stroke_line(0, sz * 0.5, sz, sz * 0.5);
+        ictx.stroke_line(-sz, d, sz * 2.0, d);
     }
     if (type == ShapeFillType::HatchVertical) {
-        ictx.stroke_line(sz * 0.5, 0, sz * 0.5, sz);
+        ictx.stroke_line(d, -sz, d, sz * 2.0);
     }
     if (type == ShapeFillType::HatchDots) {
         ictx.set_fill_style(strokeCol);
-        ictx.fill_circle(sz * 0.25, sz * 0.25, 2.2);
-        ictx.fill_circle(sz * 0.75, sz * 0.75, 2.2);
+        double dotRadiusPx = (std::max)(1.5, infillPixelWidth * 0.5);
+        ictx.fill_circle(sz * 0.25, sz * 0.25, dotRadiusPx);
+        ictx.fill_circle(sz * 0.75, sz * 0.75, dotRadiusPx);
     }
     ictx.end();
 
-    double scale = spacingMm / static_cast<double>(sz);
     return BLPattern(img, BL_EXTEND_MODE_REPEAT,
                      BLMatrix2D::make_scaling(scale, scale));
 }

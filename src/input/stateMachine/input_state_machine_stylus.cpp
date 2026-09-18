@@ -91,7 +91,8 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
         case InteractionState::Selecting: {
             if (justDown) {
                 // First test if pointer clicked an active selection gizmo handle
-                if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform)) {
+                if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
+                                                       canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
                     canvas.isDirty = true;
                 } else {
                     // Convert local coordinates to world millimeters for spatial hit-testing
@@ -115,7 +116,8 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                         canvas.ClearSelection(&session);
                         clickedObj->isSelected = 1;
                         canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
-                        canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform);
+                        canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
+                                                               canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm);
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
                         LOG_INFO(InputStateMachine, "Stylus direct click selected object uid=" + std::to_string(clickedObj->uid));
@@ -132,7 +134,8 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
             }
             else if (isMoving) {
                 if (canvas.selectionGizmo.isDragging) {
-                    if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform)) {
+                    if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform,
+                                                           canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
                         canvas.needsFullRebake = true;
                         canvas.isDirty = true;
                     }

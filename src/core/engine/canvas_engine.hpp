@@ -787,6 +787,24 @@ public:
             minX = shapeCreation.startWorld.x - r;
             minY = shapeCreation.startWorld.y - r;
         }
+        else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
+                 shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
+                 shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
+                 shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
+            // Wave shape creation: horizontal drag sets length (w).
+            // If user drags primarily horizontally (vertical delta < 4mm), set default height of 20mm
+            // (10mm amplitude) centered on start line so wave does not collapse to zero amplitude.
+            minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+            w = std::max(0.5, std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x));
+            double rawH = std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+            if (rawH < 4.0) {
+                h = 20.0;
+                minY = shapeCreation.startWorld.y - 10.0;
+            } else {
+                minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+                h = std::max(0.5, rawH);
+            }
+        }
         else {
             // Rectangle, RoundedRect, Triangle, RightTriangle, Star, etc. (bounding box drag)
             minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
@@ -806,6 +824,12 @@ public:
         if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
             shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
             shp->param1 = static_cast<double>(shapeCreation.polygonSides);
+        } else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
+                   shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
+                   shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
+                   shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
+            shp->param1 = 3.0; // Default 3 cycles across length
+            shp->param2 = 0.0; // Default: right angle on right
         }
         shp->UpdateBounds();
 
@@ -1391,6 +1415,21 @@ public:
                      shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
                 // Handled in dedicated SmartArrowObject preview branch below
             }
+            else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
+                     shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
+                     shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
+                     shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
+                minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+                w = std::max(0.5, std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x));
+                double rawH = std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+                if (rawH < 4.0) {
+                    h = 20.0;
+                    minY = shapeCreation.startWorld.y - 10.0;
+                } else {
+                    minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+                    h = std::max(0.5, rawH);
+                }
+            }
             else {
                 minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
                 minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
@@ -1433,6 +1472,12 @@ public:
                     if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
                         shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
                         preview.param1 = static_cast<double>(shapeCreation.polygonSides);
+                    } else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
+                               shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
+                               shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
+                               shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
+                        preview.param1 = 3.0;
+                        preview.param2 = 0.0;
                     }
 
                     Viewport vp;
@@ -1457,6 +1502,8 @@ public:
 
         // 3. Selection Gizmo Overlay Pass (Screen Coordinates) - suppressed during active shape drawing
         if (selectionGizmo.HasSelection() && !shapeCreation.isActive && !shapeCreation.isDragging) {
+            selectionGizmo.lockToGrid = shapeCreation.lockToGrid;
+            selectionGizmo.gridSpacingMm = gridSpacingMm;
             selectionGizmo.Render(compCtx, transform);
         }
 

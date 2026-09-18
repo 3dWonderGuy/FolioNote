@@ -126,7 +126,8 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     }
     else if (currentAction == InteractionState::Selecting) {
         if (justDown) {
-            if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform)) {
+            if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
+                                                   canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
                 canvas.isDirty = true;
             } else {
                 Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
@@ -148,7 +149,8 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     canvas.ClearSelection(&session);
                     clickedObj->isSelected = 1;
                     canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
-                    canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform);
+                    canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
+                                                           canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                     LOG_INFO(InputStateMachine, "Mouse direct click selected object uid=" + std::to_string(clickedObj->uid));
@@ -164,7 +166,8 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         }
         else if (isMoving) {
             if (canvas.selectionGizmo.isDragging) {
-                if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform)) {
+                if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform,
+                                                       canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                 }

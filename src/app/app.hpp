@@ -35,6 +35,8 @@
 #include <thread>
 #include <string>
 #include <filesystem>
+#include <unordered_set>
+#include <fstream>
 
 class Application {
 public:
@@ -78,12 +80,160 @@ public:
     std::string lastActivePageGuid;
 
     /**
+     * @brief Dedicated directory where incoming virtual print spools and imported PDF files are placed.
+     * Standard path: Documents/FolioNote/Imports (or platform preference folder).
+     */
+    std::filesystem::path importsDirectory;
+
+    /**
+     * @brief Set of canonical file paths already registered or processed from the Imports folder.
+     * Prevents continuous re-prompting for documents that have already been imported or rejected.
+     */
+    std::unordered_set<std::string> knownImportedPdfs;
+
+    /**
+     * @brief Timestamp (SDL_GetTicks) of the last directory scan of the Imports folder.
+     * Throttled to execute once every 1.5 - 2.0 seconds to minimize I/O overhead.
+     */
+    uint64_t lastImportScanTicksMs = 0;
+
+    /**
+     * @brief Pre-indexes and ensures existence of the dedicated user Imports directory.
+     *
+     * GENERAL WORKING PROCESS:
+     * 1. Forms the subdirectory path `<rootPath>/Imports` (e.g. `Documents/FolioNote/Imports`).
+     * 2. Creates the directory tree if it does not yet exist on disk.
+     * 3. Scans existing files within the folder and caches their canonical paths in `knownImportedPdfs`.
+     *    This ensures that when FolioNote starts up, pre-existing files do not trigger an avalanche
+     *    of modal prompts, and only newly deposited documents (e.g. freshly printed via
+     *    "Print to FolioNote") trigger interactive placement.
+     *
+     * @param rootPath Root directory of FolioNote data (typically OS Documents folder / FolioNote).
+     */
+    void EnsureImportsDirectory(const std::filesystem::path& rootPath) {
+        importsDirectory = rootPath / "Imports";
+        std::error_code ec;
+        if (!std::filesystem::exists(importsDirectory, ec)) {
+            std::filesystem::create_directories(importsDirectory, ec);
+        } else {
+            // Index existing files so only newly deposited documents trigger the modal
+            for (const auto& entry : std::filesystem::directory_iterator(importsDirectory, ec)) {
+                if (entry.is_regular_file() && entry.path().extension() == ".pdf") {
+                    knownImportedPdfs.insert(std::filesystem::canonical(entry.path(), ec).string());
+                }
+            }
+        }
+    }
+
+    /**
+     * @brief Stages an external document into the Imports folder and presents the import placement dialog.
+     *
+     * GENERAL WORKING PROCESS:
+     * 1. Inspects the source file to verify existence and `.pdf` format.
+     * 2. If the file is not already inside `importsDirectory`, copies it into `importsDirectory`.
+     *    If a file with the same filename already exists, appends an incremental numeric suffix
+     *    (e.g., `document_1.pdf`) to prevent accidental overwrites of existing imports.
+     * 3. Marks the destination canonical path in `knownImportedPdfs` so background polling ignores it.
+     * 4. Calls `pdfImportModal.Open(dest, &session)` which launches the interactive UI modal
+     *    asking the user where to place the document (which notebook, section, page, or standalone viewer).
+     *
+     * @param sourcePath Canonical or relative filesystem path to the external PDF document.
+     * @return true if the document was successfully staged and modal was opened; false otherwise.
+     */
+    bool ImportExternalPdf(const std::string& sourcePath) {
+        if (sourcePath.empty()) return false;
+        std::error_code ec;
+        std::filesystem::path src(sourcePath);
+        if (!std::filesystem::exists(src, ec)) return false;
+
+        std::filesystem::path dest = src;
+        if (!importsDirectory.empty()) {
+            std::filesystem::path target = importsDirectory / src.filename();
+            // Avoid copying onto itself if the file was already placed directly into Imports
+            if (std::filesystem::canonical(src, ec) != std::filesystem::canonical(target, ec)) {
+                int counter = 1;
+                while (std::filesystem::exists(target, ec)) {
+                    std::string stem = src.stem().string() + "_" + std::to_string(counter++);
+                    target = importsDirectory / (stem + src.extension().string());
+                }
+                std::filesystem::copy_file(src, target, std::filesystem::copy_options::overwrite_existing, ec);
+                if (!ec) dest = target;
+            }
+        }
+
+        std::string canonicalDest = std::filesystem::canonical(dest, ec).string();
+        if (canonicalDest.empty()) canonicalDest = dest.string();
+        knownImportedPdfs.insert(canonicalDest);
+
+        pdfImportModal.Open(dest.string(), &session);
+        return true;
+    }
+
+    /**
+     * @brief Scans the Imports directory for incoming documents (e.g. from 'Print to FolioNote').
+     *
+     * GENERAL WORKING PROCESS:
+     * 1. Guard check: If `pdfImportModal` is already open, avoids popping an overlapping modal.
+     * 2. Iterates over regular `.pdf` files located in `importsDirectory`.
+     * 3. For any file not present in `knownImportedPdfs`:
+     *    - Checks that the file size is greater than 0 bytes.
+     *    - Verifies file is not locked: Attempts an exclusive binary stream open. If locked by the
+     *      Windows Print Spooler or browser during an active print write, defers until next scan cycle.
+     *    - Adds path to `knownImportedPdfs` and triggers `pdfImportModal.Open(...)`.
+     *    - Returns true immediately to process one document at a time.
+     *
+     * @return true if a new incoming PDF document was detected and opened; false if none.
+     */
+    bool CheckImportFolder() {
+        if (pdfImportModal.isOpen) return false;
+        if (importsDirectory.empty()) return false;
+
+        std::error_code ec;
+        if (!std::filesystem::exists(importsDirectory, ec)) return false;
+
+        for (const auto& entry : std::filesystem::directory_iterator(importsDirectory, ec)) {
+            if (!entry.is_regular_file()) continue;
+
+            std::string ext = entry.path().extension().string();
+            for (auto& c : ext) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+            if (ext != ".pdf") continue;
+
+            std::string canonicalPath = std::filesystem::canonical(entry.path(), ec).string();
+            if (canonicalPath.empty()) canonicalPath = entry.path().string();
+
+            if (knownImportedPdfs.find(canonicalPath) != knownImportedPdfs.end()) {
+                continue;
+            }
+
+            // Ensure file is finished writing (not locked by print spooler / browser download)
+            auto fileSize = std::filesystem::file_size(entry.path(), ec);
+            if (ec || fileSize == 0) {
+                continue; // Still spooling or 0 bytes
+            }
+
+            // Test if file can be opened for reading
+            std::ifstream testStream(entry.path(), std::ios::binary | std::ios::in);
+            if (!testStream.is_open()) {
+                continue; // File locked by another process
+            }
+            testStream.close();
+
+            // Register and launch import modal
+            knownImportedPdfs.insert(canonicalPath);
+            pdfImportModal.Open(entry.path().string(), &session);
+            devTelemetry.LogEvent("Discovered incoming virtual print document: " + entry.path().filename().string(), LogCategory::System);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * @brief Timestamp (SDL_GetTicks) of the last LRU working-set eviction check.
      * The check runs at most once per second to avoid overhead.
      */
     uint64_t lastLruCheckMs = 0;
 
-    bool Init(const char* title = "FolioNote", int initialW = 1920, int initialH = 1080) {
+    bool Init(const char* title = "FolioNote", int initialW = 1920, int initialH = 1080, const std::string& initialImportPath = "") {
         if (!SDL_Init(SDL_INIT_VIDEO)) return false;
 
 #if defined(__ANDROID__)
@@ -320,6 +470,14 @@ public:
             pdfImportModal.Open(path, s);
         };
 
+        // ---------------------------------------------------------
+        // IMPORTS DIRECTORY & CLI STAGED DOCUMENT INITIALIZATION
+        // ---------------------------------------------------------
+        EnsureImportsDirectory(folioPath);
+        if (!initialImportPath.empty()) {
+            ImportExternalPdf(initialImportPath);
+        }
+
         devTelemetry.LogEvent("FolioNote initialized.", LogCategory::System);
         return true;
     }
@@ -475,9 +633,12 @@ public:
                             for (auto& c : ext) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
                         }
                         if (ext == ".pdf") {
-                            pdfImportModal.Open(droppedPath, &session);
+                            ImportExternalPdf(droppedPath);
                         }
                     }
+                }
+                else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+                    CheckImportFolder();
                 }
 
                 inputManager.ProcessEvent(event, canvas, session, windowSM);
@@ -547,6 +708,13 @@ public:
                 if (isActivelyDrawing) {
                     ::Folio::UsageTracker::Instance().RecordDrawingTime(frameDtSec);
                 }
+            }
+
+            // Periodically check the user Imports directory for documents from "Print to FolioNote"
+            uint64_t currentTicksMs = SDL_GetTicks();
+            if (currentTicksMs - lastImportScanTicksMs >= 2000) {
+                lastImportScanTicksMs = currentTicksMs;
+                CheckImportFolder();
             }
 
             windowSM.Update();

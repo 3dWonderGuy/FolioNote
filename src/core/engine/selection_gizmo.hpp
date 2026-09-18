@@ -49,6 +49,32 @@ public:
 
     [[nodiscard]] bool HasSelection() const noexcept { return hasSelection; }
 
+    // Grid lock / snapping configuration
+    bool lockToGrid = false;          ///< When true, snaps coordinates to gridSpacingMm during move/resize
+    double gridSpacingMm = 5.0;       ///< Grid interval in world millimeters (from background paper grid)
+
+    /**
+     * @brief Determines whether the current selection is eligible for grid snapping.
+     *
+     * Mathematical & Behavioral Rules:
+     * 1. lockToGrid must be active and gridSpacingMm > 0.001 mm.
+     * 2. Ink strokes (ObjectType::InkContainer) are explicitly excluded: freehand strokes must
+     *    never be snapped to a rigid grid when moved or resized.
+     * 3. Geometric vector shapes, text boxes, images, connectors, and other structured objects
+     *    snap cleanly to paper grid intervals.
+     *
+     * @return true if grid snapping should be applied to the active selection, false otherwise.
+     */
+    [[nodiscard]] bool ShouldSnapToGrid() const noexcept {
+        if (!lockToGrid || gridSpacingMm <= 0.001) return false;
+        for (const auto& obj : selectedObjects) {
+            if (obj && obj->type == ObjectType::InkContainer) {
+                return false; // Ink strokes bypass grid lock
+            }
+        }
+        return true;
+    }
+
     // Active drag state
     bool isDragging = false;
     HandleRole activeRole = HandleRole::None;
@@ -409,9 +435,20 @@ public:
 
     /**
      * @brief Begins an interactive transform drag if a handle or the body was hit.
+     *
+     * @param screenX Pointer X in viewport screen pixels.
+     * @param screenY Pointer Y in viewport screen pixels.
+     * @param transform Coordinate conversion between screen pixels and world millimeters.
+     * @param inLockToGrid Whether grid lock is currently enabled on canvas.
+     * @param inGridSpacingMm Background paper grid spacing in millimeters.
+     * @return true if a handle or body was hit and drag began, false otherwise.
      */
-    bool OnPointerDown(float screenX, float screenY, const CanvasTransform& transform) {
+    bool OnPointerDown(float screenX, float screenY, const CanvasTransform& transform,
+                       bool inLockToGrid = false, double inGridSpacingMm = 5.0) {
         if (!hasSelection) return false;
+
+        lockToGrid = inLockToGrid;
+        gridSpacingMm = inGridSpacingMm;
 
         GizmoHitResult hit = HitTest(screenX, screenY, transform);
         if (!hit.hit) return false;
@@ -424,7 +461,8 @@ public:
                               (activeRole == HandleRole::Rotation) ? "Rotation" : "Resize Handle";
         LOG_INFO(CanvasEngine, "Selection Gizmo drag started (operation=" + std::string(roleStr) +
                  ", handleRole=" + std::to_string(static_cast<int>(activeRole)) +
-                 ", selectedCount=" + std::to_string(selectedObjects.size()) + ")");
+                 ", selectedCount=" + std::to_string(selectedObjects.size()) +
+                 ", gridLock=" + (ShouldSnapToGrid() ? "ON" : "OFF") + ")");
 
         dragStartScreen = { screenX, screenY };
         dragStartWorld = transform.ScreenToWorld(screenX, screenY);
@@ -455,24 +493,60 @@ public:
     }
 
     /**
-     * @brief Updates the transformation during an active drag.
+     * @brief Updates the transformation during an active drag with optional grid locking.
+     *
+     * Mathematical Process:
+     * - When ShouldSnapToGrid() is true:
+     *   * Move: Target bounds top-left snaps to nearest grid multiple:
+     *     snapped = round((initMin + delta) / G) * G.
+     *     Translation applied from initialStates snapshots, avoiding numeric drift.
+     *   * Resize: Active handle world coordinate snaps to grid line:
+     *     snappedHandle = round((initHandle + delta) / G) * G.
+     *     Dimensions scale relative to fixed opposing anchor, guaranteeing integer cell widths.
+     *   * Custom handles: Target endpoint coordinate snaps to nearest grid vertex.
+     * - When ShouldSnapToGrid() is false (or ink stroke selected):
+     *   * Free floating subpixel continuous manipulation with aspect-ratio corner preservation.
      */
-    bool OnPointerMove(float screenX, float screenY, const CanvasTransform& transform) {
+    bool OnPointerMove(float screenX, float screenY, const CanvasTransform& transform,
+                       bool inLockToGrid = false, double inGridSpacingMm = 5.0) {
         if (!isDragging || selectedObjects.empty()) return false;
+
+        lockToGrid = inLockToGrid;
+        gridSpacingMm = inGridSpacingMm;
 
         Point2D currentWorld = transform.ScreenToWorld(screenX, screenY);
 
         // 1. Move (Translation)
         if (activeRole == HandleRole::Body) {
-            double dx = currentWorld.x - lastDragWorld.x;
-            double dy = currentWorld.y - lastDragWorld.y;
-            if (dx != 0.0 || dy != 0.0) {
-                BLMatrix2D trans = BLMatrix2D::make_translation(dx, dy);
-                for (auto& obj : selectedObjects) {
-                    if (obj) obj->ApplyTransform(trans);
+            if (ShouldSnapToGrid()) {
+                // Snap top-left of the bounding box to the nearest paper grid intersection
+                double targetX = initialBounds.minX + (currentWorld.x - dragStartWorld.x);
+                double targetY = initialBounds.minY + (currentWorld.y - dragStartWorld.y);
+                double snappedX = std::round(targetX / gridSpacingMm) * gridSpacingMm;
+                double snappedY = std::round(targetY / gridSpacingMm) * gridSpacingMm;
+                double totalDx = snappedX - initialBounds.minX;
+                double totalDy = snappedY - initialBounds.minY;
+
+                BLMatrix2D trans = BLMatrix2D::make_translation(totalDx, totalDy);
+                for (size_t i = 0; i < selectedObjects.size(); ++i) {
+                    if (i < initialStates.size() && selectedObjects[i]) {
+                        selectedObjects[i]->transform = initialStates[i].initialTransform;
+                        selectedObjects[i]->ApplyTransform(trans);
+                    }
                 }
                 lastDragWorld = currentWorld;
                 RecalculateBounds();
+            } else {
+                double dx = currentWorld.x - lastDragWorld.x;
+                double dy = currentWorld.y - lastDragWorld.y;
+                if (dx != 0.0 || dy != 0.0) {
+                    BLMatrix2D trans = BLMatrix2D::make_translation(dx, dy);
+                    for (auto& obj : selectedObjects) {
+                        if (obj) obj->ApplyTransform(trans);
+                    }
+                    lastDragWorld = currentWorld;
+                    RecalculateBounds();
+                }
             }
             return true;
         }
@@ -541,36 +615,45 @@ public:
 
             // Determine fixed anchor point opposite to the active handle
             Point2D anchor;
+            Point2D handleInit;
             bool scaleX = true;
             bool scaleY = true;
 
             switch (activeRole) {
                 case HandleRole::TopLeft:
                     anchor = { initialBounds.maxX, initialBounds.maxY };
+                    handleInit = { initialBounds.minX, initialBounds.minY };
                     break;
                 case HandleRole::TopCenter:
                     anchor = { (initialBounds.minX + initialBounds.maxX) * 0.5, initialBounds.maxY };
+                    handleInit = { anchor.x, initialBounds.minY };
                     scaleX = false;
                     break;
                 case HandleRole::TopRight:
                     anchor = { initialBounds.minX, initialBounds.maxY };
+                    handleInit = { initialBounds.maxX, initialBounds.minY };
                     break;
                 case HandleRole::RightCenter:
                     anchor = { initialBounds.minX, (initialBounds.minY + initialBounds.maxY) * 0.5 };
+                    handleInit = { initialBounds.maxX, anchor.y };
                     scaleY = false;
                     break;
                 case HandleRole::BottomRight:
                     anchor = { initialBounds.minX, initialBounds.minY };
+                    handleInit = { initialBounds.maxX, initialBounds.maxY };
                     break;
                 case HandleRole::BottomCenter:
                     anchor = { (initialBounds.minX + initialBounds.maxX) * 0.5, initialBounds.minY };
+                    handleInit = { anchor.x, initialBounds.maxY };
                     scaleX = false;
                     break;
                 case HandleRole::BottomLeft:
                     anchor = { initialBounds.maxX, initialBounds.minY };
+                    handleInit = { initialBounds.minX, initialBounds.maxY };
                     break;
                 case HandleRole::LeftCenter:
                     anchor = { initialBounds.maxX, (initialBounds.minY + initialBounds.maxY) * 0.5 };
+                    handleInit = { initialBounds.minX, anchor.y };
                     scaleY = false;
                     break;
                 default:
@@ -580,29 +663,51 @@ public:
             double sx = 1.0;
             double sy = 1.0;
 
-            if (scaleX) {
-                // Vector along X from anchor to current cursor vs anchor to initial handle
-                double signedDistX = currentWorld.x - anchor.x;
-                if (dragStartWorld.x < anchor.x) signedDistX = -signedDistX;
-                sx = std::clamp(signedDistX / initW, 0.05, 50.0);
-            }
+            if (ShouldSnapToGrid()) {
+                // Snap moving handle coordinates directly to paper grid intervals
+                double rawHandleX = handleInit.x + (currentWorld.x - dragStartWorld.x);
+                double rawHandleY = handleInit.y + (currentWorld.y - dragStartWorld.y);
+                double snappedHandleX = std::round(rawHandleX / gridSpacingMm) * gridSpacingMm;
+                double snappedHandleY = std::round(rawHandleY / gridSpacingMm) * gridSpacingMm;
 
-            if (scaleY) {
-                // Vector along Y from anchor to current cursor vs anchor to initial handle
-                double signedDistY = currentWorld.y - anchor.y;
-                if (dragStartWorld.y < anchor.y) signedDistY = -signedDistY;
-                sy = std::clamp(signedDistY / initH, 0.05, 50.0);
-            }
+                if (scaleX) {
+                    double signedDistX = snappedHandleX - anchor.x;
+                    if (handleInit.x < anchor.x) signedDistX = -signedDistX;
+                    signedDistX = (std::max)(gridSpacingMm, signedDistX); // Clamped to minimum 1 grid unit
+                    sx = std::clamp(signedDistX / initW, 0.05, 50.0);
+                }
 
-            // Aspect-Ratio Lock for Corner Grips (TopLeft, TopRight, BottomRight, BottomLeft)
-            // When both scaleX and scaleY are active, it is a corner handle.
-            // Ratio lock ensures the width-to-height ratio does not change while sizing.
-            if (scaleX && scaleY) {
-                // Uniform scale factor preserving aspect ratio without axis flipping or runaway jumps
-                double s = 0.5 * (sx + sy);
-                s = std::clamp(s, 0.05, 50.0);
-                sx = s;
-                sy = s;
+                if (scaleY) {
+                    double signedDistY = snappedHandleY - anchor.y;
+                    if (handleInit.y < anchor.y) signedDistY = -signedDistY;
+                    signedDistY = (std::max)(gridSpacingMm, signedDistY); // Clamped to minimum 1 grid unit
+                    sy = std::clamp(signedDistY / initH, 0.05, 50.0);
+                }
+            } else {
+                if (scaleX) {
+                    // Vector along X from anchor to current cursor vs anchor to initial handle
+                    double signedDistX = currentWorld.x - anchor.x;
+                    if (dragStartWorld.x < anchor.x) signedDistX = -signedDistX;
+                    sx = std::clamp(signedDistX / initW, 0.05, 50.0);
+                }
+
+                if (scaleY) {
+                    // Vector along Y from anchor to current cursor vs anchor to initial handle
+                    double signedDistY = currentWorld.y - anchor.y;
+                    if (dragStartWorld.y < anchor.y) signedDistY = -signedDistY;
+                    sy = std::clamp(signedDistY / initH, 0.05, 50.0);
+                }
+
+                // Aspect-Ratio Lock for Corner Grips (TopLeft, TopRight, BottomRight, BottomLeft)
+                // When both scaleX and scaleY are active, it is a corner handle.
+                // Ratio lock ensures the width-to-height ratio does not change while sizing.
+                if (scaleX && scaleY) {
+                    // Uniform scale factor preserving aspect ratio without axis flipping or runaway jumps
+                    double s = 0.5 * (sx + sy);
+                    s = std::clamp(s, 0.05, 50.0);
+                    sx = s;
+                    sy = s;
+                }
             }
 
             BLMatrix2D scaleMatrix = BLMatrix2D::make_identity();
@@ -621,11 +726,16 @@ public:
             return true;
         }
 
-        // 4. Custom Handle Drag (Delegated to Object)
+        // 4. Custom Handle Drag (Delegated to Object, e.g. SmartArrow endpoints)
         if (activeRole == HandleRole::Custom && selectedObjects.size() == 1) {
-            Point2D worldDelta = { currentWorld.x - lastDragWorld.x, currentWorld.y - lastDragWorld.y };
-            if (selectedObjects[0]->OnGizmoHandleDrag(activeCustomId, currentWorld, worldDelta)) {
-                lastDragWorld = currentWorld;
+            Point2D effectiveWorld = currentWorld;
+            if (ShouldSnapToGrid()) {
+                effectiveWorld.x = std::round(effectiveWorld.x / gridSpacingMm) * gridSpacingMm;
+                effectiveWorld.y = std::round(effectiveWorld.y / gridSpacingMm) * gridSpacingMm;
+            }
+            Point2D worldDelta = { effectiveWorld.x - lastDragWorld.x, effectiveWorld.y - lastDragWorld.y };
+            if (selectedObjects[0]->OnGizmoHandleDrag(activeCustomId, effectiveWorld, worldDelta)) {
+                lastDragWorld = effectiveWorld;
                 RecalculateBounds();
                 return true;
             }

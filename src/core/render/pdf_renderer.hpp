@@ -7,6 +7,7 @@
 #include <functional>
 #include <blend2d/blend2d.h>
 #include "utils/logger.hpp"
+#include "utils/file_loader.hpp"
 
 #if defined(FOLIO_HAS_PDFIUM) && __has_include(<fpdfview.h>)
 #include <fpdfview.h>
@@ -149,7 +150,7 @@ public:
         FILE* fp = nullptr;
 #if defined(_WIN32)
         std::error_code ec;
-        auto p = std::filesystem::u8path(filePath);
+        auto p = Utf8ToPath(filePath);
         if (std::filesystem::exists(p, ec)) {
             fp = _wfopen(p.wstring().c_str(), L"rb");
         }
@@ -437,10 +438,10 @@ public:
         std::vector<PdfOutlineItem> result;
 #if defined(FOLIO_HAS_PDFIUM)
         InitializeLibrary();
-        FPDF_DOCUMENT doc = FPDF_LoadDocument(filePath.c_str(), nullptr);
-        if (!doc) return result;
+        auto docHolder = OpenDocument(filePath);
+        if (!docHolder) return result;
+        FPDF_DOCUMENT doc = docHolder.get();
         WalkBookmarks(doc, nullptr, result);
-        FPDF_CloseDocument(doc);
 #endif
         return result;
     }
