@@ -89,6 +89,13 @@ public:
     bool isDarkMode = true;
     bool isCanvasInverted = false;
 
+    /**
+     * @brief Global default notebook accent color for newly created notebooks.
+     * Normalized RGBA float array [R, G, B, A] spanning [0.0f, 1.0f].
+     * Defaults to FolioNote signature warm orange: ImVec4(0.95f, 0.45f, 0.15f, 1.0f).
+     */
+    float defaultNotebookColor[4] = { 0.95f, 0.45f, 0.15f, 1.0f };
+
     // PDF & Virtual Printer Ingestion State
     std::string pdfSpoolFolderPath = "";
     bool autoIngestPrintedPdfs = true;
@@ -306,6 +313,12 @@ public:
                 const auto& jApp = j["appearance"];
                 if (jApp.contains("isDarkMode")) isDarkMode = jApp["isDarkMode"].get<bool>();
                 if (jApp.contains("isCanvasInverted")) isCanvasInverted = jApp["isCanvasInverted"].get<bool>();
+                if (jApp.contains("defaultNotebookColor") && jApp["defaultNotebookColor"].is_array() && jApp["defaultNotebookColor"].size() >= 4) {
+                    defaultNotebookColor[0] = jApp["defaultNotebookColor"][0].get<float>();
+                    defaultNotebookColor[1] = jApp["defaultNotebookColor"][1].get<float>();
+                    defaultNotebookColor[2] = jApp["defaultNotebookColor"][2].get<float>();
+                    defaultNotebookColor[3] = jApp["defaultNotebookColor"][3].get<float>();
+                }
             }
 
             // 4. PDF Ingestion Settings
@@ -341,6 +354,10 @@ public:
             std::cerr << "[SettingsManager] JSON load error: " << ex.what() << "\n";
             return false;
         }
+    }
+
+    bool SaveSettings(const std::string& customPath = "") {
+        return Save(customPath);
     }
 
     bool Save(const std::string& customPath = "") {
@@ -407,7 +424,8 @@ public:
             // Appearance section
             j["appearance"] = {
                 { "isDarkMode", isDarkMode },
-                { "isCanvasInverted", isCanvasInverted }
+                { "isCanvasInverted", isCanvasInverted },
+                { "defaultNotebookColor", { defaultNotebookColor[0], defaultNotebookColor[1], defaultNotebookColor[2], defaultNotebookColor[3] } }
             };
 
             // PDF Ingestion section

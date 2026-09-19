@@ -250,6 +250,29 @@ public:
     }
 
     /**
+     * @brief Opens a notebook package into the workspace's repository and activates it.
+     *
+     * Working Process:
+     * 1. Validates the notebook and its filePath.
+     * 2. Opens the SQLite package via repository.OpenNotebookPackage(filePath).
+     * 3. Persists initial metadata and section hierarchy via repository.SaveNotebookAsync(notebook).
+     * 4. Adds notebook to workspace's active notebooks vector and sets activeNotebookIndex.
+     *
+     * @param notebook Shared pointer to Notebook model.
+     * @return true if successfully opened and activated; false otherwise.
+     */
+    bool OpenAndActivateNotebook(const std::shared_ptr<Notebook>& notebook) {
+        if (!notebook || notebook->filePath.empty()) return false;
+        if (repository.OpenNotebookPackage(notebook->filePath)) {
+            repository.SaveNotebookAsync(notebook);
+            notebooks.push_back(notebook);
+            activeNotebookIndex = notebooks.size() - 1;
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * @brief Returns the number of open notebooks in this workspace.
      */
     [[nodiscard]] size_t GetNotebookCount() const noexcept {

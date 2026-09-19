@@ -37,7 +37,9 @@ namespace Folio {
         SettingsManager,
         PdfStorage,
         LibraryManager,
-        FileManager
+        FileManager,
+        SectionGroup,
+        Section
     };
 
     // Helper to convert LogSource enum values into strings
@@ -62,6 +64,8 @@ namespace Folio {
             case LogSource::SettingsManager:   return "SettingsManager";
             case LogSource::PdfStorage:        return "PdfStorage";
             case LogSource::LibraryManager:    return "LibraryManager";
+            case LogSource::SectionGroup:      return "SectionGroup";
+            case LogSource::Section:           return "Section";
             default:                           return "General";
         }
     }

@@ -86,6 +86,19 @@ public:
     bool isModified = false;            ///< Dirty flag indicating unsaved changes exist
     bool isLoaded = true;               ///< True if stroke geometry and objects are present in RAM
 
+    // -------------------------------------------------------------------------
+    // Soft Delete & Recycle Bin Lifecycle
+    // -------------------------------------------------------------------------
+    int64_t deletedAt = 0;              ///< Unix timestamp (seconds) when page was soft-deleted, or 0 if active
+
+    /**
+     * @brief Checks whether this page has been moved to the recycle bin.
+     * @return true if soft-deleted (deletedAt > 0), false if active.
+     */
+    [[nodiscard]] bool IsDeleted() const noexcept {
+        return deletedAt > 0;
+    }
+
     // Dedicated Standalone PDF Document Page
     bool isDedicatedPdf = false;        ///< True if this page is viewed in the dedicated PDF continuous viewer
     std::string dedicatedPdfPath;       ///< Path to the backing PDF document on disk / package
@@ -145,20 +158,42 @@ public:
     }
 
     /**
-     * @brief Creates a duplicate clone of this page with a new GUID and copied properties.
+     * @brief Creates an in-memory deep copy of this page with a new GUID and cloned objects.
+     *
+     * OBJECT CLONING & SPATIAL RE-INDEXING:
+     * - Generates a fresh UUID v4 for the cloned page.
+     * - Deep-copies each polymorphic `CanvasObject` via `obj->Clone()`.
+     * - Assigns fresh GUIDs to objects with persistent IDs and adds them via `AddObject`
+     *   which registers them into the newly constructed `spatialIndex` with clean runtime UIDs.
+     *
+     * @return std::shared_ptr<CanvasPage> Newly allocated deep-cloned CanvasPage.
      */
     [[nodiscard]] std::shared_ptr<CanvasPage> Clone() const {
         auto clone = std::make_shared<CanvasPage>(title + " (Copy)", parentPageGuid, nestingLevel);
+        clone->guid = GUIDGenerator::GenerateV4();
         clone->createdDateStr = createdDateStr;
         clone->createdTimeStr = createdTimeStr;
-        clone->objects = this->objects;
-        clone->spatialIndex = this->spatialIndex;
-        clone->isDedicatedPdf = this->isDedicatedPdf;
-        clone->dedicatedPdfPath = this->dedicatedPdfPath;
-        clone->dedicatedPdfBookmarks = this->dedicatedPdfBookmarks;
-        clone->dedicatedPdfHighlights = this->dedicatedPdfHighlights;
-        clone->isLoaded = true;
-        clone->isModified = true;
+        clone->sortOrder = sortOrder;
+        clone->isDedicatedPdf = isDedicatedPdf;
+        clone->dedicatedPdfPath = dedicatedPdfPath;
+        clone->dedicatedPdfBookmarks = dedicatedPdfBookmarks;
+        clone->dedicatedPdfHighlights = dedicatedPdfHighlights;
+        clone->deletedAt = deletedAt;
+        clone->isLoaded = isLoaded;
+        clone->isModified = isModified;
+
+        // Deep-clone canvas objects with fresh unique GUIDs and clean spatial index UIDs
+        for (const auto& obj : this->objects) {
+            if (obj) {
+                auto clonedObj = obj->Clone();
+                if (clonedObj) {
+                    if (!clonedObj->guuid.empty()) {
+                        clonedObj->guuid = GUIDGenerator::GenerateV4();
+                    }
+                    clone->AddObject(std::shared_ptr<CanvasObject>(std::move(clonedObj)));
+                }
+            }
+        }
         return clone;
     }
 

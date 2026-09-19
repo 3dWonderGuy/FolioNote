@@ -7,7 +7,7 @@
 #include "core/document/notebook.hpp"
 #include "core/document/section.hpp"
 #include "core/document/canvas_page.hpp"
-#include "core/document/library.hpp"
+#include "core/document/library/library.hpp"
 #include "core/storage/page_repository.hpp"
 #include "core/objects/text_box.hpp"
 #include "core/import/onenote_importer.hpp"

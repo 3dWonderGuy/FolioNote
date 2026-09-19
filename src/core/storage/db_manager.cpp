@@ -120,6 +120,10 @@ bool DBManager::InitSchema() {
             notebook_guid TEXT NOT NULL,
             parent_group_guid TEXT,
             name TEXT NOT NULL,
+            color_r REAL NOT NULL DEFAULT 0.55,
+            color_g REAL NOT NULL DEFAULT 0.58,
+            color_b REAL NOT NULL DEFAULT 0.62,
+            color_a REAL NOT NULL DEFAULT 1.0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             is_collapsed INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
@@ -132,9 +136,14 @@ bool DBManager::InitSchema() {
             notebook_guid TEXT NOT NULL,
             group_guid TEXT,
             name TEXT NOT NULL,
+            color_r REAL NOT NULL DEFAULT 0.90,
+            color_g REAL NOT NULL DEFAULT 0.42,
+            color_b REAL NOT NULL DEFAULT 0.17,
+            color_a REAL NOT NULL DEFAULT 1.0,
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
+            deleted_at INTEGER DEFAULT NULL,
             FOREIGN KEY (notebook_guid) REFERENCES notebook_meta(guid) ON DELETE CASCADE
         );
 
@@ -154,12 +163,15 @@ bool DBManager::InitSchema() {
             dedicated_pdf_path TEXT,
             dedicated_pdf_bookmarks TEXT,
             dedicated_pdf_highlights TEXT,
+            deleted_at INTEGER DEFAULT NULL,
             FOREIGN KEY (section_guid) REFERENCES sections(guid) ON DELETE CASCADE
         );
 
         CREATE INDEX IF NOT EXISTS idx_section_groups ON section_groups(notebook_guid, sort_order);
         CREATE INDEX IF NOT EXISTS idx_sections_notebook ON sections(notebook_guid, sort_order);
         CREATE INDEX IF NOT EXISTS idx_pages_section ON pages(section_guid, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_sections_deleted ON sections(notebook_guid, deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_pages_deleted ON pages(section_guid, deleted_at);
     )";
 
     char* err = nullptr;
@@ -171,7 +183,17 @@ bool DBManager::InitSchema() {
     }
 
     // Non-destructive migrations for existing database files
+    sqlite3_exec(db, "ALTER TABLE section_groups ADD COLUMN color_r REAL NOT NULL DEFAULT 0.55;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE section_groups ADD COLUMN color_g REAL NOT NULL DEFAULT 0.58;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE section_groups ADD COLUMN color_b REAL NOT NULL DEFAULT 0.62;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE section_groups ADD COLUMN color_a REAL NOT NULL DEFAULT 1.0;", nullptr, nullptr, nullptr);
+
+    sqlite3_exec(db, "ALTER TABLE sections ADD COLUMN color_r REAL NOT NULL DEFAULT 0.90;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE sections ADD COLUMN color_g REAL NOT NULL DEFAULT 0.42;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE sections ADD COLUMN color_b REAL NOT NULL DEFAULT 0.17;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE sections ADD COLUMN color_a REAL NOT NULL DEFAULT 1.0;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE sections ADD COLUMN group_guid TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE sections ADD COLUMN deleted_at INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN parent_page_guid TEXT;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN nesting_level INTEGER NOT NULL DEFAULT 0;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN is_collapsed INTEGER NOT NULL DEFAULT 0;", nullptr, nullptr, nullptr);
@@ -179,6 +201,7 @@ bool DBManager::InitSchema() {
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_path TEXT;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_bookmarks TEXT;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_highlights TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN deleted_at INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
 
     // Initialize FTS5 and spatial search catalog
     if (!NotebookSearchIndex::InitSchema(db)) {
@@ -300,12 +323,16 @@ bool DBManager::UpsertSectionGroup(const DBSectionGroupRecord& record) {
     if (!db) return false;
 
     const char* sql = R"(
-        INSERT INTO section_groups (guid, notebook_guid, parent_group_guid, name, sort_order, is_collapsed, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO section_groups (guid, notebook_guid, parent_group_guid, name, color_r, color_g, color_b, color_a, sort_order, is_collapsed, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guid) DO UPDATE SET
             notebook_guid = excluded.notebook_guid,
             parent_group_guid = excluded.parent_group_guid,
             name = excluded.name,
+            color_r = excluded.color_r,
+            color_g = excluded.color_g,
+            color_b = excluded.color_b,
+            color_a = excluded.color_a,
             sort_order = excluded.sort_order,
             is_collapsed = excluded.is_collapsed,
             updated_at = excluded.updated_at;
@@ -326,10 +353,14 @@ bool DBManager::UpsertSectionGroup(const DBSectionGroupRecord& record) {
         sqlite3_bind_null(stmt, 3);
     }
     sqlite3_bind_text(stmt, 4, record.name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 5, record.sortOrder);
-    sqlite3_bind_int(stmt, 6, record.isCollapsed ? 1 : 0);
-    sqlite3_bind_int64(stmt, 7, record.createdAt > 0 ? record.createdAt : now);
-    sqlite3_bind_int64(stmt, 8, now);
+    sqlite3_bind_double(stmt, 5, record.colorR);
+    sqlite3_bind_double(stmt, 6, record.colorG);
+    sqlite3_bind_double(stmt, 7, record.colorB);
+    sqlite3_bind_double(stmt, 8, record.colorA);
+    sqlite3_bind_int(stmt, 9, record.sortOrder);
+    sqlite3_bind_int(stmt, 10, record.isCollapsed ? 1 : 0);
+    sqlite3_bind_int64(stmt, 11, record.createdAt > 0 ? record.createdAt : now);
+    sqlite3_bind_int64(stmt, 12, now);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -364,7 +395,7 @@ std::vector<DBSectionGroupRecord> DBManager::LoadSectionGroups(const std::string
     std::vector<DBSectionGroupRecord> results;
     if (!db) return results;
 
-    const char* sql = "SELECT guid, notebook_guid, parent_group_guid, name, sort_order, is_collapsed, created_at, updated_at FROM section_groups WHERE notebook_guid = ? ORDER BY sort_order ASC;";
+    const char* sql = "SELECT guid, notebook_guid, parent_group_guid, name, color_r, color_g, color_b, color_a, sort_order, is_collapsed, created_at, updated_at FROM section_groups WHERE notebook_guid = ? ORDER BY sort_order ASC;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         LOG_ERROR(DBManager, "Failed to prepare LoadSectionGroups: " + std::string(sqlite3_errmsg(db)));
@@ -380,10 +411,14 @@ std::vector<DBSectionGroupRecord> DBManager::LoadSectionGroups(const std::string
         const auto* parentText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         grp.parentGroupGuid = parentText ? parentText : "";
         grp.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        grp.sortOrder = sqlite3_column_int(stmt, 4);
-        grp.isCollapsed = (sqlite3_column_int(stmt, 5) != 0);
-        grp.createdAt = sqlite3_column_int64(stmt, 6);
-        grp.updatedAt = sqlite3_column_int64(stmt, 7);
+        grp.colorR = static_cast<float>(sqlite3_column_double(stmt, 4));
+        grp.colorG = static_cast<float>(sqlite3_column_double(stmt, 5));
+        grp.colorB = static_cast<float>(sqlite3_column_double(stmt, 6));
+        grp.colorA = static_cast<float>(sqlite3_column_double(stmt, 7));
+        grp.sortOrder = sqlite3_column_int(stmt, 8);
+        grp.isCollapsed = (sqlite3_column_int(stmt, 9) != 0);
+        grp.createdAt = sqlite3_column_int64(stmt, 10);
+        grp.updatedAt = sqlite3_column_int64(stmt, 11);
         results.push_back(std::move(grp));
     }
 
@@ -399,12 +434,16 @@ bool DBManager::UpsertSection(const DBSectionRecord& record) {
     if (!db) return false;
 
     const char* sql = R"(
-        INSERT INTO sections (guid, notebook_guid, group_guid, name, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sections (guid, notebook_guid, group_guid, name, color_r, color_g, color_b, color_a, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guid) DO UPDATE SET
             notebook_guid = excluded.notebook_guid,
             group_guid = excluded.group_guid,
             name = excluded.name,
+            color_r = excluded.color_r,
+            color_g = excluded.color_g,
+            color_b = excluded.color_b,
+            color_a = excluded.color_a,
             sort_order = excluded.sort_order,
             updated_at = excluded.updated_at;
     )";
@@ -424,9 +463,13 @@ bool DBManager::UpsertSection(const DBSectionRecord& record) {
         sqlite3_bind_null(stmt, 3);
     }
     sqlite3_bind_text(stmt, 4, record.name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 5, record.sortOrder);
-    sqlite3_bind_int64(stmt, 6, record.createdAt > 0 ? record.createdAt : now);
-    sqlite3_bind_int64(stmt, 7, now);
+    sqlite3_bind_double(stmt, 5, record.colorR);
+    sqlite3_bind_double(stmt, 6, record.colorG);
+    sqlite3_bind_double(stmt, 7, record.colorB);
+    sqlite3_bind_double(stmt, 8, record.colorA);
+    sqlite3_bind_int(stmt, 9, record.sortOrder);
+    sqlite3_bind_int64(stmt, 10, record.createdAt > 0 ? record.createdAt : now);
+    sqlite3_bind_int64(stmt, 11, now);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -461,7 +504,7 @@ std::vector<DBSectionRecord> DBManager::LoadSections(const std::string& notebook
     std::vector<DBSectionRecord> results;
     if (!db) return results;
 
-    const char* sql = "SELECT guid, notebook_guid, group_guid, name, sort_order, created_at, updated_at FROM sections WHERE notebook_guid = ? ORDER BY sort_order ASC;";
+    const char* sql = "SELECT guid, notebook_guid, group_guid, name, color_r, color_g, color_b, color_a, sort_order, created_at, updated_at, deleted_at FROM sections WHERE notebook_guid = ? AND (deleted_at IS NULL OR deleted_at = 0) ORDER BY sort_order ASC;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         LOG_ERROR(DBManager, "Failed to prepare LoadSections: " + std::string(sqlite3_errmsg(db)));
@@ -477,9 +520,14 @@ std::vector<DBSectionRecord> DBManager::LoadSections(const std::string& notebook
         const auto* grpText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         sec.groupGuid = grpText ? grpText : "";
         sec.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        sec.sortOrder = sqlite3_column_int(stmt, 4);
-        sec.createdAt = sqlite3_column_int64(stmt, 5);
-        sec.updatedAt = sqlite3_column_int64(stmt, 6);
+        sec.colorR = static_cast<float>(sqlite3_column_double(stmt, 4));
+        sec.colorG = static_cast<float>(sqlite3_column_double(stmt, 5));
+        sec.colorB = static_cast<float>(sqlite3_column_double(stmt, 6));
+        sec.colorA = static_cast<float>(sqlite3_column_double(stmt, 7));
+        sec.sortOrder = sqlite3_column_int(stmt, 8);
+        sec.createdAt = sqlite3_column_int64(stmt, 9);
+        sec.updatedAt = sqlite3_column_int64(stmt, 10);
+        sec.deletedAt = sqlite3_column_int64(stmt, 11);
         results.push_back(std::move(sec));
     }
 
@@ -593,7 +641,7 @@ std::vector<DBPageRecord> DBManager::LoadPagesMetadata(const std::string& sectio
     std::vector<DBPageRecord> results;
     if (!db) return results;
 
-    const char* sql = "SELECT guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks, dedicated_pdf_highlights FROM pages WHERE section_guid = ? ORDER BY sort_order ASC;";
+    const char* sql = "SELECT guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks, dedicated_pdf_highlights, deleted_at FROM pages WHERE section_guid = ? AND (deleted_at IS NULL OR deleted_at = 0) ORDER BY sort_order ASC;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         LOG_ERROR(DBManager, "Failed to prepare LoadPagesMetadata: " + std::string(sqlite3_errmsg(db)));
@@ -618,10 +666,11 @@ std::vector<DBPageRecord> DBManager::LoadPagesMetadata(const std::string& sectio
         page.isDedicatedPdf = (sqlite3_column_int(stmt, 10) != 0);
         const auto* pdfPathText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
         page.dedicatedPdfPath = pdfPathText ? pdfPathText : "";
-        const auto* pdfBmText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
-        page.dedicatedPdfBookmarks = pdfBmText ? pdfBmText : "";
+        const auto* pdfBkText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
+        page.dedicatedPdfBookmarks = pdfBkText ? pdfBkText : "";
         const auto* pdfHlText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
         page.dedicatedPdfHighlights = pdfHlText ? pdfHlText : "";
+        page.deletedAt = sqlite3_column_int64(stmt, 14);
         results.push_back(std::move(page));
     }
 
@@ -676,6 +725,307 @@ bool DBManager::CheckpointWAL() {
     }
     LOG_INFO(DBManager, "WAL checkpoint executed successfully.");
     return true;
+}
+
+// =========================================================================
+// RECYCLE BIN & SOFT DELETE IMPLEMENTATIONS
+// =========================================================================
+
+/**
+ * @brief Soft-deletes a page by stamping its deleted_at timestamp in SQLite.
+ * @param pageGuid Unique persistent GUID of the page.
+ * @return true on success, false on error.
+ */
+bool DBManager::SoftDeletePage(const std::string& pageGuid) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    if (!db) return false;
+
+    const char* sql = "UPDATE pages SET deleted_at = ? WHERE guid = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        LOG_ERROR(DBManager, "Failed to prepare SoftDeletePage: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
+    sqlite3_bind_int64(stmt, 1, GetCurrentTimestamp());
+    sqlite3_bind_text(stmt, 2, pageGuid.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE);
+}
+
+/**
+ * @brief Restores a soft-deleted page by resetting deleted_at to NULL.
+ * @param pageGuid Unique persistent GUID of the page.
+ * @return true on success, false on error.
+ */
+bool DBManager::RestorePage(const std::string& pageGuid) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    if (!db) return false;
+
+    const char* sql = "UPDATE pages SET deleted_at = NULL WHERE guid = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        LOG_ERROR(DBManager, "Failed to prepare RestorePage: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, pageGuid.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE);
+}
+
+/**
+ * @brief Soft-deletes a section and cascades soft-deletion to all its child pages.
+ * @param sectionGuid Unique persistent GUID of the section.
+ * @return true on success, false on error.
+ */
+bool DBManager::SoftDeleteSection(const std::string& sectionGuid) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    if (!db) return false;
+
+    int64_t now = GetCurrentTimestamp();
+
+    // 1. Soft-delete section record
+    const char* sqlSec = "UPDATE sections SET deleted_at = ? WHERE guid = ?;";
+    sqlite3_stmt* stmtSec = nullptr;
+    if (sqlite3_prepare_v2(db, sqlSec, -1, &stmtSec, nullptr) != SQLITE_OK) {
+        LOG_ERROR(DBManager, "Failed to prepare SoftDeleteSection (sec): " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+    sqlite3_bind_int64(stmtSec, 1, now);
+    sqlite3_bind_text(stmtSec, 2, sectionGuid.c_str(), -1, SQLITE_TRANSIENT);
+    int rcSec = sqlite3_step(stmtSec);
+    sqlite3_finalize(stmtSec);
+
+    // 2. Cascade soft-deletion to all child pages in this section
+    const char* sqlPages = "UPDATE pages SET deleted_at = ? WHERE section_guid = ?;";
+    sqlite3_stmt* stmtPages = nullptr;
+    if (sqlite3_prepare_v2(db, sqlPages, -1, &stmtPages, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmtPages, 1, now);
+        sqlite3_bind_text(stmtPages, 2, sectionGuid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmtPages);
+        sqlite3_finalize(stmtPages);
+    }
+
+    return (rcSec == SQLITE_DONE);
+}
+
+/**
+ * @brief Restores a soft-deleted section and all its contained child pages.
+ * @param sectionGuid Unique persistent GUID of the section.
+ * @return true on success, false on error.
+ */
+bool DBManager::RestoreSection(const std::string& sectionGuid) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    if (!db) return false;
+
+    // 1. Restore section record
+    const char* sqlSec = "UPDATE sections SET deleted_at = NULL WHERE guid = ?;";
+    sqlite3_stmt* stmtSec = nullptr;
+    if (sqlite3_prepare_v2(db, sqlSec, -1, &stmtSec, nullptr) != SQLITE_OK) {
+        LOG_ERROR(DBManager, "Failed to prepare RestoreSection: " + std::string(sqlite3_errmsg(db)));
+        return false;
+    }
+    sqlite3_bind_text(stmtSec, 1, sectionGuid.c_str(), -1, SQLITE_TRANSIENT);
+    int rcSec = sqlite3_step(stmtSec);
+    sqlite3_finalize(stmtSec);
+
+    // 2. Cascade restoration to all child pages
+    const char* sqlPages = "UPDATE pages SET deleted_at = NULL WHERE section_guid = ?;";
+    sqlite3_stmt* stmtPages = nullptr;
+    if (sqlite3_prepare_v2(db, sqlPages, -1, &stmtPages, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmtPages, 1, sectionGuid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmtPages);
+        sqlite3_finalize(stmtPages);
+    }
+
+    return (rcSec == SQLITE_DONE);
+}
+
+/**
+ * @brief Retrieves all soft-deleted sections belonging to a notebook.
+ */
+std::vector<DBSectionRecord> DBManager::LoadDeletedSections(const std::string& notebookGuid) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    std::vector<DBSectionRecord> results;
+    if (!db) return results;
+
+    const char* sql = "SELECT guid, notebook_guid, group_guid, name, color_r, color_g, color_b, color_a, sort_order, created_at, updated_at, deleted_at FROM sections WHERE notebook_guid = ? AND deleted_at > 0 ORDER BY deleted_at DESC;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        LOG_ERROR(DBManager, "Failed to prepare LoadDeletedSections: " + std::string(sqlite3_errmsg(db)));
+        return results;
+    }
+
+    sqlite3_bind_text(stmt, 1, notebookGuid.c_str(), -1, SQLITE_TRANSIENT);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        DBSectionRecord sec;
+        sec.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        sec.notebookGuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const auto* grpText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        sec.groupGuid = grpText ? grpText : "";
+        sec.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        sec.colorR = static_cast<float>(sqlite3_column_double(stmt, 4));
+        sec.colorG = static_cast<float>(sqlite3_column_double(stmt, 5));
+        sec.colorB = static_cast<float>(sqlite3_column_double(stmt, 6));
+        sec.colorA = static_cast<float>(sqlite3_column_double(stmt, 7));
+        sec.sortOrder = sqlite3_column_int(stmt, 8);
+        sec.createdAt = sqlite3_column_int64(stmt, 9);
+        sec.updatedAt = sqlite3_column_int64(stmt, 10);
+        sec.deletedAt = sqlite3_column_int64(stmt, 11);
+        results.push_back(std::move(sec));
+    }
+
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+/**
+ * @brief Retrieves all soft-deleted pages belonging to a notebook.
+ */
+std::vector<DBPageRecord> DBManager::LoadDeletedPages(const std::string& notebookGuid) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    std::vector<DBPageRecord> results;
+    if (!db) return results;
+
+    const char* sql = R"(
+        SELECT p.guid, p.section_guid, p.title, p.created_date, p.created_time, 
+               p.parent_page_guid, p.nesting_level, p.sort_order, p.is_collapsed, 
+               p.has_blob, p.is_dedicated_pdf, p.dedicated_pdf_path, 
+               p.dedicated_pdf_bookmarks, p.dedicated_pdf_highlights, p.deleted_at 
+        FROM pages p 
+        JOIN sections s ON p.section_guid = s.guid 
+        WHERE s.notebook_guid = ? AND p.deleted_at > 0 
+        ORDER BY p.deleted_at DESC;
+    )";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        LOG_ERROR(DBManager, "Failed to prepare LoadDeletedPages: " + std::string(sqlite3_errmsg(db)));
+        return results;
+    }
+
+    sqlite3_bind_text(stmt, 1, notebookGuid.c_str(), -1, SQLITE_TRANSIENT);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        DBPageRecord page;
+        page.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        page.sectionGuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        page.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        page.createdDate = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        page.createdTime = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        const auto* parentText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        page.parentPageGuid = parentText ? parentText : "";
+        page.nestingLevel = sqlite3_column_int(stmt, 6);
+        page.sortOrder = sqlite3_column_int(stmt, 7);
+        page.isCollapsed = (sqlite3_column_int(stmt, 8) != 0);
+        page.hasBlob = (sqlite3_column_int(stmt, 9) != 0);
+        page.isDedicatedPdf = (sqlite3_column_int(stmt, 10) != 0);
+        const auto* pdfPathText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
+        page.dedicatedPdfPath = pdfPathText ? pdfPathText : "";
+        const auto* pdfBkText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
+        page.dedicatedPdfBookmarks = pdfBkText ? pdfBkText : "";
+        const auto* pdfHlText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
+        page.dedicatedPdfHighlights = pdfHlText ? pdfHlText : "";
+        page.deletedAt = sqlite3_column_int64(stmt, 14);
+        results.push_back(std::move(page));
+    }
+
+    sqlite3_finalize(stmt);
+    return results;
+}
+
+/**
+ * @brief Permanently purges a page record from SQLite and unlinks its .ink file on disk.
+ */
+bool DBManager::PermanentlyDeletePage(const std::string& pageGuid, const std::string& pkgPath) {
+    std::string rootPkg = pkgPath.empty() ? std::filesystem::path(currentDbPath).parent_path().string() : pkgPath;
+    if (!rootPkg.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(std::filesystem::path(rootPkg) / "pages" / (pageGuid + ".ink"), ec);
+    }
+    return DeletePage(pageGuid);
+}
+
+/**
+ * @brief Permanently purges a section record, all child pages, and their .ink files.
+ */
+bool DBManager::PermanentlyDeleteSection(const std::string& sectionGuid, const std::string& pkgPath) {
+    std::string rootPkg = pkgPath.empty() ? std::filesystem::path(currentDbPath).parent_path().string() : pkgPath;
+    
+    // Gather all child pages to unlink .ink files from disk
+    auto pages = LoadPagesMetadata(sectionGuid);
+    for (const auto& pg : pages) {
+        if (!rootPkg.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(std::filesystem::path(rootPkg) / "pages" / (pg.guid + ".ink"), ec);
+        }
+    }
+
+    // Cascade delete pages in SQLite
+    {
+        std::lock_guard<std::mutex> lock(dbMutex);
+        if (!db) return false;
+        const char* sqlPages = "DELETE FROM pages WHERE section_guid = ?;";
+        sqlite3_stmt* stmtP = nullptr;
+        if (sqlite3_prepare_v2(db, sqlPages, -1, &stmtP, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(stmtP, 1, sectionGuid.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(stmtP);
+            sqlite3_finalize(stmtP);
+        }
+    }
+    return DeleteSection(sectionGuid);
+}
+
+/**
+ * @brief Empties all soft-deleted pages and sections from this notebook package.
+ */
+size_t DBManager::EmptyRecycleBin(const std::string& notebookGuid, const std::string& pkgPath) {
+    size_t count = 0;
+    auto delPages = LoadDeletedPages(notebookGuid);
+    for (const auto& pg : delPages) {
+        if (PermanentlyDeletePage(pg.guid, pkgPath)) {
+            count++;
+        }
+    }
+    auto delSecs = LoadDeletedSections(notebookGuid);
+    for (const auto& sec : delSecs) {
+        if (PermanentlyDeleteSection(sec.guid, pkgPath)) {
+            count++;
+        }
+    }
+    LOG_INFO(DBManager, "Emptied recycle bin: purged " + std::to_string(count) + " items.");
+    return count;
+}
+
+/**
+ * @brief Automatically purges items in the recycle bin older than the retention window (e.g. 30 days).
+ */
+size_t DBManager::PurgeExpiredRecycleBinItems(const std::string& notebookGuid, const std::string& pkgPath, int64_t maxAgeSeconds) {
+    int64_t cutoff = GetCurrentTimestamp() - maxAgeSeconds;
+    size_t count = 0;
+    auto delPages = LoadDeletedPages(notebookGuid);
+    for (const auto& pg : delPages) {
+        if (pg.deletedAt > 0 && pg.deletedAt < cutoff) {
+            if (PermanentlyDeletePage(pg.guid, pkgPath)) {
+                count++;
+            }
+        }
+    }
+    auto delSecs = LoadDeletedSections(notebookGuid);
+    for (const auto& sec : delSecs) {
+        if (sec.deletedAt > 0 && sec.deletedAt < cutoff) {
+            if (PermanentlyDeleteSection(sec.guid, pkgPath)) {
+                count++;
+            }
+        }
+    }
+    if (count > 0) {
+        LOG_INFO(DBManager, "Purged " + std::to_string(count) + " expired recycle bin items older than " + std::to_string(maxAgeSeconds / 86400) + " days.");
+    }
+    return count;
 }
 
 std::vector<SearchResult> DBManager::SearchContent(const std::string& notebookGuid, 

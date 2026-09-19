@@ -81,6 +81,7 @@ public:
     std::string sectionSettingsTargetGuid;
     char sectionSettingsName[256] = "";
     std::string sectionSettingsIcon;
+    ImVec4 sectionSettingsColorTag = ImVec4(0.90f, 0.42f, 0.17f, 1.0f);
     bool sectionSettingsPasswordProtected = false;
     char sectionSettingsPassword[128] = "";
 
@@ -97,6 +98,7 @@ public:
         strncpy(sectionSettingsName, sec->name.c_str(), sizeof(sectionSettingsName) - 1);
         sectionSettingsName[sizeof(sectionSettingsName) - 1] = '\0';
         sectionSettingsIcon = sec->iconFile;
+        sectionSettingsColorTag = sec->colorTag;
         sectionSettingsPasswordProtected = sec->isPasswordProtected;
         strncpy(sectionSettingsPassword, sec->password.c_str(), sizeof(sectionSettingsPassword) - 1);
         sectionSettingsPassword[sizeof(sectionSettingsPassword) - 1] = '\0';
@@ -125,6 +127,37 @@ public:
     char passwordBuffer[128] = "";
     bool openPasswordModal = false;
     bool passwordError = false;
+
+    // -----------------------------------------------------------------------
+    // Delete Confirmation Warning Modal State
+    // -----------------------------------------------------------------------
+    enum class PendingDeleteType { None, Page, Section, SectionGroup };
+    PendingDeleteType pendingDeleteType = PendingDeleteType::None;
+    std::string pendingDeleteGuid;
+    std::string pendingDeleteName;
+    std::string pendingDeleteParentGuid;
+    bool openDeleteConfirmModal = false;
+
+    /**
+     * @brief Prepares and opens the Delete Confirmation Modal for safe soft-deletion.
+     *
+     * USER EXPERIENCE & INVARIANTS:
+     * - Prevents accidental loss of user notes by presenting an explicit warning popup.
+     * - Informs the user that the item will be moved to the Recycle Bin and retained for 30 days.
+     *
+     * @param type The document hierarchy entity type (Page, Section, SectionGroup).
+     * @param guid Unique persistent GUID of the entity to soft-delete.
+     * @param name Display title or name shown in the modal prompt.
+     * @param parentGuid Optional parent SectionGroup GUID (for sections inside a group).
+     */
+    void RequestDeleteConfirmation(PendingDeleteType type, const std::string& guid, const std::string& name, const std::string& parentGuid = "") {
+        pendingDeleteType = type;
+        pendingDeleteGuid = guid;
+        pendingDeleteName = name;
+        pendingDeleteParentGuid = parentGuid;
+        openDeleteConfirmModal = true;
+        ::Folio::UsageTracker::Instance().RecordDialogOpened();
+    }
 
     // -----------------------------------------------------------------------
     // Smooth Collapse / Expand Animation
@@ -253,6 +286,7 @@ public:
         RenderPasswordModal(activeNb, canvas, theme);
         RenderSectionSettingsModal(session, canvas, theme);
         RenderPageSettingsModal(session, canvas, theme);
+        RenderDeleteConfirmModal(session, canvas, theme);
 
         ImGui::End();
         ImGui::PopStyleVar(8);
@@ -492,18 +526,17 @@ private:
 
                 static const struct SecColorDef {
                     const char* name;
-                    const char* svg;
                     ImVec4 color;
                 } secColors[] = {
-                    { "Blue",        "blue-section-simple.svg",        ImVec4(0.17f, 0.45f, 0.73f, 1.0f) },
-                    { "Green",       "green-section-simple.svg",       ImVec4(0.18f, 0.55f, 0.34f, 1.0f) },
-                    { "Magenta",     "magenta-section-simple.svg",     ImVec4(0.73f, 0.17f, 0.55f, 1.0f) },
-                    { "Orange",      "orange-section-simple.svg",      ImVec4(0.90f, 0.42f, 0.17f, 1.0f) },
-                    { "Pink",        "pink-section-simple.svg",        ImVec4(0.88f, 0.41f, 0.63f, 1.0f) },
-                    { "Red",         "red-section-simple.svg",         ImVec4(0.85f, 0.21f, 0.21f, 1.0f) },
-                    { "Salad Green", "saladgreen-section-simple.svg",  ImVec4(0.43f, 0.71f, 0.24f, 1.0f) },
-                    { "Sky Blue",    "skyblue-section-simple.svg",     ImVec4(0.20f, 0.63f, 0.86f, 1.0f) },
-                    { "Yellow",      "yellow-section-simple.svg",      ImVec4(0.90f, 0.71f, 0.12f, 1.0f) }
+                    { "Blue",        ImVec4(0.17f, 0.45f, 0.73f, 1.0f) },
+                    { "Green",       ImVec4(0.18f, 0.55f, 0.34f, 1.0f) },
+                    { "Magenta",     ImVec4(0.73f, 0.17f, 0.55f, 1.0f) },
+                    { "Orange",      ImVec4(0.90f, 0.42f, 0.17f, 1.0f) },
+                    { "Pink",        ImVec4(0.88f, 0.41f, 0.63f, 1.0f) },
+                    { "Red",         ImVec4(0.85f, 0.21f, 0.21f, 1.0f) },
+                    { "Salad Green", ImVec4(0.43f, 0.71f, 0.24f, 1.0f) },
+                    { "Sky Blue",    ImVec4(0.20f, 0.63f, 0.86f, 1.0f) },
+                    { "Yellow",      ImVec4(0.90f, 0.71f, 0.12f, 1.0f) }
                 };
 
                 float swatchW = 46.0f;
@@ -511,7 +544,9 @@ private:
                 float swatchGap = 6.0f;
                 for (size_t i = 0; i < IM_ARRAYSIZE(secColors); ++i) {
                     const auto& cDef = secColors[i];
-                    bool isSelected = (sectionSettingsIcon == cDef.svg);
+                    bool isSelected = (std::abs(sectionSettingsColorTag.x - cDef.color.x) < 0.02f &&
+                                       std::abs(sectionSettingsColorTag.y - cDef.color.y) < 0.02f &&
+                                       std::abs(sectionSettingsColorTag.z - cDef.color.z) < 0.02f);
 
                     ImGui::PushID(static_cast<int>(i));
                     ImGui::PushStyleColor(ImGuiCol_Button, cDef.color);
@@ -522,7 +557,7 @@ private:
 
                     const char* btnLabel = isSelected ? "\xe2\x9c\x93" : " ";
                     if (ImGui::Button(btnLabel, ImVec2(swatchW, swatchH))) {
-                        sectionSettingsIcon = cDef.svg;
+                        sectionSettingsColorTag = cDef.color;
                     }
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("%s Color Theme", cDef.name);
@@ -580,7 +615,8 @@ private:
                     if (strlen(sectionSettingsName) > 0) {
                         sec->name = sectionSettingsName;
                     }
-                    sec->iconFile = sectionSettingsIcon;
+                    sec->colorTag = sectionSettingsColorTag;
+                    sec->iconFile = FOLIO_SECTION_DEFAULT_ICON;
                     sec->isPasswordProtected = sectionSettingsPasswordProtected;
                     if (sectionSettingsPasswordProtected && strlen(sectionSettingsPassword) > 0) {
                         sec->password = sectionSettingsPassword;
@@ -788,6 +824,148 @@ private:
         }
     }
 
+    /**
+     * @brief Renders the confirmation popup warning modal before soft-deleting any document element.
+     *
+     * USER EXPERIENCE & INVARIANTS:
+     * - As requested: "from ui level we want to add warning popup are you sure you want to delete this".
+     * - Clearly informs user that the item is moved to the Recycle Bin and retained for 30 days.
+     * - Destructive action uses warm warning styling (red/orange button).
+     * - Dispatches soft-delete timestamp update to PageRepository/SQLite so changes persist asynchronously.
+     */
+    void RenderDeleteConfirmModal(DocumentSession& session, CanvasEngine& canvas, const ThemeManager& theme) {
+        auto activeNb = session.workspace.GetActiveNotebook();
+        if (openDeleteConfirmModal) {
+            ImGui::OpenPopup("DeleteConfirmModal##Nav");
+            openDeleteConfirmModal = false;
+        }
+
+        ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("DeleteConfirmModal##Nav", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+
+                // Header
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                const char* typeStr = "Item";
+                if (pendingDeleteType == PendingDeleteType::Page) typeStr = "Page";
+                else if (pendingDeleteType == PendingDeleteType::Section) typeStr = "Section";
+                else if (pendingDeleteType == PendingDeleteType::SectionGroup) typeStr = "Section Group";
+
+                ImGui::TextColored(ImVec4(0.92f, 0.30f, 0.25f, 1.0f), "DELETE %s?", typeStr);
+                ImGui::PopFont();
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                // Warning body text
+                ImGui::TextWrapped("Are you sure you want to delete \"%s\"?", pendingDeleteName.c_str());
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                ImGui::TextColored(theme.colorTextMuted, 
+                    "It will be moved to the Notebook Recycle Bin and can be restored anytime within 30 days before being permanently erased.");
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                // Action Buttons
+                float deleteBtnW = 160.0f;
+                float cancelBtnW = 90.0f;
+                float btnGap = 10.0f;
+                float rightAlignX = ImGui::GetCursorPosX() + availW - (deleteBtnW + cancelBtnW + btnGap);
+                if (rightAlignX > ImGui::GetCursorPosX()) {
+                    ImGui::SetCursorPosX(rightAlignX);
+                }
+
+                // Delete Button
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.22f, 0.22f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.32f, 0.32f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.75f, 0.15f, 0.15f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                bool deleteClicked = ImGui::Button("Move to Recycle Bin", ImVec2(deleteBtnW, 34.0f));
+                ImGui::PopStyleColor(4);
+
+                if (deleteClicked) {
+                    if (pendingDeleteType == PendingDeleteType::Page) {
+                        if (activeNb) {
+                            for (auto& sec : activeNb->sections) {
+                                if (sec && sec->FindPageByGuid(pendingDeleteGuid)) {
+                                    sec->RemovePage(pendingDeleteGuid);
+                                    break;
+                                }
+                            }
+                            for (auto& grp : activeNb->sectionGroups) {
+                                if (grp) {
+                                    for (auto& sec : grp->sections) {
+                                        if (sec && sec->FindPageByGuid(pendingDeleteGuid)) {
+                                            sec->RemovePage(pendingDeleteGuid);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        session.workspace.repository.SoftDeletePageAsync(pendingDeleteGuid);
+                    } else if (pendingDeleteType == PendingDeleteType::Section) {
+                        if (activeNb) {
+                            if (!pendingDeleteParentGuid.empty()) {
+                                auto grp = activeNb->FindSectionGroupByGuid(pendingDeleteParentGuid);
+                                if (grp) {
+                                    auto it = std::find_if(grp->sections.begin(), grp->sections.end(), [&](const std::shared_ptr<Section>& s) {
+                                        return s && s->guid == pendingDeleteGuid;
+                                    });
+                                    if (it != grp->sections.end()) {
+                                        grp->sections.erase(it);
+                                    }
+                                }
+                            } else {
+                                activeNb->RemoveSection(pendingDeleteGuid);
+                            }
+                            if (activeNb->GetActiveSection() == nullptr) {
+                                auto fallback = activeNb->GetActiveSection();
+                                activeNb->SetActiveSection(fallback);
+                            }
+                        }
+                        session.workspace.repository.SoftDeleteSectionAsync(pendingDeleteGuid);
+                    } else if (pendingDeleteType == PendingDeleteType::SectionGroup) {
+                        if (activeNb) {
+                            auto it = std::find_if(activeNb->sectionGroups.begin(), activeNb->sectionGroups.end(), [&](const std::shared_ptr<SectionGroup>& g) {
+                                return g && g->guid == pendingDeleteGuid;
+                            });
+                            if (it != activeNb->sectionGroups.end()) {
+                                for (const auto& sec : (*it)->sections) {
+                                    if (sec) {
+                                        session.workspace.repository.SoftDeleteSectionAsync(sec->guid);
+                                    }
+                                }
+                                activeNb->sectionGroups.erase(it);
+                            }
+                        }
+                    }
+
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                    session.workspace.FlushActiveNotebookAsync();
+
+                    pendingDeleteType = PendingDeleteType::None;
+                    pendingDeleteGuid.clear();
+                    pendingDeleteName.clear();
+                    pendingDeleteParentGuid.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::SameLine(0.0f, btnGap);
+                if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 34.0f))) {
+                    pendingDeleteType = PendingDeleteType::None;
+                    pendingDeleteGuid.clear();
+                    pendingDeleteName.clear();
+                    pendingDeleteParentGuid.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
+        }
+    }
+
     bool RenderHierarchyItemCard(
         const char* strId,
         const char* label,
@@ -801,7 +979,8 @@ private:
         bool isFolder = false,
         bool* outChevronClicked = nullptr,
         bool isLocked = false,
-        bool isDedicatedPdf = false
+        bool isDedicatedPdf = false,
+        ImVec4 itemColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
     ) {
         ImGui::SetCursorPosX(5.0f + indentX);
         ImVec2 pMin = ImGui::GetCursorScreenPos();
@@ -874,8 +1053,12 @@ private:
         // Folder icon or SVG icon
         if (isFolder) {
             float fMidY = pMin.y + size.y * 0.5f;
-            ImU32 folderCol = ImGui::ColorConvertFloat4ToU32(ImVec4(0.92f, 0.72f, 0.28f, 1.0f));
-            ImU32 folderTab = ImGui::ColorConvertFloat4ToU32(ImVec4(0.80f, 0.60f, 0.20f, 1.0f));
+            ImVec4 baseFCol = (itemColor.w > 0.0f && (itemColor.x != 1.0f || itemColor.y != 1.0f || itemColor.z != 1.0f))
+                ? itemColor
+                : ImVec4(0.92f, 0.72f, 0.28f, 1.0f);
+            ImVec4 tabFCol = ImVec4(baseFCol.x * 0.85f, baseFCol.y * 0.85f, baseFCol.z * 0.85f, baseFCol.w);
+            ImU32 folderCol = ImGui::ColorConvertFloat4ToU32(baseFCol);
+            ImU32 folderTab = ImGui::ColorConvertFloat4ToU32(tabFCol);
             drawList->AddRectFilled(ImVec2(curX, fMidY - 7.0f), ImVec2(curX + 6.0f, fMidY - 3.0f), folderTab, 1.0f);
             drawList->AddRectFilled(ImVec2(curX, fMidY - 4.0f), ImVec2(curX + 17.0f, fMidY + 6.0f), folderCol, 2.0f);
             drawList->AddRect(ImVec2(curX, fMidY - 4.0f), ImVec2(curX + 17.0f, fMidY + 6.0f), folderTab, 2.0f, 0, 1.0f);
@@ -883,7 +1066,8 @@ private:
         } else if (iconTex != 0) {
             float iconSize = 20.0f;
             float iconY = pMin.y + (size.y - iconSize) * 0.5f;
-            drawList->AddImage((ImTextureID)(intptr_t)iconTex, ImVec2(curX, iconY), ImVec2(curX + iconSize, iconY + iconSize));
+            ImU32 iconTint = ImGui::ColorConvertFloat4ToU32(itemColor);
+            drawList->AddImage((ImTextureID)(intptr_t)iconTex, ImVec2(curX, iconY), ImVec2(curX + iconSize, iconY + iconSize), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), iconTint);
             curX += iconSize + 6.0f;
         } else {
             curX += 4.0f;
@@ -1068,7 +1252,8 @@ private:
         float width,
         float height,
         const ThemeManager& theme,
-        const ImVec4& bgCol
+        const ImVec4& bgCol,
+        const ImVec4& secIconColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
     ) {
         ImVec2 pMin = ImGui::GetCursorScreenPos();
         ImVec2 size(width, height);
@@ -1114,7 +1299,8 @@ private:
             float iconY = pMin.y + (size.y - iconSize) * 0.5f;
             ImVec2 iconMin(curX, iconY);
             ImVec2 iconMax(curX + iconSize, iconY + iconSize);
-            drawList->AddImage((ImTextureID)(intptr_t)secIconTex, iconMin, iconMax);
+            ImU32 secTint = ImGui::ColorConvertFloat4ToU32(secIconColor);
+            drawList->AddImage((ImTextureID)(intptr_t)secIconTex, iconMin, iconMax, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), secTint);
             curX += iconSize + 8.0f;
         }
 
@@ -1222,17 +1408,22 @@ private:
 
         auto activeSec = activeNb ? activeNb->GetActiveSection() : nullptr;
 
-        static const struct ColorOption { const char* name; const char* svg; } colorOptions[] = {
-            {"Blue", "blue-section-simple.svg"},
-            {"Green", "green-section-simple.svg"},
-            {"Magenta", "magenta-section-simple.svg"},
-            {"Orange", "orange-section-simple.svg"},
-            {"Pink", "pink-section-simple.svg"},
-            {"Red", "red-section-simple.svg"},
-            {"Salad Green", "saladgreen-section-simple.svg"},
-            {"Sky Blue", "skyblue-section-simple.svg"},
-            {"Yellow", "yellow-section-simple.svg"}
+        static const struct ColorOption {
+            const char* name;
+            ImVec4 color;
+        } colorOptions[] = {
+            { "Blue",        ImVec4(0.17f, 0.45f, 0.73f, 1.0f) },
+            { "Green",       ImVec4(0.18f, 0.55f, 0.34f, 1.0f) },
+            { "Magenta",     ImVec4(0.73f, 0.17f, 0.55f, 1.0f) },
+            { "Orange",      ImVec4(0.90f, 0.42f, 0.17f, 1.0f) },
+            { "Pink",        ImVec4(0.88f, 0.41f, 0.63f, 1.0f) },
+            { "Red",         ImVec4(0.85f, 0.21f, 0.21f, 1.0f) },
+            { "Salad Green", ImVec4(0.43f, 0.71f, 0.24f, 1.0f) },
+            { "Sky Blue",    ImVec4(0.20f, 0.63f, 0.86f, 1.0f) },
+            { "Yellow",      ImVec4(0.90f, 0.71f, 0.12f, 1.0f) }
         };
+
+        GLuint secIconMask = g_IconManager.LoadOrGetSVG("section_icon_mask", "assets/icons/Sections_Notebooks/" + FOLIO_SECTION_DEFAULT_ICON, 64, true);
 
         // -----------------------------------------------------------------
         // 1. SECTION GROUPS
@@ -1254,7 +1445,8 @@ private:
             bool grpClicked = RenderHierarchyItemCard(
                 grpCardId.c_str(), group->name.c_str(), 
                 containsActive && group->isCollapsed, 
-                colWidth - 10.0f, theme, 0, 0.0f, true, group->isCollapsed, true, &chevronClicked
+                colWidth - 10.0f, theme, 0, 0.0f, true, group->isCollapsed, true, &chevronClicked,
+                false, false, group->colorTag
             );
 
             if (grpClicked && ImGui::GetDragDropPayload() == nullptr) {
@@ -1337,13 +1529,7 @@ private:
                     openRenamePopup = true;
                 }
                 if (ImGui::MenuItem("Delete Group")) {
-                    activeNb->sectionGroups.erase(activeNb->sectionGroups.begin() + g);
-                    if (containsActive) {
-                        auto fallback = activeNb->GetActiveSection();
-                        activeNb->SetActiveSection(fallback);
-                    }
-                    canvas.needsFullRebake = true;
-                    canvas.isDirty = true;
+                    RequestDeleteConfirmation(PendingDeleteType::SectionGroup, group->guid, group->name);
                     ImGui::EndPopup();
                     ImGui::PopID();
                     break;
@@ -1361,6 +1547,19 @@ private:
                     canvas.isDirty = true;
                     session.workspace.FlushActiveNotebookAsync();
                 }
+                ImGui::Separator();
+                if (ImGui::BeginMenu("Group Color")) {
+                    for (const auto& opt : colorOptions) {
+                        bool isCurrent = (std::abs(group->colorTag.x - opt.color.x) < 0.02f &&
+                                          std::abs(group->colorTag.y - opt.color.y) < 0.02f &&
+                                          std::abs(group->colorTag.z - opt.color.z) < 0.02f);
+                        if (ImGui::MenuItem(opt.name, nullptr, isCurrent)) {
+                            group->colorTag = opt.color;
+                            session.workspace.FlushActiveNotebookAsync();
+                        }
+                    }
+                    ImGui::EndMenu();
+                }
                 ImGui::EndPopup();
             }
 
@@ -1372,15 +1571,11 @@ private:
                     ImGui::PushID(static_cast<int>(cs));
 
                     bool isSecActive = (activeSec && sec->guid == activeSec->guid);
-                    GLuint iconTex = 0;
-                    if (!sec->iconFile.empty()) {
-                        iconTex = g_IconManager.LoadOrGetSVG(sec->iconFile, "assets/icons/Sections_Notebooks/" + sec->iconFile, 64);
-                    }
                     float indentX = 14.0f;
                     float secW = std::max(60.0f, colWidth - 10.0f - indentX);
                     std::string secId = "##GrpSec_" + sec->guid;
 
-                    if (RenderHierarchyItemCard(secId.c_str(), sec->name.c_str(), isSecActive, secW, theme, iconTex, indentX, false, false, false, nullptr, sec->isPasswordProtected && sec->isLocked)) {
+                    if (RenderHierarchyItemCard(secId.c_str(), sec->name.c_str(), isSecActive, secW, theme, secIconMask, indentX, false, false, false, nullptr, sec->isPasswordProtected && sec->isLocked, false, sec->colorTag)) {
                         if (sec->isPasswordProtected && sec->isLocked) {
                             passwordTargetSecGuid = sec->guid;
                             passwordModalMode = 2; // Unlock
@@ -1484,12 +1679,7 @@ private:
                         }
                         if (group->sections.size() > 1 || !activeNb->sections.empty()) {
                             if (ImGui::MenuItem("Delete Section")) {
-                                group->sections.erase(group->sections.begin() + cs);
-                                if (isSecActive) {
-                                    activeNb->SetActiveSection(activeNb->GetActiveSection());
-                                }
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
+                                RequestDeleteConfirmation(PendingDeleteType::Section, sec->guid, sec->name, group->guid);
                                 ImGui::EndPopup();
                                 ImGui::PopID();
                                 break;
@@ -1547,9 +1737,12 @@ private:
                         ImGui::Separator();
                         if (ImGui::BeginMenu("Section Color")) {
                             for (const auto& opt : colorOptions) {
-                                bool isCurrent = (sec->iconFile == opt.svg);
+                                bool isCurrent = (std::abs(sec->colorTag.x - opt.color.x) < 0.02f &&
+                                                  std::abs(sec->colorTag.y - opt.color.y) < 0.02f &&
+                                                  std::abs(sec->colorTag.z - opt.color.z) < 0.02f);
                                 if (ImGui::MenuItem(opt.name, nullptr, isCurrent)) {
-                                    sec->iconFile = opt.svg;
+                                    sec->colorTag = opt.color;
+                                    session.workspace.FlushActiveNotebookAsync();
                                 }
                             }
                             ImGui::EndMenu();
@@ -1633,14 +1826,9 @@ private:
             if (!sec) continue;
             ImGui::PushID(static_cast<int>(s));
             
-            GLuint iconTex = 0;
-            if (!sec->iconFile.empty()) {
-                iconTex = g_IconManager.LoadOrGetSVG(sec->iconFile, "assets/icons/Sections_Notebooks/" + sec->iconFile, 64);
-            }
-
             bool isSecActive = (activeSec && sec->guid == activeSec->guid);
             std::string secId = "##RootSec_" + sec->guid;
-            if (RenderHierarchyItemCard(secId.c_str(), sec->name.c_str(), isSecActive, colWidth - 10.0f, theme, iconTex, 0.0f, false, false, false, nullptr, sec->isPasswordProtected && sec->isLocked)) {
+            if (RenderHierarchyItemCard(secId.c_str(), sec->name.c_str(), isSecActive, colWidth - 10.0f, theme, secIconMask, 0.0f, false, false, false, nullptr, sec->isPasswordProtected && sec->isLocked, false, sec->colorTag)) {
                 if (sec->isPasswordProtected && sec->isLocked) {
                     passwordTargetSecGuid = sec->guid;
                     passwordModalMode = 2;
@@ -1737,9 +1925,7 @@ private:
                 }
                 if (activeNb->sections.size() > 1 || !activeNb->sectionGroups.empty()) {
                     if (ImGui::MenuItem("Delete Section")) {
-                        activeNb->RemoveSection(sec->guid);
-                        canvas.needsFullRebake = true;
-                        canvas.isDirty = true;
+                        RequestDeleteConfirmation(PendingDeleteType::Section, sec->guid, sec->name);
                         ImGui::EndPopup();
                         ImGui::PopID();
                         break;
@@ -1789,9 +1975,12 @@ private:
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Section Color")) {
                     for (const auto& opt : colorOptions) {
-                        bool isCurrent = (sec->iconFile == opt.svg);
+                        bool isCurrent = (std::abs(sec->colorTag.x - opt.color.x) < 0.02f &&
+                                          std::abs(sec->colorTag.y - opt.color.y) < 0.02f &&
+                                          std::abs(sec->colorTag.z - opt.color.z) < 0.02f);
                         if (ImGui::MenuItem(opt.name, nullptr, isCurrent)) {
-                            sec->iconFile = opt.svg;
+                            sec->colorTag = opt.color;
+                            session.workspace.FlushActiveNotebookAsync();
                         }
                     }
                     ImGui::EndMenu();
@@ -2023,9 +2212,7 @@ private:
                     }
                     if (activeSec->pages.size() > 1) {
                         if (ImGui::MenuItem("Delete Page")) {
-                            activeSec->RemovePage(page->guid);
-                            canvas.needsFullRebake = true;
-                            canvas.isDirty = true;
+                            RequestDeleteConfirmation(PendingDeleteType::Page, page->guid, page->title);
                             ImGui::EndPopup();
                             ImGui::PopID();
                             break;
@@ -2214,15 +2401,16 @@ private:
         // Arrow pointing right for expanding
         GLuint arrowLeftTex = g_IconManager.LoadOrGetSVG("arrow_left", "assets/icons/Navigation/arrow-left.svg", 64, true);
         GLuint secIconTex = 0;
-        if (activeSec && !activeSec->iconFile.empty()) {
-            secIconTex = g_IconManager.LoadOrGetSVG(activeSec->iconFile, "assets/icons/Sections_Notebooks/" + activeSec->iconFile, 64, false);
+        ImVec4 secColor = activeSec ? activeSec->colorTag : ImVec4(0.90f, 0.42f, 0.17f, 1.0f);
+        if (activeSec) {
+            secIconTex = g_IconManager.LoadOrGetSVG("section_icon_mask", "assets/icons/Sections_Notebooks/" + FOLIO_SECTION_DEFAULT_ICON, 64, true);
         }
 
         std::string secName = activeSec ? activeSec->name : "Section";
         float headerBtnWidth = std::max(60.0f, pagesWidth - 12.0f);
 
         ImGui::SetCursorPos(ImVec2(6.0f, 6.0f));
-        if (RenderCombinedSectionHeaderButton("##PagesHeaderBtn", arrowLeftTex, secIconTex, secName.c_str(), headerBtnWidth, ModernNavConfig::TOP_BUTTON_HEIGHT, theme, theme.colorNavBg)) {
+        if (RenderCombinedSectionHeaderButton("##PagesHeaderBtn", arrowLeftTex, secIconTex, secName.c_str(), headerBtnWidth, ModernNavConfig::TOP_BUTTON_HEIGHT, theme, theme.colorNavBg, secColor)) {
             ToggleState();
         }
         if (ImGui::IsItemHovered()) {

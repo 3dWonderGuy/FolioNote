@@ -13,7 +13,7 @@
 #include "ui/icon_manager.hpp"
 #include "app/theme_manager.hpp"
 #include "core/document/document_session.hpp"
-#include "core/document/library.hpp"
+#include "core/document/library/library.hpp"
 
 using Folio::LibraryInfo;
 using Folio::LibraryManager;
@@ -93,7 +93,8 @@ enum class NbManagerSubTab {
     AllNotebooks = 0,
     LibraryFolders = 1,
     ImportAndMigration = 2,
-    CreateNotebook = 3
+    CreateNotebook = 3,
+    RecycleBin = 4
 };
 
 enum class InfoSubTab {
@@ -113,6 +114,39 @@ enum class SettingsSubCategory {
     Usage = 5,
     About = 6
 };
+
+// ============================================================================
+// NOTEBOOK COLOR PRESETS & PALETTE
+// ============================================================================
+
+/**
+ * @struct NotebookColorPreset
+ * @brief Curated visual accent color swatch for notebook packaging and UI identification.
+ */
+struct NotebookColorPreset {
+    const char* name;   ///< Friendly display title (e.g. "Warm Orange")
+    ImVec4 color;       ///< Normalized RGBA color vector
+};
+
+/**
+ * @brief Returns the curated modern palette of FolioNote notebook accent colors.
+ * Working Process:
+ * Provides a standardized collection of vibrant, accessible colors matching the
+ * theme system, with Warm Orange as the signature default.
+ */
+inline const std::vector<NotebookColorPreset>& GetNotebookColorPresets() {
+    static const std::vector<NotebookColorPreset> presets = {
+        { "Warm Orange",  ImVec4(0.95f, 0.45f, 0.15f, 1.0f) }, // Signature Folio Orange
+        { "Azure Blue",   ImVec4(0.20f, 0.48f, 0.92f, 1.0f) },
+        { "Emerald Green",ImVec4(0.18f, 0.72f, 0.42f, 1.0f) },
+        { "Royal Violet", ImVec4(0.60f, 0.30f, 0.88f, 1.0f) },
+        { "Crimson Red",  ImVec4(0.88f, 0.22f, 0.25f, 1.0f) },
+        { "Amber Gold",   ImVec4(0.92f, 0.68f, 0.12f, 1.0f) },
+        { "Deep Teal",    ImVec4(0.10f, 0.62f, 0.68f, 1.0f) },
+        { "Slate Navy",   ImVec4(0.35f, 0.45f, 0.60f, 1.0f) }
+    };
+    return presets;
+}
 
 // ============================================================================
 // NOTEBOOK HUB VIEW (FILE / BACKSTAGE REDESIGNED)
@@ -141,11 +175,59 @@ struct NotebookHubView {
     int renameNotebookIndex = -1;
     char renameNotebookBuffer[128] = "";
 
+    // Delete Notebook Modal state
+    bool showDeleteNotebookModal = false;
+    std::string deleteNotebookTargetPath;
+    std::string deleteNotebookTargetName;
+
+    // Recycle Bin UI state
+    int recycleBinCategory = 0; // 0 = Active Notebook (Pages & Sections), 1 = Library Trash (.notebook packages)
+    bool showEmptyRecycleBinModal = false;
+    bool showPermanentDeleteModal = false;
+    std::string permanentDeleteGuid;
+    std::string permanentDeleteName;
+    int permanentDeleteType = 0; // 0 = Page, 1 = Section, 2 = Trashed Notebook Package
+    std::string permanentDeleteExtraPath;
+
     // New Notebook inputs
     char newNbName[128] = "My Notebook";
     char newNbPath[256] = "";
-    int newNbColorIndex = 0; // 0=Azure, 1=Emerald, 2=Purple, 3=Sunset, 4=Crimson, 5=Slate
+    int newNbColorIndex = 0; // Index into GetNotebookColorPresets()
+    ImVec4 newNbCustomColor = ImVec4(0.95f, 0.45f, 0.15f, 1.0f);
+    ImVec4 renameNotebookColor = ImVec4(0.95f, 0.45f, 0.15f, 1.0f);
     int newNbTemplateIndex = 0; // 0=Blank, 1=Ruled, 2=Engineering Grid, 3=Dot Grid, 4=Cornell Notes
+
+    /**
+     * @brief Resets the "Create New Notebook" form and randomly selects a starting accent color preset.
+     *
+     * MATHEMATICAL WORKING PROCESS:
+     * - Entropy Source: Hardware entropy via `std::random_device rd` seeds a 32-bit Mersenne
+     *   Twister engine (`std::mt19937 gen`).
+     * - Discrete Uniform Distribution:
+     *     P(preset = i) = 1 / presets.size()
+     *   Ensures equal probability across all 8 curated notebook color presets so each newly
+     *   prepared notebook begins with a fresh, distinct color.
+     */
+    void ResetCreateNotebookForm() {
+        snprintf(newNbName, sizeof(newNbName), "My Notebook");
+        newNbPath[0] = '\0';
+        const auto& presets = GetNotebookColorPresets();
+        if (!presets.empty()) {
+            static std::random_device rd;
+            static std::mt19937 gen(rd());
+            std::uniform_int_distribution<size_t> dis(0, presets.size() - 1);
+            newNbColorIndex = static_cast<int>(dis(gen));
+            newNbCustomColor = presets[newNbColorIndex].color;
+        } else {
+            newNbColorIndex = 0;
+            newNbCustomColor = ImVec4(0.95f, 0.45f, 0.15f, 1.0f);
+        }
+        newNbTemplateIndex = 0;
+    }
+
+    NotebookHubView() {
+        ResetCreateNotebookForm();
+    }
 
     // Copy / Duplicate inputs
     char copyNbName[128] = "";
@@ -219,6 +301,7 @@ struct NotebookHubView {
         size_t sections;
         size_t pages;
         bool isActive;
+        ImVec4 colorTag;
     };
 
     void OpenDiskPath(const std::string& picked, Workspace& ws, CanvasEngine& canvas) {
@@ -298,6 +381,9 @@ struct NotebookHubView {
         ImVec2 cardMin = ImGui::GetWindowPos();
         ImVec2 cardMax(cardMin.x + cardW, cardMin.y + cardH);
 
+        // Accent color strip along left edge
+        dl->AddRectFilled(cardMin, ImVec2(cardMin.x + 6.0f, cardMax.y), ImGui::ColorConvertFloat4ToU32(item.colorTag));
+
         // Icon
         GLuint iconTex = 0;
         if (!item.icon.empty()) {
@@ -314,6 +400,10 @@ struct NotebookHubView {
         ImGui::PushFont(FolioTheme::FontNavBoldLarge);
         ImGui::TextColored(item.isActive ? ImVec4(0.0f, 0.0f, 0.0f, 1.0f) : theme.colorText, "%s", item.name.c_str());
         ImGui::PopFont();
+
+        // Accent color indicator circle next to title
+        ImVec2 titleSz = ImGui::CalcTextSize(item.name.c_str());
+        dl->AddCircleFilled(ImVec2(cardMin.x + txtX + titleSz.x + 12.0f, cardMin.y + 22.0f), 5.0f, ImGui::ColorConvertFloat4ToU32(item.colorTag));
 
         // Metadata count
         ImGui::SetCursorPos(ImVec2(txtX, 40.0f));
@@ -352,6 +442,7 @@ struct NotebookHubView {
         if (ImGui::Button("Rename##NbCardRename", ImVec2(76.0f, 26.0f))) {
             renameNotebookIndex = static_cast<int>(item.workspaceIndex);
             snprintf(renameNotebookBuffer, sizeof(renameNotebookBuffer), "%s", item.name.c_str());
+            renameNotebookColor = item.colorTag;
             showRenameNotebookModal = true;
         }
         if (ImGui::IsItemActive()) {
@@ -370,6 +461,20 @@ struct NotebookHubView {
             dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(30, 30, 30, 240), 6.0f, 0, 1.5f);
         }
 
+        ImGui::SameLine(0.0f, 8.0f);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.15f, 0.15f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.22f, 0.22f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.6f, 0.6f, 1.0f));
+        if (ImGui::Button("Delete##NbCardDel", ImVec2(68.0f, 26.0f))) {
+            deleteNotebookTargetPath = item.path;
+            deleteNotebookTargetName = item.name;
+            showDeleteNotebookModal = true;
+        }
+        ImGui::PopStyleColor(3);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Move notebook package to Library Recycle Bin (.trash)");
+        }
+
         ImGui::PopStyleVar(2); // FrameRounding, FramePadding
 
         ImGui::EndChild();
@@ -381,6 +486,14 @@ struct NotebookHubView {
     void InitIfNeeded(const std::string& defaultPath) {
         if (!isInitialized) {
             libraryManager.Init(defaultPath);
+            // Restore default notebook color preference from settings.json
+            auto& sm = SettingsManager::Instance();
+            newNbCustomColor = ImVec4(
+                sm.defaultNotebookColor[0],
+                sm.defaultNotebookColor[1],
+                sm.defaultNotebookColor[2],
+                sm.defaultNotebookColor[3]
+            );
             isInitialized = true;
         }
     }
@@ -515,7 +628,7 @@ private:
         };
 
         HeaderTabDef tabs[4] = {
-            { "Notebook Manager", HubMainCategory::NotebookManager, "icon_notebooks", "assets/icons/Sections_Notebooks/blue-notebook.svg" },
+            { "Notebook Manager", HubMainCategory::NotebookManager, "icon_notebooks", "assets/icons/Sections_Notebooks/orange-notebook.svg" },
             { "Info & Health", HubMainCategory::NotebookInfo, "icon_info", "assets/icons/Navigation/view.svg" },
             { "Export & Print", HubMainCategory::ExportAndPrint, "icon_export", "assets/icons/Navigation/add.svg" },
             { "Settings & Preferences", HubMainCategory::Settings, "icon_settings", "assets/icons/Navigation/settings.svg" }
@@ -653,13 +766,14 @@ private:
         switch (activeMainCategory) {
             case HubMainCategory::NotebookManager:
                 RenderSubRailTab("All Notebooks", activeNbSubTab == NbManagerSubTab::AllNotebooks, [&](){ activeNbSubTab = NbManagerSubTab::AllNotebooks; }, "icon_tab_all", "assets/icons/Navigation/expand.svg");
-                RenderSubRailTab("Library Folders", activeNbSubTab == NbManagerSubTab::LibraryFolders, [&](){ activeNbSubTab = NbManagerSubTab::LibraryFolders; }, "icon_tab_lib", "assets/icons/Sections_Notebooks/purple-notebook.svg");
+                RenderSubRailTab("Library Folders", activeNbSubTab == NbManagerSubTab::LibraryFolders, [&](){ activeNbSubTab = NbManagerSubTab::LibraryFolders; }, "icon_tab_lib", "assets/icons/Sections_Notebooks/orange-notebook.svg");
                 RenderSubRailTab("Import & Migration", activeNbSubTab == NbManagerSubTab::ImportAndMigration, [&](){ activeNbSubTab = NbManagerSubTab::ImportAndMigration; }, "icon_tab_imp", "assets/icons/Tools/pencil.svg");
-                RenderSubRailTab("+ New Notebook", activeNbSubTab == NbManagerSubTab::CreateNotebook, [&](){ activeNbSubTab = NbManagerSubTab::CreateNotebook; }, "icon_tab_new", "assets/icons/Navigation/add.svg");
+                RenderSubRailTab("+ New Notebook", activeNbSubTab == NbManagerSubTab::CreateNotebook, [&](){ ResetCreateNotebookForm(); activeNbSubTab = NbManagerSubTab::CreateNotebook; }, "icon_tab_new", "assets/icons/Navigation/add.svg");
+                RenderSubRailTab("Recycle Bin", activeNbSubTab == NbManagerSubTab::RecycleBin, [&](){ activeNbSubTab = NbManagerSubTab::RecycleBin; }, "icon_tab_recycle", "assets/icons/Tools/eraser.svg");
                 break;
 
             case HubMainCategory::NotebookInfo:
-                RenderSubRailTab("Overview", true, [&](){ activeInfoSubTab = InfoSubTab::Overview; }, "icon_i_over", "assets/icons/Sections_Notebooks/blue-notebook.svg");
+                RenderSubRailTab("Overview", true, [&](){ activeInfoSubTab = InfoSubTab::Overview; }, "icon_i_over", "assets/icons/Sections_Notebooks/orange-notebook.svg");
                 break;
 
             case HubMainCategory::ExportAndPrint:
@@ -668,9 +782,9 @@ private:
 
             case HubMainCategory::Settings:
                 RenderSubRailTab("General & Session", activeSettingsSubCategory == SettingsSubCategory::General, [&](){ activeSettingsSubCategory = SettingsSubCategory::General; }, "icon_s_gen", "assets/icons/Tools/settings.svg");
-                RenderSubRailTab("Appearance & Themes", activeSettingsSubCategory == SettingsSubCategory::Appearance, [&](){ activeSettingsSubCategory = SettingsSubCategory::Appearance; }, "icon_s_app", "assets/icons/Sections_Notebooks/purple-notebook.svg");
+                RenderSubRailTab("Appearance & Themes", activeSettingsSubCategory == SettingsSubCategory::Appearance, [&](){ activeSettingsSubCategory = SettingsSubCategory::Appearance; }, "icon_s_app", "assets/icons/Tools/brush.svg");
                 RenderSubRailTab("Inking & Stylus", activeSettingsSubCategory == SettingsSubCategory::Inking, [&](){ activeSettingsSubCategory = SettingsSubCategory::Inking; }, "icon_s_ink", "assets/icons/Tools/brush.svg");
-                RenderSubRailTab("Storage & Database", activeSettingsSubCategory == SettingsSubCategory::Storage, [&](){ activeSettingsSubCategory = SettingsSubCategory::Storage; }, "icon_s_sto", "assets/icons/Sections_Notebooks/blue-notebook.svg");
+                RenderSubRailTab("Storage & Database", activeSettingsSubCategory == SettingsSubCategory::Storage, [&](){ activeSettingsSubCategory = SettingsSubCategory::Storage; }, "icon_s_sto", "assets/icons/Navigation/settings.svg");
                 RenderSubRailTab("Add-ons & Plugins", activeSettingsSubCategory == SettingsSubCategory::Addons, [&](){ activeSettingsSubCategory = SettingsSubCategory::Addons; }, "icon_s_add", "assets/icons/Navigation/add.svg");
                 RenderSubRailTab("Canvas & UI Usage", activeSettingsSubCategory == SettingsSubCategory::Usage, [&](){ activeSettingsSubCategory = SettingsSubCategory::Usage; }, "icon_s_usg", "assets/icons/Ribbon/tag.svg");
                 RenderSubRailTab("About & Updates", activeSettingsSubCategory == SettingsSubCategory::About, [&](){ activeSettingsSubCategory = SettingsSubCategory::About; }, "icon_s_abo", "assets/icons/logo.svg");
@@ -772,6 +886,7 @@ private:
 
                 ImGui::SameLine(0.0f, 20.0f);
                 if (ImGui::Button("+ New Notebook", ImVec2(154.0f, 40.0f))) {
+                    ResetCreateNotebookForm();
                     activeNbSubTab = NbManagerSubTab::CreateNotebook;
                 }
                 if (ImGui::IsItemActive()) {
@@ -869,7 +984,7 @@ private:
                     size_t pCount = 0;
                     for (const auto& s : nb->sections) if (s) pCount += s->pages.size();
 
-                    cardList.push_back({ i, nb->name, nb->filePath, nb->iconFile, nb->sections.size(), pCount, ws.activeNotebookIndex == i });
+                    cardList.push_back({ i, nb->name, nb->filePath, nb->iconFile, nb->sections.size(), pCount, ws.activeNotebookIndex == i, nb->colorTag });
                 }
 
                 // Apply Sorting
@@ -1280,6 +1395,54 @@ private:
 
                 ImGui::Dummy(ImVec2(0.0f, 16.0f));
                 ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Select Notebook Accent Color:");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Choose a color tag to visually identify this notebook across tabs and managers");
+                ImGui::Dummy(ImVec2(0.0f, 6.0f));
+
+                const auto& colorPresets = GetNotebookColorPresets();
+                float swatchSize = 34.0f;
+                float swatchGap = 10.0f;
+                for (size_t c = 0; c < colorPresets.size(); ++c) {
+                    bool isColSelected = (newNbColorIndex == static_cast<int>(c));
+                    ImGui::PushID(static_cast<int>(c + 1000));
+                    ImVec2 p0 = ImGui::GetCursorScreenPos();
+                    ImVec2 p1(p0.x + swatchSize, p0.y + swatchSize);
+
+                    if (ImGui::InvisibleButton("##ColorSwatch", ImVec2(swatchSize, swatchSize))) {
+                        newNbColorIndex = static_cast<int>(c);
+                        newNbCustomColor = colorPresets[c].color;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", colorPresets[c].name);
+                    }
+
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    dl->AddRectFilled(p0, p1, ImGui::ColorConvertFloat4ToU32(colorPresets[c].color), 4.0f);
+                    if (isColSelected) {
+                        dl->AddRect(p0, p1, IM_COL32(255, 255, 255, 255), 4.0f, 0, 2.5f);
+                        dl->AddCircleFilled(ImVec2(p0.x + swatchSize * 0.5f, p0.y + swatchSize * 0.5f), 4.0f, IM_COL32(255, 255, 255, 255));
+                    } else {
+                        dl->AddRect(p0, p1, IM_COL32(0, 0, 0, 80), 4.0f, 0, 1.0f);
+                    }
+
+                    if (c + 1 < colorPresets.size()) {
+                        ImGui::SameLine(0.0f, swatchGap);
+                    }
+                    ImGui::PopID();
+                }
+
+                ImGui::SameLine(0.0f, 16.0f);
+                ImGui::SetNextItemWidth(150.0f);
+                if (ImGui::ColorEdit4("##NewNbCustomCol", &newNbCustomColor.x, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs)) {
+                    newNbColorIndex = -1; // custom chosen
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Fine-tune custom accent color");
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 16.0f));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
                 ImGui::TextColored(theme.colorText, "Select Page Template:");
                 ImGui::PopFont();
                 ImGui::Dummy(ImVec2(0.0f, 6.0f));
@@ -1353,7 +1516,7 @@ private:
                         } else {
                             targetDir = strlen(newNbPath) > 0 ? std::string(newNbPath) : libraryManager.defaultLibraryPath;
                         }
-                        auto created = libraryManager.CreateNewNotebook(newNbName, targetDir);
+                        auto created = libraryManager.CreateNewNotebook(newNbName, targetDir, newNbCustomColor, FOLIO_NOTEBOOK_DEFAULT_ICON);
                         if (created) {
                             // Apply template configuration to first page
                             if (!created->sections.empty() && !created->sections[0]->pages.empty()) {
@@ -1370,8 +1533,7 @@ private:
                             else if (newNbTemplateIndex == 4) canvas.currentPaperStyle = PaperStyle::Lined;
                             canvas.defaultTemplate.paperStyle = canvas.currentPaperStyle;
 
-                            ws.notebooks.push_back(created);
-                            ws.activeNotebookIndex = ws.notebooks.size() - 1;
+                            ws.OpenAndActivateNotebook(created);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
                             outViewMode = AppViewMode::CanvasWorkspace;
@@ -1380,6 +1542,376 @@ private:
                 }
                 ImGui::PopStyleVar(2);
                 break;
+            }
+
+            case NbManagerSubTab::RecycleBin: {
+                RenderRecycleBinContent(session, canvas, theme);
+                break;
+            }
+        }
+    }
+
+    // ========================================================================
+    // RECYCLE BIN & 30-DAY RETENTION MANAGEMENT VIEW
+    // ========================================================================
+
+    /**
+     * @brief Renders the Notebook and Library Recycle Bin manager view.
+     *
+     * MATHEMATICAL INVARIANTS & RETENTION WINDOW:
+     * - Soft-deleted items record a unix timestamp `deleted_at` in seconds.
+     * - Days Remaining formula:
+     *     \f$ \text{daysLeft} = \max\left(0, 30 - \left\lfloor \frac{t_{\text{now}} - t_{\text{deleted}}}{86,400} \right\rfloor \right) \f$
+     * - Items older than 30 days are automatically purged on startup.
+     * - Color coding:
+     *     Green (> 14 days), Orange/Yellow (5 - 14 days), Red (< 5 days).
+     *
+     * GENERAL WORKING PROCESS:
+     * 1. Top bar allows switching between Active Notebook items and Library Trashed Packages (.trash).
+     * 2. Provides 1-click restore to resurrect items back into the live document hierarchy.
+     * 3. Provides "Delete Forever" and "Empty Recycle Bin" options with safe confirmation modals.
+     *
+     * @param session Active document session containing workspace and page repository.
+     * @param canvas Canvas engine for rebaking upon restoration.
+     * @param theme Active color theme manager.
+     */
+    void RenderRecycleBinContent(DocumentSession& session, CanvasEngine& canvas, const ThemeManager& theme) {
+        auto activeNb = session.workspace.GetActiveNotebook();
+
+        ImGui::PushFont(FolioTheme::FontRibbonBoldLarge);
+        ImGui::TextColored(theme.colorText, "Recycle Bin & Document Recovery");
+        ImGui::PopFont();
+        ImGui::TextColored(theme.colorTextMuted, 
+            "Safely restore deleted pages, sections, or notebook packages. Items are retained for 30 days before permanent deletion.");
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+        float availW = ImGui::GetContentRegionAvail().x;
+
+        // Top Filter Bar & Empty Recycle Bin Action
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 8.0f));
+
+        bool isTabActiveNb = (recycleBinCategory == 0);
+        if (isTabActiveNb) {
+            ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, theme.colorNavBg);
+            ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
+        }
+        std::string tabNbLabel = "Active Notebook: " + (activeNb ? activeNb->name : "None");
+        if (ImGui::Button(tabNbLabel.c_str())) {
+            recycleBinCategory = 0;
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine(0.0f, 10.0f);
+        bool isTabLib = (recycleBinCategory == 1);
+        if (isTabLib) {
+            ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, theme.colorNavBg);
+            ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
+        }
+        if (ImGui::Button("Library Trashed Notebooks (.trash)")) {
+            recycleBinCategory = 1;
+        }
+        ImGui::PopStyleColor(2);
+
+        // Empty Recycle Bin Button (Right Aligned)
+        float emptyBtnW = 160.0f;
+        float rightAlignX = ImGui::GetCursorPosX() + availW - emptyBtnW;
+        if (rightAlignX > ImGui::GetCursorPosX()) {
+            ImGui::SameLine(rightAlignX);
+        } else {
+            ImGui::SameLine();
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.15f, 0.15f, 0.7f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.22f, 0.22f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.7f, 0.7f, 1.0f));
+        if (ImGui::Button("Empty Recycle Bin", ImVec2(emptyBtnW, 0.0f))) {
+            showEmptyRecycleBinModal = true;
+        }
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar(2);
+
+        ImGui::Dummy(ImVec2(0.0f, 14.0f));
+
+        int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+        if (recycleBinCategory == 0) {
+            // TAB 0: Active Notebook Soft-Deleted Items
+            if (!activeNb) {
+                ImGui::TextColored(theme.colorTextMuted, "No active notebook is currently open.");
+                return;
+            }
+
+            auto delSecs = session.workspace.repository.LoadDeletedSections(activeNb->guid);
+            auto delPages = session.workspace.repository.LoadDeletedPages(activeNb->guid);
+
+            if (delSecs.empty() && delPages.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, theme.colorNavBg);
+                ImGui::BeginChild("##RecycleEmptyCard", ImVec2(availW, 140.0f), true);
+                ImGui::SetCursorPos(ImVec2(24.0f, 30.0f));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "The Recycle Bin for \"%s\" is Empty", activeNb->name.c_str());
+                ImGui::PopFont();
+                ImGui::SetCursorPos(ImVec2(24.0f, 60.0f));
+                ImGui::TextColored(theme.colorTextMuted, "When you delete sections or pages, they will appear here and can be restored anytime within 30 days.");
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
+                return;
+            }
+
+            // Render Deleted Sections
+            if (!delSecs.empty()) {
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Deleted Sections (%zu)", delSecs.size());
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                for (size_t s = 0; s < delSecs.size(); ++s) {
+                    const auto& secRec = delSecs[s];
+                    ImGui::PushID(static_cast<int>(10000 + s));
+
+                    int64_t elapsedSec = (secRec.deletedAt > 0) ? (now - secRec.deletedAt) : 0;
+                    int64_t daysRemaining = std::max<int64_t>(0, 30 - (elapsedSec / 86400));
+
+                    ImVec4 badgeCol = (daysRemaining > 14) ? ImVec4(0.2f, 0.7f, 0.3f, 1.0f) :
+                                      (daysRemaining > 5)  ? ImVec4(0.9f, 0.6f, 0.1f, 1.0f) :
+                                                             ImVec4(0.9f, 0.2f, 0.2f, 1.0f);
+
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme.colorPanel);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+                    std::string cId = "##DelSecCard_" + secRec.guid;
+                    ImGui::BeginChild(cId.c_str(), ImVec2(availW, 64.0f), true);
+
+                    // Name
+                    ImGui::SetCursorPos(ImVec2(16.0f, 12.0f));
+                    ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                    ImGui::TextColored(theme.colorText, "📁 %s", secRec.name.c_str());
+                    ImGui::PopFont();
+
+                    // Status / Days left
+                    ImGui::SetCursorPos(ImVec2(16.0f, 36.0f));
+                    ImGui::TextColored(theme.colorTextMuted, "Section • ");
+                    ImGui::SameLine(0.0f, 0.0f);
+                    ImGui::TextColored(badgeCol, "%lld days left before permanent deletion", daysRemaining);
+
+                    // Buttons
+                    float bW = 120.0f;
+                    float bH = 28.0f;
+                    float bX = availW - (bW * 2.0f + 24.0f);
+
+                    ImGui::SetCursorPos(ImVec2(bX, 18.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    if (ImGui::Button("Restore Section", ImVec2(bW, bH))) {
+                        session.workspace.repository.RestoreSectionAsync(secRec.guid);
+                        // Reload notebook hierarchy to seamlessly restore section
+                        if (auto reloaded = session.workspace.repository.LoadNotebookHierarchy(activeNb->filePath)) {
+                            for (size_t nbI = 0; nbI < session.workspace.notebooks.size(); ++nbI) {
+                                if (session.workspace.notebooks[nbI]->guid == activeNb->guid) {
+                                    session.workspace.notebooks[nbI] = reloaded;
+                                    break;
+                                }
+                            }
+                        }
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                    ImGui::PopStyleColor(3);
+
+                    ImGui::SameLine(0.0f, 8.0f);
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 0.7f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.22f, 0.22f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.7f, 0.7f, 1.0f));
+                    if (ImGui::Button("Delete Forever", ImVec2(bW, bH))) {
+                        permanentDeleteGuid = secRec.guid;
+                        permanentDeleteName = secRec.name;
+                        permanentDeleteType = 1; // Section
+                        showPermanentDeleteModal = true;
+                    }
+                    ImGui::PopStyleColor(3);
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor();
+                    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                    ImGui::PopID();
+                }
+                ImGui::Dummy(ImVec2(0.0f, 10.0f));
+            }
+
+            // Render Deleted Pages
+            if (!delPages.empty()) {
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Deleted Pages (%zu)", delPages.size());
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                for (size_t p = 0; p < delPages.size(); ++p) {
+                    const auto& pageRec = delPages[p];
+                    ImGui::PushID(static_cast<int>(20000 + p));
+
+                    int64_t elapsedSec = (pageRec.deletedAt > 0) ? (now - pageRec.deletedAt) : 0;
+                    int64_t daysRemaining = std::max<int64_t>(0, 30 - (elapsedSec / 86400));
+
+                    ImVec4 badgeCol = (daysRemaining > 14) ? ImVec4(0.2f, 0.7f, 0.3f, 1.0f) :
+                                      (daysRemaining > 5)  ? ImVec4(0.9f, 0.6f, 0.1f, 1.0f) :
+                                                             ImVec4(0.9f, 0.2f, 0.2f, 1.0f);
+
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme.colorPanel);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+                    std::string cId = "##DelPageCard_" + pageRec.guid;
+                    ImGui::BeginChild(cId.c_str(), ImVec2(availW, 64.0f), true);
+
+                    // Name
+                    ImGui::SetCursorPos(ImVec2(16.0f, 12.0f));
+                    ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                    ImGui::TextColored(theme.colorText, "📄 %s", pageRec.title.c_str());
+                    ImGui::PopFont();
+
+                    // Status / Days left
+                    ImGui::SetCursorPos(ImVec2(16.0f, 36.0f));
+                    ImGui::TextColored(theme.colorTextMuted, "Page • Created: %s • ", pageRec.createdDate.c_str());
+                    ImGui::SameLine(0.0f, 0.0f);
+                    ImGui::TextColored(badgeCol, "%lld days left before permanent deletion", daysRemaining);
+
+                    // Buttons
+                    float bW = 120.0f;
+                    float bH = 28.0f;
+                    float bX = availW - (bW * 2.0f + 24.0f);
+
+                    ImGui::SetCursorPos(ImVec2(bX, 18.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    if (ImGui::Button("Restore Page", ImVec2(bW, bH))) {
+                        session.workspace.repository.RestorePageAsync(pageRec.guid);
+                        // Reload notebook hierarchy to reflect restored page
+                        if (auto reloaded = session.workspace.repository.LoadNotebookHierarchy(activeNb->filePath)) {
+                            for (size_t nbI = 0; nbI < session.workspace.notebooks.size(); ++nbI) {
+                                if (session.workspace.notebooks[nbI]->guid == activeNb->guid) {
+                                    session.workspace.notebooks[nbI] = reloaded;
+                                    break;
+                                }
+                            }
+                        }
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                    ImGui::PopStyleColor(3);
+
+                    ImGui::SameLine(0.0f, 8.0f);
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 0.7f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.22f, 0.22f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.7f, 0.7f, 1.0f));
+                    if (ImGui::Button("Delete Forever", ImVec2(bW, bH))) {
+                        permanentDeleteGuid = pageRec.guid;
+                        permanentDeleteName = pageRec.title;
+                        permanentDeleteType = 0; // Page
+                        showPermanentDeleteModal = true;
+                    }
+                    ImGui::PopStyleColor(3);
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor();
+                    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                    ImGui::PopID();
+                }
+            }
+        } else {
+            // TAB 1: Library Trashed Notebooks (.trash/)
+            bool foundAnyTrash = false;
+
+            for (size_t l = 0; l < libraryManager.libraries.size(); ++l) {
+                const auto& lib = libraryManager.libraries[l];
+                auto trashedNbs = libraryManager.GetTrashNotebooks(lib.rootPath);
+                if (trashedNbs.empty()) continue;
+
+                foundAnyTrash = true;
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "📁 Library: %s  (%zu in trash)", lib.name.c_str(), trashedNbs.size());
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                for (size_t t = 0; t < trashedNbs.size(); ++t) {
+                    const auto& tPath = trashedNbs[t];
+                    ImGui::PushID(static_cast<int>(30000 + l * 100 + t));
+
+                    std::string nbName = std::filesystem::path(tPath).stem().string();
+
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme.colorPanel);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+                    std::string cId = "##TrashNbCard_" + std::to_string(t);
+                    ImGui::BeginChild(cId.c_str(), ImVec2(availW, 64.0f), true);
+
+                    // Name
+                    ImGui::SetCursorPos(ImVec2(16.0f, 12.0f));
+                    ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                    ImGui::TextColored(theme.colorText, "📓 %s", nbName.c_str());
+                    ImGui::PopFont();
+
+                    // Path
+                    ImGui::SetCursorPos(ImVec2(16.0f, 36.0f));
+                    ImGui::TextColored(theme.colorTextMuted, "Package: %s", tPath.c_str());
+
+                    // Buttons
+                    float bW = 130.0f;
+                    float bH = 28.0f;
+                    float bX = availW - (bW * 2.0f + 24.0f);
+
+                    ImGui::SetCursorPos(ImVec2(bX, 18.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    if (ImGui::Button("Restore to Library", ImVec2(bW, bH))) {
+                        libraryManager.RestoreNotebookFromTrash(tPath, lib.rootPath);
+                        session.workspace.LoadWorkspace(session.workspace.workspaceDirectory);
+                    }
+                    ImGui::PopStyleColor(3);
+
+                    ImGui::SameLine(0.0f, 8.0f);
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 0.7f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.22f, 0.22f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.7f, 0.7f, 1.0f));
+                    if (ImGui::Button("Delete Forever", ImVec2(bW, bH))) {
+                        permanentDeleteGuid = "";
+                        permanentDeleteName = nbName;
+                        permanentDeleteExtraPath = tPath;
+                        permanentDeleteType = 2; // Trashed Notebook
+                        showPermanentDeleteModal = true;
+                    }
+                    ImGui::PopStyleColor(3);
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor();
+                    ImGui::Dummy(ImVec2(0.0f, 6.0f));
+                    ImGui::PopID();
+                }
+                ImGui::Dummy(ImVec2(0.0f, 12.0f));
+            }
+
+            if (!foundAnyTrash) {
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, theme.colorNavBg);
+                ImGui::BeginChild("##LibTrashEmptyCard", ImVec2(availW, 140.0f), true);
+                ImGui::SetCursorPos(ImVec2(24.0f, 30.0f));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "No Trashed Notebook Packages");
+                ImGui::PopFont();
+                ImGui::SetCursorPos(ImVec2(24.0f, 60.0f));
+                ImGui::TextColored(theme.colorTextMuted, "When notebook packages are deleted from libraries, they are moved to each library's .trash folder and kept for 30 days.");
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
             }
         }
     }
@@ -1488,7 +2020,88 @@ private:
         ImGui::SameLine(0.0f, 16.0f);
         RenderMetricCard("Ink Strokes", std::to_string(totalStrokes), mWidth, "Vector Paths");
 
-        // Overview statistics are complete and self-contained
+        // =====================================================================
+        // Notebook Customization & Settings Panel
+        // =====================================================================
+        ImGui::Dummy(ImVec2(0.0f, 20.0f));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0.0f, 14.0f));
+
+        ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+        ImGui::TextColored(theme.colorText, "Notebook Customization & Settings");
+        ImGui::PopFont();
+        ImGui::TextColored(theme.colorTextMuted, "Customize the accent color and display title for '%s'. Changes are automatically saved into pages.db.", activeNb->name.c_str());
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+        // 1. Notebook Title Editor
+        static char activeNbTitleBuffer[128] = "";
+        static std::string lastLoadedGuid = "";
+        if (lastLoadedGuid != activeNb->guid) {
+            snprintf(activeNbTitleBuffer, sizeof(activeNbTitleBuffer), "%s", activeNb->name.c_str());
+            lastLoadedGuid = activeNb->guid;
+        }
+
+        ImGui::TextColored(theme.colorText, "Notebook Title:");
+        ImGui::SetNextItemWidth(340.0f);
+        ImGui::InputText("##ActiveNbTitleInput", activeNbTitleBuffer, sizeof(activeNbTitleBuffer));
+        ImGui::SameLine(0.0f, 10.0f);
+        if (ImGui::Button("Save Title##ActiveNbTitleSave", ImVec2(100.0f, 0.0f))) {
+            if (strlen(activeNbTitleBuffer) > 0) {
+                activeNb->name = activeNbTitleBuffer;
+                session.workspace.repository.SaveNotebookAsync(activeNb);
+            }
+        }
+
+        ImGui::Dummy(ImVec2(0.0f, 12.0f));
+
+        // 2. Notebook Accent Color Palette & Custom Picker
+        ImGui::TextColored(theme.colorText, "Notebook Accent Color:");
+        ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+        const auto& activeColorPresets = GetNotebookColorPresets();
+        float infoSwatchSize = 34.0f;
+        float infoSwatchGap = 10.0f;
+        for (size_t c = 0; c < activeColorPresets.size(); ++c) {
+            bool isCurrentCol = (std::abs(activeNb->colorTag.x - activeColorPresets[c].color.x) < 0.01f &&
+                                 std::abs(activeNb->colorTag.y - activeColorPresets[c].color.y) < 0.01f &&
+                                 std::abs(activeNb->colorTag.z - activeColorPresets[c].color.z) < 0.01f);
+            ImGui::PushID(static_cast<int>(c + 2000));
+            ImVec2 p0 = ImGui::GetCursorScreenPos();
+            ImVec2 p1(p0.x + infoSwatchSize, p0.y + infoSwatchSize);
+
+            if (ImGui::InvisibleButton("##ActiveNbColorChip", ImVec2(infoSwatchSize, infoSwatchSize))) {
+                activeNb->colorTag = activeColorPresets[c].color;
+                session.workspace.repository.SaveNotebookAsync(activeNb);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s (Click to apply & save)", activeColorPresets[c].name);
+            }
+
+            ImDrawList* curDl = ImGui::GetWindowDrawList();
+            curDl->AddRectFilled(p0, p1, ImGui::ColorConvertFloat4ToU32(activeColorPresets[c].color), 4.0f);
+            if (isCurrentCol) {
+                curDl->AddRect(p0, p1, IM_COL32(255, 255, 255, 255), 4.0f, 0, 2.5f);
+                curDl->AddCircleFilled(ImVec2(p0.x + infoSwatchSize * 0.5f, p0.y + infoSwatchSize * 0.5f), 4.0f, IM_COL32(255, 255, 255, 255));
+            } else {
+                curDl->AddRect(p0, p1, IM_COL32(0, 0, 0, 80), 4.0f, 0, 1.0f);
+            }
+
+            if (c + 1 < activeColorPresets.size()) {
+                ImGui::SameLine(0.0f, infoSwatchGap);
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::SameLine(0.0f, 16.0f);
+        ImVec4 customCol = activeNb->colorTag;
+        ImGui::SetNextItemWidth(140.0f);
+        if (ImGui::ColorEdit4("##ActiveNbCustomColEdit", &customCol.x, ImGuiColorEditFlags_NoAlpha)) {
+            activeNb->colorTag = customCol;
+            session.workspace.repository.SaveNotebookAsync(activeNb);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Custom color picker (auto-saved to notebook package)");
+        }
     }
 
     // ========================================================================
@@ -1820,6 +2433,61 @@ private:
                 if (ImGui::ColorEdit4("##AccentColorPicker", &accentCol.x, ImGuiColorEditFlags_NoAlpha)) {
                     theme.colorPrimary = accentCol;
                     theme.colorItemSelected = ImVec4(accentCol.x, accentCol.y, accentCol.z, 0.40f);
+                }
+
+                // Default Notebook Accent Color Configuration
+                ImGui::Dummy(ImVec2(0.0f, 14.0f));
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "Default Notebook Accent Color");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Global default accent color applied to newly created notebook packages (persisted in config/settings.json)");
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                auto& sm = SettingsManager::Instance();
+                const auto& settingsColorPresets = GetNotebookColorPresets();
+                float settingsSwatchSize = 34.0f;
+                float settingsSwatchGap = 10.0f;
+                for (size_t c = 0; c < settingsColorPresets.size(); ++c) {
+                    bool isDefaultCol = (std::abs(sm.defaultNotebookColor[0] - settingsColorPresets[c].color.x) < 0.01f &&
+                                         std::abs(sm.defaultNotebookColor[1] - settingsColorPresets[c].color.y) < 0.01f &&
+                                         std::abs(sm.defaultNotebookColor[2] - settingsColorPresets[c].color.z) < 0.01f);
+                    ImGui::PushID(static_cast<int>(c + 3000));
+                    ImVec2 p0 = ImGui::GetCursorScreenPos();
+                    ImVec2 p1(p0.x + settingsSwatchSize, p0.y + settingsSwatchSize);
+
+                    if (ImGui::InvisibleButton("##SettingsNbColorChip", ImVec2(settingsSwatchSize, settingsSwatchSize))) {
+                        sm.defaultNotebookColor[0] = settingsColorPresets[c].color.x;
+                        sm.defaultNotebookColor[1] = settingsColorPresets[c].color.y;
+                        sm.defaultNotebookColor[2] = settingsColorPresets[c].color.z;
+                        sm.defaultNotebookColor[3] = settingsColorPresets[c].color.w;
+                        sm.Save();
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s (Set as default & save)", settingsColorPresets[c].name);
+                    }
+
+                    ImDrawList* curDl = ImGui::GetWindowDrawList();
+                    curDl->AddRectFilled(p0, p1, ImGui::ColorConvertFloat4ToU32(settingsColorPresets[c].color), 4.0f);
+                    if (isDefaultCol) {
+                        curDl->AddRect(p0, p1, IM_COL32(255, 255, 255, 255), 4.0f, 0, 2.5f);
+                        curDl->AddCircleFilled(ImVec2(p0.x + settingsSwatchSize * 0.5f, p0.y + settingsSwatchSize * 0.5f), 4.0f, IM_COL32(255, 255, 255, 255));
+                    } else {
+                        curDl->AddRect(p0, p1, IM_COL32(0, 0, 0, 80), 4.0f, 0, 1.0f);
+                    }
+
+                    if (c + 1 < settingsColorPresets.size()) {
+                        ImGui::SameLine(0.0f, settingsSwatchGap);
+                    }
+                    ImGui::PopID();
+                }
+
+                ImGui::SameLine(0.0f, 16.0f);
+                ImGui::SetNextItemWidth(140.0f);
+                if (ImGui::ColorEdit4("##SettingsNbCustomColorEdit", sm.defaultNotebookColor, ImGuiColorEditFlags_NoAlpha)) {
+                    sm.Save();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Custom default color (auto-saved to config/settings.json)");
                 }
 
                 ImGui::Dummy(ImVec2(0.0f, 16.0f));
@@ -2386,8 +3054,7 @@ private:
                         }
                         auto created = libraryManager.CreateNewNotebook(newNbName, targetDir);
                         if (created) {
-                            session.workspace.notebooks.push_back(created);
-                            session.workspace.activeNotebookIndex = session.workspace.notebooks.size() - 1;
+                            session.workspace.OpenAndActivateNotebook(created);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
                         }
@@ -2463,8 +3130,7 @@ private:
                         std::string targetDir = strlen(copyNbDestPath) > 0 ? std::string(copyNbDestPath) : std::filesystem::path(active->filePath).parent_path().string();
                         auto copied = libraryManager.SaveAsCopy(active, copyNbName, targetDir);
                         if (copied) {
-                            session.workspace.notebooks.push_back(copied);
-                            session.workspace.activeNotebookIndex = session.workspace.notebooks.size() - 1;
+                            session.workspace.OpenAndActivateNotebook(copied);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
                         }
@@ -2628,19 +3294,64 @@ private:
                 float availW = ImGui::GetContentRegionAvail().x;
 
                 ImGui::PushFont(FolioTheme::FontNavBoldLarge);
-                ImGui::TextColored(theme.colorText, "Rename Notebook");
+                ImGui::TextColored(theme.colorText, "Notebook Properties");
                 ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Change notebook title and accent color tag");
                 ImGui::Dummy(ImVec2(0.0f, 4.0f));
 
-                ImGui::TextColored(theme.colorText, "New Notebook Title:");
+                ImGui::TextColored(theme.colorText, "Notebook Title:");
                 ImGui::SetNextItemWidth(availW);
                 if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
                 bool enterPressed = ImGui::InputText("##RenameNbInput", renameNotebookBuffer, sizeof(renameNotebookBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
 
                 ImGui::Dummy(ImVec2(0.0f, 8.0f));
+                ImGui::TextColored(theme.colorText, "Accent Color Tag:");
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                const auto& modalPresets = GetNotebookColorPresets();
+                float modalSwatchSize = 28.0f;
+                float modalSwatchGap = 8.0f;
+                for (size_t c = 0; c < modalPresets.size(); ++c) {
+                    bool isColSelected = (std::abs(renameNotebookColor.x - modalPresets[c].color.x) < 0.01f &&
+                                         std::abs(renameNotebookColor.y - modalPresets[c].color.y) < 0.01f &&
+                                         std::abs(renameNotebookColor.z - modalPresets[c].color.z) < 0.01f);
+                    ImGui::PushID(static_cast<int>(c + 4000));
+                    ImVec2 p0 = ImGui::GetCursorScreenPos();
+                    ImVec2 p1(p0.x + modalSwatchSize, p0.y + modalSwatchSize);
+
+                    if (ImGui::InvisibleButton("##RenameColorChip", ImVec2(modalSwatchSize, modalSwatchSize))) {
+                        renameNotebookColor = modalPresets[c].color;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", modalPresets[c].name);
+                    }
+
+                    ImDrawList* curDl = ImGui::GetWindowDrawList();
+                    curDl->AddRectFilled(p0, p1, ImGui::ColorConvertFloat4ToU32(modalPresets[c].color), 4.0f);
+                    if (isColSelected) {
+                        curDl->AddRect(p0, p1, IM_COL32(255, 255, 255, 255), 4.0f, 0, 2.0f);
+                        curDl->AddCircleFilled(ImVec2(p0.x + modalSwatchSize * 0.5f, p0.y + modalSwatchSize * 0.5f), 3.0f, IM_COL32(255, 255, 255, 255));
+                    } else {
+                        curDl->AddRect(p0, p1, IM_COL32(0, 0, 0, 80), 4.0f, 0, 1.0f);
+                    }
+
+                    if (c + 1 < modalPresets.size()) {
+                        ImGui::SameLine(0.0f, modalSwatchGap);
+                    }
+                    ImGui::PopID();
+                }
+
+                ImGui::SameLine(0.0f, 12.0f);
+                ImGui::SetNextItemWidth(100.0f);
+                ImGui::ColorEdit4("##RenameCustomCol", &renameNotebookColor.x, ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Custom accent color");
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 12.0f));
 
                 // Bottom Right-Aligned Buttons
-                float renameBtnW = 96.0f;
+                float renameBtnW = 110.0f;
                 float cancelBtnW = 86.0f;
                 float btnGap = 10.0f;
                 float rightAlignX = ImGui::GetCursorPosX() + availW - (renameBtnW + cancelBtnW + btnGap);
@@ -2651,18 +3362,185 @@ private:
                 ImGui::PushStyleColor(ImGuiCol_Button, theme.colorPrimary);
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme.colorPrimaryHover);
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-                bool renameClicked = ImGui::Button("Rename", ImVec2(renameBtnW, 32.0f));
+                bool renameClicked = ImGui::Button("Save Changes", ImVec2(renameBtnW, 32.0f));
                 ImGui::PopStyleColor(3);
 
                 if (renameClicked || enterPressed) {
                     if (renameNotebookIndex >= 0 && renameNotebookIndex < static_cast<int>(session.workspace.notebooks.size())) {
+                        auto targetNb = session.workspace.notebooks[renameNotebookIndex];
                         if (strlen(renameNotebookBuffer) > 0) {
-                            session.workspace.notebooks[renameNotebookIndex]->name = renameNotebookBuffer;
-                            session.workspace.FlushActiveNotebookAsync();
+                            targetNb->name = renameNotebookBuffer;
                         }
+                        targetNb->colorTag = renameNotebookColor;
+                        session.workspace.repository.SaveNotebookAsync(targetNb);
                     }
                     ImGui::CloseCurrentPopup();
                 }
+
+                ImGui::SameLine(0.0f, btnGap);
+                if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 32.0f))) {
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
+        }
+
+        // 6. Delete Notebook Package Warning Modal (Moved to .trash)
+        if (showDeleteNotebookModal) {
+            ImGui::OpenPopup("DeleteNotebookModal##Hub");
+            showDeleteNotebookModal = false;
+        }
+        ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("DeleteNotebookModal##Hub", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(ImVec4(0.92f, 0.30f, 0.25f, 1.0f), "MOVE NOTEBOOK TO TRASH?");
+                ImGui::PopFont();
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                ImGui::TextWrapped("Are you sure you want to delete \"%s\"?", deleteNotebookTargetName.c_str());
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                ImGui::TextColored(theme.colorTextMuted, 
+                    "The entire .notebook package will be safely moved to the Library Recycle Bin (.trash) and can be restored anytime within 30 days.");
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                float delBtnW = 140.0f;
+                float cancelBtnW = 86.0f;
+                float btnGap = 10.0f;
+                float rightAlignX = ImGui::GetCursorPosX() + availW - (delBtnW + cancelBtnW + btnGap);
+                if (rightAlignX > ImGui::GetCursorPosX()) {
+                    ImGui::SetCursorPosX(rightAlignX);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.22f, 0.22f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.32f, 0.32f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                if (ImGui::Button("Move to Trash", ImVec2(delBtnW, 32.0f))) {
+                    libraryManager.MoveNotebookToTrash(deleteNotebookTargetPath);
+                    session.workspace.LoadWorkspace(session.workspace.workspaceDirectory);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor(3);
+
+                ImGui::SameLine(0.0f, btnGap);
+                if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 32.0f))) {
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
+        }
+
+        // 7. Permanent Deletion Confirmation Modal
+        if (showPermanentDeleteModal) {
+            ImGui::OpenPopup("PermanentDeleteModal##Hub");
+            showPermanentDeleteModal = false;
+        }
+        ImGui::SetNextWindowSize(ImVec2(480.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("PermanentDeleteModal##Hub", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(ImVec4(0.95f, 0.20f, 0.20f, 1.0f), "PERMANENTLY DELETE ITEM?");
+                ImGui::PopFont();
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                ImGui::TextWrapped("Are you sure you want to permanently delete \"%s\"?", permanentDeleteName.c_str());
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                ImGui::TextColored(ImVec4(0.95f, 0.40f, 0.40f, 1.0f), 
+                    "CAUTION: This action is permanent and CANNOT be undone! The underlying binary data and ink strokes will be unlinked and destroyed immediately.");
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                float delBtnW = 160.0f;
+                float cancelBtnW = 86.0f;
+                float btnGap = 10.0f;
+                float rightAlignX = ImGui::GetCursorPosX() + availW - (delBtnW + cancelBtnW + btnGap);
+                if (rightAlignX > ImGui::GetCursorPosX()) {
+                    ImGui::SetCursorPosX(rightAlignX);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.15f, 0.15f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.25f, 0.25f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                if (ImGui::Button("Delete Forever", ImVec2(delBtnW, 32.0f))) {
+                    if (permanentDeleteType == 0) { // Page
+                        session.workspace.repository.PermanentlyDeletePageAsync(permanentDeleteGuid);
+                    } else if (permanentDeleteType == 1) { // Section
+                        session.workspace.repository.PermanentlyDeleteSectionAsync(permanentDeleteGuid);
+                    } else if (permanentDeleteType == 2) { // Trashed Notebook
+                        libraryManager.PermanentlyDeleteNotebookFromTrash(permanentDeleteExtraPath);
+                    }
+                    permanentDeleteGuid.clear();
+                    permanentDeleteName.clear();
+                    permanentDeleteExtraPath.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor(3);
+
+                ImGui::SameLine(0.0f, btnGap);
+                if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 32.0f))) {
+                    permanentDeleteGuid.clear();
+                    permanentDeleteName.clear();
+                    permanentDeleteExtraPath.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
+        }
+
+        // 8. Empty Entire Recycle Bin Confirmation Modal
+        if (showEmptyRecycleBinModal) {
+            ImGui::OpenPopup("EmptyRecycleBinModal##Hub");
+            showEmptyRecycleBinModal = false;
+        }
+        ImGui::SetNextWindowSize(ImVec2(480.0f, 0.0f), ImGuiCond_Appearing);
+        {
+            ModalThemeScope modalScope(theme);
+            if (ImGui::BeginPopupModal("EmptyRecycleBinModal##Hub", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                float availW = ImGui::GetContentRegionAvail().x;
+
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(ImVec4(0.95f, 0.20f, 0.20f, 1.0f), "EMPTY RECYCLE BIN?");
+                ImGui::PopFont();
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                ImGui::TextWrapped("Are you sure you want to permanently purge all items currently in the Recycle Bin?");
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                ImGui::TextColored(ImVec4(0.95f, 0.40f, 0.40f, 1.0f), 
+                    "CAUTION: All deleted sections, pages, and trashed notebook bundles will be permanently erased. This operation cannot be reversed.");
+                ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+                float delBtnW = 180.0f;
+                float cancelBtnW = 86.0f;
+                float btnGap = 10.0f;
+                float rightAlignX = ImGui::GetCursorPosX() + availW - (delBtnW + cancelBtnW + btnGap);
+                if (rightAlignX > ImGui::GetCursorPosX()) {
+                    ImGui::SetCursorPosX(rightAlignX);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.15f, 0.15f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.25f, 0.25f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                if (ImGui::Button("Empty Recycle Bin", ImVec2(delBtnW, 32.0f))) {
+                    if (auto activeNb = session.workspace.GetActiveNotebook()) {
+                        session.workspace.repository.EmptyRecycleBinAsync(activeNb->guid);
+                    }
+                    for (const auto& lib : libraryManager.libraries) {
+                        libraryManager.EmptyLibraryTrash(lib.rootPath);
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor(3);
 
                 ImGui::SameLine(0.0f, btnGap);
                 if (ImGui::Button("Cancel", ImVec2(cancelBtnW, 32.0f))) {

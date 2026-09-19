@@ -71,7 +71,7 @@ public:
         if (nbName.empty()) nbName = "Imported OneNote Notebook";
 
         auto notebook = std::make_shared<Notebook>(nbName);
-        notebook->iconFile = "blue-notebook.svg";
+        notebook->iconFile = FOLIO_NOTEBOOK_DEFAULT_ICON;
 
         if (std::filesystem::is_directory(p, ec)) {
             // Case 1: Directory containing .one files and subdirectories (Section Groups)

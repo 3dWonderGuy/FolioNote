@@ -319,6 +319,10 @@ public:
                 secRecord.notebookGuid = notebook->guid;
                 secRecord.groupGuid = groupGuid;
                 secRecord.name = section->name;
+                secRecord.colorR = section->colorTag.x;
+                secRecord.colorG = section->colorTag.y;
+                secRecord.colorB = section->colorTag.z;
+                secRecord.colorA = section->colorTag.w;
                 secRecord.sortOrder = sIdx;
                 dbManager->UpsertSection(secRecord);
 
@@ -356,6 +360,10 @@ public:
             grpRecord.notebookGuid = notebook->guid;
             grpRecord.parentGroupGuid = group->parentGroupGuid;
             grpRecord.name = group->name;
+            grpRecord.colorR = group->colorTag.x;
+            grpRecord.colorG = group->colorTag.y;
+            grpRecord.colorB = group->colorTag.z;
+            grpRecord.colorA = group->colorTag.w;
             grpRecord.sortOrder = gIdx;
             grpRecord.isCollapsed = group->isCollapsed;
             dbManager->UpsertSectionGroup(grpRecord);
@@ -374,6 +382,10 @@ public:
                 subRec.notebookGuid = notebook->guid;
                 subRec.parentGroupGuid = group->guid;
                 subRec.name = subGrp->name;
+                subRec.colorR = subGrp->colorTag.x;
+                subRec.colorG = subGrp->colorTag.y;
+                subRec.colorB = subGrp->colorTag.z;
+                subRec.colorA = subGrp->colorTag.w;
                 subRec.sortOrder = subIdx;
                 subRec.isCollapsed = subGrp->isCollapsed;
                 dbManager->UpsertSectionGroup(subRec);
@@ -419,6 +431,14 @@ public:
         notebook->sectionGroups.clear();
 
         // -----------------------------------------------------------------------------
+        // Step 0: Automatic 30-Day Recycle Bin Purge
+        // Mathematical Invariant: Cutoff timestamp = CurrentTime - (30 * 86,400 seconds).
+        // Any pages or sections soft-deleted more than 30 days ago have their binary .ink
+        // files permanently unlinked from disk and their SQLite records deleted.
+        // -----------------------------------------------------------------------------
+        dbManager->PurgeExpiredRecycleBinItems(notebook->guid, packagePath);
+
+        // -----------------------------------------------------------------------------
         // Step 1: Load Section Groups and resolve nested parent/child relationships
         // -----------------------------------------------------------------------------
         std::unordered_map<std::string, std::shared_ptr<SectionGroup>> groupMap;
@@ -427,6 +447,7 @@ public:
             auto grp = std::make_shared<SectionGroup>(gRec.name, gRec.parentGroupGuid);
             grp->guid = gRec.guid;
             grp->notebookGuid = gRec.notebookGuid;
+            grp->colorTag = ImVec4(gRec.colorR, gRec.colorG, gRec.colorB, gRec.colorA);
             grp->sortOrder = gRec.sortOrder;
             grp->isCollapsed = gRec.isCollapsed;
             groupMap[grp->guid] = grp;
@@ -450,6 +471,7 @@ public:
         for (const auto& secRec : sectionRecords) {
             auto section = std::make_shared<Section>(secRec.name, "", secRec.groupGuid);
             section->guid = secRec.guid;
+            section->colorTag = ImVec4(secRec.colorR, secRec.colorG, secRec.colorB, secRec.colorA);
             section->sortOrder = secRec.sortOrder;
             section->pages.clear();
 
@@ -590,6 +612,176 @@ public:
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // RECYCLE BIN & 30-DAY RETENTION MANAGEMENT
+    // =========================================================================
+
+    /**
+     * @brief Soft-deletes a page asynchronously in SQLite.
+     *
+     * WORKING PROCESS & INVARIANTS:
+     * 1. Marks the page record in SQLite with deleted_at = current_unix_timestamp.
+     * 2. Preserves the binary .ink file on disk untouched, guaranteeing full vector fidelity
+     *    if restored within the 30-day recovery window.
+     * 3. Dispatches the SQLite UPDATE asynchronously to avoid UI frame hitches.
+     *
+     * @param pageGuid Unique persistent GUID of the page to move to the recycle bin.
+     * @return std::future<bool> Future resolving to true if soft-deletion succeeded.
+     */
+    std::future<bool> SoftDeletePageAsync(const std::string& pageGuid) {
+        if (!dbManager || !dbManager->IsOpen()) {
+            std::promise<bool> p;
+            p.set_value(false);
+            return p.get_future();
+        }
+        auto db = dbManager;
+        return GetGlobalThreadPool().Enqueue([db, pageGuid]() -> bool {
+            return db->SoftDeletePage(pageGuid);
+        });
+    }
+
+    /**
+     * @brief Restores a soft-deleted page asynchronously.
+     *
+     * Invariants:
+     * - Resets deleted_at to NULL in SQLite.
+     * - The page becomes immediately retrievable via LoadPagesMetadata.
+     *
+     * @param pageGuid Unique persistent GUID of the page to restore.
+     * @return std::future<bool> Future resolving to true on successful restoration.
+     */
+    std::future<bool> RestorePageAsync(const std::string& pageGuid) {
+        if (!dbManager || !dbManager->IsOpen()) {
+            std::promise<bool> p;
+            p.set_value(false);
+            return p.get_future();
+        }
+        auto db = dbManager;
+        return GetGlobalThreadPool().Enqueue([db, pageGuid]() -> bool {
+            return db->RestorePage(pageGuid);
+        });
+    }
+
+    /**
+     * @brief Soft-deletes a section and cascades soft-deletion to all its child pages asynchronously.
+     *
+     * Mathematical Cascade:
+     * When a section is soft-deleted at timestamp T, all contained pages are simultaneously
+     * stamped with deleted_at = T, preserving hierarchical integrity.
+     *
+     * @param sectionGuid Unique persistent GUID of the section.
+     * @return std::future<bool> Future resolving to true on success.
+     */
+    std::future<bool> SoftDeleteSectionAsync(const std::string& sectionGuid) {
+        if (!dbManager || !dbManager->IsOpen()) {
+            std::promise<bool> p;
+            p.set_value(false);
+            return p.get_future();
+        }
+        auto db = dbManager;
+        return GetGlobalThreadPool().Enqueue([db, sectionGuid]() -> bool {
+            return db->SoftDeleteSection(sectionGuid);
+        });
+    }
+
+    /**
+     * @brief Restores a soft-deleted section and all its contained pages asynchronously.
+     *
+     * @param sectionGuid Unique persistent GUID of the section to restore.
+     * @return std::future<bool> Future resolving to true on success.
+     */
+    std::future<bool> RestoreSectionAsync(const std::string& sectionGuid) {
+        if (!dbManager || !dbManager->IsOpen()) {
+            std::promise<bool> p;
+            p.set_value(false);
+            return p.get_future();
+        }
+        auto db = dbManager;
+        return GetGlobalThreadPool().Enqueue([db, sectionGuid]() -> bool {
+            return db->RestoreSection(sectionGuid);
+        });
+    }
+
+    /**
+     * @brief Retrieves all soft-deleted sections currently residing in the notebook's recycle bin.
+     * @param notebookGuid GUID of the notebook.
+     * @return Vector of DBSectionRecord metadata with non-null deletedAt timestamps.
+     */
+    [[nodiscard]] std::vector<DBSectionRecord> LoadDeletedSections(const std::string& notebookGuid) const {
+        if (!dbManager || !dbManager->IsOpen()) return {};
+        return dbManager->LoadDeletedSections(notebookGuid);
+    }
+
+    /**
+     * @brief Retrieves all soft-deleted pages currently residing in the notebook's recycle bin.
+     * @param notebookGuid GUID of the notebook.
+     * @return Vector of DBPageRecord metadata with non-null deletedAt timestamps.
+     */
+    [[nodiscard]] std::vector<DBPageRecord> LoadDeletedPages(const std::string& notebookGuid) const {
+        if (!dbManager || !dbManager->IsOpen()) return {};
+        return dbManager->LoadDeletedPages(notebookGuid);
+    }
+
+    /**
+     * @brief Permanently purges a page from the database and removes its binary .ink file from disk.
+     *
+     * CRITICAL / NON-RECOVERABLE ACTION:
+     * Dispatches unlinking of pages/{pageGuid}.ink and deletion from SQLite tables to worker thread.
+     *
+     * @param pageGuid GUID of the page to purge permanently.
+     * @return std::future<bool> Future resolving to true on success.
+     */
+    std::future<bool> PermanentlyDeletePageAsync(const std::string& pageGuid) {
+        if (!dbManager || !dbManager->IsOpen()) {
+            std::promise<bool> p;
+            p.set_value(false);
+            return p.get_future();
+        }
+        auto db = dbManager;
+        std::string pkgPath = currentPackagePath;
+        return GetGlobalThreadPool().Enqueue([db, pageGuid, pkgPath]() -> bool {
+            return db->PermanentlyDeletePage(pageGuid, pkgPath);
+        });
+    }
+
+    /**
+     * @brief Permanently purges a section, its child pages, and their .ink files from disk.
+     *
+     * @param sectionGuid GUID of the section to purge permanently.
+     * @return std::future<bool> Future resolving to true on success.
+     */
+    std::future<bool> PermanentlyDeleteSectionAsync(const std::string& sectionGuid) {
+        if (!dbManager || !dbManager->IsOpen()) {
+            std::promise<bool> p;
+            p.set_value(false);
+            return p.get_future();
+        }
+        auto db = dbManager;
+        std::string pkgPath = currentPackagePath;
+        return GetGlobalThreadPool().Enqueue([db, sectionGuid, pkgPath]() -> bool {
+            return db->PermanentlyDeleteSection(sectionGuid, pkgPath);
+        });
+    }
+
+    /**
+     * @brief Empties all soft-deleted pages and sections from this notebook package asynchronously.
+     *
+     * @param notebookGuid GUID of the notebook whose recycle bin is being emptied.
+     * @return std::future<size_t> Future resolving to the number of items permanently purged.
+     */
+    std::future<size_t> EmptyRecycleBinAsync(const std::string& notebookGuid) {
+        if (!dbManager || !dbManager->IsOpen()) {
+            std::promise<size_t> p;
+            p.set_value(0);
+            return p.get_future();
+        }
+        auto db = dbManager;
+        std::string pkgPath = currentPackagePath;
+        return GetGlobalThreadPool().Enqueue([db, notebookGuid, pkgPath]() -> size_t {
+            return db->EmptyRecycleBin(notebookGuid, pkgPath);
+        });
     }
 };
 
