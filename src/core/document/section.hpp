@@ -151,9 +151,9 @@ public:
         name(std::move(sectionName)), 
         colorTag(color),
         iconFile(icon.empty() ? FOLIO_SECTION_DEFAULT_ICON : std::move(icon)) {
-        // Guarantee at least one blank page exists
-        pages.push_back(std::make_shared<CanvasPage>("Untitled page"));
         LOG_INFO(Section, "Created Section '" + name + "' (" + guid + ") in group '" + groupGuid + "'");
+        // Guarantee at least one blank page exists via official AddPage API
+        AddPage(std::make_shared<CanvasPage>("Untitled page"));
     }
 
     /**
@@ -176,8 +176,7 @@ public:
         for (const auto& p : pages) {
             if (p) {
                 auto clonedPage = p->Clone();
-                clonedPage->sortOrder = p->sortOrder;
-                clone->pages.push_back(clonedPage);
+                clone->AddPage(clonedPage);
             }
         }
         clone->sortOrder = sortOrder;
@@ -207,16 +206,62 @@ public:
     }
 
     /**
-     * @brief Appends a new page to this section, sets its sortOrder, and logs addition.
+     * @brief Appends a new page to this section, sets its sortOrder, marks it modified, and logs addition.
+     *
      * @param page Shared pointer to CanvasPage to add.
      */
     void AddPage(std::shared_ptr<CanvasPage> page) {
         if (!page) return;
         page->sortOrder = static_cast<int32_t>(pages.size());
+        page->isModified = true;
         std::string pageTitle = page->title;
         std::string pageGuid = page->guid;
         pages.push_back(std::move(page));
         LOG_INFO(Section, "Added page '" + pageTitle + "' (" + pageGuid + ") to section '" + name + "'. Total pages: " + std::to_string(pages.size()));
+    }
+
+    /**
+     * @brief Inserts a CanvasPage at a specific index, maintains contiguous sort orders,
+     * marks the page dirty for persistence, and logs the operation.
+     *
+     * MATHEMATICAL WORKING PROCESS & SORT ORDER SEQUENCING:
+     * - Clamps insertion index to [0, pages.size()] to prevent vector iterator out-of-bounds.
+     * - Re-indexes all subsequent page positions monotonically:
+     *     \forall i \in [0, N-1], \quad pages[i]->sortOrder = i
+     * - Sets `page->isModified = true` ensuring the inserted page is scheduled for SQLite upsert.
+     *
+     * @param index 0-indexed position where the page should be inserted.
+     * @param page Shared pointer to the CanvasPage to insert.
+     * @return bool True if successfully inserted; false if page was nullptr.
+     */
+    bool InsertPage(size_t index, std::shared_ptr<CanvasPage> page) {
+        if (!page) return false;
+        if (index > pages.size()) {
+            index = pages.size();
+        }
+        page->isModified = true;
+        std::string pageTitle = page->title;
+        std::string pageGuid = page->guid;
+        pages.insert(pages.begin() + index, std::move(page));
+        for (size_t i = 0; i < pages.size(); ++i) {
+            if (pages[i]) pages[i]->sortOrder = static_cast<int32_t>(i);
+        }
+        LOG_INFO(Section, "Inserted page '" + pageTitle + "' (" + pageGuid + ") at index " + std::to_string(index) + " in section '" + name + "'. Total pages: " + std::to_string(pages.size()));
+        return true;
+    }
+
+    /**
+     * @brief Factory method: instantiates a new CanvasPage and appends it to this section.
+     *
+     * @param title Display title of the new page (defaults to "New Untitled").
+     * @param parentGuid Optional GUID of parent page for subpage hierarchy.
+     * @param level Nesting hierarchy level (0 = page, 1 = subpage, 2 = sub-subpage).
+     * @return std::shared_ptr<CanvasPage> Newly created and registered CanvasPage pointer.
+     */
+    std::shared_ptr<CanvasPage> CreatePage(std::string title = "New Untitled", std::string parentGuid = "", int32_t level = 0) {
+        auto page = std::make_shared<CanvasPage>(std::move(title), std::move(parentGuid), level);
+        AddPage(page);
+        return page;
     }
 
     /**

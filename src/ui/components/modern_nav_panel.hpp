@@ -2078,8 +2078,9 @@ private:
             if (activeSec) {
                 auto newPage = std::make_shared<CanvasPage>("New Untitled");
                 newPage->nestingLevel = 0;
-                activeSec->pages.push_back(newPage);
+                activeSec->AddPage(newPage);
                 activeSec->activePageIndex = activeSec->pages.size() - 1;
+                session.workspace.FlushActiveNotebookAsync();
                 canvas.ClearSelection(&session);
                 canvas.ApplyDefaultTemplate();
             }
@@ -2222,8 +2223,10 @@ private:
                     if (ImGui::MenuItem("Add Subpage Below")) {
                         auto newSub = std::make_shared<CanvasPage>("New Untitled");
                         newSub->nestingLevel = std::min(2, page->nestingLevel + 1);
-                        activeSec->pages.insert(activeSec->pages.begin() + p + 1, newSub);
+                        newSub->parentPageGuid = page->guid;
+                        activeSec->InsertPage(p + 1, newSub);
                         activeSec->activePageIndex = p + 1;
+                        session.workspace.FlushActiveNotebookAsync();
                         canvas.ClearSelection(&session);
                         canvas.ApplyDefaultTemplate();
                     }
@@ -2253,8 +2256,9 @@ private:
                     if (ImGui::MenuItem("Paste Page Below", nullptr, false, copiedPage != nullptr)) {
                         if (copiedPage) {
                             auto pastePg = copiedPage->Clone();
-                            activeSec->pages.insert(activeSec->pages.begin() + p + 1, pastePg);
+                            activeSec->InsertPage(p + 1, pastePg);
                             activeSec->activePageIndex = p + 1;
+                            session.workspace.FlushActiveNotebookAsync();
                             canvas.ClearSelection(&session);
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;

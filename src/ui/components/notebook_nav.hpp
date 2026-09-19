@@ -71,7 +71,7 @@ struct NotebookNav {
         if (ImGui::Button("+ Add Page", ImVec2(-1, 32))) {
             auto sec = ws.GetActiveNotebook() ? ws.GetActiveNotebook()->GetActiveSection() : nullptr;
             if (sec) {
-                sec->pages.push_back(std::make_shared<CanvasPage>("New Untitled"));
+                sec->AddPage(std::make_shared<CanvasPage>("New Untitled"));
                 sec->activePageIndex = sec->pages.size() - 1;
                 canvas.ApplyDefaultTemplate();
             }

@@ -4,6 +4,7 @@
 #include <memory>
 #include <chrono>
 #include <algorithm>
+#include <ctime>
 #include <SDL3/SDL.h>
 #include "core/spatial/r_tree.hpp"
 #include "core/spatial/aabb.hpp"
@@ -11,6 +12,37 @@
 #include "core/objects/ink_container.hpp"
 #include "core/history/command_history.hpp"
 #include "utils/guid_generator.hpp"
+
+/**
+ * @brief Formats the current system clock time into human-readable date and time strings.
+ *
+ * MATHEMATICAL WORKING PROCESS & TIME RESOLUTION:
+ * - Samples system wall-clock time via `std::chrono::system_clock::now()` (sub-microsecond resolution).
+ * - Converts to calendar breakdown `std::tm` using thread-safe platform primitives (`localtime_s` on Windows,
+ *   `localtime_r` on POSIX).
+ * - Generates formatted strings:
+ *     - Date: "%B %d, %Y" (e.g. "September 19, 2026")
+ *     - Time: "%I:%M %p"   (e.g. "01:05 AM")
+ *
+ * @param[out] outDate Formatted calendar date string.
+ * @param[out] outTime Formatted 12-hour clock time string with AM/PM indicator.
+ */
+inline void PopulateCurrentDateTime(std::string& outDate, std::string& outTime) {
+    auto now = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#if defined(_WIN32)
+    localtime_s(&tm, &tt);
+#else
+    localtime_r(&tt, &tm);
+#endif
+    char dateBuf[64];
+    char timeBuf[32];
+    std::strftime(dateBuf, sizeof(dateBuf), "%B %d, %Y", &tm);
+    std::strftime(timeBuf, sizeof(timeBuf), "%I:%M %p", &tm);
+    outDate = dateBuf;
+    outTime = timeBuf;
+}
 
 /**
  * =========================================================================================
@@ -44,8 +76,8 @@
  *    Also tracks UI collapse state (`isCollapsed`) for folding child pages in the navigation sidebar.
  * 5. Memory Management & LRU Eviction:
  *    Pages track `lastAccessTimeMs`, `isLoaded`, and `isModified`. When inactive, the storage
- *    engine can call `EvictFromRAM()` to discard heavy vector/geometry caches from RAM while
- *    retaining lightweight metadata in memory.
+ *    repository evicts stroke data from RAM to conserve working set memory while preserving
+ *    the lightweight metadata stub.
  *
  * POTENTIAL FUTURE ENHANCEMENTS:
  * - Background Templates: Ruled lines, grid lines, dot grids, or custom background colors.
@@ -83,7 +115,7 @@ public:
     // LRU Caching & Memory Management Telemetry
     // -------------------------------------------------------------------------
     uint64_t lastAccessTimeMs = 0;      ///< Last time this page was rendered or modified (SDL_GetTicks)
-    bool isModified = false;            ///< Dirty flag indicating unsaved changes exist
+    bool isModified = true;             ///< Dirty flag indicating unsaved changes exist (defaults true for new pages)
     bool isLoaded = true;               ///< True if stroke geometry and objects are present in RAM
 
     // -------------------------------------------------------------------------
@@ -141,12 +173,20 @@ public:
 
     /**
      * @brief Constructs a new CanvasPage with an optional title, parent page, and nesting level.
+     * Automatically populates creation timestamps and flags the page as dirty (isModified = true)
+     * so that it is guaranteed to be persisted to SQLite.
+     *
+     * @param pageTitle Initial display title (defaults to "New Untitled").
+     * @param parentGuid GUID of parent page if this is a subpage.
+     * @param level Nesting hierarchy level (0 = root page, 1 = subpage, 2 = sub-subpage).
      */
     CanvasPage(std::string pageTitle = "New Untitled", std::string parentGuid = "", int32_t level = 0)
         : guid(GUIDGenerator::GenerateV4()), 
           title(std::move(pageTitle)), 
           parentPageGuid(std::move(parentGuid)), 
-          nestingLevel(level) {
+          nestingLevel(level),
+          isModified(true) {
+        PopulateCurrentDateTime(createdDateStr, createdTimeStr);
         Touch();
     }
 
@@ -165,6 +205,7 @@ public:
      * - Deep-copies each polymorphic `CanvasObject` via `obj->Clone()`.
      * - Assigns fresh GUIDs to objects with persistent IDs and adds them via `AddObject`
      *   which registers them into the newly constructed `spatialIndex` with clean runtime UIDs.
+     * - Marks the cloned page dirty (`isModified = true`) to ensure it is saved to SQLite.
      *
      * @return std::shared_ptr<CanvasPage> Newly allocated deep-cloned CanvasPage.
      */
@@ -180,7 +221,7 @@ public:
         clone->dedicatedPdfHighlights = dedicatedPdfHighlights;
         clone->deletedAt = deletedAt;
         clone->isLoaded = isLoaded;
-        clone->isModified = isModified;
+        clone->isModified = true;
 
         // Deep-clone canvas objects with fresh unique GUIDs and clean spatial index UIDs
         for (const auto& obj : this->objects) {
