@@ -309,7 +309,8 @@ public:
             LOG_INFO(Section, "Removed page '" + pageTitle + "' (" + pageGuid + ") from section '" + name + "'. Remaining pages: " + std::to_string(pages.size()));
             return true;
         }
-        LOG_WARN(Section, "RemovePage failed: Page not found in section '" + name + "': " + pageGuid);
+        LOG_WARN_CODE(Section, FolioErrorCode::DocPageNotFound, 
+                      "RemovePage failed: Page not found in section '" + name + "': " + pageGuid);
         return false;
     }
 

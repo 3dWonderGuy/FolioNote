@@ -108,6 +108,12 @@ public:
     std::string defaultLibraryFolder = "";                     ///< Path to the primary .foliolib bundle
     std::vector<LibrarySettingEntry> registeredLibraries;       ///< All user-registered .foliolib library bundles
 
+    // ==========================================================================
+    // Working Set & Memory Management Configuration
+    // ==========================================================================
+    uint32_t maxLoadedPages = 10;            ///< Maximum active pages kept in RAM simultaneously (hard cap)
+    uint64_t lruInactivityTimeoutMs = 60000; ///< Inactivity duration in ms before unviewed pages are evicted (default 60s)
+
     // Has settings been loaded from disk
     bool isLoaded = false;
 
@@ -348,6 +354,13 @@ public:
                 }
             }
 
+            // 6. Memory & Working Set Management Settings
+            if (j.contains("memory") && j["memory"].is_object()) {
+                const auto& jMem = j["memory"];
+                if (jMem.contains("maxLoadedPages")) maxLoadedPages = jMem["maxLoadedPages"].get<uint32_t>();
+                if (jMem.contains("lruInactivityTimeoutMs")) lruInactivityTimeoutMs = jMem["lruInactivityTimeoutMs"].get<uint64_t>();
+            }
+
             isLoaded = true;
             return true;
         } catch (const std::exception& ex) {
@@ -449,6 +462,12 @@ public:
             j["libraries"] = {
                 { "defaultLibraryFolder", defaultLibraryFolder },
                 { "registeredLibraries", jLibs }
+            };
+
+            // Memory Management section
+            j["memory"] = {
+                { "maxLoadedPages", maxLoadedPages },
+                { "lruInactivityTimeoutMs", lruInactivityTimeoutMs }
             };
 
             return FileLoader::WriteString(filepath, j.dump(2));

@@ -378,7 +378,8 @@ std::shared_ptr<Notebook> LibraryManager::CreateNewNotebook(
 
     // 4. Create physical package directory and child pages folder
     if (!NotebookCloner::InitializePackage(nb)) {
-        LOG_ERROR(LibraryManager, "CreateNewNotebook failed: Could not create package container at: " + nb->filePath);
+        LOG_ERROR_CODE(LibraryManager, FolioErrorCode::DocNotebookCreateFailed, 
+                       "CreateNewNotebook failed: Could not create package container at: " + nb->filePath);
         return nullptr;
     }
 
@@ -410,12 +411,14 @@ bool LibraryManager::MoveNotebookToLibrary(
 ) {
     // 1. Validation
     if (!IsNotebookPackage(sourceNotebookPath)) {
-        LOG_ERROR(LibraryManager, "MoveNotebook failed: Source is not a valid .notebook: " + sourceNotebookPath);
+        LOG_ERROR_CODE(LibraryManager, FolioErrorCode::DocNotebookNotFound, 
+                       "MoveNotebook failed: Source is not a valid .notebook: " + sourceNotebookPath);
         return false;
     }
 
     if (!IsLibraryFolder(targetLibraryPath)) {
-        LOG_ERROR(LibraryManager, "MoveNotebook failed: Target is not a valid library directory: " + targetLibraryPath);
+        LOG_ERROR_CODE(LibraryManager, FolioErrorCode::DocLibraryNotFound, 
+                       "MoveNotebook failed: Target is not a valid library directory: " + targetLibraryPath);
         return false;
     }
 

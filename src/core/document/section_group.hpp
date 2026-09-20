@@ -303,7 +303,8 @@ public:
             LOG_INFO(SectionGroup, "Removed section '" + secName + "' (" + secGuid + ") from group '" + name + "'. Remaining sections: " + std::to_string(sections.size()));
             return true;
         }
-        LOG_WARN(SectionGroup, "RemoveSection failed: Section not found in group '" + name + "': " + secGuid);
+        LOG_WARN_CODE(SectionGroup, FolioErrorCode::DocSectionNotFound, 
+                      "RemoveSection failed: Section not found in group '" + name + "': " + secGuid);
         return false;
     }
 

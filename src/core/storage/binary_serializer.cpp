@@ -746,11 +746,34 @@ bool BinarySerializer::SerializePage(const CanvasPage& page, std::vector<uint8_t
     writer.WriteU32(MAGIC_HEADER);
     writer.WriteU32(FORMAT_VERSION);
 
+    // 1. Identity & Creation Timestamps
     writer.WriteString(page.guid);
     writer.WriteString(page.title);
     writer.WriteString(page.createdDateStr);
     writer.WriteString(page.createdTimeStr);
 
+    // 2. Per-Page Template, Layout, Boundary & Grid Configuration
+    writer.WriteU8(static_cast<uint8_t>(page.infinityMode));
+    writer.WriteU8(static_cast<uint8_t>(page.paperStyle));
+    writer.WriteDouble(page.gridSpacingMm);
+    writer.WriteU8(static_cast<uint8_t>(page.pageSizeFormat));
+    writer.WriteBool(page.pageIsLandscape);
+    writer.WriteDouble(page.pageWidthMm);
+    writer.WriteDouble(page.pageHeightMm);
+
+    // 3. Per-Page Border Configuration
+    writer.WriteBool(page.showPageBorder);
+    writer.WriteU8(static_cast<uint8_t>(page.pageBorderType));
+    writer.WriteU8(static_cast<uint8_t>(page.pageBorderStyle));
+    writer.WriteDouble(page.pageBorderWidth);
+
+    // 4. Dedicated Standalone PDF Document State
+    writer.WriteBool(page.isDedicatedPdf);
+    writer.WriteString(page.dedicatedPdfPath);
+    writer.WriteString(page.dedicatedPdfBookmarks);
+    writer.WriteString(page.dedicatedPdfHighlights);
+
+    // 5. Canvas Objects
     writer.WriteU32(static_cast<uint32_t>(page.objects.size()));
     stats.objectCount = static_cast<uint32_t>(page.objects.size());
 
@@ -861,10 +884,32 @@ bool BinarySerializer::DeserializePage(const uint8_t* blobData, size_t blobSize,
             return false;
         }
 
+        // 1. Identity & Timestamps
         outPage.guid = reader.ReadString();
         outPage.title = reader.ReadString();
         outPage.createdDateStr = reader.ReadString();
         outPage.createdTimeStr = reader.ReadString();
+
+        // 2. Per-Page Template, Layout, Boundary & Grid Configuration
+        outPage.infinityMode   = static_cast<CanvasInfinityMode>(reader.ReadU8());
+        outPage.paperStyle     = static_cast<PaperStyle>(reader.ReadU8());
+        outPage.gridSpacingMm  = reader.ReadDouble();
+        outPage.pageSizeFormat = static_cast<PageSizeFormat>(reader.ReadU8());
+        outPage.pageIsLandscape = reader.ReadBool();
+        outPage.pageWidthMm    = reader.ReadDouble();
+        outPage.pageHeightMm   = reader.ReadDouble();
+
+        // 3. Per-Page Border Configuration
+        outPage.showPageBorder  = reader.ReadBool();
+        outPage.pageBorderType  = static_cast<PageBorderType>(reader.ReadU8());
+        outPage.pageBorderStyle = static_cast<PageBorderStyle>(reader.ReadU8());
+        outPage.pageBorderWidth = reader.ReadDouble();
+
+        // 4. Dedicated Standalone PDF Document State
+        outPage.isDedicatedPdf        = reader.ReadBool();
+        outPage.dedicatedPdfPath       = reader.ReadString();
+        outPage.dedicatedPdfBookmarks  = reader.ReadString();
+        outPage.dedicatedPdfHighlights = reader.ReadString();
 
         outPage.Clear();
 
@@ -877,6 +922,7 @@ bool BinarySerializer::DeserializePage(const uint8_t* blobData, size_t blobSize,
         outPage.objects.reserve(objectCount);
         stats.objectCount = objectCount;
 
+
         for (uint32_t i = 0; i < objectCount; ++i) {
             auto obj = DeserializeObject(reader, stats);
             if (obj) {
@@ -885,6 +931,7 @@ bool BinarySerializer::DeserializePage(const uint8_t* blobData, size_t blobSize,
         }
 
         outPage.isModified = false;
+        outPage.isLoaded = true;
         outPage.Touch();
 
         if (stats.rawSizeBytes > 0) {

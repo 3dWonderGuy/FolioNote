@@ -19,6 +19,7 @@
 #include <string>
 
 #include "utils/file_manager.hpp"
+#include "utils/package_marker.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {
@@ -86,6 +87,9 @@ void LibraryManager::WriteLibraryMarker(const std::string& folderPath, const std
     } else {
         LOG_ERROR(LibraryManager, "Failed to write library marker file at: " + markerPath);
     }
+
+    // Ensure the library folder is stamped with Windows Explorer package shell identity (desktop.ini)
+    PackageMarker::MarkFolderAsPackage(folderPath, "FolioNote Library Package");
 }
 
 /**

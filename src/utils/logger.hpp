@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 #include "utils/file_logger.hpp"
+#include "utils/error_codes.hpp"
 
 namespace Folio {
 
@@ -39,7 +40,10 @@ namespace Folio {
         LibraryManager,
         FileManager,
         SectionGroup,
-        Section
+        Section,
+        CanvasPage,
+        DocumentSession,
+        Workspace
     };
 
     // Helper to convert LogSource enum values into strings
@@ -66,6 +70,9 @@ namespace Folio {
             case LogSource::LibraryManager:    return "LibraryManager";
             case LogSource::SectionGroup:      return "SectionGroup";
             case LogSource::Section:           return "Section";
+            case LogSource::CanvasPage:        return "CanvasPage";
+            case LogSource::DocumentSession:   return "DocumentSession";
+            case LogSource::Workspace:         return "Workspace";
             default:                           return "General";
         }
     }
@@ -171,4 +178,10 @@ namespace Folio {
 #endif
 #ifndef LOG_ERROR
 #define LOG_ERROR(source, msg) ::Folio::LogConsole(::Folio::LogLevel::Error, ::Folio::LogSource::source, msg)
+#endif
+#ifndef LOG_ERROR_CODE
+#define LOG_ERROR_CODE(source, code, msg) ::Folio::LogConsole(::Folio::LogLevel::Error, ::Folio::LogSource::source, ::Folio::FormatError(code, msg))
+#endif
+#ifndef LOG_WARN_CODE
+#define LOG_WARN_CODE(source, code, msg)  ::Folio::LogConsole(::Folio::LogLevel::Warn, ::Folio::LogSource::source, ::Folio::FormatError(code, msg))
 #endif

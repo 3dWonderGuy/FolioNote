@@ -867,9 +867,36 @@ public:
                                     outPg->inMemoryViewport.zoom              = canvas.transform.zoom;
                                     outPg->inMemoryViewport.hasCustomViewport = true;
                                     outPg->inMemoryViewport.lastViewportAccessMs = nowMs;
+
+                                    // Persist active canvas template and layout settings back to the outgoing page
+                                    outPg->infinityMode    = canvas.infinityMode;
+                                    outPg->paperStyle      = canvas.currentPaperStyle;
+                                    outPg->gridSpacingMm   = canvas.gridSpacingMm;
+                                    outPg->pageSizeFormat  = canvas.pageSizeFormat;
+                                    outPg->pageIsLandscape = canvas.pageIsLandscape;
+                                    outPg->pageWidthMm     = canvas.customPageWidthMm;
+                                    outPg->pageHeightMm    = canvas.customPageHeightMm;
+                                    outPg->showPageBorder  = canvas.showPageBorder;
+                                    outPg->pageBorderStyle = canvas.pageBorderStyle;
+                                    outPg->pageBorderWidth = canvas.pageBorderWidth;
+                                    outPg->pageBorderType  = canvas.pageBorderType;
                                 }
                             }
                         }
+
+                        // --- Restore per-page template, layout, and border properties ---
+                        canvas.infinityMode           = activePg->infinityMode;
+                        canvas.transform.infinityMode = activePg->infinityMode;
+                        canvas.currentPaperStyle      = activePg->paperStyle;
+                        canvas.gridSpacingMm          = activePg->gridSpacingMm;
+                        canvas.pageSizeFormat         = activePg->pageSizeFormat;
+                        canvas.pageIsLandscape        = activePg->pageIsLandscape;
+                        canvas.customPageWidthMm      = activePg->pageWidthMm;
+                        canvas.customPageHeightMm     = activePg->pageHeightMm;
+                        canvas.showPageBorder         = activePg->showPageBorder;
+                        canvas.pageBorderStyle        = activePg->pageBorderStyle;
+                        canvas.pageBorderWidth        = activePg->pageBorderWidth;
+                        canvas.pageBorderType         = activePg->pageBorderType;
 
                         // --- Restore or home incoming page viewport ---
                         auto& vp = activePg->inMemoryViewport;
@@ -893,12 +920,13 @@ public:
                     }
                 }
 
-                // Periodic LRU eviction: evict pages absent for >60 s (~1/s)
+                // Periodic LRU eviction: enforce TTL and capacity cap (~1/s)
                 {
                     uint64_t nowMs = SDL_GetTicks();
                     if (nowMs - lastLruCheckMs >= 1000) {
                         lastLruCheckMs = nowMs;
-                        session.workspace.MaintainWorkingSetLRU(VIEWPORT_TIMEOUT_MS);
+                        auto& sm = SettingsManager::Instance();
+                        session.workspace.MaintainWorkingSetLRU(sm.lruInactivityTimeoutMs, sm.maxLoadedPages);
                     }
                 }
 

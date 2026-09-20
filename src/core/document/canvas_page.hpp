@@ -4,14 +4,16 @@
 #include <memory>
 #include <chrono>
 #include <algorithm>
+#include <unordered_map>
 #include <ctime>
 #include <SDL3/SDL.h>
 #include "core/spatial/r_tree.hpp"
 #include "core/spatial/aabb.hpp"
 #include "core/objects/canvas_object.hpp"
-#include "core/objects/ink_container.hpp"
 #include "core/history/command_history.hpp"
+#include "core/engine/canvas_transform.hpp"
 #include "utils/guid_generator.hpp"
+#include "utils/logger.hpp"
 
 /**
  * @brief Formats the current system clock time into human-readable date and time strings.
@@ -47,22 +49,23 @@ inline void PopulateCurrentDateTime(std::string& outDate, std::string& outTime) 
 /**
  * =========================================================================================
  * @file canvas_page.hpp
- * @brief Represents an infinite 2D canvas drawing surface within a notebook section.
+ * @brief Represents an infinite or bounded 2D canvas drawing surface within a notebook section.
  * =========================================================================================
  *
  * ARCHITECTURAL ROLE:
  * - The CanvasPage is the core content container of the application.
  * - Each Section contains an ordered list of CanvasPages.
- * - An infinite 2D coordinate system is used: objects (ink strokes, images, text boxes)
- *   can be placed anywhere in world-space coordinates (double precision).
+ * - An infinite 2D coordinate system is used: objects (ink strokes, images, text boxes, etc)
+ *   can be placed anywhere in world-space coordinates (double precision millimeters).
  *
  * KEY SUBSYSTEMS INTEGRATED:
- * 1. Polymorphic Object Storage:
- *    Maintains `std::vector<std::shared_ptr<CanvasObject>> objects`, supporting ink containers,
- *    raster images, text boxes, and future PDF/shape objects uniformly.
+ * 1. Polymorphic Object Storage & Fast Lookups:
+ *    Maintains `std::vector<std::shared_ptr<CanvasObject>> objects` for strict z-order rendering,
+ *    alongside `std::unordered_map<uint32_t, std::shared_ptr<CanvasObject>> objectMap` providing
+ *    instant O(1) UID lookups and eliminating O(K * N) bottlenecks during viewport culling.
  * 2. Spatial Indexing (R-Tree):
  *    Uses a dynamic R-Tree (`RTree spatialIndex`) storing AABBs (Axis-Aligned Bounding Boxes).
- *    During rendering, `QueryVisible(viewport)` performs an O(log N) frustum query so that only
+ *    During rendering, `QueryVisible(viewport)` performs an O(log N + K) frustum query so that only
  *    objects visible on the user's screen are processed by Blend2D, guaranteeing 120+ FPS even
  *    with 50,000+ strokes on a single page.
  * 3. Undo / Redo History:
@@ -74,16 +77,14 @@ inline void PopulateCurrentDateTime(std::string& outDate, std::string& outTime) 
  *      - Level 1: Sub-page
  *      - Level 2: Sub-sub-page
  *    Also tracks UI collapse state (`isCollapsed`) for folding child pages in the navigation sidebar.
- * 5. Memory Management & LRU Eviction:
+ * 5. Per-Page Layout & Paper Templates:
+ *    Tracks page-level infinity mode (SemiInfinity, FullInfinity, VerticalScroll, HorizontalScroll),
+ *    paper styling (Grid, Lined, Blank, Dotted, Cornell), dimensions (Letter, A4, Custom),
+ *    border styles, and DPI calibration factor.
+ * 6. Memory Management & LRU Eviction:
  *    Pages track `lastAccessTimeMs`, `isLoaded`, and `isModified`. When inactive, the storage
  *    repository evicts stroke data from RAM to conserve working set memory while preserving
  *    the lightweight metadata stub.
- *
- * POTENTIAL FUTURE ENHANCEMENTS:
- * - Background Templates: Ruled lines, grid lines, dot grids, or custom background colors.
- * - Page Dimensions / Printing Guides: Optional fixed-size bounds (Letter, A4, Infinite).
- * - Full-Text Search Indexing: Extract text from text boxes, OCR images, and handwriting.
- * - Layer Management: Explicit drawing layers (e.g. background, ink, annotations).
  */
 
 class CanvasPage {
@@ -107,9 +108,25 @@ public:
     // -------------------------------------------------------------------------
     // Page Content & Spatial Index
     // -------------------------------------------------------------------------
-    std::vector<std::shared_ptr<CanvasObject>> objects; ///< All canvas objects on this page
-    RTree spatialIndex;                                 ///< Fast bounding-box query index
-    CommandHistory history;                             ///< Per-page undo/redo command stack
+    std::vector<std::shared_ptr<CanvasObject>> objects;                      ///< Ordered canvas objects (rendering z-order)
+    std::unordered_map<uint32_t, std::shared_ptr<CanvasObject>> objectMap;   ///< O(1) runtime UID lookup table
+    RTree spatialIndex;                                                      ///< Fast bounding-box query index
+    CommandHistory history;                                                  ///< Per-page undo/redo command stack
+
+    // -------------------------------------------------------------------------
+    // Per-Page Layout, Grid, Border & DPI Configuration
+    // -------------------------------------------------------------------------
+    CanvasInfinityMode infinityMode = CanvasInfinityMode::SemiInfinity; ///< Canvas boundary mode (SemiInfinity, FullInfinity, etc.)
+    PaperStyle paperStyle = PaperStyle::Grid;                           ///< Background paper style (Grid, Lined, Blank, Dotted, Cornell)
+    double gridSpacingMm = 5.0;                                         ///< Physical grid or rule line spacing in millimeters
+    PageSizeFormat pageSizeFormat = PageSizeFormat::Letter;             ///< Fixed page format (Letter, A4, A3, A5, Custom)
+    bool pageIsLandscape = false;                                       ///< True if page dimensions are rotated 90 degrees
+    double pageWidthMm = 215.9;                                         ///< Physical width in mm (Letter default: 8.5 in * 25.4 = 215.9 mm)
+    double pageHeightMm = 279.4;                                         ///< Physical height in mm (Letter default: 11.0 in * 25.4 = 279.4 mm)
+    bool showPageBorder = false;                                        ///< Whether page boundaries are visually demarcated
+    PageBorderType pageBorderType = PageBorderType::Automatic;          ///< Dynamic content-fitted or fixed dimensions
+    PageBorderStyle pageBorderStyle = PageBorderStyle::Continuous;      ///< Border line rendering stroke (Continuous, Dashed, Corners)
+    double pageBorderWidth = 1.5;                                       ///< Border outline thickness in points/pixels
 
     // -------------------------------------------------------------------------
     // LRU Caching & Memory Management Telemetry
@@ -202,9 +219,10 @@ public:
      *
      * OBJECT CLONING & SPATIAL RE-INDEXING:
      * - Generates a fresh UUID v4 for the cloned page.
+     * - Preserves layout, paper style, grid spacing, dimensions, border, and DPI parameters.
      * - Deep-copies each polymorphic `CanvasObject` via `obj->Clone()`.
      * - Assigns fresh GUIDs to objects with persistent IDs and adds them via `AddObject`
-     *   which registers them into the newly constructed `spatialIndex` with clean runtime UIDs.
+     *   which registers them into the newly constructed `spatialIndex` and `objectMap` with clean UIDs.
      * - Marks the cloned page dirty (`isModified = true`) to ensure it is saved to SQLite.
      *
      * @return std::shared_ptr<CanvasPage> Newly allocated deep-cloned CanvasPage.
@@ -223,6 +241,23 @@ public:
         clone->isLoaded = isLoaded;
         clone->isModified = true;
 
+        // Clone layout and styling settings
+        clone->infinityMode = infinityMode;
+        clone->paperStyle = paperStyle;
+        clone->gridSpacingMm = gridSpacingMm;
+        clone->pageSizeFormat = pageSizeFormat;
+        clone->pageIsLandscape = pageIsLandscape;
+        clone->pageWidthMm = pageWidthMm;
+        clone->pageHeightMm = pageHeightMm;
+        clone->showPageBorder = showPageBorder;
+        clone->pageBorderType = pageBorderType;
+        clone->pageBorderStyle = pageBorderStyle;
+        clone->pageBorderWidth = pageBorderWidth;
+        clone->isDedicatedPdf = isDedicatedPdf;
+        clone->dedicatedPdfPath = dedicatedPdfPath;
+        clone->dedicatedPdfBookmarks = dedicatedPdfBookmarks;
+        clone->dedicatedPdfHighlights = dedicatedPdfHighlights;
+
         // Deep-clone canvas objects with fresh unique GUIDs and clean spatial index UIDs
         for (const auto& obj : this->objects) {
             if (obj) {
@@ -235,17 +270,24 @@ public:
                 }
             }
         }
+        ::Folio::LogConsole(::Folio::LogLevel::Info, ::Folio::LogSource::CanvasPage,
+            "Page '" + title + "' [" + guid + "] cloned into new page [" + clone->guid + "] with " +
+            std::to_string(clone->objects.size()) + " objects");
         return clone;
     }
 
     /**
-     * @brief Evicts in-memory vector strokes, spatial index, and undo stack to free RAM.
+     * @brief Evicts in-memory vector strokes, spatial index, UID map, and undo stack to free RAM.
      * Called by PageRepository / Workspace LRU cache when memory limits are reached.
      * Automatically homes the in-memory viewport when unloaded due to prolonged absence.
      */
     void EvictFromRAM() {
+        ::Folio::LogConsole(::Folio::LogLevel::Info, ::Folio::LogSource::CanvasPage,
+            "Evicting page '" + title + "' [" + guid + "] from RAM (" +
+            std::to_string(objects.size()) + " objects unloaded)");
         spatialIndex.Clear();
         objects.clear();
+        objectMap.clear();
         history.Clear();
         inMemoryViewport.Home();
         isLoaded = false;
@@ -256,23 +298,39 @@ public:
     // -------------------------------------------------------------------------
 
     /**
-     * @brief Adds a canvas object to the page and registers it with the spatial index.
+     * @brief Adds a canvas object to the page, registers it in the R-Tree, and inserts it into the fast UID map.
+     *
+     * MATHEMATICAL & TIME COMPLEXITY PROCESS:
+     * - Vector Append: O(1) amortized insertion into `objects` to maintain rendering z-order.
+     * - Fast UID Map: O(1) hash insertion into `objectMap[obj->uid] = obj`.
+     * - Spatial Index: O(log N) R-Tree insertion with Axis-Aligned Bounding Box (AABB) expansion.
+     * - Marks page dirty (`isModified = true`) and updates LRU timestamp.
+     *
      * @param obj Shared pointer to any derived CanvasObject (Ink, Image, TextBox, PDF).
      */
     void AddObject(const std::shared_ptr<CanvasObject>& obj) {
         if (!obj) return;
         objects.push_back(obj);
+        objectMap[obj->uid] = obj;
         spatialIndex.Insert(obj->uid, obj->bounds);
         isModified = true;
         Touch();
     }
 
     /**
-     * @brief Removes a canvas object from both the page list and spatial index.
+     * @brief Removes a canvas object from the page list, fast UID map, and R-Tree spatial index.
+     *
+     * MATHEMATICAL & TIME COMPLEXITY PROCESS:
+     * - Spatial Index: O(log N) R-Tree deletion via AABB overlap search and leaf re-balancing.
+     * - Fast UID Map: O(1) hash erasure `objectMap.erase(obj->uid)`.
+     * - Vector Removal: O(N) linear search and erasure in `objects` to maintain z-order sequence.
+     *
+     * @param obj Shared pointer to the CanvasObject to remove.
      */
     void RemoveObject(const std::shared_ptr<CanvasObject>& obj) {
         if (!obj) return;
         spatialIndex.Remove(obj->uid);
+        objectMap.erase(obj->uid);
         auto it = std::find(objects.begin(), objects.end(), obj);
         if (it != objects.end()) {
             objects.erase(it);
@@ -282,7 +340,13 @@ public:
     }
 
     /**
-     * @brief Updates the bounds and spatial index entry for a modified object.
+     * @brief Updates the bounding box and spatial index entry for a modified object.
+     *
+     * MATHEMATICAL & TIME COMPLEXITY PROCESS:
+     * - Geometry Recalculation: O(V) where V is vertex count (recomputes min/max world coordinates).
+     * - Spatial Re-index: O(log N) R-Tree update (leaf deletion and re-insertion into parent MBR).
+     *
+     * @param obj Shared pointer to the modified CanvasObject.
      */
     void UpdateObject(const std::shared_ptr<CanvasObject>& obj) {
         if (!obj) return;
@@ -293,21 +357,32 @@ public:
     }
 
     /**
-     * @brief Finds a canvas object by its runtime UID.
-     * @return Shared pointer to object if found, or nullptr.
+     * @brief Finds a canvas object by its runtime UID in O(1) time using hash map lookup.
+     *
+     * @param targetUid Runtime 32-bit unique identifier of the object.
+     * @return Shared pointer to object if found, or nullptr if absent.
      */
     [[nodiscard]] std::shared_ptr<CanvasObject> FindObjectByUid(uint32_t targetUid) const {
-        for (const auto& obj : objects) {
-            if (obj && obj->uid == targetUid) {
-                return obj;
-            }
+        auto it = objectMap.find(targetUid);
+        if (it != objectMap.end()) {
+            return it->second;
         }
         return nullptr;
     }
 
     /**
-     * @brief Queries all objects intersecting the camera viewport frustum.
-     * Uses the R-Tree spatial index for high-speed spatial culling.
+     * @brief Queries all objects intersecting the camera viewport frustum using spatial culling.
+     *
+     * MATHEMATICAL CULLING & RENDERING PIPELINE:
+     * - Viewport Frustum: AABB bounds computed from screen dimensions inverted through the camera matrix:
+     *     minX = ScreenToWorld(0, 0).x, maxX = ScreenToWorld(W, H).x
+     *     minY = ScreenToWorld(0, 0).y, maxY = ScreenToWorld(W, H).y
+     * - R-Tree Frustum Search: O(log N + K) hierarchy traversal where K is the number of visible candidates.
+     * - UID Map Resolution: Eliminates the prior O(K * N) linear vector scan by resolving each candidate UID
+     *   in O(1) via `objectMap`. Total resolution time is O(K) instead of O(K * N).
+     *
+     * @param viewport Active rendering camera viewport with physical bounds.
+     * @return Vector of visible canvas objects ready for rasterization.
      */
     [[nodiscard]] std::vector<std::shared_ptr<CanvasObject>> QueryVisible(const Viewport& viewport) {
         Touch();
@@ -316,22 +391,39 @@ public:
         visible.reserve(visibleUids.size());
 
         for (uint32_t id : visibleUids) {
-            for (const auto& obj : objects) {
-                if (obj && obj->uid == id) {
-                    visible.push_back(obj);
-                    break;
-                }
+            auto it = objectMap.find(id);
+            if (it != objectMap.end() && it->second) {
+                visible.push_back(it->second);
             }
         }
         return visible;
     }
 
     /**
-     * @brief Clears all objects, spatial index entries, and history from this page.
+     * @brief Rebuilds the fast UID lookup map and R-Tree spatial index from scratch.
+     * Guarantees spatial and associative coherence if the objects array was modified directly.
+     */
+    void RebuildSpatialIndex() {
+        spatialIndex.Clear();
+        objectMap.clear();
+        for (const auto& obj : objects) {
+            if (obj) {
+                objectMap[obj->uid] = obj;
+                spatialIndex.Insert(obj->uid, obj->bounds);
+            }
+        }
+    }
+
+    /**
+     * @brief Clears all objects, spatial index entries, UID map, and undo history from this page.
      */
     void Clear() {
+        ::Folio::LogConsole(::Folio::LogLevel::Info, ::Folio::LogSource::CanvasPage,
+            "Clearing page '" + title + "' [" + guid + "] (purging " +
+            std::to_string(objects.size()) + " objects)");
         spatialIndex.Clear();
         objects.clear();
+        objectMap.clear();
         history.Clear();
         isModified = true;
         Touch();

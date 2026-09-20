@@ -69,20 +69,28 @@ void SpecialActionManager::TriggerAction(SpecialActionType action, float x, floa
     // 2. Built-in default execution logic for core canvas actions
     switch (action) {
         case SpecialActionType::Undo: {
-            LOG_INFO(InputStateMachine, "Executing Undo via Special Action");
             auto activePage = session.GetActivePage();
-            if (activePage && !activePage->objects.empty()) {
-                activePage->objects.pop_back();
-                canvas.SyncSelectionToSpatialIndex(&session);
-                canvas.needsFullRebake = true;
-                canvas.isDirty = true;
+            if (!activePage) {
+                LOG_WARN_CODE(InputStateMachine, FolioErrorCode::InputTargetPageNull, 
+                              "Undo action skipped: No active CanvasPage available.");
+                break;
             }
+            if (activePage->objects.empty()) {
+                LOG_WARN_CODE(InputStateMachine, FolioErrorCode::InputActionTargetMissing, 
+                              "Undo action skipped: Active page object stack is empty.");
+                break;
+            }
+            LOG_INFO(InputStateMachine, "Executing Undo via Special Action: Removing last object UID " + 
+                     std::to_string(activePage->objects.back()->uid));
+            activePage->RemoveObject(activePage->objects.back());
+            canvas.SyncSelectionToSpatialIndex(&session);
+            canvas.needsFullRebake = true;
+            canvas.isDirty = true;
             break;
         }
 
         case SpecialActionType::Redo: {
-            LOG_INFO(InputStateMachine, "Executing Redo via Special Action (reserved)");
-            // Reserved for future CommandManager redo stack integration
+            LOG_INFO(InputStateMachine, "Executing Redo via Special Action (reserved for command manager)");
             break;
         }
 
@@ -94,18 +102,22 @@ void SpecialActionManager::TriggerAction(SpecialActionType action, float x, floa
         }
 
         case SpecialActionType::SelectAtPoint: {
+            auto activePage = session.GetActivePage();
+            if (!activePage) {
+                LOG_WARN_CODE(InputStateMachine, FolioErrorCode::InputTargetPageNull,
+                              "SelectAtPoint skipped: No active CanvasPage loaded.");
+                break;
+            }
+
             // Hit test canvas objects at local position (x, y)
             Point2D worldMm = canvas.transform.ScreenToWorld(x, y);
-            auto activePage = session.GetActivePage();
             std::shared_ptr<CanvasObject> clickedObj = nullptr;
-            if (activePage) {
-                for (auto it = activePage->objects.rbegin(); it != activePage->objects.rend(); ++it) {
-                    auto& obj = *it;
-                    if (obj && obj->isVisible && obj->isSelectable &&
-                        (obj->HitTest(worldMm.x, worldMm.y) || obj->HitTestCircle(worldMm.x, worldMm.y, 2.0))) {
-                        clickedObj = obj;
-                        break;
-                    }
+            for (auto it = activePage->objects.rbegin(); it != activePage->objects.rend(); ++it) {
+                auto& obj = *it;
+                if (obj && obj->isVisible && obj->isSelectable &&
+                    (obj->HitTest(worldMm.x, worldMm.y) || obj->HitTestCircle(worldMm.x, worldMm.y, 2.0))) {
+                    clickedObj = obj;
+                    break;
                 }
             }
 
@@ -114,7 +126,11 @@ void SpecialActionManager::TriggerAction(SpecialActionType action, float x, floa
                 clickedObj->isSelected = 1;
                 canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
                 canvas.selectionGizmo.OnPointerDown(x, y, canvas.transform);
-                LOG_INFO(InputStateMachine, "Direct selection picked object uid=" + std::to_string(clickedObj->uid));
+                LOG_INFO(InputStateMachine, "Direct selection picked object UID " + std::to_string(clickedObj->uid) +
+                         " at (" + std::to_string(x) + ", " + std::to_string(y) + ")");
+            } else {
+                LOG_INFO(InputStateMachine, "SelectAtPoint: No object hit at screen (" + std::to_string(x) +
+                         ", " + std::to_string(y) + "). Selection cleared.");
             }
             canvas.needsFullRebake = true;
             canvas.isDirty = true;

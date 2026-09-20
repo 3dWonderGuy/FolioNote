@@ -61,6 +61,7 @@
 #include <mutex>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <SDL3/SDL.h>
 
 #include "core/storage/db_manager.hpp"
@@ -567,48 +568,82 @@ public:
      * 
      * @param activeNotebook Shared pointer to the notebook being maintained.
      * @param timeoutMs Maximum allowed inactivity duration before eviction (default: 60,000ms / 1 min).
+     * @param maxLoadedPages Maximum resident pages allowed in RAM (default: 10 pages).
      */
-    void MaintainLRUCache(std::shared_ptr<Notebook> activeNotebook, uint64_t timeoutMs = 60000) {
+    void MaintainLRUCache(std::shared_ptr<Notebook> activeNotebook, uint64_t timeoutMs = 60000, uint32_t maxLoadedPages = 10) {
         if (!activeNotebook) return;
 
         uint64_t nowMs = SDL_GetTicks();
         auto activePage = activeNotebook->GetActivePage();
 
+        struct ResidentEntry {
+            std::shared_ptr<CanvasPage> page;
+            std::string sectionGuid;
+        };
+        std::vector<ResidentEntry> residentInactivePages;
+
         // Helper lambda to evaluate and prune pages inside a section
-        auto maintainSectionPages = [this, nowMs, &activePage, timeoutMs](const std::shared_ptr<Section>& section) {
+        auto evaluateSectionPages = [this, nowMs, &activePage, timeoutMs, &residentInactivePages](const std::shared_ptr<Section>& section) {
             if (!section) return;
             for (const auto& page : section->pages) {
-                // Never evict the page currently being viewed/edited by the user
+                // Never evict the active page currently viewed/edited by user
                 if (!page || page == activePage) continue;
 
-                // Check if page is currently in RAM and has exceeded the inactivity threshold
-                if (page->isLoaded && (nowMs - page->lastAccessTimeMs > timeoutMs)) {
-                    if (page->isModified) {
-                        // Flush dirty canvas state to disk before freeing RAM
-                        SavePageAsync(page, section->guid, page->sortOrder);
+                if (page->isLoaded) {
+                    if (nowMs - page->lastAccessTimeMs > timeoutMs) {
+                        // Policy 1: Time-to-Live (TTL) eviction
+                        if (page->isModified) {
+                            SavePageAsync(page, section->guid, page->sortOrder);
+                        }
+                        page->EvictFromRAM();
+                        LOG_INFO(PageRepository, "LRU [TTL Expired]: Evicted inactive page from RAM: " + page->title + " (" + page->guid + ")");
+                    } else {
+                        // Keep candidate for Policy 2 (Capacity Cap)
+                        residentInactivePages.push_back({ page, section->guid });
                     }
-                    // Free heavy vector stroke objects, undo history, and spatial index nodes
-                    page->EvictFromRAM();
-                    LOG_INFO(PageRepository, "LRU evicted page from RAM: " + page->title + " (" + page->guid + ")");
                 }
             }
         };
 
         // Scan top-level sections
         for (const auto& section : activeNotebook->sections) {
-            maintainSectionPages(section);
+            evaluateSectionPages(section);
         }
 
         // Scan sections within section groups and sub-groups
         for (const auto& group : activeNotebook->sectionGroups) {
             if (!group) continue;
             for (const auto& section : group->sections) {
-                maintainSectionPages(section);
+                evaluateSectionPages(section);
             }
             for (const auto& subGrp : group->subGroups) {
                 if (!subGrp) continue;
                 for (const auto& sec : subGrp->sections) {
-                    maintainSectionPages(sec);
+                    evaluateSectionPages(sec);
+                }
+            }
+        }
+
+        // Policy 2: Enforce Hard Capacity Cap on remaining resident pages
+        size_t totalResident = residentInactivePages.size() + (activePage && activePage->isLoaded ? 1 : 0);
+        if (maxLoadedPages > 0 && totalResident > maxLoadedPages) {
+            // Sort resident inactive pages by lastAccessTimeMs ascending (least recently accessed first)
+            std::sort(residentInactivePages.begin(), residentInactivePages.end(),
+                      [](const ResidentEntry& a, const ResidentEntry& b) {
+                          return a.page->lastAccessTimeMs < b.page->lastAccessTimeMs;
+                      });
+
+            for (auto& entry : residentInactivePages) {
+                if (totalResident <= maxLoadedPages) break;
+                if (entry.page && entry.page->isLoaded) {
+                    if (entry.page->isModified) {
+                        SavePageAsync(entry.page, entry.sectionGuid, entry.page->sortOrder);
+                    }
+                    entry.page->EvictFromRAM();
+                    --totalResident;
+                    LOG_INFO(PageRepository, "LRU [Capacity Cap Enforced]: Evicted page from RAM (" + 
+                             std::to_string(totalResident) + "/" + std::to_string(maxLoadedPages) + 
+                             " pages resident): " + entry.page->title + " (" + entry.page->guid + ")");
                 }
             }
         }

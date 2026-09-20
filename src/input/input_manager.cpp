@@ -72,7 +72,16 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     // dimensions, swapchain buffers, and projection matrices are in flux. Aborting
     // input processing here prevents stray strokes, coordinate warping, and division
     // by zero in aspect-ratio calculations.
-    if (windowSM.getCurrentState() != WindowState::Stable) return;
+    static bool s_loggedUnstable = false;
+    if (windowSM.getCurrentState() != WindowState::Stable) {
+        if (!s_loggedUnstable) {
+            s_loggedUnstable = true;
+            LOG_WARN_CODE(InputManager, FolioErrorCode::InputWindowUnstable,
+                          "Input suspended: Window geometry is actively resizing or moving.");
+        }
+        return;
+    }
+    s_loggedUnstable = false;
 
     // -----------------------------------------------------------------------------
     // STAGE 2: EVENT TIMESTAMP TRACKING
@@ -149,9 +158,11 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     // Diagnostic log for genuine physical mouse clicks (excluding synthetic SDL touch/pen mouse events)
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         if (event.button.which != SDL_TOUCH_MOUSEID && event.button.which != SDL_PEN_MOUSEID) {
-            LOG_INFO(InputManager, "REAL MOUSE DOWN! WantCaptureMouse: " + std::to_string(ImGui::GetIO().WantCaptureMouse) + 
-                                   ", wasCanvasImageHovered: " + std::to_string(wasCanvasImageHovered) + 
-                                   ", imguiHasFocus: " + std::to_string(imguiHasFocus));
+            LOG_INFO(InputManager, "Mouse button " + std::to_string(event.button.button) + " DOWN at (" +
+                                   std::to_string(static_cast<int>(event.button.x)) + ", " +
+                                   std::to_string(static_cast<int>(event.button.y)) + ") [CanvasHovered=" +
+                                   (wasCanvasImageHovered ? "true" : "false") + ", ImGuiCaptured=" +
+                                   (imguiHasFocus ? "true" : "false") + "]");
         }
     }
 

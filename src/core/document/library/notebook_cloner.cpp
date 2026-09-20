@@ -28,6 +28,7 @@
 #include <memory>
 
 #include "utils/file_manager.hpp"
+#include "utils/package_marker.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {
@@ -62,6 +63,9 @@ bool NotebookCloner::InitializePackage(const std::shared_ptr<Notebook>& notebook
     }
 
     LOG_INFO(LibraryManager, "NotebookCloner: Initialized package container at: " + notebook->filePath);
+
+    // Apply Windows Shell package identity (desktop.ini)
+    PackageMarker::MarkFolderAsPackage(notebook->filePath, "FolioNote Notebook Package");
     return true;
 }
 
@@ -175,6 +179,9 @@ std::shared_ptr<Notebook> NotebookCloner::CloneNotebook(
     }
 
     LOG_INFO(LibraryManager, "NotebookCloner: Successfully cloned notebook package with unique GUIDs to: " + newPkgPath);
+
+    // Apply Windows Shell package identity (desktop.ini)
+    PackageMarker::MarkFolderAsPackage(newPkgPath, "FolioNote Notebook Package");
     return copyNb;
 }
 

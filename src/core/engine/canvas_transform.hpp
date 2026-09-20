@@ -6,6 +6,11 @@
 #include "core/engine/stroke_smoother.hpp"
 #include "core/spatial/aabb.hpp"
 
+enum class PaperStyle { Grid, Lined, Blank, Dotted, Cornell };
+enum class PageBorderType { Automatic, Fixed };
+enum class PageBorderStyle { Continuous, Dashed, Corners };
+enum class PageSizeFormat { Letter, A4, A3, A5, Custom };
+
 enum class CanvasInfinityMode {
     SemiInfinity,      // OneNote style: origin (0, 0), extends right and down
     FullInfinity,      // Unbounded 2D infinity in all directions

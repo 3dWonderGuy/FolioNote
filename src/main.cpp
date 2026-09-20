@@ -39,6 +39,14 @@
 #include <string_view>
 #include <filesystem>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <shlobj.h>
+#endif
+
 #if defined(__ANDROID__)
 #include <android/log.h>
 #define LOG_TAG "FolioNoteNative"
@@ -101,15 +109,75 @@ int main(int argc, char* argv[])
         }
     }
 
+#if defined(_WIN32)
+    // -------------------------------------------------------------------------
+    // SINGLE INSTANCE ENFORCEMENT & RUNNING INSTANCE ACTIVATION
+    // -------------------------------------------------------------------------
+    // Create or check the process mutex. If another instance already owns this mutex,
+    // we hand off any requested import files directly to the running instance's
+    // dedicated Imports directory and bring its existing window to the foreground.
+    HANDLE hSingleInstanceMutex = CreateMutexW(NULL, FALSE, L"FolioNote_SingleInstance_Mutex_Global");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        // Forward document if an import path was specified
+        if (!initialImportPath.empty()) {
+            std::error_code ec;
+            std::filesystem::path srcPath = std::filesystem::u8path(initialImportPath);
+            if (std::filesystem::exists(srcPath, ec)) {
+                PWSTR docsPathW = NULL;
+                if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &docsPathW))) {
+                    std::filesystem::path importsDir = std::filesystem::path(docsPathW) / "FolioNote" / "Imports";
+                    CoTaskMemFree(docsPathW);
+                    std::filesystem::create_directories(importsDir, ec);
+
+                    std::filesystem::path destPath = importsDir / srcPath.filename();
+                    int counter = 1;
+                    while (std::filesystem::exists(destPath, ec)) {
+                        std::string stem = srcPath.stem().string() + "_" + std::to_string(counter++);
+                        destPath = importsDir / (stem + srcPath.extension().string());
+                    }
+                    std::filesystem::copy_file(srcPath, destPath, std::filesystem::copy_options::overwrite_existing, ec);
+                }
+            }
+        }
+
+        // Activate and bring the primary running FolioNote window to the foreground
+        HWND hwnd = FindWindowW(NULL, L"FolioNote");
+        if (hwnd) {
+            if (IsIconic(hwnd)) {
+                ShowWindow(hwnd, SW_RESTORE);
+            } else {
+                ShowWindow(hwnd, SW_SHOW);
+            }
+            SetForegroundWindow(hwnd);
+        }
+
+        if (hSingleInstanceMutex) {
+            CloseHandle(hSingleInstanceMutex);
+        }
+        return 0; // Seamlessly hand off and terminate secondary process
+    }
+#endif
+
     // -------------------------------------------------------------------------
     // APPLICATION LIFECYCLE INITIALIZATION
     // -------------------------------------------------------------------------
     Application app;
     if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
+#if defined(_WIN32)
+        if (hSingleInstanceMutex) {
+            CloseHandle(hSingleInstanceMutex);
+        }
+#endif
         return -1;
     }
 
     app.Run();
     app.Shutdown();
+
+#if defined(_WIN32)
+    if (hSingleInstanceMutex) {
+        CloseHandle(hSingleInstanceMutex);
+    }
+#endif
     return 0;
 }

@@ -166,12 +166,6 @@ bool DBManager::InitSchema() {
             deleted_at INTEGER DEFAULT NULL,
             FOREIGN KEY (section_guid) REFERENCES sections(guid) ON DELETE CASCADE
         );
-
-        CREATE INDEX IF NOT EXISTS idx_section_groups ON section_groups(notebook_guid, sort_order);
-        CREATE INDEX IF NOT EXISTS idx_sections_notebook ON sections(notebook_guid, sort_order);
-        CREATE INDEX IF NOT EXISTS idx_pages_section ON pages(section_guid, sort_order);
-        CREATE INDEX IF NOT EXISTS idx_sections_deleted ON sections(notebook_guid, deleted_at);
-        CREATE INDEX IF NOT EXISTS idx_pages_deleted ON pages(section_guid, deleted_at);
     )";
 
     char* err = nullptr;
@@ -182,7 +176,7 @@ bool DBManager::InitSchema() {
         return false;
     }
 
-    // Non-destructive migrations for existing database files
+    // Phase 2: Non-destructive migrations for existing database files
     sqlite3_exec(db, "ALTER TABLE section_groups ADD COLUMN color_r REAL NOT NULL DEFAULT 0.55;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE section_groups ADD COLUMN color_g REAL NOT NULL DEFAULT 0.58;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE section_groups ADD COLUMN color_b REAL NOT NULL DEFAULT 0.62;", nullptr, nullptr, nullptr);
@@ -203,7 +197,21 @@ bool DBManager::InitSchema() {
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_highlights TEXT;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN deleted_at INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
 
-    // Initialize FTS5 and spatial search catalog
+    // Phase 3: Create relational and query acceleration indexes AFTER all columns exist
+    const char* indexSql = R"(
+        CREATE INDEX IF NOT EXISTS idx_section_groups ON section_groups(notebook_guid, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_sections_notebook ON sections(notebook_guid, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_pages_section ON pages(section_guid, sort_order);
+        CREATE INDEX IF NOT EXISTS idx_sections_deleted ON sections(notebook_guid, deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_pages_deleted ON pages(section_guid, deleted_at);
+    )";
+    rc = sqlite3_exec(db, indexSql, nullptr, nullptr, &err);
+    if (rc != SQLITE_OK) {
+        LOG_WARN(DBManager, "Index creation notice: " + std::string(err ? err : "Unknown"));
+        if (err) sqlite3_free(err);
+    }
+
+    // Phase 4: Initialize FTS5 and spatial search catalog
     if (!NotebookSearchIndex::InitSchema(db)) {
         LOG_WARN(DBManager, "Failed to initialize FTS5 search schema; falling back to relational queries.");
     }

@@ -38,11 +38,6 @@
 #include <functional>
 #include <SDL3/SDL_dialog.h>
 
-enum class PaperStyle { Grid, Lined, Blank, Dotted };
-enum class PageBorderType { Automatic, Fixed };
-enum class PageBorderStyle { Continuous, Dashed, Corners };
-enum class PageSizeFormat { Letter, A4, A3, A5, Custom };
-
 struct PageTemplateDefaults {
     PaperStyle paperStyle = PaperStyle::Grid;
     double gridSpacingMm = 5.0;

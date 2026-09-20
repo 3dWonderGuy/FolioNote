@@ -263,7 +263,8 @@ bool Notebook::MoveSectionGroup(size_t fromIdx, size_t toIdx) {
 bool Notebook::MoveSectionToGroup(const std::string& secGuid, const std::string& targetGroupGuid, size_t targetIdx) {
     auto targetGrp = FindSectionGroupByGuid(targetGroupGuid);
     if (!targetGrp) {
-        LOG_ERROR(Notebook, "MoveSectionToGroup failed: Target group not found: " + targetGroupGuid);
+        LOG_ERROR_CODE(Notebook, FolioErrorCode::DocSectionGroupNotFound, 
+                       "MoveSectionToGroup failed: Target SectionGroup not found: " + targetGroupGuid);
         return false;
     }
 
@@ -340,7 +341,8 @@ bool Notebook::MoveSectionToGroup(const std::string& secGuid, const std::string&
         return true;
     }
 
-    LOG_WARN(Notebook, "MoveSectionToGroup failed: Section not found: " + secGuid);
+    LOG_WARN_CODE(Notebook, FolioErrorCode::DocSectionNotFound, 
+                  "MoveSectionToGroup failed: Section not found across root or groups: " + secGuid);
     return false;
 }
 
@@ -412,7 +414,8 @@ bool Notebook::MoveSectionToRoot(const std::string& secGuid, size_t targetIdx) {
         return true;
     }
 
-    LOG_WARN(Notebook, "MoveSectionToRoot failed: Section not found in any group: " + secGuid);
+    LOG_WARN_CODE(Notebook, FolioErrorCode::DocSectionNotFound, 
+                  "MoveSectionToRoot failed: Section not found in any group: " + secGuid);
     return false;
 }
 
@@ -455,7 +458,8 @@ bool Notebook::RemoveSection(const std::string& secGuid) {
         return true;
     }
 
-    LOG_WARN(Notebook, "RemoveSection failed: Root section not found: " + secGuid);
+    LOG_WARN_CODE(Notebook, FolioErrorCode::DocSectionNotFound, 
+                  "RemoveSection failed: Root section not found: " + secGuid);
     return false;
 }
 

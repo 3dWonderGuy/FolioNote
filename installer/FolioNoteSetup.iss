@@ -121,29 +121,87 @@ Root: HKA; Subkey: "Software\Classes\FolioNote.NotebookPackage"; ValueType: stri
 Root: HKA; Subkey: "Software\Classes\FolioNote.NotebookPackage\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"",0"; Tasks: assoc_notebook
 Root: HKA; Subkey: "Software\Classes\FolioNote.NotebookPackage\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: assoc_notebook
 
+; Directory Shell Context Menu: "Open in FolioNote" for .foliolib and .notebook package folders
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: ""; ValueData: "Open in FolioNote"; Flags: uninsdeletekey; Tasks: assoc_foliolib
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: assoc_foliolib
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: "AppliesTo"; ValueData: "System.FileName:~< "".foliolib"" OR System.FileName:~< "".notebook"""; Tasks: assoc_foliolib
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: assoc_foliolib
+
 [Run]
 ; Option to launch FolioNote immediately following setup
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
+; Clean up "FolioNotePrintDispatch" scheduled task on uninstallation
+Filename: "schtasks.exe"; Parameters: "/delete /tn ""FolioNotePrintDispatch"" /f"; StatusMsg: "Removing 'Print to FolioNote' event dispatcher..."; RunOnceId: "RemoveFolioNotePrintTask"; Flags: runhidden
 ; Clean up "Print to FolioNote" virtual printer on uninstallation
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (Get-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue) {{ Remove-Printer -Name 'Print to FolioNote' -ErrorAction SilentlyContinue }}; Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue"""; StatusMsg: "Removing 'Print to FolioNote' virtual printer..."; RunOnceId: "RemovePrintToFolioNote"; Flags: runhidden
 
 [Code]
 // ==============================================================================
-// VIRTUAL PRINTER REGISTRATION PROCEDURE
+// VIRTUAL PRINTER & PRINT EVENT DISPATCH REGISTRATION PROCEDURE
 // ==============================================================================
-procedure CurStepChanged(CurStep: TSetupStep);
+procedure ConfigurePrintToFolioNote();
 var
   ResultCode: Integer;
+  AppExe: String;
+  XmlContent: String;
+  TempXmlPath: String;
+begin
+  AppExe := ExpandConstant('{app}\{#MyAppExeName}');
+  TempXmlPath := ExpandConstant('{tmp}\FolioNotePrintTask.xml');
+
+  XmlContent :=
+    '<?xml version="1.0" encoding="UTF-8"?>' + #13#10 +
+    '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">' + #13#10 +
+    '  <RegistrationInfo><Description>Auto-dispatches printed PDFs into FolioNote</Description></RegistrationInfo>' + #13#10 +
+    '  <Triggers>' + #13#10 +
+    '    <EventTrigger>' + #13#10 +
+    '      <Enabled>true</Enabled>' + #13#10 +
+    '      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="Microsoft-Windows-PrintService/Operational"&gt;&lt;Select Path="Microsoft-Windows-PrintService/Operational"&gt;*[System[EventID=307]] and *[UserData[DocumentPrinted[Param5=''Print to FolioNote'']]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>' + #13#10 +
+    '      <ValueQueries><Value name="PrintedFile">Event/UserData/DocumentPrinted/Param6</Value></ValueQueries>' + #13#10 +
+    '    </EventTrigger>' + #13#10 +
+    '  </Triggers>' + #13#10 +
+    '  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>' + #13#10 +
+    '  <Settings>' + #13#10 +
+    '    <MultipleInstancesPolicy>Parallel</MultipleInstancesPolicy>' + #13#10 +
+    '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>' + #13#10 +
+    '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>' + #13#10 +
+    '    <AllowHardTerminate>true</AllowHardTerminate>' + #13#10 +
+    '    <StartWhenAvailable>true</StartWhenAvailable>' + #13#10 +
+    '    <Enabled>true</Enabled>' + #13#10 +
+    '    <Priority>7</Priority>' + #13#10 +
+    '  </Settings>' + #13#10 +
+    '  <Actions Context="Author">' + #13#10 +
+    '    <Exec>' + #13#10 +
+    '      <Command>' + AppExe + '</Command>' + #13#10 +
+    '      <Arguments>--import "$(PrintedFile)"</Arguments>' + #13#10 +
+    '    </Exec>' + #13#10 +
+    '  </Actions>' + #13#10 +
+    '</Task>';
+
+  SaveStringToFile(TempXmlPath, XmlContent, False);
+
+  // 1. Enable PrintService/Operational log and configure virtual printer
+  Exec('powershell.exe',
+       '-NoProfile -ExecutionPolicy Bypass -Command "wevtutil sl ''Microsoft-Windows-PrintService/Operational'' /e:true; if (-not (Get-Printer -Name ''Print to FolioNote'' -ErrorAction SilentlyContinue)) { Add-Printer -Name ''Print to FolioNote'' -DriverName ''Microsoft Print To PDF'' -PortName ''FILE:'' }; Set-Printer -Name ''Print to FolioNote'' -Comment ''Virtual PDF printer for importing documents into FolioNote''; Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue"',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  // 2. Register event-triggered scheduled task
+  Exec('schtasks.exe',
+       '/create /tn "FolioNotePrintDispatch" /xml "' + TempXmlPath + '" /f',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  DeleteFile(TempXmlPath);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
     if WizardIsTaskSelected('printtofolionote') then
     begin
-      Exec('powershell.exe',
-           '-NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-Printer -Name ''Print to FolioNote'' -ErrorAction SilentlyContinue)) { Add-Printer -Name ''Print to FolioNote'' -DriverName ''Microsoft Print To PDF'' -PortName ''FILE:'' }; Set-Printer -Name ''Print to FolioNote'' -Comment ''Virtual PDF printer for importing documents into FolioNote''; Restart-Service -Name Spooler -Force -ErrorAction SilentlyContinue"',
-           '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      ConfigurePrintToFolioNote();
     end;
   end;
 end;

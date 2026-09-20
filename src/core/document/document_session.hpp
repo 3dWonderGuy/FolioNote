@@ -11,6 +11,8 @@
 #include "core/engine/live_layer_pipeline.hpp"
 #include "input/pen_palette.hpp"
 #include "utils/uid_generator.hpp"
+#include "utils/logger.hpp"
+#include "utils/error_codes.hpp"
 
 /**
  * =========================================================================================
@@ -79,7 +81,12 @@ public:
      */
     void CommitStroke(FinishedStrokeData&& data, const PenTool& tool) {
         auto activePage = GetActivePage();
-        if (!activePage || (data.outlinePath.is_empty() && data.liveSegments.empty())) return;
+        if (!activePage) {
+            LOG_WARN_CODE(DocumentSession, FolioErrorCode::InputTargetPageNull,
+                          "CommitStroke rejected: No active CanvasPage available to receive stroke data.");
+            return;
+        }
+        if (data.outlinePath.is_empty() && data.liveSegments.empty()) return;
 
         auto container = std::make_shared<InkContainer>();
         container->uid = UIDGenerator::Next();
@@ -103,7 +110,12 @@ public:
      */
     void CommitStroke(std::vector<Segment1D>&& segments, const PenTool& tool) {
         auto activePage = GetActivePage();
-        if (!activePage || segments.empty()) return;
+        if (!activePage) {
+            LOG_WARN_CODE(DocumentSession, FolioErrorCode::InputTargetPageNull,
+                          "CommitStroke (raw segments) rejected: No active CanvasPage available.");
+            return;
+        }
+        if (segments.empty()) return;
 
         auto container = std::make_shared<InkContainer>();
         container->uid = UIDGenerator::Next();
@@ -136,11 +148,21 @@ public:
      */
     void AddObject(const std::shared_ptr<CanvasObject>& obj) {
         auto activePage = GetActivePage();
-        if (!activePage || !obj) return;
+        if (!activePage) {
+            LOG_WARN_CODE(DocumentSession, FolioErrorCode::InputTargetPageNull,
+                          "AddObject rejected: No active CanvasPage available in session.");
+            return;
+        }
+        if (!obj) {
+            LOG_WARN(DocumentSession, "AddObject rejected: Null object pointer passed.");
+            return;
+        }
 
         if (obj->uid == 0) {
             obj->uid = UIDGenerator::Next();
         }
+        LOG_INFO(DocumentSession, "DocumentSession: Added CanvasObject UID " + std::to_string(obj->uid) +
+                 " to active page '" + activePage->title + "' [" + activePage->guid + "]");
         activePage->AddObject(obj);
     }
 
