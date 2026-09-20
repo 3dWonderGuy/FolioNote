@@ -84,9 +84,9 @@ void LibraryManager::Init(const std::string& globalAppRoot) {
     ScanLibraryNotebooks(defaultLib);
     libraries.push_back(defaultLib);
 
-    // 5. Auto-discover any physical .foliolib bundles inside the app's default Libraries/ folder
+    // 5. Auto-discover any physical library bundles inside the app's default Libraries/ folder (with or without .foliolib)
     std::string librariesDir = FileManager::GetLibrariesDirectory();
-    auto libEntries = FileManager::ListEntries(librariesDir, FOLIO_LIBRARY_EXTENSION);
+    auto libEntries = FileManager::ListEntries(librariesDir);
     for (const auto& entry : libEntries) {
         if (entry.type == FileType::Directory && IsLibraryFolder(entry.fullPath)) {
             bool alreadyRegistered = false;

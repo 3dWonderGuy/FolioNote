@@ -310,6 +310,31 @@ jobs:
           echo "Final release artifacts:"
           ls -la release-artifacts/
 
+      # -------------------------------------------------------------------------
+      # PRUNE OBSOLETE ASSETS FROM ROLLING PRE-RELEASE
+      # -------------------------------------------------------------------------
+      # Because nightly builds run continuously and installer filenames contain
+      # unique git commit hashes (e.g. FolioNote-Setup-0.1.0-nightly.<sha>.exe),
+      # GitHub Releases retains older versions by default. This step uses the
+      # GitHub CLI to delete any obsolete assets from the 'nightly' tag before
+      # uploading the latest build, preventing release storage bloating.
+      - name: Prune Previous Nightly Release Assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Querying existing assets on rolling 'nightly' release..."
+          OLD_ASSETS=$(gh release view nightly --json assets --jq '.assets[].name' 2>/dev/null || true)
+          if [ -n "$OLD_ASSETS" ]; then
+            for asset in $OLD_ASSETS; do
+              echo "Pruning stale release asset: $asset"
+              gh release delete-asset nightly "$asset" --yes 2>/dev/null || true
+            done
+            echo "Completed asset cleanup for rolling release."
+          else
+            echo "No prior assets found on 'nightly' release."
+          fi
+
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:

@@ -69,15 +69,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; Desktop shortcut (optional, unchecked by default)
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
-; File association options
-Name: "assoc_foliolib"; Description: "Associate .foliolib library bundles with FolioNote"; GroupDescription: "File Associations:"; Flags: checkedonce
-Name: "assoc_notebook"; Description: "Associate .notebook package files with FolioNote"; GroupDescription: "File Associations:"; Flags: checkedonce
+; Context menu shell integration (checked by default)
+Name: "contextmenu"; Description: "Add Explorer right-click integration ('Open in FolioNote' for library folders, 'Import into FolioNote' for PDFs)"; GroupDescription: "System Integration:"
 
 ; Virtual Printer installation (checked by default as requested for full application capabilities)
 Name: "printtofolionote"; Description: "Install 'Print to FolioNote' virtual printer (allows printing documents directly into FolioNote)"; GroupDescription: "System Integration:"
-
-; Context menu shell integration (checked by default)
-Name: "contextmenu"; Description: "Add 'Import into FolioNote' to Windows Explorer right-click menu for PDF files"; GroupDescription: "System Integration:"
 
 [Dirs]
 ; Ensure the dedicated user Imports directory exists for virtual printer spools and file imports
@@ -109,23 +105,11 @@ Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\FolioNote
 Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\FolioNote"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: contextmenu
 Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.pdf\shell\FolioNote\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" --import ""%1"""; Tasks: contextmenu
 
-; File Association: .foliolib Library Bundles
-Root: HKA; Subkey: "Software\Classes\.foliolib"; ValueType: string; ValueName: ""; ValueData: "FolioNote.LibraryBundle"; Flags: uninsdeletevalue; Tasks: assoc_foliolib
-Root: HKA; Subkey: "Software\Classes\FolioNote.LibraryBundle"; ValueType: string; ValueName: ""; ValueData: "FolioNote Library Package"; Flags: uninsdeletekey; Tasks: assoc_foliolib
-Root: HKA; Subkey: "Software\Classes\FolioNote.LibraryBundle\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"",0"; Tasks: assoc_foliolib
-Root: HKA; Subkey: "Software\Classes\FolioNote.LibraryBundle\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: assoc_foliolib
-
-; File Association: .notebook Package Files
-Root: HKA; Subkey: "Software\Classes\.notebook"; ValueType: string; ValueName: ""; ValueData: "FolioNote.NotebookPackage"; Flags: uninsdeletevalue; Tasks: assoc_notebook
-Root: HKA; Subkey: "Software\Classes\FolioNote.NotebookPackage"; ValueType: string; ValueName: ""; ValueData: "FolioNote Package"; Flags: uninsdeletekey; Tasks: assoc_notebook
-Root: HKA; Subkey: "Software\Classes\FolioNote.NotebookPackage\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"",0"; Tasks: assoc_notebook
-Root: HKA; Subkey: "Software\Classes\FolioNote.NotebookPackage\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: assoc_notebook
-
-; Directory Shell Context Menu: "Open in FolioNote" for .foliolib and .notebook package folders
-Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: ""; ValueData: "Open in FolioNote"; Flags: uninsdeletekey; Tasks: assoc_foliolib
-Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: assoc_foliolib
-Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: "AppliesTo"; ValueData: "System.FileName:~< "".foliolib"" OR System.FileName:~< "".notebook"""; Tasks: assoc_foliolib
-Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: assoc_foliolib
+; Windows Explorer Directory Shell Context Menu: "Open in FolioNote" for .foliolib and .notebook folders
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: ""; ValueData: "Open in FolioNote"; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote"; ValueType: string; ValueName: "AppliesTo"; ValueData: "System.FileName:~< "".foliolib"" OR System.FileName:~< "".notebook"""; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FolioNote\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: contextmenu
 
 [Run]
 ; Option to launch FolioNote immediately following setup
