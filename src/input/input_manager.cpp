@@ -99,8 +99,68 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     // Distribute the raw event to dedicated hardware handlers.
     // Each handler parses device-specific data packets and updates stateMachine telemetry.
     switch (event.type) {
+        // --- TEXT INPUT FOR HEADLESS CONTROLLER ---
+        case SDL_EVENT_TEXT_INPUT: {
+            if (canvas.textEditor.IsActive()) {
+                canvas.textEditor.OnTextInput(event.text.text);
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+            } else if ((stateMachine.GetActiveDeviceTool() == InteractionState::Selecting ||
+                        stateMachine.currentAction == InteractionState::Selecting) &&
+                       !ImGui::GetIO().WantCaptureKeyboard) {
+                // Auto-create text box if user starts typing while in Selecting mode
+                auto activePage = session.GetActivePage();
+                if (activePage) {
+                    Point2D clickPos = stateMachine.lastCanvasClickWorldMm;
+                    if (clickPos.x == 0.0 && clickPos.y == 0.0) {
+                        auto vp = canvas.GetViewport();
+                        double cx = (vp.bounds.minX + vp.bounds.maxX) * 0.5;
+                        double cy = (vp.bounds.minY + vp.bounds.maxY) * 0.5;
+                        clickPos = Point2D(cx - 25.0, cy - 10.0);
+                    }
+                    auto newBox = std::make_shared<Folio::TextBoxObject>(clickPos.x, clickPos.y);
+                    newBox->textColor = canvas.defaultTextColor;
+                    newBox->fontFamily = canvas.defaultTextFontFamily;
+                    newBox->fontSize = canvas.defaultTextFontSize;
+                    newBox->isBold = canvas.defaultTextBold;
+                    newBox->isItalic = canvas.defaultTextItalic;
+                    newBox->isUnderline = canvas.defaultTextUnderline;
+                    newBox->isStrikethrough = canvas.defaultTextStrikethrough;
+                    newBox->highlightColor = canvas.defaultTextHighlightColor;
+                    newBox->alignment = canvas.defaultTextAlignment;
+                    activePage->AddObject(newBox);
+                    canvas.textEditor.Attach(newBox.get());
+                    canvas.textEditor.OnTextInput(event.text.text);
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                    LOG_INFO(InputManager, "Auto-created OneNote text box from keyboard input at (" +
+                             std::to_string(clickPos.x) + ", " + std::to_string(clickPos.y) + ")");
+                }
+            }
+            break;
+        }
+
         // --- KEYBOARD SHORTCUTS & MODIFIERS ---
-        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_DOWN: {
+            if (event.key.key == SDLK_ESCAPE) {
+                if (canvas.textEditor.IsActive()) {
+                    auto target = canvas.textEditor.GetTarget();
+                    canvas.textEditor.Detach();
+                    if (target && target->PlainText().empty()) {
+                        auto activePage = session.GetActivePage();
+                        if (activePage) activePage->RemoveObjectByUid(target->uid);
+                    }
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                }
+            } else if (canvas.textEditor.IsActive()) {
+                canvas.textEditor.OnKeyDown(event.key.key, event.key.mod);
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+            }
+            HandleKeyboardEvent(event);
+            break;
+        }
         case SDL_EVENT_KEY_UP:
             HandleKeyboardEvent(event);
             break;
@@ -168,9 +228,15 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
 
     // Hand off all consolidated telemetry to the InputStateMachine:
     // 1. Device Priority Arbitration: Stylus (highest) > Touch > Mouse.
-    // 2. Interaction State Determination: Inking, Eraser, Panning, Selecting.
+    // 2. Interaction State Determination: Inking, Eraser, Panning, Selecting, Text.
     // 3. Dispatch: Invokes CanvasEngine / DocumentSession APIs to draw strokes, pan, or erase.
     stateMachine.ProcessInputState(canvas, session, imguiHasFocus);
+
+    // Ensure OS text input is active so key events yield character input
+    SDL_Window* focusedWin = SDL_GetKeyboardFocus();
+    if (focusedWin && !SDL_TextInputActive(focusedWin)) {
+        SDL_StartTextInput(focusedWin);
+    }
 }
 
 // =============================================================================

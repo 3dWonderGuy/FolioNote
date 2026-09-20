@@ -2,21 +2,24 @@
 /**
  * =========================================================================================
  * @file backup_manager.hpp
- * @brief Autonomous Backup & Disaster Recovery Engine for Libraries and Notebooks
+ * @brief Autonomous 3-Tier Multi-Ring Backup & Disaster Recovery Engine
  * =========================================================================================
  *
  * ARCHITECTURAL ROLE:
  * BackupManager is the dedicated subsystem responsible for offline snapshots, archival,
  * and disaster recovery of FolioNote data:
- * 1. Full Library Snapshots: Captures all constituent notebooks, section hierarchies,
- *    SQLite structure databases, and binary .ink vector files.
- * 2. Standalone Notebook Snapshots: Backs up individual notebooks independently.
- * 3. Atomic Staging & Integrity: Writes metadata markers (backup.meta) containing SHA/size
- *    telemetry, timestamps, and schema version to verify backup health.
- * 4. Non-Blocking ThreadPool Execution: All intensive file tree duplications are offloaded
- *    to background worker threads, ensuring the 120 FPS inking canvas never hitches.
- * 5. Automated Retention Pruning: Rotates snapshots according to configurable retention
- *    policies (e.g. keep last N snapshots), preventing unbounded disk consumption.
+ * 1. 3-Tier Grandfather-Father-Son Retention:
+ *    - Tier 1 (Daily / Post-Session): 24h interval, rolling N (default: 7 copies).
+ *    - Tier 2 (Weekly): 7d interval, rolling N (default: 4 copies).
+ *    - Tier 3 (Monthly): 30d interval, rolling N (default: 12 copies).
+ *    - Manual: User on-demand snapshots.
+ * 2. Deep Filesystem Isolation:
+ *    Snapshots are organized deep in `<AppRoot>/backups/tiers/{daily,weekly,monthly}/`.
+ * 3. Safe SQLite WAL Checkpointing:
+ *    Flushes and truncates SQLite WAL journals (`PRAGMA wal_checkpoint(TRUNCATE)`) prior
+ *    to disk copying to eliminate Windows file sharing violations.
+ * 4. Non-Blocking ThreadPool Execution:
+ *    All file tree duplications are dispatched to background worker threads.
  */
 
 #include <string>
@@ -26,6 +29,17 @@
 #include <cstdint>
 
 namespace Folio {
+
+/**
+ * @enum BackupTier
+ * @brief Grandfather-Father-Son multi-ring backup tiers.
+ */
+enum class BackupTier {
+    Daily,    ///< 24-hour interval; retains rolling N copies (default: 7)
+    Weekly,   ///< 7-day interval; retains rolling N copies (default: 4)
+    Monthly,  ///< 30-day interval; retains rolling N copies (default: 12)
+    Manual    ///< On-demand user snapshot
+};
 
 /**
  * @struct BackupInfo
@@ -41,6 +55,7 @@ struct BackupInfo {
     uint64_t totalBytes = 0;         ///< Total byte size of the backup folder on disk
     bool isLibrary = false;          ///< True if snapshot represents an entire library; false if individual notebook
     size_t notebookCount = 0;        ///< Number of notebooks contained inside the snapshot
+    BackupTier tier = BackupTier::Manual; ///< Retention tier category
 };
 
 /**
@@ -50,108 +65,118 @@ struct BackupInfo {
 class BackupManager {
 public:
     /**
-     * @brief Creates a synchronous, full snapshot of a library folder.
-     *
-     * GENERAL WORKING PROCESS:
-     * 1. Validates that `libraryPath` exists and is a valid directory.
-     * 2. Resolves destination root: uses `customDestination` if provided; otherwise
-     *    defaults to `FileManager::GetBackupsDirectory()`.
-     * 3. Constructs a timestamped snapshot directory: `<Dest>/<LibName>_Backup_<YYYYMMDD_HHMMSS>/`.
-     * 4. Copies the directory tree recursively with full Unicode path fidelity.
-     * 5. Generates and writes `backup.meta` inside the snapshot folder with source telemetry.
-     *
-     * @param libraryPath Absolute path to the source library directory on disk.
-     * @param customDestination Optional target directory (defaults to `<AppRoot>/backups`).
-     * @return true if snapshot was successfully completed and validated; false otherwise.
+     * @brief Converts a BackupTier enum to its string representation ("daily", "weekly", "monthly", "manual").
+     */
+    static std::string TierToString(BackupTier tier);
+
+    /**
+     * @brief Parses a string into a BackupTier enum.
+     */
+    static BackupTier StringToTier(const std::string& str);
+
+    /**
+     * @brief Resolves the deep isolated filesystem directory for a backup tier: `<BackupsRoot>/tiers/<tier>`.
+     */
+    static std::string GetTierDirectory(BackupTier tier, const std::string& customRoot = "");
+
+    /**
+     * @brief Flushes and truncates any SQLite WAL buffers inside `rootDirectory` before backup copying.
+     * @param rootDirectory Path to library or notebook directory to scan for .db files.
+     * @return true if all detected SQLite databases were successfully checkpointed.
+     */
+    static bool FlushSqliteWal(const std::string& rootDirectory);
+
+    /**
+     * @brief Creates a synchronous snapshot of a library folder.
      */
     static bool BackupLibrary(const std::string& libraryPath, const std::string& customDestination = "");
 
     /**
      * @brief Asynchronously creates a full snapshot of a library folder on the background ThreadPool.
-     *
-     * Guarantees zero UI/inking thread interruptions during heavy disk I/O.
-     *
-     * @param libraryPath Absolute path to the source library directory on disk.
-     * @param customDestination Optional target directory (defaults to `<AppRoot>/backups`).
-     * @return std::future<bool> Future resolving to true on success.
      */
     static std::future<bool> BackupLibraryAsync(const std::string& libraryPath, const std::string& customDestination = "");
 
     /**
-     * @brief Creates a synchronous, full snapshot of an individual notebook directory.
-     *
-     * Copies `structure.db`, `pages/` (.ink files), and `imports/` to a timestamped backup directory.
-     *
-     * @param notebookPath Absolute path to the .notebook directory.
-     * @param customDestination Optional target directory (defaults to `<AppRoot>/backups`).
-     * @return true if backup succeeded; false otherwise.
+     * @brief Creates a synchronous snapshot of a library folder placed in a specific retention tier.
+     */
+    static bool BackupLibraryTiered(const std::string& libraryPath, BackupTier tier, const std::string& customRoot = "");
+
+    /**
+     * @brief Asynchronously creates a tiered library snapshot on the background ThreadPool.
+     */
+    static std::future<bool> BackupLibraryTieredAsync(const std::string& libraryPath, BackupTier tier, const std::string& customRoot = "");
+
+    /**
+     * @brief Creates a synchronous snapshot of an individual notebook directory.
      */
     static bool BackupNotebook(const std::string& notebookPath, const std::string& customDestination = "");
 
     /**
-     * @brief Asynchronously creates a full snapshot of a notebook directory on the background ThreadPool.
-     *
-     * @param notebookPath Absolute path to the .notebook directory.
-     * @param customDestination Optional target directory (defaults to `<AppRoot>/backups`).
-     * @return std::future<bool> Future resolving to true on success.
+     * @brief Asynchronously creates a snapshot of a notebook directory on the background ThreadPool.
      */
     static std::future<bool> BackupNotebookAsync(const std::string& notebookPath, const std::string& customDestination = "");
 
     /**
-     * @brief Discovers and catalogs all available backup snapshots in the backups directory.
-     *
-     * Parses `backup.meta` markers inside each snapshot directory.
-     *
-     * @param backupRootDir Directory to scan (defaults to `FileManager::GetBackupsDirectory()`).
-     * @return Vector of BackupInfo entries sorted by timestamp descending (newest first).
+     * @brief Creates a synchronous snapshot of an individual notebook placed in a specific retention tier.
+     */
+    static bool BackupNotebookTiered(const std::string& notebookPath, BackupTier tier, const std::string& customRoot = "");
+
+    /**
+     * @brief Asynchronously creates a tiered notebook snapshot on the background ThreadPool.
+     */
+    static std::future<bool> BackupNotebookTieredAsync(const std::string& notebookPath, BackupTier tier, const std::string& customRoot = "");
+
+    /**
+     * @brief Discovers and catalogs all available backup snapshots in the specified directory.
      */
     static std::vector<BackupInfo> ListBackups(const std::string& backupRootDir = "");
 
     /**
+     * @brief Discovers and catalogs backups for a specific tier.
+     */
+    static std::vector<BackupInfo> ListTierBackups(BackupTier tier, const std::string& customRoot = "");
+
+    /**
      * @brief Restores an existing backup snapshot to a target directory.
-     *
-     * WORKING PROCESS:
-     * 1. Validates `backupSnapshotPath` and verifies the presence of `backup.meta`.
-     * 2. Cleans/prepares the `targetDestinationDir`.
-     * 3. Recursively copies the snapshot contents (omitting `backup.meta`) to the destination.
-     * 4. Verifies disk integrity.
-     *
-     * @param backupSnapshotPath Absolute path to the snapshot directory to restore.
-     * @param targetDestinationDir Target location where the restored library/notebook will reside.
-     * @return true if restore completed successfully; false otherwise.
      */
     static bool RestoreBackup(const std::string& backupSnapshotPath, const std::string& targetDestinationDir);
 
     /**
      * @brief Asynchronously restores a backup snapshot on the background ThreadPool.
-     *
-     * @param backupSnapshotPath Absolute path to the snapshot directory.
-     * @param targetDestinationDir Target restore path.
-     * @return std::future<bool> Future resolving to true on success.
      */
     static std::future<bool> RestoreBackupAsync(const std::string& backupSnapshotPath, const std::string& targetDestinationDir);
 
     /**
      * @brief Deletes a specific backup snapshot directory from disk.
-     * @param backupSnapshotPath Absolute path to the snapshot directory to delete.
-     * @return true if deleted; false otherwise.
      */
     static bool DeleteBackup(const std::string& backupSnapshotPath);
 
     /**
      * @brief Rotates and prunes older backup snapshots to enforce storage retention limits.
-     *
-     * MATHEMATICAL RETENTION LOGIC:
-     * For a given source entity (e.g. "Default Library"), queries all matching snapshots
-     * and sorts by `timestamp` descending. If total count $C > \text{maxToKeep}$,
-     * deletes the oldest $C - \text{maxToKeep}$ snapshots from disk.
-     *
-     * @param sourceName User-visible source name to prune (e.g. "Default Library"), or empty for all.
-     * @param maxToKeep Maximum number of newest snapshots to retain (default: 5).
-     * @param backupRootDir Directory containing snapshots (defaults to `<AppRoot>/backups`).
-     * @return Number of pruned/deleted backup directories.
      */
     static size_t PruneOldBackups(const std::string& sourceName, size_t maxToKeep = 5, const std::string& backupRootDir = "");
+
+    /**
+     * @brief Prunes snapshots in a specific tier according to its retention limit.
+     */
+    static size_t PruneTierBackups(BackupTier tier, const std::string& sourceName = "", size_t maxToKeep = 0, const std::string& customRoot = "");
+
+    /**
+     * @brief Evaluates elapsed timestamps and runs any due scheduled multi-ring backups (Daily, Weekly, Monthly).
+     *
+     * MATHEMATICAL SCHEDULING LOGIC:
+     * - Evaluates $\Delta t_{\text{daily}} \ge 24\text{h}$, $\Delta t_{\text{weekly}} \ge 7\text{d}$, $\Delta t_{\text{monthly}} \ge 30\text{d}$.
+     * - Dispatches snapshots and prunes obsolete snapshots per configured tier retention caps.
+     *
+     * @param libraryPath Root path of the active library to back up.
+     * @param customRoot Optional backups storage root (defaults to `<AppRoot>/backups`).
+     */
+    static void CheckAndRunScheduledBackups(const std::string& libraryPath, const std::string& customRoot = "");
+
+    /**
+     * @brief Asynchronously executes the scheduled backup evaluation on the background ThreadPool.
+     */
+    static std::future<void> CheckAndRunScheduledBackupsAsync(const std::string& libraryPath, const std::string& customRoot = "");
 };
 
 } // namespace Folio

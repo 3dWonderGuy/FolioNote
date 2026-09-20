@@ -340,6 +340,40 @@ public:
     }
 
     /**
+     * @brief Removes an object identified by its unique 32-bit runtime UID.
+     * @param uid Runtime UID of the object to remove.
+     */
+    void RemoveObjectByUid(uint32_t uid) {
+        auto obj = FindObjectByUid(uid);
+        if (obj) RemoveObject(obj);
+    }
+
+    /**
+     * @brief Replaces an existing object in-place, updating the fast UID map and R-Tree spatial index.
+     * Maintains the exact rendering z-order position in the objects array.
+     *
+     * @param uid Runtime UID of the object to replace.
+     * @param newObj Shared pointer to the replacement CanvasObject.
+     */
+    void ReplaceObject(uint32_t uid, const std::shared_ptr<CanvasObject>& newObj) {
+        if (!newObj) return;
+        auto existing = FindObjectByUid(uid);
+        if (existing) {
+            spatialIndex.Remove(uid);
+            objectMap[uid] = newObj;
+            spatialIndex.Insert(newObj->uid, newObj->bounds);
+            auto it = std::find(objects.begin(), objects.end(), existing);
+            if (it != objects.end()) {
+                *it = newObj;
+            }
+            isModified = true;
+            Touch();
+        } else {
+            AddObject(newObj);
+        }
+    }
+
+    /**
      * @brief Updates the bounding box and spatial index entry for a modified object.
      *
      * MATHEMATICAL & TIME COMPLEXITY PROCESS:
@@ -392,11 +426,43 @@ public:
 
         for (uint32_t id : visibleUids) {
             auto it = objectMap.find(id);
-            if (it != objectMap.end() && it->second) {
+            if (it != objectMap.end() && it->second && it->second->isVisible) {
                 visible.push_back(it->second);
             }
         }
         return visible;
+    }
+
+    /**
+     * @brief Permanently purges soft-deleted / invisible objects from RAM, UID maps, and spatial index.
+     *
+     * MATHEMATICAL & MEMORY RECLAMATION PROCESS:
+     * - Traverses the resident `objects` vector in O(N) time.
+     * - Identifies soft-deleted tombstones marked with `!obj->isVisible`.
+     * - De-indexes them from `spatialIndex` (O(log N) R-Tree leaf purge) and `objectMap` (O(1) hash erase).
+     * - Uses the erase-remove idiom to shift surviving valid objects in-place and shrink the vector.
+     * - Marks the page dirty (`isModified = true`) to reflect permanent truncation in persistent storage.
+     *
+     * @return size_t Total number of tombstone objects permanently purged from the page.
+     */
+    size_t PurgeInvisibleObjects() {
+        size_t purgedCount = 0;
+        auto it = objects.begin();
+        while (it != objects.end()) {
+            if (*it && !(*it)->isVisible) {
+                spatialIndex.Remove((*it)->uid);
+                objectMap.erase((*it)->uid);
+                it = objects.erase(it);
+                ++purgedCount;
+            } else {
+                ++it;
+            }
+        }
+        if (purgedCount > 0) {
+            isModified = true;
+            Touch();
+        }
+        return purgedCount;
     }
 
     /**

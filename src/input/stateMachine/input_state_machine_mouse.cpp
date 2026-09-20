@@ -78,9 +78,12 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         // Double click detection on canvas
         if (!uiCapturedMouse) {
             uint64_t now = SDL_GetTicks();
-            if (specialActions.EvaluateDoubleClick(mouse.x, mouse.y, now, config)) {
+            isLastClickDouble = specialActions.EvaluateDoubleClick(mouse.x, mouse.y, now, config);
+            if (isLastClickDouble) {
                 LOG_INFO(InputStateMachine, "Mouse Double-Click detected!");
             }
+        } else {
+            isLastClickDouble = false;
         }
     }
 
@@ -113,6 +116,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             lastEraserX = canvasLocalX;
             lastEraserY = canvasLocalY;
             isEraserActive = true;
+            session.BeginEraseTransaction();
             canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
         } else if (isMoving && isEraserActive) {
             canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
@@ -120,17 +124,21 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             lastEraserY = canvasLocalY;
         } else if (justUp) {
             isEraserActive = false;
+            session.EndEraseTransaction(&canvas);
         }
         canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
     }
     else if (currentAction == InteractionState::Selecting) {
         if (justDown) {
+            clickDownScreenX = mouse.x;
+            clickDownScreenY = mouse.y;
             if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
                                                    canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
                 canvas.isDirty = true;
             } else {
                 Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
+                lastCanvasClickWorldMm = worldMm;
                 auto activePage = session.GetActivePage();
                 std::shared_ptr<CanvasObject> clickedObj = nullptr;
 
@@ -146,6 +154,39 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 }
 
                 if (clickedObj) {
+                    if (clickedObj->type == ObjectType::Text) {
+                        auto textObj = std::dynamic_pointer_cast<Folio::TextBoxObject>(clickedObj);
+                        if (textObj) {
+                            // If previous target was empty, clean it up
+                            if (canvas.textEditor.IsActive() && canvas.textEditor.GetTarget() &&
+                                canvas.textEditor.GetTarget() != textObj.get() &&
+                                canvas.textEditor.GetTarget()->PlainText().empty()) {
+                                if (activePage) activePage->RemoveObjectByUid(canvas.textEditor.GetTarget()->uid);
+                            }
+                            canvas.ClearSelection(&session);
+                            canvas.textEditor.Detach();
+                            canvas.textEditor.Attach(textObj.get());
+                            canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, keyboard.shift);
+                            hasPendingEmptyTextBox = false;
+                            pendingTextBoxUid = 0;
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                            LOG_INFO(InputStateMachine, "Activated text editor on text box uid=" + std::to_string(textObj->uid));
+                            return;
+                        }
+                    }
+
+                    // Clicked non-text object:
+                    if (canvas.textEditor.IsActive()) {
+                        auto prevTarget = canvas.textEditor.GetTarget();
+                        canvas.textEditor.Detach();
+                        if (prevTarget && prevTarget->PlainText().empty()) {
+                            if (activePage) activePage->RemoveObjectByUid(prevTarget->uid);
+                        }
+                    }
+                    hasPendingEmptyTextBox = false;
+                    pendingTextBoxUid = 0;
+
                     canvas.ClearSelection(&session);
                     clickedObj->isSelected = 1;
                     canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
@@ -155,7 +196,39 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     canvas.isDirty = true;
                     LOG_INFO(InputStateMachine, "Mouse direct click selected object uid=" + std::to_string(clickedObj->uid));
                 } else {
+                    // Clicked on empty canvas!
+                    // If previous text box was empty, clean it up
+                    if (canvas.textEditor.IsActive()) {
+                        auto prevTarget = canvas.textEditor.GetTarget();
+                        canvas.textEditor.Detach();
+                        if (prevTarget && prevTarget->PlainText().empty()) {
+                            if (activePage) activePage->RemoveObjectByUid(prevTarget->uid);
+                        }
+                        canvas.needsFullRebake = true;
+                    }
                     canvas.ClearSelection(&session);
+
+                    // OneNote Click-to-Type: Instantly instantiate empty text note with blinking caret
+                    if (activePage) {
+                        auto newBox = std::make_shared<Folio::TextBoxObject>(worldMm.x, worldMm.y);
+                        newBox->textColor = canvas.defaultTextColor;
+                        newBox->fontFamily = canvas.defaultTextFontFamily;
+                        newBox->fontSize = canvas.defaultTextFontSize;
+                        newBox->isBold = canvas.defaultTextBold;
+                        newBox->isItalic = canvas.defaultTextItalic;
+                        newBox->isUnderline = canvas.defaultTextUnderline;
+                        newBox->isStrikethrough = canvas.defaultTextStrikethrough;
+                        newBox->highlightColor = canvas.defaultTextHighlightColor;
+                        newBox->alignment = canvas.defaultTextAlignment;
+                        activePage->AddObject(newBox);
+                        canvas.textEditor.Attach(newBox.get());
+                        canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, false);
+                        hasPendingEmptyTextBox = true;
+                        pendingTextBoxUid = newBox->uid;
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+
                     if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                         canvas.OnLassoDown(canvasLocalX, canvasLocalY);
                     } else {
@@ -165,6 +238,26 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             }
         }
         else if (isMoving) {
+            // If user begins dragging while a pending empty text box was placed,
+            // clean up the empty box so the user can marquee/lasso select smoothly!
+            if (hasPendingEmptyTextBox && pendingTextBoxUid != 0) {
+                float distSq = (mouse.x - clickDownScreenX) * (mouse.x - clickDownScreenX) +
+                               (mouse.y - clickDownScreenY) * (mouse.y - clickDownScreenY);
+                if (distSq > 16.0f) { // Moved > 4 pixels
+                    if (canvas.textEditor.IsActive() && canvas.textEditor.GetTarget() &&
+                        canvas.textEditor.GetTarget()->uid == pendingTextBoxUid &&
+                        canvas.textEditor.GetTarget()->PlainText().empty()) {
+                        auto activePage = session.GetActivePage();
+                        if (activePage) activePage->RemoveObjectByUid(pendingTextBoxUid);
+                        canvas.textEditor.Detach();
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                    }
+                    hasPendingEmptyTextBox = false;
+                    pendingTextBoxUid = 0;
+                }
+            }
+
             if (canvas.selectionGizmo.isDragging) {
                 if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform,
                                                        canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
@@ -178,8 +271,11 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             }
         }
         else if (justUp) {
+            hasPendingEmptyTextBox = false;
+            pendingTextBoxUid = 0;
+
             if (canvas.selectionGizmo.isDragging) {
-                canvas.selectionGizmo.OnPointerUp();
+                canvas.selectionGizmo.OnPointerUp(&session);
                 canvas.SyncSelectionToSpatialIndex(&session);
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
@@ -265,6 +361,48 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         }
 
         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+    }
+    else if (currentAction == InteractionState::Text) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+        Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
+
+        if (justDown) {
+            auto activePage = session.GetActivePage();
+            std::shared_ptr<Folio::TextBoxObject> clickedBox = nullptr;
+            if (activePage) {
+                for (auto it = activePage->objects.rbegin(); it != activePage->objects.rend(); ++it) {
+                    auto& obj = *it;
+                    if (obj && obj->isVisible && obj->type == ObjectType::Text) {
+                        if (obj->HitTest(worldMm.x, worldMm.y)) {
+                            clickedBox = std::dynamic_pointer_cast<Folio::TextBoxObject>(obj);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (clickedBox) {
+                if (canvas.textEditor.GetTarget() != clickedBox.get()) {
+                    canvas.textEditor.Detach();
+                    canvas.textEditor.Attach(clickedBox.get());
+                }
+                canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, keyboard.shift);
+                canvas.isDirty = true;
+            } else {
+                // OneNote Hybrid Pattern: Click anywhere on empty canvas to create text box
+                canvas.textEditor.Detach();
+                auto newBox = std::make_shared<Folio::TextBoxObject>(worldMm.x, worldMm.y, 70.0, 20.0);
+                session.AddTextBox(newBox);
+                canvas.textEditor.Attach(newBox.get());
+                canvas.needsFullRebake = true;
+                canvas.isDirty = true;
+                LOG_INFO(InputStateMachine, "OneNote hybrid text click created text box at (" +
+                         std::to_string(worldMm.x) + ", " + std::to_string(worldMm.y) + ")");
+            }
+        } else if (isMoving && canvas.textEditor.IsActive()) {
+            canvas.textEditor.OnMouseDrag(worldMm.x, worldMm.y);
+            canvas.isDirty = true;
+        }
     }
     else if (currentAction == InteractionState::Panning && isMoving) {
         canvas.Pan(mouse.dx, mouse.dy);

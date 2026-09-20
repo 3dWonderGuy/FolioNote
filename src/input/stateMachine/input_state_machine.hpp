@@ -11,6 +11,7 @@
 #include "input/touch_gesture_recognizer.hpp"
 #include "input/stateMachine/input_configuration.hpp"
 #include "input/stateMachine/special_action_manager.hpp"
+#include "core/engine/stroke_smoother.hpp"
 #include "utils/logger.hpp"
 #include <array>
 #include <string>
@@ -38,7 +39,8 @@ enum class InteractionState : uint8_t {
     Selecting,    ///< Lasso / freehand / box selection & gizmo manipulation
     Panning,      ///< Panning the canvas viewport
     Transforming, ///< Moving / scaling selected objects
-    DrawingShape  ///< Drag-creating geometric vector shapes
+    DrawingShape, ///< Drag-creating geometric vector shapes
+    Text          ///< OneNote click-to-type & text editing
 };
 
 // =============================================================================
@@ -145,9 +147,17 @@ public:
     bool wasMouseDown     = false;
     bool wasTouchDown     = false;
     bool wasMiddleDown    = false;
+    bool isLastClickDouble = false;
     bool uiCapturedStylus = false;
     bool uiCapturedTouch  = false;
     bool uiCapturedMouse  = false;
+
+    // OneNote click-to-type positioning and auto-instantiation tracking
+    Point2D  lastCanvasClickWorldMm{0.0, 0.0};
+    float    clickDownScreenX = 0.0f;
+    float    clickDownScreenY = 0.0f;
+    bool     hasPendingEmptyTextBox = false;
+    uint32_t pendingTextBoxUid = 0;
 
     // =========================================================================
     // PUBLIC API

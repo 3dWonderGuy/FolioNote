@@ -147,7 +147,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
             }
             else if (justUp) {
                 if (canvas.selectionGizmo.isDragging) {
-                    canvas.selectionGizmo.OnPointerUp();
+                    canvas.selectionGizmo.OnPointerUp(&session);
                     canvas.SyncSelectionToSpatialIndex(&session);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
@@ -168,6 +168,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                 lastEraserX = canvasLocalX;
                 lastEraserY = canvasLocalY;
                 isEraserActive = true;
+                session.BeginEraseTransaction();
                 canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
             } else if (isMoving && isEraserActive) {
                 canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
@@ -175,6 +176,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                 lastEraserY = canvasLocalY;
             } else if (justUp) {
                 isEraserActive = false;
+                session.EndEraseTransaction(&canvas);
             }
             canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
             break;

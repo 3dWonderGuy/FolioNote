@@ -215,6 +215,49 @@ public:
         return page;
     }
 
+    /**
+     * @brief Resolves the currently active Section from the active notebook.
+     * @return Shared pointer to active Section, or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<Section> GetActiveSection() const {
+        auto nb = GetActiveNotebook();
+        return nb ? nb->GetActiveSection() : nullptr;
+    }
+
+    /**
+     * @brief Traverses all notebooks, sections, and section groups to locate a CanvasPage by GUID.
+     * @param pageGuid Persistent UUID v4 of the target page.
+     * @return Shared pointer to CanvasPage if found, or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<CanvasPage> FindPageByGuid(const std::string& pageGuid) const {
+        if (pageGuid.empty()) return nullptr;
+        for (const auto& nb : notebooks) {
+            if (!nb) continue;
+            for (const auto& sec : nb->sections) {
+                if (sec) {
+                    if (auto p = sec->FindPageByGuid(pageGuid)) return p;
+                }
+            }
+            for (const auto& grp : nb->sectionGroups) {
+                if (!grp) continue;
+                for (const auto& sec : grp->sections) {
+                    if (sec) {
+                        if (auto p = sec->FindPageByGuid(pageGuid)) return p;
+                    }
+                }
+                for (const auto& sub : grp->subGroups) {
+                    if (!sub) continue;
+                    for (const auto& sec : sub->sections) {
+                        if (sec) {
+                            if (auto p = sec->FindPageByGuid(pageGuid)) return p;
+                        }
+                    }
+                }
+            }
+        }
+        return nullptr;
+    }
+
     // -------------------------------------------------------------------------
     // Persistence & Memory Management
     // -------------------------------------------------------------------------

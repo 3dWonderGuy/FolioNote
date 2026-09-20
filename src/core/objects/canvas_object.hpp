@@ -56,6 +56,7 @@ enum class ObjectType {
 class CanvasObject {
 public:
     std::string guuid = "";                              // to have searchable text and prevent user to user collisions and for persistent storage id (ink is not tracked)
+    std::string groupId = "";                            // UUID of parent logical group (empty if ungrouped)
     uint32_t uid = 0;                                   // Matches RTree UID index (deleted upon closing notebook)
     ObjectType type = ObjectType::InkContainer;         // Fast type discriminator
     AABB bounds;                                        // Cached World-space AABB
@@ -77,6 +78,13 @@ public:
     class Deserializer;
     
     virtual ~CanvasObject() = default;                  // Virtual destructor for proper cleanup of derived classes
+
+    /**
+     * @brief Returns true if this object belongs to a logical group.
+     */
+    [[nodiscard]] bool IsGrouped() const noexcept {
+        return !groupId.empty();
+    }
 
     /********************************************* */
     // Bounds & Spatial

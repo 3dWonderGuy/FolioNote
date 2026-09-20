@@ -131,6 +131,7 @@ void InputStateMachine::UpdateHardwareState(uint64_t nowMs) {
                                  (currentAction == InteractionState::Selecting)   ? "Selecting"   :
                                  (currentAction == InteractionState::Panning)     ? "Panning"     :
                                  (currentAction == InteractionState::DrawingShape) ? "DrawingShape" :
+                                 (currentAction == InteractionState::Text)        ? "Text"        :
                                  (currentAction == InteractionState::Transforming) ? "Transforming" : "Idle";
         LOG_INFO(InputStateMachine, "Interaction state changed to: " + actionName);
     }

@@ -11,7 +11,7 @@
 
 #include "app/app_view_mode.hpp"
 #include "ui/views/pdf_viewer_page.hpp"
-enum class RibbonTab { Home, Insert, Draw, History, Review, View, Help, ShapeFormat, PdfTools };
+enum class RibbonTab { Home, Insert, Draw, History, Review, View, Help, ShapeFormat, TextFormat, PdfTools };
 
 enum class RibbonDisplayMode {
     FullyHidden,    // 0.0f px  (canvas-only fullscreen)
@@ -1511,8 +1511,11 @@ public:
         // Check for contextual selected shape or connector and handle auto-tab navigation
         auto selectedShape = canvas.GetSelectedShape(session ? session : currentSession);
         auto selectedConnector = canvas.GetSelectedConnector(session ? session : currentSession);
+        auto selectedTextBox = canvas.GetSelectedTextBox(session ? session : currentSession);
         static uint32_t s_lastSelectedShapeUid = 0;
+        static uint32_t s_lastSelectedTextUid = 0;
         uint32_t currentShapeUid = selectedShape ? selectedShape->uid : (selectedConnector ? selectedConnector->uid : 0);
+        uint32_t currentTextUid = selectedTextBox ? selectedTextBox->uid : 0;
 
         // Auto-switch to ShapeFormat tab ONLY when a shape or connector is newly selected
         if (selectedShape || selectedConnector) {
@@ -1528,6 +1531,7 @@ public:
             tabTransitionTimer = 0.0f;
         }
         s_lastSelectedShapeUid = currentShapeUid;
+        s_lastSelectedTextUid = currentTextUid;
 
         struct TabDef {
             const char* name;
@@ -1911,14 +1915,367 @@ public:
                     sec.Render();
                 }
 
+                // -------------------------------------------------------------
+                // SUBSECTION: Basic Text (OneNote Ribbon Group)
+                // -------------------------------------------------------------
+                {
+                    FolioUI::ToolbarSectionBuilder sec("grp_home_basic_text", "Basic Text", theme, isMini);
+
+                    sec.AddWidget([&]() {
+                        auto selectedTextBox = canvas.GetSelectedTextBox(currentSession);
+
+                        std::string curFamily = selectedTextBox ? selectedTextBox->fontFamily : canvas.defaultTextFontFamily;
+                        float curSize = selectedTextBox ? selectedTextBox->fontSize : canvas.defaultTextFontSize;
+                        bool curBold = selectedTextBox ? selectedTextBox->isBold : canvas.defaultTextBold;
+                        bool curItalic = selectedTextBox ? selectedTextBox->isItalic : canvas.defaultTextItalic;
+                        bool curUnderline = selectedTextBox ? selectedTextBox->isUnderline : canvas.defaultTextUnderline;
+                        bool curStrike = selectedTextBox ? selectedTextBox->isStrikethrough : canvas.defaultTextStrikethrough;
+                        BLRgba32 curColor = selectedTextBox ? selectedTextBox->textColor : canvas.defaultTextColor;
+                        BLRgba32 curHighlight = selectedTextBox ? selectedTextBox->highlightColor : canvas.defaultTextHighlightColor;
+                        uint8_t curAlign = selectedTextBox ? selectedTextBox->alignment : canvas.defaultTextAlignment;
+
+                        auto applyChanges = [&]() {
+                            if (selectedTextBox) {
+                                selectedTextBox->fontFamily = curFamily;
+                                selectedTextBox->fontSize = curSize;
+                                selectedTextBox->isBold = curBold;
+                                selectedTextBox->isItalic = curItalic;
+                                selectedTextBox->isUnderline = curUnderline;
+                                selectedTextBox->isStrikethrough = curStrike;
+                                selectedTextBox->textColor = curColor;
+                                selectedTextBox->highlightColor = curHighlight;
+                                selectedTextBox->alignment = curAlign;
+                                selectedTextBox->SyncTextToRuns();
+                                if (canvas.textEditor.IsActive()) canvas.textEditor.ReflowLayout();
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            }
+                            canvas.defaultTextFontFamily = curFamily;
+                            canvas.defaultTextFontSize = curSize;
+                            canvas.defaultTextBold = curBold;
+                            canvas.defaultTextItalic = curItalic;
+                            canvas.defaultTextUnderline = curUnderline;
+                            canvas.defaultTextStrikethrough = curStrike;
+                            canvas.defaultTextColor = curColor;
+                            canvas.defaultTextHighlightColor = curHighlight;
+                            canvas.defaultTextAlignment = curAlign;
+                        };
+
+                        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 3.0f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 3.0f));
+
+                        ImGui::BeginGroup();
+
+                        // ---------------------------------------------------------
+                        // ROW 1: Font Family, Font Size, Bullets, Numbering, Indents, Clear Formatting
+                        // ---------------------------------------------------------
+                        ImGui::SetNextItemWidth(100.0f);
+                        if (ImGui::BeginCombo("##font_family_combo", curFamily.c_str())) {
+                            static const char* families[] = {
+                                "Calibri", "Segoe UI", "Arial", "Roboto", "Consolas", "Times New Roman", "Georgia", "Comic Sans MS"
+                            };
+                            for (const char* fam : families) {
+                                bool isSel = (curFamily == fam);
+                                if (ImGui::Selectable(fam, isSel)) {
+                                    curFamily = fam;
+                                    applyChanges();
+                                }
+                                if (isSel) ImGui::SetItemDefaultFocus();
+                            }
+                            ImGui::EndCombo();
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Font Family");
+
+                        ImGui::SameLine(0, 3.0f);
+                        ImGui::SetNextItemWidth(52.0f);
+                        char sizeBuf[16];
+                        snprintf(sizeBuf, sizeof(sizeBuf), "%g", curSize);
+                        if (ImGui::BeginCombo("##font_size_combo", sizeBuf)) {
+                            static const float stdSizes[] = { 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 14.0f, 16.0f, 18.0f, 20.0f, 24.0f, 28.0f, 32.0f, 36.0f, 48.0f, 72.0f };
+                            for (float sz : stdSizes) {
+                                char itemBuf[16];
+                                snprintf(itemBuf, sizeof(itemBuf), "%g", sz);
+                                bool isSel = (std::abs(curSize - sz) < 0.1f);
+                                if (ImGui::Selectable(itemBuf, isSel)) {
+                                    curSize = sz;
+                                    applyChanges();
+                                }
+                                if (isSel) ImGui::SetItemDefaultFocus();
+                            }
+                            ImGui::EndCombo();
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Font Size");
+
+                        ImGui::SameLine(0, 3.0f);
+                        if (ImGui::Button("::##bullets", ImVec2(26.0f, 23.0f))) {
+                            if (canvas.textEditor.IsActive()) {
+                                canvas.textEditor.OnTextInput(reinterpret_cast<const char*>(u8"• "));
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            }
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bullets: Insert bullet point");
+
+                        ImGui::SameLine(0, 2.0f);
+                        if (ImGui::Button("1.##numbering", ImVec2(26.0f, 23.0f))) {
+                            if (canvas.textEditor.IsActive()) {
+                                canvas.textEditor.OnTextInput("1. ");
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            }
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Numbering: Insert numbered list item");
+
+                        ImGui::SameLine(0, 3.0f);
+                        ImGui::TextDisabled("|");
+
+                        ImGui::SameLine(0, 3.0f);
+                        if (ImGui::Button("<-##dec_indent", ImVec2(24.0f, 23.0f))) {
+                            if (selectedTextBox && !selectedTextBox->text.empty()) {
+                                if (selectedTextBox->text.rfind("  ", 0) == 0) {
+                                    selectedTextBox->text.erase(0, 2);
+                                    applyChanges();
+                                }
+                            }
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Decrease Indent");
+
+                        ImGui::SameLine(0, 2.0f);
+                        if (ImGui::Button("->##inc_indent", ImVec2(24.0f, 23.0f))) {
+                            if (selectedTextBox) {
+                                selectedTextBox->text.insert(0, "  ");
+                                applyChanges();
+                            }
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Increase Indent");
+
+                        ImGui::SameLine(0, 3.0f);
+                        ImGui::TextDisabled("|");
+
+                        ImGui::SameLine(0, 3.0f);
+                        if (ImGui::Button("A\\_##clear_fmt", ImVec2(26.0f, 23.0f))) {
+                            curFamily = "Calibri";
+                            curSize = 11.0f;
+                            curBold = false;
+                            curItalic = false;
+                            curUnderline = false;
+                            curStrike = false;
+                            curColor = BLRgba32(0x1F, 0x29, 0x37, 0xFF);
+                            curHighlight = BLRgba32(0x00, 0x00, 0x00, 0x00);
+                            applyChanges();
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear All Formatting");
+
+                        // ---------------------------------------------------------
+                        // ROW 2: Bold, Italic, Underline, Strike, Sub/Super, Highlight, Color, Align, Delete
+                        // ---------------------------------------------------------
+                        auto renderToggleBtn = [&](const char* label, const char* tip, bool& state, const ImVec2& sz = ImVec2(24.0f, 24.0f)) {
+                            if (state) {
+                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.23f, 0.51f, 0.96f, 0.35f));
+                                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.23f, 0.51f, 0.96f, 0.90f));
+                            }
+                            if (ImGui::Button(label, sz)) {
+                                state = !state;
+                                applyChanges();
+                            }
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+                            if (state) {
+                                ImGui::PopStyleColor(2);
+                            }
+                        };
+
+                        renderToggleBtn("B##btn_bold", "Bold (Ctrl+B)", curBold);
+
+                        ImGui::SameLine(0, 2.0f);
+                        renderToggleBtn("I##btn_italic", "Italic (Ctrl+I)", curItalic);
+
+                        ImGui::SameLine(0, 2.0f);
+                        renderToggleBtn("U##btn_underline", "Underline (Ctrl+U)", curUnderline);
+
+                        ImGui::SameLine(0, 2.0f);
+                        renderToggleBtn("ab##btn_strike", "Strikethrough", curStrike, ImVec2(26.0f, 24.0f));
+
+                        ImGui::SameLine(0, 2.0f);
+                        if (ImGui::Button("x2##btn_subsuper", ImVec2(26.0f, 24.0f))) {
+                            ImGui::OpenPopup("popup_subsuper");
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Subscript / Superscript");
+                        if (ImGui::BeginPopup("popup_subsuper")) {
+                            if (ImGui::MenuItem("Subscript (x2)")) {
+                                if (canvas.textEditor.IsActive()) {
+                                    canvas.textEditor.OnTextInput(reinterpret_cast<const char*>(u8"₂"));
+                                    canvas.needsFullRebake = true;
+                                    canvas.isDirty = true;
+                                }
+                            }
+                            if (ImGui::MenuItem("Superscript (x2)")) {
+                                if (canvas.textEditor.IsActive()) {
+                                    canvas.textEditor.OnTextInput(reinterpret_cast<const char*>(u8"²"));
+                                    canvas.needsFullRebake = true;
+                                    canvas.isDirty = true;
+                                }
+                            }
+                            ImGui::EndPopup();
+                        }
+
+                        ImGui::SameLine(0, 3.0f);
+                        ImGui::TextDisabled("|");
+
+                        // Highlight & Sticky Presets
+                        ImGui::SameLine(0, 3.0f);
+                        ImVec4 hlBarCol = (curHighlight.a() > 0)
+                            ? ImVec4(curHighlight.r() / 255.0f, curHighlight.g() / 255.0f, curHighlight.b() / 255.0f, 1.0f)
+                            : ImVec4(1.0f, 0.94f, 0.54f, 1.0f);
+                        ImGui::PushStyleColor(ImGuiCol_Border, hlBarCol);
+                        if (ImGui::Button("HL##btn_highlight", ImVec2(28.0f, 24.0f))) {
+                            ImGui::OpenPopup("popup_highlight");
+                        }
+                        ImGui::PopStyleColor();
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Text Highlight Color & Sticky Note Presets");
+                        if (ImGui::BeginPopup("popup_highlight")) {
+                            ImGui::TextUnformatted("Text Highlight:");
+                            auto highlightOption = [&](const char* name, BLRgba32 col) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(col.r()/255.f, col.g()/255.f, col.b()/255.f, 1.0f));
+                                if (ImGui::MenuItem(name)) {
+                                    curHighlight = col;
+                                    applyChanges();
+                                }
+                                ImGui::PopStyleColor();
+                            };
+                            highlightOption("Yellow", BLRgba32(0xFE, 0xF0, 0x8A, 0xC0));
+                            highlightOption("Soft Mint Green", BLRgba32(0xBB, 0xF7, 0xD0, 0xC0));
+                            highlightOption("Soft Sky Blue", BLRgba32(0xBA, 0xE6, 0xFD, 0xC0));
+                            highlightOption("Soft Rose Pink", BLRgba32(0xFB, 0xCF, 0xE8, 0xC0));
+                            highlightOption("Soft Lavender", BLRgba32(0xE9, 0xD5, 0xFF, 0xC0));
+                            if (ImGui::MenuItem("No Highlight")) {
+                                curHighlight = BLRgba32(0x00, 0x00, 0x00, 0x00);
+                                applyChanges();
+                            }
+                            ImGui::Separator();
+                            ImGui::TextUnformatted("Sticky Note Preset:");
+                            if (ImGui::MenuItem("Transparent Note")) {
+                                if (selectedTextBox) selectedTextBox->ApplyStickyPreset(Folio::StickyPreset::Transparent);
+                                applyChanges();
+                            }
+                            if (ImGui::MenuItem("Pale Yellow Sticky Note")) {
+                                if (selectedTextBox) selectedTextBox->ApplyStickyPreset(Folio::StickyPreset::PaleYellow);
+                                applyChanges();
+                            }
+                            if (ImGui::MenuItem("Soft Blue Sticky Note")) {
+                                if (selectedTextBox) selectedTextBox->ApplyStickyPreset(Folio::StickyPreset::SoftBlue);
+                                applyChanges();
+                            }
+                            if (ImGui::MenuItem("Soft Green Sticky Note")) {
+                                if (selectedTextBox) selectedTextBox->ApplyStickyPreset(Folio::StickyPreset::SoftGreen);
+                                applyChanges();
+                            }
+                            if (ImGui::MenuItem("Soft Pink Sticky Note")) {
+                                if (selectedTextBox) selectedTextBox->ApplyStickyPreset(Folio::StickyPreset::SoftPink);
+                                applyChanges();
+                            }
+                            if (ImGui::MenuItem("Dark Slate Sticky Note")) {
+                                if (selectedTextBox) selectedTextBox->ApplyStickyPreset(Folio::StickyPreset::SubtleCharcoal);
+                                applyChanges();
+                            }
+                            ImGui::EndPopup();
+                        }
+
+                        // Font Color
+                        ImGui::SameLine(0, 2.0f);
+                        ImVec4 fontBarCol(curColor.r() / 255.0f, curColor.g() / 255.0f, curColor.b() / 255.0f, 1.0f);
+                        ImGui::PushStyleColor(ImGuiCol_Border, fontBarCol);
+                        if (ImGui::Button("A##btn_font_color", ImVec2(26.0f, 24.0f))) {
+                            ImGui::OpenPopup("popup_font_color");
+                        }
+                        ImGui::PopStyleColor();
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Font Color");
+                        if (ImGui::BeginPopup("popup_font_color")) {
+                            auto fontColorOption = [&](const char* name, BLRgba32 col) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(col.r()/255.f, col.g()/255.f, col.b()/255.f, 1.0f));
+                                if (ImGui::MenuItem(name)) {
+                                    curColor = col;
+                                    applyChanges();
+                                }
+                                ImGui::PopStyleColor();
+                            };
+                            fontColorOption("Dark Graphite", BLRgba32(0x1F, 0x29, 0x37, 0xFF));
+                            fontColorOption("Navy Blue", BLRgba32(0x1D, 0x4E, 0xD8, 0xFF));
+                            fontColorOption("Crimson Red", BLRgba32(0xDC, 0x26, 0x26, 0xFF));
+                            fontColorOption("Emerald Green", BLRgba32(0x16, 0xA3, 0x4A, 0xFF));
+                            fontColorOption("Amber Orange", BLRgba32(0xD9, 0x77, 0x06, 0xFF));
+                            fontColorOption("Purple", BLRgba32(0x7C, 0x3A, 0xED, 0xFF));
+                            fontColorOption("White", BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+                            ImGui::EndPopup();
+                        }
+
+                        ImGui::SameLine(0, 3.0f);
+                        ImGui::TextDisabled("|");
+
+                        // Alignment
+                        ImGui::SameLine(0, 3.0f);
+                        const char* alignLabel = (curAlign == 1) ? "Center" : ((curAlign == 2) ? "Right" : "Left");
+                        if (ImGui::Button("=##btn_align", ImVec2(24.0f, 24.0f))) {
+                            ImGui::OpenPopup("popup_align");
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Text Alignment (%s)", alignLabel);
+                        if (ImGui::BeginPopup("popup_align")) {
+                            if (ImGui::MenuItem("Align Left", nullptr, curAlign == 0)) {
+                                curAlign = 0;
+                                applyChanges();
+                            }
+                            if (ImGui::MenuItem("Align Center", nullptr, curAlign == 1)) {
+                                curAlign = 1;
+                                applyChanges();
+                            }
+                            if (ImGui::MenuItem("Align Right", nullptr, curAlign == 2)) {
+                                curAlign = 2;
+                                applyChanges();
+                            }
+                            ImGui::EndPopup();
+                        }
+
+                        ImGui::SameLine(0, 3.0f);
+                        ImGui::TextDisabled("|");
+
+                        // Delete
+                        ImGui::SameLine(0, 3.0f);
+                        if (ImGui::Button("X##btn_del_note", ImVec2(24.0f, 24.0f))) {
+                            if (canvas.textEditor.IsActive()) {
+                                auto target = canvas.textEditor.GetTarget();
+                                canvas.textEditor.Detach();
+                                if (target && currentSession) {
+                                    auto activePage = currentSession->GetActivePage();
+                                    if (activePage) activePage->RemoveObjectByUid(target->uid);
+                                }
+                            } else if (selectedTextBox && currentSession) {
+                                auto activePage = currentSession->GetActivePage();
+                                if (activePage) activePage->RemoveObjectByUid(selectedTextBox->uid);
+                            }
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Delete selected text note (Del)");
+
+                        ImGui::EndGroup();
+                        ImGui::PopStyleVar(3);
+                    });
+
+                    sec.Render();
+                }
+
                 // SUBSECTION: History
                 {
                     FolioUI::ToolbarSectionBuilder sec("grp_home_history", "History", theme, isMini);
                     sec.BeginStack();
                     sec.AddSmallButton("undo_home", redoIcon, "Undo", "Undo last action (Ctrl+Z)", false,
-                        [&]() { /* Undo */ }, false /* flipH = false: points LEFT */);
+                        [&]() {
+                            if (currentSession) currentSession->Undo(&canvas);
+                        }, false /* flipH = false: points LEFT */);
                     sec.AddSmallButton("redo_home", redoIcon, "Redo", "Redo last action (Ctrl+Y)", false,
-                        [&]() { /* Redo */ }, true /* flipH = true: points RIGHT */);
+                        [&]() {
+                            if (currentSession) currentSession->Redo(&canvas);
+                        }, true /* flipH = true: points RIGHT */);
                     sec.EndStack();
                     sec.Render();
                 }
@@ -2124,6 +2481,49 @@ public:
                 // -------------------------------------------------------------
                 // SECTION 3.5: Shapes & Drawings
                 // -------------------------------------------------------------
+                // SECTION 3.5: Text & Notes
+                // -------------------------------------------------------------
+                {
+                    FolioUI::ToolbarSectionBuilder sec("grp_insert_text_notes", "Text", theme, isMini);
+                    sec.AddLargeButton("btn_insert_textbox", 0, "Text Box", "Insert a transparent text note at center of page", false,
+                        [&]() {
+                            canvas.InsertTextBox(currentSession);
+                        }, false, ImVec2(64.0f, 58.0f));
+
+                    sec.AddSplitButton("btn_insert_sticky", 0, "Sticky Note", "Insert a colored sticky note onto canvas", false,
+                        [&]() {
+                            auto box = canvas.InsertTextBox(currentSession);
+                            if (box) box->ApplyStickyPreset(Folio::StickyPreset::PaleYellow);
+                        },
+                        [&](FolioUI::FlyoutMenuBuilder& menu) {
+                            menu.AddItem("Pale Yellow Note", 0, nullptr, [&]() {
+                                auto box = canvas.InsertTextBox(currentSession);
+                                if (box) box->ApplyStickyPreset(Folio::StickyPreset::PaleYellow);
+                            });
+                            menu.AddItem("Soft Blue Note", 0, nullptr, [&]() {
+                                auto box = canvas.InsertTextBox(currentSession);
+                                if (box) box->ApplyStickyPreset(Folio::StickyPreset::SoftBlue);
+                            });
+                            menu.AddItem("Soft Green Note", 0, nullptr, [&]() {
+                                auto box = canvas.InsertTextBox(currentSession);
+                                if (box) box->ApplyStickyPreset(Folio::StickyPreset::SoftGreen);
+                            });
+                            menu.AddItem("Soft Pink Note", 0, nullptr, [&]() {
+                                auto box = canvas.InsertTextBox(currentSession);
+                                if (box) box->ApplyStickyPreset(Folio::StickyPreset::SoftPink);
+                            });
+                            menu.AddItem("Subtle Charcoal Note", 0, nullptr, [&]() {
+                                auto box = canvas.InsertTextBox(currentSession);
+                                if (box) box->ApplyStickyPreset(Folio::StickyPreset::SubtleCharcoal);
+                            });
+                        }
+                    );
+                    sec.Render();
+                }
+
+                // -------------------------------------------------------------
+                // SECTION 3.6: Shapes
+                // -------------------------------------------------------------
                 {
                     FolioUI::ToolbarSectionBuilder sec("grp_insert_shapes_tab", "Shapes", theme, isMini);
                     sec.AddWidget([&]() {
@@ -2257,9 +2657,13 @@ public:
                 if (SettingsManager::Instance().IsSectionVisible("sec_history")) {
                     FolioUI::ToolbarSectionBuilder sec("grp_draw_history", "History", theme, isMini);
                     sec.AddLargeButton("undo_draw", redoIcon, "Undo", "Undo last stroke (Ctrl+Z)", false,
-                        [&]() { /* Undo action */ }, false /* flipH = false: points LEFT */, ImVec2(46.0f, 58.0f));
+                        [&]() {
+                            if (currentSession) currentSession->Undo(&canvas);
+                        }, false /* flipH = false: points LEFT */, ImVec2(46.0f, 58.0f));
                     sec.AddLargeButton("redo_draw", redoIcon, "Redo", "Redo stroke (Ctrl+Y)", false,
-                        [&]() { /* Redo action */ }, true /* flipH = true: points RIGHT */, ImVec2(46.0f, 58.0f));
+                        [&]() {
+                            if (currentSession) currentSession->Redo(&canvas);
+                        }, true /* flipH = true: points RIGHT */, ImVec2(46.0f, 58.0f));
                     sec.Render();
                 }
 
@@ -2310,6 +2714,16 @@ public:
                                 SettingsManager::Instance().drawWithTouch = false;
                                 SettingsManager::Instance().Save();
                             }
+                        }, false, ImVec2(48.0f, 58.0f));
+
+                    // OneNote Hybrid Text Tool
+                    bool isTextMode = (inputSM.currentAction == InteractionState::Text);
+                    sec.AddLargeButton("text_draw_btn", 0, "Text",
+                        "Text Note: Click anywhere on canvas to type (OneNote style)",
+                        isTextMode,
+                        [&]() {
+                            inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Text);
+                            inputSM.currentAction = InteractionState::Text;
                         }, false, ImVec2(48.0f, 58.0f));
 
                     sec.Render();

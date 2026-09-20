@@ -114,6 +114,24 @@ public:
     uint32_t maxLoadedPages = 10;            ///< Maximum active pages kept in RAM simultaneously (hard cap)
     uint64_t lruInactivityTimeoutMs = 60000; ///< Inactivity duration in ms before unviewed pages are evicted (default 60s)
 
+    // ==========================================================================
+    // Last-Session Resumption State
+    // ==========================================================================
+    std::string lastActiveNotebookGuid = ""; ///< GUID of active notebook when session closed
+    std::string lastActiveSectionGuid = "";  ///< GUID of active section when session closed
+    std::string lastActivePageGuid = "";     ///< GUID of active page when session closed
+
+    // ==========================================================================
+    // Backup & Page Revision Retention Configuration
+    // ==========================================================================
+    int maxPageVersionsToKeep = 15;        ///< Retention cap for unnamed session versions (0 = unlimited)
+    bool autoBackupDailyEnabled = true;    ///< Grandfather-Father-Son Tier 1: 24h interval
+    bool autoBackupWeeklyEnabled = true;   ///< Tier 2: 7d interval
+    bool autoBackupMonthlyEnabled = true;  ///< Tier 3: 30d interval
+    int dailyBackupsRetention = 7;         ///< Number of rolling daily snapshots to retain
+    int weeklyBackupsRetention = 4;        ///< Number of rolling weekly snapshots to retain
+    int monthlyBackupsRetention = 12;      ///< Number of rolling monthly snapshots to retain
+
     // Has settings been loaded from disk
     bool isLoaded = false;
 
@@ -361,6 +379,26 @@ public:
                 if (jMem.contains("lruInactivityTimeoutMs")) lruInactivityTimeoutMs = jMem["lruInactivityTimeoutMs"].get<uint64_t>();
             }
 
+            // 7. Last-Session Resumption State
+            if (j.contains("session") && j["session"].is_object()) {
+                const auto& jSess = j["session"];
+                if (jSess.contains("lastNotebookGuid")) lastActiveNotebookGuid = jSess["lastNotebookGuid"].get<std::string>();
+                if (jSess.contains("lastSectionGuid")) lastActiveSectionGuid = jSess["lastSectionGuid"].get<std::string>();
+                if (jSess.contains("lastPageGuid")) lastActivePageGuid = jSess["lastPageGuid"].get<std::string>();
+            }
+
+            // 8. Backups & Page Revision Retention Settings
+            if (j.contains("backups") && j["backups"].is_object()) {
+                const auto& jB = j["backups"];
+                if (jB.contains("maxPageVersionsToKeep")) maxPageVersionsToKeep = jB["maxPageVersionsToKeep"].get<int>();
+                if (jB.contains("autoBackupDailyEnabled")) autoBackupDailyEnabled = jB["autoBackupDailyEnabled"].get<bool>();
+                if (jB.contains("autoBackupWeeklyEnabled")) autoBackupWeeklyEnabled = jB["autoBackupWeeklyEnabled"].get<bool>();
+                if (jB.contains("autoBackupMonthlyEnabled")) autoBackupMonthlyEnabled = jB["autoBackupMonthlyEnabled"].get<bool>();
+                if (jB.contains("dailyBackupsRetention")) dailyBackupsRetention = jB["dailyBackupsRetention"].get<int>();
+                if (jB.contains("weeklyBackupsRetention")) weeklyBackupsRetention = jB["weeklyBackupsRetention"].get<int>();
+                if (jB.contains("monthlyBackupsRetention")) monthlyBackupsRetention = jB["monthlyBackupsRetention"].get<int>();
+            }
+
             isLoaded = true;
             return true;
         } catch (const std::exception& ex) {
@@ -468,6 +506,24 @@ public:
             j["memory"] = {
                 { "maxLoadedPages", maxLoadedPages },
                 { "lruInactivityTimeoutMs", lruInactivityTimeoutMs }
+            };
+
+            // Session Resumption section
+            j["session"] = {
+                { "lastNotebookGuid", lastActiveNotebookGuid },
+                { "lastSectionGuid", lastActiveSectionGuid },
+                { "lastPageGuid", lastActivePageGuid }
+            };
+
+            // Backup & Page Revision section
+            j["backups"] = {
+                { "maxPageVersionsToKeep", maxPageVersionsToKeep },
+                { "autoBackupDailyEnabled", autoBackupDailyEnabled },
+                { "autoBackupWeeklyEnabled", autoBackupWeeklyEnabled },
+                { "autoBackupMonthlyEnabled", autoBackupMonthlyEnabled },
+                { "dailyBackupsRetention", dailyBackupsRetention },
+                { "weeklyBackupsRetention", weeklyBackupsRetention },
+                { "monthlyBackupsRetention", monthlyBackupsRetention }
             };
 
             return FileLoader::WriteString(filepath, j.dump(2));

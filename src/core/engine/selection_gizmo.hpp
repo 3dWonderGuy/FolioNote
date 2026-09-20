@@ -18,6 +18,7 @@
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/gizmo_types.hpp"
 #include "core/objects/canvas_object.hpp"
+#include "core/document/document_session.hpp"
 #include "utils/logger.hpp"
 
 /**
@@ -101,6 +102,7 @@ public:
         AABB initialBounds;
     };
     std::vector<ObjectInitialState> initialStates;
+    std::unordered_map<uint32_t, std::shared_ptr<CanvasObject>> initialClones; ///< Deep clones for undo/redo
 
     // Cached HUD font for degree readout
     mutable BLFont hudFont;
@@ -118,11 +120,25 @@ public:
      */
     void SetSelectedObjects(const std::vector<std::shared_ptr<CanvasObject>>& objects) {
         selectedObjects.clear();
+        std::unordered_set<std::string> activeGroupIds;
+
+        // 1. Identify directly selected objects and their associated group IDs
         for (const auto& obj : objects) {
-            if (obj && obj->isSelected) {
-                selectedObjects.push_back(obj);
+            if (obj && obj->isSelected && obj->IsGrouped()) {
+                activeGroupIds.insert(obj->groupId);
             }
         }
+
+        // 2. Expand selection to encompass all co-members sharing active group IDs
+        for (const auto& obj : objects) {
+            if (obj) {
+                if (obj->isSelected || (!obj->groupId.empty() && activeGroupIds.count(obj->groupId) > 0)) {
+                    obj->isSelected = 1;
+                    selectedObjects.push_back(obj);
+                }
+            }
+        }
+
         hasSelection = !selectedObjects.empty();
         currentRotationAngle = 0.0;
         displayAngleDeg = 0.0;
@@ -144,6 +160,7 @@ public:
             if (obj) obj->isSelected = 0;
         }
         selectedObjects.clear();
+        initialClones.clear();
         hasSelection = false;
         isDragging = false;
         activeRole = HandleRole::None;
@@ -481,11 +498,13 @@ public:
         float boxHalfDiag = 0.5f * std::hypot(static_cast<float>(sMax.x - sMin.x), static_cast<float>(sMax.y - sMin.y));
         currentSnapRadius = std::max(boxHalfDiag + 45.0f, 100.0f);
 
-        // Snapshot initial transforms
+        // Snapshot initial transforms & deep clones for transactional undo
         initialStates.clear();
+        initialClones.clear();
         for (const auto& obj : selectedObjects) {
             if (obj) {
                 initialStates.push_back({ obj->uid, obj->transform, obj->bounds });
+                initialClones[obj->uid] = std::shared_ptr<CanvasObject>(obj->Clone().release());
             }
         }
 
@@ -746,8 +765,9 @@ public:
 
     /**
      * @brief Finalizes the active drag operation. Snaps rotated box back to axis-aligned AABB.
+     * @param session Optional DocumentSession pointer to record TransformObjectsCommand for undo/redo.
      */
-    void OnPointerUp() {
+    void OnPointerUp(DocumentSession* session = nullptr) {
         if (!isDragging) return;
         const char* roleStr = (activeRole == HandleRole::Body) ? "Body Move" :
                               (activeRole == HandleRole::Rotation) ? "Rotation" : "Resize Handle";
@@ -761,6 +781,30 @@ public:
                 obj->BakeTransform();
             }
         }
+
+        // Record transformation command into page history for undo/redo
+        if (session && !initialClones.empty()) {
+            auto activePage = session->GetActivePage();
+            if (activePage) {
+                std::vector<Folio::TransformObjectsCommand::Entry> entries;
+                for (const auto& obj : selectedObjects) {
+                    if (!obj) continue;
+                    auto it = initialClones.find(obj->uid);
+                    if (it != initialClones.end()) {
+                        entries.push_back({
+                            obj->uid,
+                            it->second,
+                            std::shared_ptr<CanvasObject>(obj->Clone().release())
+                        });
+                    }
+                }
+                if (!entries.empty()) {
+                    activePage->history.RecordCommand(std::make_unique<Folio::TransformObjectsCommand>(std::move(entries)));
+                    activePage->isModified = true;
+                }
+            }
+        }
+        initialClones.clear();
 
         isDragging = false;
         activeRole = HandleRole::None;

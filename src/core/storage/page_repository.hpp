@@ -550,21 +550,33 @@ public:
     /**
      * @brief LRU Memory Working Set Maintenance: Flushes and evicts inactive pages from RAM.
      * 
-     * --- RAM WORKING SET MANAGEMENT (PAGE PURGE CYCLE) ---
+     * --- RAM WORKING SET MANAGEMENT & STRATEGY A HISTORY PROTECTION ---
      * In long editing sessions with large notebooks (hundreds/thousands of pages), keeping
      * all vector paths and R-Tree spatial structures in RAM would lead to excessive memory consumption.
+     * However, blindly evicting inactive pages destroys live undo/redo command stacks: when a page is
+     * evicted, its in-memory objects and `CommandHistory` are cleared. Reloading the page from disk assigns
+     * new memory addresses to objects, breaking pointer-based command references and preventing the user
+     * from pressing Ctrl+Z on previously edited pages during an active session.
      * 
-     * MaintainLRUCache scans through all pages in the active notebook:
-     * 1. Skips the currently active/visible page.
-     * 2. Checks if an inactive page is loaded in RAM (`isLoaded == true`) and its elapsed
-     *    inactivity time (`nowMs - page->lastAccessTimeMs`) exceeds `timeoutMs` (default 60,000 ms).
-     * 3. If dirty (`isModified == true`), flushes changes asynchronously via `SavePageAsync(...)`.
-     * 4. Calls `page->EvictFromRAM()`, releasing vector paths, undo/redo history, and R-Tree nodes.
-     * 5. Sets `page->isLoaded = false`. Page metadata (title, GUID, order) remains intact in RAM
-     *    so the sidebar UI continues to display seamlessly.
+     * STRATEGY A DUAL-TIERED WORKING SET ALGORITHM:
+     * - Working Set Partitioning:
+     *     Let P be the set of resident inactive pages.
+     *     P_ref  = { p in P | !p.history.CanUndo() && !p.history.CanRedo() } (Pure browse / reference pages)
+     *     P_edit = { p in P | p.history.CanUndo() || p.history.CanRedo() }   (Active editing session pages)
+     * 
+     * - Policy 1: Time-to-Live (TTL) Inactivity Eviction:
+     *     Pages in P_ref whose elapsed inactivity (nowMs - lastAccessTimeMs) exceeds timeoutMs are evicted immediately
+     *     (dirty pages flushed asynchronously via SavePageAsync first).
+     *     Pages in P_edit are EXEMPT from TTL eviction, preserving their undo/redo command chains across page switches.
+     * 
+     * - Policy 2: Capacity Cap Enforcement:
+     *     When total resident pages exceed maxLoadedPages, candidates are sorted using a lexicographical priority key:
+     *       Key(p) = ( HasActiveHistory(p) ? 1 : 0, p.lastAccessTimeMs )
+     *     This guarantees that all reference pages (P_ref) are pruned first in LRU order before any page with active
+     *     undo history (P_edit) is considered for eviction.
      * 
      * @param activeNotebook Shared pointer to the notebook being maintained.
-     * @param timeoutMs Maximum allowed inactivity duration before eviction (default: 60,000ms / 1 min).
+     * @param timeoutMs Maximum allowed inactivity duration before eviction of reference pages (default: 60,000ms / 1 min).
      * @param maxLoadedPages Maximum resident pages allowed in RAM (default: 10 pages).
      */
     void MaintainLRUCache(std::shared_ptr<Notebook> activeNotebook, uint64_t timeoutMs = 60000, uint32_t maxLoadedPages = 10) {
@@ -576,6 +588,7 @@ public:
         struct ResidentEntry {
             std::shared_ptr<CanvasPage> page;
             std::string sectionGuid;
+            bool hasActiveHistory = false;
         };
         std::vector<ResidentEntry> residentInactivePages;
 
@@ -587,16 +600,26 @@ public:
                 if (!page || page == activePage) continue;
 
                 if (page->isLoaded) {
+                    // Check if page owns live undo or redo history actions
+                    bool hasHistory = page->history.CanUndo() || page->history.CanRedo();
+
                     if (nowMs - page->lastAccessTimeMs > timeoutMs) {
                         // Policy 1: Time-to-Live (TTL) eviction
+                        // If page has active undo/redo history, exempt it from TTL eviction to preserve
+                        // live cross-page Ctrl+Z command stacks during the active session.
+                        if (hasHistory) {
+                            residentInactivePages.push_back({ page, section->guid, true });
+                            continue;
+                        }
+
                         if (page->isModified) {
                             SavePageAsync(page, section->guid, page->sortOrder);
                         }
                         page->EvictFromRAM();
-                        LOG_INFO(PageRepository, "LRU [TTL Expired]: Evicted inactive page from RAM: " + page->title + " (" + page->guid + ")");
+                        LOG_INFO(PageRepository, "LRU [TTL Expired]: Evicted inactive reference page from RAM: " + page->title + " (" + page->guid + ")");
                     } else {
                         // Keep candidate for Policy 2 (Capacity Cap)
-                        residentInactivePages.push_back({ page, section->guid });
+                        residentInactivePages.push_back({ page, section->guid, hasHistory });
                     }
                 }
             }
@@ -624,15 +647,25 @@ public:
         // Policy 2: Enforce Hard Capacity Cap on remaining resident pages
         size_t totalResident = residentInactivePages.size() + (activePage && activePage->isLoaded ? 1 : 0);
         if (maxLoadedPages > 0 && totalResident > maxLoadedPages) {
-            // Sort resident inactive pages by lastAccessTimeMs ascending (least recently accessed first)
+            // Lexicographical two-tier sort:
+            // 1. Pages WITHOUT active undo/redo history (pure reference/browse pages) are evicted first.
+            // 2. Within each tier, least recently accessed (lastAccessTimeMs ascending) are evicted first.
+            // 3. Pages WITH active undo history are strictly preserved unless hard capacity is exhausted.
             std::sort(residentInactivePages.begin(), residentInactivePages.end(),
                       [](const ResidentEntry& a, const ResidentEntry& b) {
+                          if (a.hasActiveHistory != b.hasActiveHistory) {
+                              return !a.hasActiveHistory; // false (no history) comes before true (has history)
+                          }
                           return a.page->lastAccessTimeMs < b.page->lastAccessTimeMs;
                       });
 
             for (auto& entry : residentInactivePages) {
                 if (totalResident <= maxLoadedPages) break;
                 if (entry.page && entry.page->isLoaded) {
+                    if (entry.hasActiveHistory) {
+                        LOG_WARN(PageRepository, "LRU [Capacity Cap Enforced]: Evicting page with active undo history under severe RAM pressure: " +
+                                 entry.page->title + " (" + entry.page->guid + ")");
+                    }
                     if (entry.page->isModified) {
                         SavePageAsync(entry.page, entry.sectionGuid, entry.page->sortOrder);
                     }

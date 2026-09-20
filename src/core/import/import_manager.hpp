@@ -1,100 +1,93 @@
 #pragma once
+/**
+ * =========================================================================================
+ * @file import_manager.hpp
+ * @brief Unified Ingestion & Migration Subsystem Facade for FolioNote
+ * =========================================================================================
+ *
+ * ARCHITECTURAL PURPOSE & DESIGN RATIONALE:
+ * Central coordination point for importing notebooks, multi-notebook libraries, and external
+ * OneNote documents into FolioNote.
+ *
+ * Coordinates:
+ *  1. OneNote Migration (`OneNoteImporter`):
+ *     Ingests .one sections, .onetoc2 TOC files, .onepkg CAB archives, and OneNote folders.
+ *  2. Standalone Package Ingestion (`PackageImporter`):
+ *     Ingests .notebook folders and compressed archives (.folionb.7z, .fnpack, .7z, .zip).
+ *  3. Multi-Notebook Library Ingestion (`PackageImporter`):
+ *     Extracts and mounts multi-notebook library bundles (.foliolib.7z).
+ *  4. External Library Mounting:
+ *     Registers external disk directories directly with `LibraryManager`.
+ *  5. Asynchronous Worker Thread Execution:
+ *     Provides `std::future<...>` overloads dispatched onto `GetGlobalThreadPool()` to ensure
+ *     large archive decompressions do not stutter the 120 FPS UI thread.
+ */
+
 #include <string>
 #include <vector>
 #include <memory>
-#include <filesystem>
-#include <fstream>
+#include <future>
 #include "core/document/notebook.hpp"
-#include "core/document/section.hpp"
-#include "core/document/canvas_page.hpp"
-#include "core/document/library/library.hpp"
-#include "core/storage/page_repository.hpp"
-#include "core/objects/text_box.hpp"
-#include "core/import/onenote_importer.hpp"
-#include "utils/logger.hpp"
+
+class Section;
+class CanvasPage;
 
 namespace Folio {
 
+class LibraryManager;
+class PageRepository;
+
+/**
+ * @class ImportManager
+ * @brief Unified facade for document and package ingestion into FolioNote.
+ */
 class ImportManager {
 public:
     /**
-     * @brief Ingests a Microsoft OneNote notebook folder, .one section, or .onepkg package,
-     * converting it into a standard FolioNote .notebook package.
+     * @brief Imports a standalone FolioNote .notebook folder or compressed archive into a library.
+     *
+     * @param sourcePackagePath Path to .notebook folder or .folionb.7z / .fnpack archive.
+     * @param destLibraryPath Target library directory root.
+     * @return Path to the imported package directory, or empty string on failure.
      */
-    static std::shared_ptr<Notebook> ImportOneNote(
-        const std::string& sourcePath, 
-        const std::string& destLibraryPath,
-        PageRepository& repo
-    ) {
-        std::error_code ec;
-        if (!std::filesystem::exists(sourcePath, ec)) return nullptr;
-
-        auto nb = OneNoteImporter::Import(sourcePath, destLibraryPath);
-        if (!nb) return nullptr;
-
-        // Generate target .notebook package directory
-        std::string safeName = nb->name;
-        for (char& c : safeName) {
-            if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
-                c = '_';
-            }
-        }
-        std::filesystem::path targetPkg = std::filesystem::path(destLibraryPath) / (safeName + ".notebook");
-        int counter = 1;
-        while (std::filesystem::exists(targetPkg, ec)) {
-            targetPkg = std::filesystem::path(destLibraryPath) / (safeName + " (" + std::to_string(counter++) + ").notebook");
-        }
-
-        nb->filePath = targetPkg.string();
-        std::filesystem::create_directories(targetPkg / "pages", ec);
-
-        // Persist the converted notebook hierarchy via PageRepository
-        if (repo.OpenNotebookPackage(targetPkg.string())) {
-            repo.SaveNotebookAsync(nb);
-        }
-
-        return nb;
-    }
+    static std::string ImportNotebookPackage(
+        const std::string& sourcePackagePath,
+        const std::string& destLibraryPath
+    );
 
     /**
-     * @brief Imports a standalone FolioNote .notebook folder or .folio package into a library.
+     * @brief Imports a multi-notebook library package (.foliolib.7z) into a library directory.
+     *
+     * @param sourceArchivePath Path to .foliolib.7z archive.
+     * @param destLibraryPath Target library directory root.
+     * @return List of extracted .notebook package paths.
      */
-    static std::string ImportNotebookPackage(const std::string& sourcePackagePath, const std::string& destLibraryPath) {
-        std::error_code ec;
-        std::filesystem::path src(sourcePackagePath);
-        if (!std::filesystem::exists(src, ec)) return "";
-
-        std::filesystem::path destDir(destLibraryPath);
-        if (!std::filesystem::exists(destDir, ec)) {
-            std::filesystem::create_directories(destDir, ec);
-        }
-
-        std::filesystem::path targetPkg = destDir / src.filename();
-        int counter = 1;
-        while (std::filesystem::exists(targetPkg, ec)) {
-            std::string stem = src.stem().string();
-            targetPkg = destDir / (stem + " (Imported " + std::to_string(counter++) + ").notebook");
-        }
-
-        std::filesystem::copy(src, targetPkg, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, ec);
-        if (ec) return "";
-
-        return targetPkg.string();
-    }
+    static std::vector<std::string> ImportLibraryPackage(
+        const std::string& sourceArchivePath,
+        const std::string& destLibraryPath
+    );
 
     /**
-     * @brief Registers an existing directory as a FolioNote library folder and scans its notebooks.
+     * @brief Registers an existing directory as a FolioNote library folder.
+     *
+     * @param folderPath Path to folder on disk.
+     * @param libManager Target LibraryManager.
+     * @param customName Optional custom display name for the library.
+     * @return True if folder exists and was registered successfully.
      */
-    static bool ImportLibraryFolder(const std::string& folderPath, LibraryManager& libManager, const std::string& customName = "") {
-        std::error_code ec;
-        if (!std::filesystem::exists(folderPath, ec) || !std::filesystem::is_directory(folderPath, ec)) {
-            return false;
-        }
+    static bool ImportLibraryFolder(
+        const std::string& folderPath,
+        LibraryManager& libManager,
+        const std::string& customName = ""
+    );
 
-        std::string libName = customName.empty() ? std::filesystem::path(folderPath).filename().string() : customName;
-        libManager.AddLibrary(libName, folderPath);
-        return true;
-    }
+    /**
+     * @brief Asynchronously decompresses and imports a package on a worker thread.
+     */
+    static std::future<std::string> ImportNotebookPackageAsync(
+        const std::string& sourcePackagePath,
+        const std::string& destLibraryPath
+    );
 };
 
 } // namespace Folio

@@ -69,28 +69,14 @@ void SpecialActionManager::TriggerAction(SpecialActionType action, float x, floa
     // 2. Built-in default execution logic for core canvas actions
     switch (action) {
         case SpecialActionType::Undo: {
-            auto activePage = session.GetActivePage();
-            if (!activePage) {
-                LOG_WARN_CODE(InputStateMachine, FolioErrorCode::InputTargetPageNull, 
-                              "Undo action skipped: No active CanvasPage available.");
-                break;
-            }
-            if (activePage->objects.empty()) {
-                LOG_WARN_CODE(InputStateMachine, FolioErrorCode::InputActionTargetMissing, 
-                              "Undo action skipped: Active page object stack is empty.");
-                break;
-            }
-            LOG_INFO(InputStateMachine, "Executing Undo via Special Action: Removing last object UID " + 
-                     std::to_string(activePage->objects.back()->uid));
-            activePage->RemoveObject(activePage->objects.back());
-            canvas.SyncSelectionToSpatialIndex(&session);
-            canvas.needsFullRebake = true;
-            canvas.isDirty = true;
+            LOG_INFO(InputStateMachine, "Executing Undo via Special Action");
+            session.Undo(&canvas);
             break;
         }
 
         case SpecialActionType::Redo: {
-            LOG_INFO(InputStateMachine, "Executing Redo via Special Action (reserved for command manager)");
+            LOG_INFO(InputStateMachine, "Executing Redo via Special Action");
+            session.Redo(&canvas);
             break;
         }
 

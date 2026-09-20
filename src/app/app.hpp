@@ -263,6 +263,7 @@ public:
         SDL_SetWindowHitTest(window, CustomTitleBar::HitTestCallback, &customTitleBar);
         customTitleBar.AttachWindow(window);
         canvas.sdlWindow = window;
+        SDL_StartTextInput(window);
 
 #if defined(_WIN32)
         // Set Win32 Taskbar and Window Icon directly on the HWND from compiled resource
@@ -345,6 +346,9 @@ public:
 #endif
 
         canvas.Init(initialW, initialH);
+        session.SetEphemeralStrokeSink([this](BLPath path, BLRgba32 color, uint32_t durationMs) {
+            canvas.AddEphemeralStroke(std::move(path), color, durationMs);
+        });
         // Pass the SDL window so WindowStateManager can toggle VSync during transitions
         windowSM.Init(initialW, initialH, window);
         inputManager.stateMachine.InitTiming();
@@ -393,6 +397,12 @@ public:
 
         // Load persistent JSON settings
         SettingsManager::Instance().Load();
+
+        // Restore last session position (Notebook, Section, Page)
+        const auto& sm = SettingsManager::Instance();
+        if (!sm.lastActiveNotebookGuid.empty() || !sm.lastActivePageGuid.empty()) {
+            session.RestoreLastSession(sm.lastActiveNotebookGuid, sm.lastActiveSectionGuid, sm.lastActivePageGuid);
+        }
 
         // Sync loaded settings to RibbonBar and InputStateMachine
         ribbon.drawWithTouch = SettingsManager::Instance().drawWithTouch;
@@ -621,6 +631,19 @@ public:
                     else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
                         canvas.InsertImageFromClipboard(&session);
                     }
+                    else if (event.key.key == SDLK_Z && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                        if (SDL_GetModState() & SDL_KMOD_SHIFT) {
+                            session.Redo(&canvas);
+                        } else {
+                            session.Undo(&canvas);
+                        }
+                    }
+                    else if (event.key.key == SDLK_Y && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                        session.Redo(&canvas);
+                    }
+                    else if (event.key.key == SDLK_A && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                        canvas.SelectAll(&session);
+                    }
                     else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
                 }
                 else if (event.type == SDL_EVENT_DROP_FILE) {
@@ -674,6 +697,19 @@ public:
                             else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
                             else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
                                 canvas.InsertImageFromClipboard(&session);
+                            }
+                            else if (event.key.key == SDLK_Z && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                                if (SDL_GetModState() & SDL_KMOD_SHIFT) {
+                                    session.Redo(&canvas);
+                                } else {
+                                    session.Undo(&canvas);
+                                }
+                            }
+                            else if (event.key.key == SDLK_Y && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                                session.Redo(&canvas);
+                            }
+                            else if (event.key.key == SDLK_A && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                                canvas.SelectAll(&session);
                             }
                             else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
                             else if (event.key.key == SDLK_F1 && (SDL_GetModState() & SDL_KMOD_CTRL)) ribbon.CycleDisplayMode();
@@ -825,20 +861,14 @@ public:
                 float canvasW = screenW - navW;
 
                 // =========================================================
-                // CANVAS VIEWPORT PRESERVATION ON PAGE SWITCH
+                // CANVAS VIEWPORT PRESERVATION ON PAGE SWITCH (CONTINUITY)
                 // =========================================================
-                // When the user switches canvas pages we save the outgoing
-                // page's transform and restore the incoming page's saved
-                // transform if it was accessed within the last 60 seconds.
-                // After 60 s of absence (matching the LRU eviction window)
-                // we home the viewport to (pan=0, zoom=1) so the user always
-                // starts at a sensible position after a long break.
-                //
-                //   Timeout condition: elapsed > VIEWPORT_TIMEOUT_MS
-                //   Restore condition: hasCustomViewport && elapsed <= VIEWPORT_TIMEOUT_MS
-                //   Home    condition: !hasCustomViewport || elapsed > VIEWPORT_TIMEOUT_MS
-                constexpr uint64_t VIEWPORT_TIMEOUT_MS = 60000;
-
+                // While the application session is active, each page preserves
+                // its in-memory pan and zoom transform across all page transitions
+                // without arbitrary time-based expiration.
+                // Upon cold restart of the application, each page's in-memory
+                // viewport starts default (hasCustomViewport = false), resetting
+                // to homed (0, 0, 1.0) viewports as desired.
                 auto activePg = session.GetActivePage();
                 if (activePg && !activePg->isDedicatedPdf) {
                     std::string newGuid = activePg->guid;
@@ -847,40 +877,25 @@ public:
 
                         // --- Save outgoing page viewport ---
                         if (!lastActivePageGuid.empty()) {
-                            // Find the outgoing page across all sections
-                            auto activeNb = session.workspace.GetActiveNotebook();
-                            if (activeNb) {
-                                auto findPage = [&](const std::string& guid) -> std::shared_ptr<CanvasPage> {
-                                    for (auto& s : activeNb->sections) {
-                                        if (s) { if (auto p = s->FindPageByGuid(guid)) return p; }
-                                    }
-                                    for (auto& g : activeNb->sectionGroups) {
-                                        if (g) { for (auto& s : g->sections) {
-                                            if (s) { if (auto p = s->FindPageByGuid(guid)) return p; }
-                                        }}
-                                    }
-                                    return nullptr;
-                                };
-                                if (auto outPg = findPage(lastActivePageGuid)) {
-                                    outPg->inMemoryViewport.panXMm            = canvas.transform.panXMm;
-                                    outPg->inMemoryViewport.panYMm            = canvas.transform.panYMm;
-                                    outPg->inMemoryViewport.zoom              = canvas.transform.zoom;
-                                    outPg->inMemoryViewport.hasCustomViewport = true;
-                                    outPg->inMemoryViewport.lastViewportAccessMs = nowMs;
+                            if (auto outPg = session.workspace.FindPageByGuid(lastActivePageGuid)) {
+                                outPg->inMemoryViewport.panXMm            = canvas.transform.panXMm;
+                                outPg->inMemoryViewport.panYMm            = canvas.transform.panYMm;
+                                outPg->inMemoryViewport.zoom              = canvas.transform.zoom;
+                                outPg->inMemoryViewport.hasCustomViewport = true;
+                                outPg->inMemoryViewport.lastViewportAccessMs = nowMs;
 
-                                    // Persist active canvas template and layout settings back to the outgoing page
-                                    outPg->infinityMode    = canvas.infinityMode;
-                                    outPg->paperStyle      = canvas.currentPaperStyle;
-                                    outPg->gridSpacingMm   = canvas.gridSpacingMm;
-                                    outPg->pageSizeFormat  = canvas.pageSizeFormat;
-                                    outPg->pageIsLandscape = canvas.pageIsLandscape;
-                                    outPg->pageWidthMm     = canvas.customPageWidthMm;
-                                    outPg->pageHeightMm    = canvas.customPageHeightMm;
-                                    outPg->showPageBorder  = canvas.showPageBorder;
-                                    outPg->pageBorderStyle = canvas.pageBorderStyle;
-                                    outPg->pageBorderWidth = canvas.pageBorderWidth;
-                                    outPg->pageBorderType  = canvas.pageBorderType;
-                                }
+                                // Persist active canvas template and layout settings back to outgoing page
+                                outPg->infinityMode    = canvas.infinityMode;
+                                outPg->paperStyle      = canvas.currentPaperStyle;
+                                outPg->gridSpacingMm   = canvas.gridSpacingMm;
+                                outPg->pageSizeFormat  = canvas.pageSizeFormat;
+                                outPg->pageIsLandscape = canvas.pageIsLandscape;
+                                outPg->pageWidthMm     = canvas.customPageWidthMm;
+                                outPg->pageHeightMm    = canvas.customPageHeightMm;
+                                outPg->showPageBorder  = canvas.showPageBorder;
+                                outPg->pageBorderStyle = canvas.pageBorderStyle;
+                                outPg->pageBorderWidth = canvas.pageBorderWidth;
+                                outPg->pageBorderType  = canvas.pageBorderType;
                             }
                         }
 
@@ -898,16 +913,15 @@ public:
                         canvas.pageBorderWidth        = activePg->pageBorderWidth;
                         canvas.pageBorderType         = activePg->pageBorderType;
 
-                        // --- Restore or home incoming page viewport ---
+                        // --- Restore or home incoming page viewport (Session Continuity) ---
                         auto& vp = activePg->inMemoryViewport;
-                        if (vp.hasCustomViewport &&
-                            (nowMs - vp.lastViewportAccessMs) <= VIEWPORT_TIMEOUT_MS) {
-                            // Restore previously saved viewport
+                        if (vp.hasCustomViewport) {
+                            // Viewport Continuity: restore user's exact pan and zoom across page switches
                             canvas.transform.panXMm = vp.panXMm;
                             canvas.transform.panYMm = vp.panYMm;
                             canvas.transform.zoom   = vp.zoom;
                         } else {
-                            // Home: absent too long or never visited
+                            // Clean startup: home to top-left / center (0, 0, 1.0x)
                             canvas.transform.panXMm = 0.0;
                             canvas.transform.panYMm = 0.0;
                             canvas.transform.zoom   = 1.0;
@@ -916,6 +930,18 @@ public:
                         vp.lastViewportAccessMs = nowMs;
 
                         lastActivePageGuid = newGuid;
+
+                        // Persist active document resumption state to SettingsManager
+                        auto activeNb = session.workspace.GetActiveNotebook();
+                        if (activeNb) {
+                            SettingsManager::Instance().lastActiveNotebookGuid = activeNb->guid;
+                            auto sec = activeNb->GetActiveSection();
+                            if (sec) {
+                                SettingsManager::Instance().lastActiveSectionGuid = sec->guid;
+                                SettingsManager::Instance().lastActivePageGuid = newGuid;
+                            }
+                        }
+
                         canvas.needsFullRebake = true;
                     }
                 }
@@ -1214,6 +1240,21 @@ public:
         }
 
         toolbarDemo.SaveToSettings();
+
+        // Save active notebook, section, and page GUIDs for last-session resumption
+        auto activeNb = session.workspace.GetActiveNotebook();
+        if (activeNb) {
+            SettingsManager::Instance().lastActiveNotebookGuid = activeNb->guid;
+            auto sec = activeNb->GetActiveSection();
+            if (sec) {
+                SettingsManager::Instance().lastActiveSectionGuid = sec->guid;
+                auto page = sec->GetActivePage();
+                if (page) {
+                    SettingsManager::Instance().lastActivePageGuid = page->guid;
+                }
+            }
+        }
+
         SettingsManager::Instance().Save();
 
         ImGui_ImplOpenGL3_Shutdown();

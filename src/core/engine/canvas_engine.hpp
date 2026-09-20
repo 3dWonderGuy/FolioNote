@@ -18,6 +18,8 @@
 #include "core/objects/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
+#include "core/objects/text/text_box.hpp"
+#include "core/objects/text/text_editor_state.hpp"
 #include "core/storage/pdf_storage.hpp"
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
@@ -36,6 +38,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <chrono>
 #include <SDL3/SDL_dialog.h>
 
 struct PageTemplateDefaults {
@@ -56,11 +59,71 @@ struct PageTemplateDefaults {
     double calibrationDpi = 96.0;
 };
 
+/**
+ * @struct EphemeralStroke
+ * @brief Represents a transient presentation stroke (e.g. Laser Pointer) that decays quadratically over time.
+ *
+ * MATHEMATICAL PROCESS & DECAY MODEL:
+ * - Ephemeral strokes are transient annotations designed for presentations, teaching, and screen-sharing.
+ * - They reside entirely in volatile memory and are NEVER committed to SQLite storage or CommandHistory.
+ * - Temporal Quadratic Decay:
+ *     Given elapsed time Δt = t_current - t_start and lifetime T = durationMs:
+ *       progress = Δt / T,  progress ∈ [0.0, 1.0]
+ *       decay_factor = (1.0 - progress)^2
+ *       α(t) = α_base * decay_factor
+ * - The quadratic model maintains strong visibility during the initial stroke gesture, then drops off
+ *   cleanly and smoothly toward zero without an abrupt linear pop.
+ */
+struct EphemeralStroke {
+    BLPath outlinePath;
+    BLRgba32 color;
+    uint64_t startTimeMs = 0;
+    uint32_t durationMs = 2500;
+};
+
 class CanvasEngine {
 public:
     CanvasTransform transform;
     LiveLayerPipeline liveLayer;
     SelectionGizmo selectionGizmo;
+    Folio::TextEditorState textEditor;
+
+    // -------------------------------------------------------------------------
+    // DEFAULT TYPOGRAPHY SETTINGS (Basic Text Ribbon Group & Click-to-Type)
+    // -------------------------------------------------------------------------
+    std::string defaultTextFontFamily = "Segoe UI";
+    float defaultTextFontSize = 14.0f;
+    bool defaultTextBold = false;
+    bool defaultTextItalic = false;
+    bool defaultTextUnderline = false;
+    bool defaultTextStrikethrough = false;
+    BLRgba32 defaultTextColor{0x1F, 0x29, 0x37, 0xFF};
+    BLRgba32 defaultTextHighlightColor{0x00, 0x00, 0x00, 0x00};
+    uint8_t defaultTextAlignment = 0; // 0: Left, 1: Center, 2: Right
+
+    // Ephemeral Presentation Ink / Laser Pointer storage
+    std::vector<EphemeralStroke> ephemeralStrokes;
+
+    /**
+     * @brief Appends a laser pointer or presentation stroke for temporal quadratic fading.
+     * @param path Outline geometry in world coordinates (millimeters).
+     * @param color Base stroke color including alpha.
+     * @param durationMs Duration in milliseconds before stroke completely vanishes (default: 2500ms).
+     */
+    void AddEphemeralStroke(BLPath path, BLRgba32 color, uint32_t durationMs = 2500) {
+        auto nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+        ephemeralStrokes.push_back(EphemeralStroke{std::move(path), color, nowMs, durationMs});
+        isDirty = true;
+    }
+
+    /**
+     * @brief Instantly purges all active ephemeral presentation strokes from RAM.
+     */
+    void ClearEphemeralStrokes() {
+        ephemeralStrokes.clear();
+        isDirty = true;
+    }
 
     // Tracking state
     Point2D lastInkingWorldMm{0.0, 0.0};
@@ -355,9 +418,20 @@ public:
 
         // Direct handoff: Canvas -> DocumentSession (passes outlinePath + modeledPoints + segments)
         if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
-            session.CommitStroke(std::move(data), tool);
-            ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
-            ::Folio::UsageTracker::Instance().RecordObjectCreated();
+            if (tool.penType == PenType::LaserPointer) {
+                // Laser Pointer / Ephemeral Presentation Ink:
+                // Transient visual feedback that decays quadratically over 2.5s and is never committed
+                // to persistent SQLite storage or CommandHistory.
+                if (session.HasEphemeralStrokeSink()) {
+                    session.CommitEphemeralStroke(std::move(data), tool, 2500);
+                } else {
+                    AddEphemeralStroke(std::move(data.outlinePath), tool.color, 2500);
+                }
+            } else {
+                session.CommitStroke(std::move(data), tool);
+                ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
+                ::Folio::UsageTracker::Instance().RecordObjectCreated();
+            }
         }
     }
 
@@ -392,7 +466,7 @@ public:
                 std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(lassoBox);
                 for (uint32_t uid : candidateUids) {
                     auto obj = activePage->FindObjectByUid(uid);
-                    if (obj && obj->Intersects(lassoBox)) {
+                    if (obj && obj->isVisible && obj->isSelectable && obj->Intersects(lassoBox)) {
                         obj->isSelected = 1;
                     }
                 }
@@ -436,7 +510,6 @@ public:
         if (!marqueeBox.isActive) return;
         marqueeBox.isActive = false;
         isDirty = true;
-
         if (session) {
             auto activePage = session->GetActivePage();
             if (activePage) {
@@ -451,7 +524,7 @@ public:
                     std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(box);
                     for (uint32_t uid : candidateUids) {
                         auto obj = activePage->FindObjectByUid(uid);
-                        if (obj && obj->Intersects(box)) {
+                        if (obj && obj->isVisible && obj->isSelectable && obj->Intersects(box)) {
                             obj->isSelected = 1;
                         }
                     }
@@ -482,32 +555,38 @@ public:
         isDirty = true;
     }
 
+    /**
+     * @brief Deletes all currently selected objects on the active page via DocumentSession.
+     * Safe operation: If nothing is selected, returns false without modifying any objects.
+     *
+     * @param session Pointer to DocumentSession.
+     * @return true if objects were selected and deleted, false if selection was empty.
+     */
     bool DeleteSelectedObjects(DocumentSession* session = nullptr) {
         if (!session) return false;
-        auto activePage = session->GetActivePage();
-        if (!activePage) return false;
+        size_t deletedCount = session->DeleteSelection();
+        if (deletedCount > 0) {
+            selectionGizmo.ClearSelection();
+            needsFullRebake = true;
+            isDirty = true;
+            return true;
+        }
+        return false;
+    }
 
-        std::vector<std::shared_ptr<CanvasObject>> toRemove;
-        for (const auto& obj : activePage->objects) {
-            if (obj && obj->isSelected) {
-                toRemove.push_back(obj);
-            }
+    /**
+     * @brief Selects all visible, selectable, unlocked objects on the active page and attaches the SelectionGizmo.
+     * @param session Pointer to DocumentSession.
+     * @return Number of objects selected.
+     */
+    size_t SelectAll(DocumentSession* session = nullptr) {
+        if (!session) return 0;
+        size_t count = session->SelectAll();
+        if (count > 0) {
+            selectionGizmo.SetSelectedObjects(session->GetSelectedObjects());
+            isDirty = true;
         }
-        if (toRemove.empty()) {
-            if (!activePage->objects.empty()) {
-                toRemove.push_back(activePage->objects.back());
-            } else {
-                return false;
-            }
-        }
-
-        for (const auto& obj : toRemove) {
-            activePage->RemoveObject(obj);
-        }
-        selectionGizmo.ClearSelection();
-        needsFullRebake = true;
-        isDirty = true;
-        return true;
+        return count;
     }
 
     struct ShapeCreationState {
@@ -872,6 +951,45 @@ public:
         return nullptr;
     }
 
+    /**
+     * @brief Resolves the currently selected or actively edited TextBoxObject.
+     */
+    std::shared_ptr<Folio::TextBoxObject> GetSelectedTextBox(DocumentSession* session) const {
+        if (!session) return nullptr;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return nullptr;
+        for (const auto& obj : activePage->objects) {
+            if (obj && obj->type == ObjectType::Text) {
+                if (obj->isSelected || (textEditor.IsActive() && obj.get() == textEditor.GetTarget())) {
+                    return std::dynamic_pointer_cast<Folio::TextBoxObject>(obj);
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    /**
+     * @brief Inserts a new TextBoxObject onto the active canvas page and activates editor.
+     */
+    std::shared_ptr<Folio::TextBoxObject> InsertTextBox(DocumentSession* session, double worldX = 0.0, double worldY = 0.0) {
+        if (!session) return nullptr;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return nullptr;
+
+        if (worldX == 0.0 && worldY == 0.0) {
+            Point2D center = transform.ScreenToWorld(viewportW * 0.5f, viewportH * 0.5f);
+            worldX = center.x - 35.0;
+            worldY = center.y - 10.0;
+        }
+
+        auto box = std::make_shared<Folio::TextBoxObject>(worldX, worldY, 70.0, 20.0);
+        session->AddTextBox(box);
+        textEditor.Attach(box.get());
+        needsFullRebake = true;
+        isDirty = true;
+        return box;
+    }
+
     std::shared_ptr<Folio::ShapeObject> InsertShape(Folio::ShapeType type, DocumentSession* session, double worldX = 0.0, double worldY = 0.0) {
         if (!session) return nullptr;
         auto activePage = session->GetActivePage();
@@ -1200,6 +1318,7 @@ public:
             if (isStrokeEraser) {
                 if (obj->HitTestSwept(w0, w1, r)) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
+                    session.RecordErasedObject(obj);
                     activePage->RemoveObject(obj);
                     modified = true;
                 }
@@ -1209,6 +1328,9 @@ public:
                     auto ink = std::static_pointer_cast<InkContainer>(obj);
                     double segLen = std::hypot(w1.x - w0.x, w1.y - w0.y);
                     int steps = std::clamp(static_cast<int>(std::ceil(segLen / (r * 0.6))), 1, 30);
+
+                    // Clone pristine original stroke state before any slicing takes place
+                    auto originalClone = std::shared_ptr<InkContainer>(static_cast<InkContainer*>(ink->Clone().release()));
 
                     bool inkModified = false;
                     std::vector<std::shared_ptr<InkContainer>> newFragments;
@@ -1229,21 +1351,26 @@ public:
 
                     if (inkModified) {
                         if (devMode) debugCollision.hitUids.push_back(obj->uid);
+                        std::vector<std::shared_ptr<InkContainer>> survivingFragments;
                         if (ink->strokes.empty()) {
                             activePage->RemoveObject(ink);
                         } else {
                             activePage->UpdateObject(ink);
+                            survivingFragments.push_back(ink);
                         }
                         for (auto& frag : newFragments) {
                             frag->uid = UIDGenerator::Next();
                             activePage->AddObject(frag);
+                            survivingFragments.push_back(frag);
                         }
+                        session.RecordSlicedStroke(originalClone, survivingFragments);
                         modified = true;
                     }
                 } else {
                     // Non-stroke objects (e.g. image, text box, shape): delete on hit
                     if (obj->HitTestSwept(w0, w1, r)) {
                         if (devMode) debugCollision.hitUids.push_back(obj->uid);
+                        session.RecordErasedObject(obj);
                         activePage->RemoveObject(obj);
                         modified = true;
                     }
@@ -1300,6 +1427,9 @@ public:
             staticCtx.save();
             staticCtx.set_transform(renderMatrix);
             for (const auto& obj : visibleBakedObjects) {
+                if (textEditor.IsActive() && obj.get() == textEditor.GetTarget()) {
+                    continue; // Rendered live in real-time composite pass with caret and selection
+                }
                 obj->Render(staticCtx, currentView);
             }
             staticCtx.restore();
@@ -1491,6 +1621,52 @@ public:
                 compCtx.fill_circle(shapeCreation.snapAnchorPoint.x, shapeCreation.snapAnchorPoint.y, 1.2);
                 compCtx.restore();
             }
+        }
+
+        // Render ephemeral presentation ink strokes (e.g. Laser Pointer) in World Coordinates
+        // Mathematical model: Quadratic decay α(t) = α_0 * (1 - t/T)^2
+        if (!ephemeralStrokes.empty()) {
+            auto nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+
+            // Remove expired strokes and render surviving strokes with continuous alpha attenuation
+            ephemeralStrokes.erase(
+                std::remove_if(ephemeralStrokes.begin(), ephemeralStrokes.end(),
+                    [&](const EphemeralStroke& stroke) {
+                        if (nowMs < stroke.startTimeMs) return false;
+                        uint64_t elapsed = nowMs - stroke.startTimeMs;
+                        if (elapsed >= stroke.durationMs) return true; // Lifetime expired
+
+                        // Normalized progress: progress ∈ [0.0, 1.0]
+                        double progress = static_cast<double>(elapsed) / static_cast<double>(stroke.durationMs);
+                        // Quadratic decay factor: (1 - t)^2
+                        double decayFactor = (1.0 - progress) * (1.0 - progress);
+
+                        uint32_t baseAlpha = stroke.color.a();
+                        uint32_t fadedAlpha = static_cast<uint32_t>(baseAlpha * decayFactor);
+                        if (fadedAlpha > 0) {
+                            BLRgba32 fadedColor(stroke.color.r(), stroke.color.g(), stroke.color.b(), fadedAlpha);
+                            compCtx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
+                            compCtx.set_fill_style(fadedColor);
+                            compCtx.fill_path(stroke.outlinePath);
+                        }
+                        return false;
+                    }),
+                ephemeralStrokes.end()
+            );
+
+            // As long as ephemeral strokes are alive and decaying, request continuous frame redraws
+            if (!ephemeralStrokes.empty()) {
+                isDirty = true;
+            }
+        }
+
+        // Active Headless Text Editor Pass (World Coordinates)
+        if (textEditor.IsActive() && textEditor.GetTarget()) {
+            auto nowSec = static_cast<double>(SDL_GetTicks()) / 1000.0;
+            textEditor.UpdateBlink(nowSec);
+            textEditor.GetTarget()->RenderWithEditor(compCtx, currentView, textEditor);
+            isDirty = true; // Continuous refresh for caret blink
         }
 
         compCtx.restore();

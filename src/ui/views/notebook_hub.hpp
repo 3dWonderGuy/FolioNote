@@ -22,6 +22,7 @@ using Folio::FOLIO_NOTEBOOK_EXTENSION;
 using Folio::FOLIO_LIBRARY_MARKER_FILE;
 #include "core/export/export_manager.hpp"
 #include "core/import/import_manager.hpp"
+#include "core/import/package_importer.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "app/app_view_mode.hpp"
 #include "utils/usage_tracker.hpp"
@@ -72,8 +73,55 @@ inline std::string ShowNativeFolderPicker(const std::string& title = "Select Fol
     }
     return resultPath;
 }
+
+inline std::string ShowNativeFilePicker(const std::string& title, const std::vector<COMDLG_FILTERSPEC>& filters) {
+    std::string resultPath;
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    bool coInited = (hr == S_OK || hr == S_FALSE);
+
+    IFileOpenDialog* pFileOpen = nullptr;
+    hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
+    if (SUCCEEDED(hr) && pFileOpen) {
+        DWORD dwOptions = 0;
+        if (SUCCEEDED(pFileOpen->GetOptions(&dwOptions))) {
+            pFileOpen->SetOptions(dwOptions | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
+        }
+        if (!filters.empty()) {
+            pFileOpen->SetFileTypes(static_cast<UINT>(filters.size()), filters.data());
+        }
+        std::wstring wTitle(title.begin(), title.end());
+        pFileOpen->SetTitle(wTitle.c_str());
+
+        hr = pFileOpen->Show(NULL);
+        if (SUCCEEDED(hr)) {
+            IShellItem* pItem = nullptr;
+            hr = pFileOpen->GetResult(&pItem);
+            if (SUCCEEDED(hr) && pItem) {
+                PWSTR pszFilePath = nullptr;
+                hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+                if (SUCCEEDED(hr) && pszFilePath) {
+                    int len = WideCharToMultiByte(CP_UTF8, 0, pszFilePath, -1, NULL, 0, NULL, NULL);
+                    if (len > 1) {
+                        resultPath.resize(len - 1);
+                        WideCharToMultiByte(CP_UTF8, 0, pszFilePath, -1, &resultPath[0], len, NULL, NULL);
+                    }
+                    CoTaskMemFree(pszFilePath);
+                }
+                pItem->Release();
+            }
+        }
+        pFileOpen->Release();
+    }
+    if (coInited) {
+        CoUninitialize();
+    }
+    return resultPath;
+}
 #else
 inline std::string ShowNativeFolderPicker(const std::string& /*title*/ = "") {
+    return "";
+}
+inline std::string ShowNativeFilePicker(const std::string& /*title*/ = "", const std::vector<int>& /*filters*/ = {}) {
     return "";
 }
 #endif
@@ -238,11 +286,7 @@ struct NotebookHubView {
     char newLibPath[256] = "";
     char openCustomPath[256] = "";
 
-    // Import & Migration state (OneNote, FolioNote, Library)
-    char importOneNotePath[256] = "";
-    std::string oneNoteStatusMessage = "";
-    bool oneNoteSuccess = false;
-
+    // Import & Migration state (FolioNote Packages & Libraries)
     char importPkgPath[256] = "";
     std::string pkgStatusMessage = "";
     bool pkgSuccess = false;
@@ -1203,85 +1247,77 @@ private:
                 ImGui::PushFont(FolioTheme::FontRibbonBoldLarge);
                 ImGui::TextColored(theme.colorText, "Import & Document Migration");
                 ImGui::PopFont();
-                ImGui::TextColored(theme.colorTextMuted, "Migrate notebooks from Microsoft OneNote or import existing FolioNote packages and libraries");
+                ImGui::TextColored(theme.colorTextMuted, "Import existing FolioNote packages (.notebook, .folionb.7z, .foliolib.7z) or mount external library folders");
 
                 ImGui::Dummy(ImVec2(0.0f, 14.0f));
                 ImGui::Separator();
                 ImGui::Dummy(ImVec2(0.0f, 14.0f));
 
-                // 1. OneNote Migration
+                // 1. FolioNote Package Import
                 ImGui::PushFont(FolioTheme::FontNavBoldLarge);
-                ImGui::TextColored(theme.colorText, "1. Microsoft OneNote Migration (.one / .onetoc2 / .onepkg / Folder)");
+                ImGui::TextColored(theme.colorText, "1. FolioNote Standalone Package (.notebook / .folionb.7z / .foliolib.7z)");
                 ImGui::PopFont();
-                ImGui::TextColored(theme.colorTextMuted, "Reverse-engineers and parses OneNote files, extracting sections, pages, and rich text into native FolioNote notebooks");
-                ImGui::Dummy(ImVec2(0.0f, 6.0f));
-                
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 8.0f));
-                ImGui::SetNextItemWidth(540.0f);
-                ImGui::InputTextWithHint("##OneNotePathInput", "Path to .one file, .onepkg archive, or OneNote notebook folder...", importOneNotePath, sizeof(importOneNotePath));
-                ImGui::SameLine(0.0f, 14.0f);
-                if (ImGui::Button("Migrate OneNote Notebook", ImVec2(220.0f, 38.0f))) {
-                    if (strlen(importOneNotePath) > 0) {
-                        auto converted = Folio::ImportManager::ImportOneNote(importOneNotePath, libraryManager.defaultLibraryPath, ws.repository);
-                        if (converted) {
-                            ws.notebooks.push_back(converted);
-                            ws.activeNotebookIndex = ws.notebooks.size() - 1;
-                            oneNoteSuccess = true;
-                            oneNoteStatusMessage = "Successfully migrated OneNote notebook: " + converted->name + "!";
-                            canvas.needsFullRebake = true;
-                            canvas.isDirty = true;
-                        } else {
-                            oneNoteSuccess = false;
-                            oneNoteStatusMessage = "Could not parse or migrate OneNote file. Verify file path and format.";
-                        }
-                    }
-                }
-                ImGui::PopStyleVar(2);
-
-                if (!oneNoteStatusMessage.empty()) {
-                    ImGui::Dummy(ImVec2(0.0f, 6.0f));
-                    ImVec4 col = oneNoteSuccess ? ImVec4(0.25f, 0.85f, 0.35f, 1.0f) : ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
-                    ImGui::TextColored(col, "%s", oneNoteStatusMessage.c_str());
-                }
-
-                ImGui::Dummy(ImVec2(0.0f, 28.0f));
-
-                // 2. FolioNote Package Import
-                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
-                ImGui::TextColored(theme.colorText, "2. FolioNote Standalone Package (.notebook / .folio)");
-                ImGui::PopFont();
-                ImGui::TextColored(theme.colorTextMuted, "Imports a standalone package into your active library and opens it immediately");
+                ImGui::TextColored(theme.colorTextMuted, "Imports standalone packages or multi-notebook libraries into your active library");
                 ImGui::Dummy(ImVec2(0.0f, 6.0f));
 
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 8.0f));
                 ImGui::SetNextItemWidth(430.0f);
-                ImGui::InputTextWithHint("##FolioPkgPathInput", "Path to .notebook package folder...", importPkgPath, sizeof(importPkgPath));
+                ImGui::InputTextWithHint("##FolioPkgPathInput", "Path to .notebook folder or .folionb.7z / .foliolib.7z archive...", importPkgPath, sizeof(importPkgPath));
                 ImGui::SameLine(0.0f, 8.0f);
                 if (ImGui::Button("Browse...##ImportPkgBrowse", ImVec2(90.0f, 38.0f))) {
-                    std::string picked = ShowNativeFolderPicker("Select FolioNote Package (.notebook)");
+#if defined(_WIN32)
+                    static const std::vector<COMDLG_FILTERSPEC> folioFilters = {
+                        { L"FolioNote Packages (*.folionb.7z;*.foliolib.7z;*.fnpack;*.7z;*.zip)", L"*.folionb.7z;*.foliolib.7z;*.fnpack;*.7z;*.zip" },
+                        { L"All Files (*.*)", L"*.*" }
+                    };
+                    std::string picked = ShowNativeFilePicker("Select FolioNote Package Archive", folioFilters);
+                    if (picked.empty()) {
+                        picked = ShowNativeFolderPicker("Or Select FolioNote Package (.notebook) Folder");
+                    }
                     if (!picked.empty()) {
                         snprintf(importPkgPath, sizeof(importPkgPath), "%s", picked.c_str());
                     }
+#endif
                 }
                 ImGui::SameLine(0.0f, 14.0f);
                 if (ImGui::Button("Import Package", ImVec2(180.0f, 38.0f))) {
                     if (strlen(importPkgPath) > 0) {
                         std::string targetDir = libraryManager.defaultLibraryPath;
-                        std::string importedPath = Folio::ImportManager::ImportNotebookPackage(importPkgPath, targetDir);
-                        if (!importedPath.empty()) {
-                            if (auto loaded = ws.repository.LoadNotebookHierarchy(importedPath)) {
-                                ws.notebooks.push_back(loaded);
-                                ws.activeNotebookIndex = ws.notebooks.size() - 1;
+                        if (Folio::PackageImporter::IsLibraryArchive(importPkgPath)) {
+                            auto importedList = Folio::ImportManager::ImportLibraryPackage(importPkgPath, targetDir);
+                            if (!importedList.empty()) {
+                                for (const auto& nbPath : importedList) {
+                                    if (auto loaded = ws.repository.LoadNotebookHierarchy(nbPath)) {
+                                        ws.notebooks.push_back(loaded);
+                                    }
+                                }
+                                if (!ws.notebooks.empty()) {
+                                    ws.activeNotebookIndex = ws.notebooks.size() - 1;
+                                }
                                 pkgSuccess = true;
-                                pkgStatusMessage = "Package imported and mounted into library!";
+                                pkgStatusMessage = "Extracted and mounted " + std::to_string(importedList.size()) + " notebooks from library archive!";
                                 canvas.needsFullRebake = true;
                                 canvas.isDirty = true;
+                            } else {
+                                pkgSuccess = false;
+                                pkgStatusMessage = "Failed to extract notebooks from library archive.";
                             }
                         } else {
-                            pkgSuccess = false;
-                            pkgStatusMessage = "Failed to copy or load package.";
+                            std::string importedPath = Folio::ImportManager::ImportNotebookPackage(importPkgPath, targetDir);
+                            if (!importedPath.empty()) {
+                                if (auto loaded = ws.repository.LoadNotebookHierarchy(importedPath)) {
+                                    ws.notebooks.push_back(loaded);
+                                    ws.activeNotebookIndex = ws.notebooks.size() - 1;
+                                    pkgSuccess = true;
+                                    pkgStatusMessage = "Package imported and mounted into library!";
+                                    canvas.needsFullRebake = true;
+                                    canvas.isDirty = true;
+                                }
+                            } else {
+                                pkgSuccess = false;
+                                pkgStatusMessage = "Failed to copy or decompress package.";
+                            }
                         }
                     }
                 }
@@ -2197,20 +2233,21 @@ private:
             const char* title;
             const char* subtitle;
         };
-        FormatCard formatCards[4] = {
+        FormatCard formatCards[5] = {
             { "##fmt_pdf",   "Print to PDF",       "A4 paginated" },
             { "##fmt_html",  "HTML Document",      "Standalone web" },
             { "##fmt_folio", "Folio Package",      "Portable archive" },
-            { "##fmt_md",    "Markdown Notes",     "Clean text .md" }
+            { "##fmt_md",    "Markdown Notes",     "Clean text .md" },
+            { "##fmt_vecpdf","Vector PDF",         "Direct PDF binary" }
         };
 
         float fmtGap = 10.0f;
-        float fmtCardW = 160.0f;
-        if (availW > 0.0f && availW < (4 * fmtCardW + 3 * fmtGap)) {
-            fmtCardW = std::max(115.0f, (availW - 3 * fmtGap) / 4.0f);
+        float fmtCardW = 145.0f;
+        if (availW > 0.0f && availW < (5 * fmtCardW + 4 * fmtGap)) {
+            fmtCardW = std::max(100.0f, (availW - 4 * fmtGap) / 5.0f);
         }
 
-        for (int f = 0; f < 4; ++f) {
+        for (int f = 0; f < 5; ++f) {
             bool isSel = (static_cast<int>(exportFormat) == f);
             ImVec2 p0 = ImGui::GetCursorScreenPos();
             ImVec2 p1(p0.x + fmtCardW, p0.y + cardH);
@@ -2238,7 +2275,7 @@ private:
             dl->AddText(ImVec2(p0.x + 12.0f, p0.y + 9.0f), titleCol, formatCards[f].title);
             dl->AddText(ImVec2(p0.x + 12.0f, p0.y + 30.0f), subCol, formatCards[f].subtitle);
 
-            if (f < 3) {
+            if (f < 4) {
                 ImGui::SameLine(0.0f, fmtGap);
             }
         }
