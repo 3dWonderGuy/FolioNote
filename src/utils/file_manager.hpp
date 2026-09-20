@@ -125,6 +125,11 @@ public:
     static std::string GetLogsDirectory();
 
     /**
+     * @brief Resolves the directory for automated and manual snapshots (`<AppRoot>/backups`).
+     */
+    static std::string GetBackupsDirectory();
+
+    /**
      * @brief Resolves a system-wide or app-private temporary working directory.
      */
     static std::string GetTempDirectory();

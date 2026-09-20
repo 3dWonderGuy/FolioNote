@@ -65,7 +65,16 @@ void LibraryManager::Init(const std::string& globalAppRoot) {
     FileManager::CreateDirectories(FileManager::GetExportsDirectory());
 
     // 3. Configure Default Library Bundle inside Libraries/
-    defaultLibraryPath = FileManager::JoinPath(FileManager::GetLibrariesDirectory(), std::string("Default") + FOLIO_LIBRARY_EXTENSION);
+    std::string defaultLibPlain = FileManager::JoinPath(FileManager::GetLibrariesDirectory(), "Default");
+    std::string defaultLibWithExt = FileManager::JoinPath(FileManager::GetLibrariesDirectory(), std::string("Default") + FOLIO_LIBRARY_EXTENSION);
+    if (FileManager::IsDirectory(defaultLibPlain)) {
+        defaultLibraryPath = defaultLibPlain;
+    } else if (FileManager::IsDirectory(defaultLibWithExt)) {
+        defaultLibraryPath = defaultLibWithExt;
+    } else {
+        defaultLibraryPath = defaultLibPlain;
+    }
+
     if (FileManager::CreateDirectories(defaultLibraryPath)) {
         WriteLibraryMarker(defaultLibraryPath, "Default Library");
     } else {
@@ -202,10 +211,7 @@ bool LibraryManager::AddLibrary(const std::string& name, const std::string& path
         return false;
     }
 
-    std::string bundlePath = path;
-    if (!FileManager::Exists(bundlePath) && !FileManager::HasExtension(bundlePath, FOLIO_LIBRARY_EXTENSION)) {
-        bundlePath += FOLIO_LIBRARY_EXTENSION;
-    }
+    std::string bundlePath = FileManager::NormalizeSeparators(path);
 
     // Check for duplicates
     for (const auto& existing : libraries) {

@@ -204,14 +204,13 @@ std::string LibraryManager::ExtractLibraryNameFromPath(const std::string& bundle
 }
 
 /**
- * @brief Sanitizes a library directory path, supporting both .foliolib bundles and plain folders.
+ * @brief Cleans and canonicalizes an input path to ensure it represents a valid library directory.
  *
- * SANITIZATION ALGORITHM:
+ * GENERAL WORKING PROCESS & SANITIZATION RULES:
  * 1. Loop-strips any trailing `.notebook` package paths to prevent nested encapsulation errors.
- * 2. If the path is empty, ".", or matches "FolioNote", routes to `<defaultParentDir>/<defaultBundleName>.foliolib`.
- * 3. If the path already points to an existing directory on disk, normalizes slashes and accepts as-is.
- * 4. For new paths lacking the `.foliolib` extension, appends `.foliolib` to maintain bundle consistency.
- * 5. Normalizes all path separators to platform-canonical format.
+ * 2. If the path is empty, ".", or matches "FolioNote", routes to `<defaultParentDir>/<defaultBundleName>`.
+ *    (If a legacy bundle `<defaultParentDir>/<defaultBundleName>.foliolib` exists on disk, that is favored).
+ * 3. Normalizes all path separators to platform-canonical format without forcing a `.foliolib` extension.
  *
  * @param inputPath User-supplied or configuration directory path.
  * @param defaultParentDir Fallback parent directory to place bundle in.
@@ -232,21 +231,14 @@ std::string LibraryManager::SanitizeLibraryRoot(
 
     // 2. If empty or relative dot, place default bundle in defaultParentDir
     if (p.empty() || p == "." || p == "FolioNote") {
-        return FileManager::JoinPath(defaultParentDir, defaultBundleName + FOLIO_LIBRARY_EXTENSION);
+        std::string candidateWithExt = FileManager::JoinPath(defaultParentDir, defaultBundleName + FOLIO_LIBRARY_EXTENSION);
+        if (FileManager::IsDirectory(candidateWithExt)) {
+            return FileManager::NormalizeSeparators(candidateWithExt);
+        }
+        return FileManager::NormalizeSeparators(FileManager::JoinPath(defaultParentDir, defaultBundleName));
     }
 
-    // 3. If path points to an existing directory on disk, accept it as-is
-    if (FileManager::IsDirectory(p)) {
-        return FileManager::NormalizeSeparators(p);
-    }
-
-    // 4. Default for brand new libraries: use .foliolib extension for clean bundle feel
-    if (!FileManager::HasExtension(p, FOLIO_LIBRARY_EXTENSION)) {
-        std::string filename = FileManager::GetFileName(p);
-        if (filename.empty()) filename = defaultBundleName;
-        p = FileManager::JoinPath(FileManager::GetParentPath(p), filename + FOLIO_LIBRARY_EXTENSION);
-    }
-
+    // 3. For any provided paths, accept as-is and normalize path separators
     return FileManager::NormalizeSeparators(p);
 }
 

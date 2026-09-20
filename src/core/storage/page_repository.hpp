@@ -71,6 +71,7 @@
 #include "core/document/canvas_page.hpp"
 #include "utils/thread_pool.hpp"
 #include "utils/logger.hpp"
+#include "utils/file_manager.hpp"
 
 namespace Folio {
 
@@ -196,16 +197,12 @@ public:
         // Offload disk writing and database upserting to a worker thread.
         // ---------------------------------------------------------------------------------
         return GetGlobalThreadPool().Enqueue([db, pkgPath, pageGuid, sectionGuid, title, createdDate, createdTime, order, blobData, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks, dedicatedPdfHighlights]() -> bool {
-            // Write compressed binary payload to disk: pages/{pageGuid}.ink
+            // Write compressed binary payload atomically to disk: pages/{pageGuid}.ink
+            // Staged in .ink.tmp.<timestamp> and atomically renamed to prevent corruption.
             std::string inkPath = (std::filesystem::path(pkgPath) / "pages" / (pageGuid + ".ink")).string();
-            std::ofstream out(inkPath, std::ios::binary);
-            bool hasBlob = false;
-            if (out) {
-                out.write(reinterpret_cast<const char*>(blobData->data()), blobData->size());
-                out.close();
-                hasBlob = true;
-            } else {
-                LOG_ERROR(PageRepository, "Failed to write .ink file for page: " + pageGuid);
+            bool hasBlob = FileManager::WriteBinaryAtomic(inkPath, *blobData);
+            if (!hasBlob) {
+                LOG_ERROR(PageRepository, "Failed to write .ink file atomically for page: " + pageGuid);
             }
 
             // Update SQLite metadata record in 'pages' table

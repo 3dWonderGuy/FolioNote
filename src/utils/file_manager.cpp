@@ -174,6 +174,10 @@ std::string FileManager::GetLogsDirectory() {
     return JoinPath(GetAppRootDirectory(), "logs");
 }
 
+std::string FileManager::GetBackupsDirectory() {
+    return JoinPath(GetAppRootDirectory(), "backups");
+}
+
 std::string FileManager::GetTempDirectory() {
     std::error_code ec;
     auto tempPath = std::filesystem::temp_directory_path(ec);
