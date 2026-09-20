@@ -101,15 +101,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                     std::shared_ptr<CanvasObject> clickedObj = nullptr;
 
                     if (activePage) {
-                        // Reverse iterate to test topmost objects first
-                        for (auto it = activePage->objects.rbegin(); it != activePage->objects.rend(); ++it) {
-                            auto& obj = *it;
-                            if (obj && obj->isVisible && obj->isSelectable &&
-                                (obj->HitTest(worldMm.x, worldMm.y) || obj->HitTestCircle(worldMm.x, worldMm.y, config.objectHitTestRadiusMm))) {
-                                clickedObj = obj;
-                                break;
-                            }
-                        }
+                        clickedObj = activePage->HitTestSingleClick(worldMm.x, worldMm.y, config.objectHitTestRadiusMm);
                     }
 
                     if (clickedObj) {

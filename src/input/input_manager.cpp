@@ -119,34 +119,53 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
             } else if ((stateMachine.GetActiveDeviceTool() == InteractionState::Selecting ||
                         stateMachine.currentAction == InteractionState::Selecting) &&
                        !ImGui::GetIO().WantCaptureKeyboard) {
-                // Auto-create text box if user starts typing while in Selecting mode
                 auto activePage = session.GetActivePage();
                 if (activePage) {
-                    Point2D clickPos = stateMachine.lastCanvasClickWorldMm;
-                    if (clickPos.x == 0.0 && clickPos.y == 0.0) {
-                        auto vp = canvas.GetViewport();
-                        double cx = (vp.bounds.minX + vp.bounds.maxX) * 0.5;
-                        double cy = (vp.bounds.minY + vp.bounds.maxY) * 0.5;
-                        clickPos = Point2D(cx - 25.0, cy - 10.0);
+                    // Check if a TextBoxObject is currently selected: typing activates editing on it!
+                    std::shared_ptr<Folio::TextBoxObject> selectedBox = nullptr;
+                    for (auto& obj : activePage->objects) {
+                        if (obj && obj->isSelected && obj->type == ObjectType::Text) {
+                            selectedBox = std::dynamic_pointer_cast<Folio::TextBoxObject>(obj);
+                            break;
+                        }
                     }
-                    auto newBox = std::make_shared<Folio::TextBoxObject>(clickPos.x, clickPos.y);
-                    newBox->textColor = canvas.defaultTextColor;
-                    newBox->fontFamily = canvas.defaultTextFontFamily;
-                    newBox->fontSize = canvas.defaultTextFontSize;
-                    newBox->isBold = canvas.defaultTextBold;
-                    newBox->isItalic = canvas.defaultTextItalic;
-                    newBox->isUnderline = canvas.defaultTextUnderline;
-                    newBox->isStrikethrough = canvas.defaultTextStrikethrough;
-                    newBox->highlightColor = canvas.defaultTextHighlightColor;
-                    newBox->alignment = canvas.defaultTextAlignment;
-                    activePage->AddObject(newBox);
-                    session.RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(newBox));
-                    canvas.textEditor.Attach(newBox.get(), &session);
-                    canvas.textEditor.OnTextInput(event.text.text);
-                    canvas.needsFullRebake = true;
-                    canvas.isDirty = true;
-                    LOG_INFO(InputManager, "Auto-created OneNote text box from keyboard input at (" +
-                             std::to_string(clickPos.x) + ", " + std::to_string(clickPos.y) + ")");
+
+                    if (selectedBox) {
+                        canvas.ClearSelection(&session);
+                        canvas.textEditor.Attach(selectedBox.get(), &session);
+                        canvas.textEditor.OnTextInput(event.text.text);
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                        LOG_INFO(InputManager, "Typing activated text editor on selected text box uid=" +
+                                 std::to_string(selectedBox->uid));
+                    } else {
+                        // Auto-create text box if user starts typing on empty canvas while in Selecting mode
+                        Point2D clickPos = stateMachine.lastCanvasClickWorldMm;
+                        if (clickPos.x == 0.0 && clickPos.y == 0.0) {
+                            auto vp = canvas.GetViewport();
+                            double cx = (vp.bounds.minX + vp.bounds.maxX) * 0.5;
+                            double cy = (vp.bounds.minY + vp.bounds.maxY) * 0.5;
+                            clickPos = Point2D(cx - 25.0, cy - 10.0);
+                        }
+                        auto newBox = std::make_shared<Folio::TextBoxObject>(clickPos.x, clickPos.y);
+                        newBox->textColor = canvas.defaultTextColor;
+                        newBox->fontFamily = canvas.defaultTextFontFamily;
+                        newBox->fontSize = canvas.defaultTextFontSize;
+                        newBox->isBold = canvas.defaultTextBold;
+                        newBox->isItalic = canvas.defaultTextItalic;
+                        newBox->isUnderline = canvas.defaultTextUnderline;
+                        newBox->isStrikethrough = canvas.defaultTextStrikethrough;
+                        newBox->highlightColor = canvas.defaultTextHighlightColor;
+                        newBox->alignment = canvas.defaultTextAlignment;
+                        activePage->AddObject(newBox);
+                        session.RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(newBox));
+                        canvas.textEditor.Attach(newBox.get(), &session);
+                        canvas.textEditor.OnTextInput(event.text.text);
+                        canvas.needsFullRebake = true;
+                        canvas.isDirty = true;
+                        LOG_INFO(InputManager, "Auto-created OneNote text box from keyboard input at (" +
+                                 std::to_string(clickPos.x) + ", " + std::to_string(clickPos.y) + ")");
+                    }
                 }
             }
             break;
@@ -185,6 +204,29 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
                 }
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
+            } else if ((stateMachine.GetActiveDeviceTool() == InteractionState::Selecting ||
+                        stateMachine.currentAction == InteractionState::Selecting) &&
+                       !ImGui::GetIO().WantCaptureKeyboard) {
+                // If a TextBoxObject is selected and user hits Backspace, Enter, or navigation key, activate editor
+                if (event.key.key == SDLK_BACKSPACE || event.key.key == SDLK_DELETE ||
+                    event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) {
+                    auto activePage = session.GetActivePage();
+                    if (activePage) {
+                        for (auto& obj : activePage->objects) {
+                            if (obj && obj->isSelected && obj->type == ObjectType::Text) {
+                                auto selectedBox = std::dynamic_pointer_cast<Folio::TextBoxObject>(obj);
+                                if (selectedBox) {
+                                    canvas.ClearSelection(&session);
+                                    canvas.textEditor.Attach(selectedBox.get(), &session);
+                                    canvas.textEditor.OnKeyDown(event.key.key, event.key.mod);
+                                    canvas.needsFullRebake = true;
+                                    canvas.isDirty = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             HandleKeyboardEvent(event);
             break;

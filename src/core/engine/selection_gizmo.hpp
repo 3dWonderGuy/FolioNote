@@ -442,9 +442,23 @@ public:
         const float PADDING = 4.0f;
         if (screenX >= (left - PADDING) && screenX <= (right + PADDING) &&
             screenY >= (top - PADDING)  && screenY <= (bottom + PADDING)) {
-            res.hit = true;
-            res.role = HandleRole::Body;
-            return res;
+            // If only a single object is selected, verify that the pointer actually hits the object's body
+            // or is near the gizmo border. This ensures that clicking inside an unfilled shape container
+            // doesn't block selection of items inside it!
+            if (selectedObjects.size() == 1 && selectedObjects[0]) {
+                Point2D worldPt = transform.ScreenToWorld(screenX, screenY);
+                bool nearBorder = (screenX <= (left + PADDING + 4.0f) || screenX >= (right - PADDING - 4.0f) ||
+                                   screenY <= (top + PADDING + 4.0f)  || screenY >= (bottom - PADDING - 4.0f));
+                if (nearBorder || selectedObjects[0]->HitTest(worldPt.x, worldPt.y)) {
+                    res.hit = true;
+                    res.role = HandleRole::Body;
+                    return res;
+                }
+            } else {
+                res.hit = true;
+                res.role = HandleRole::Body;
+                return res;
+            }
         }
 
         return res;

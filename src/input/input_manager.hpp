@@ -2,7 +2,7 @@
 #include <SDL3/SDL.h>
 #include "imgui.h"
 #include "core/engine/canvas_engine.hpp"
-#include "core/spatial/undo_redo_manager.hpp"
+#include "core/history/undo_redo_manager.hpp"
 #include "app/window_state_manager.hpp"
 #include "input_state_machine.hpp"
 #include <algorithm>

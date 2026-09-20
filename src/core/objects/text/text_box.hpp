@@ -91,6 +91,40 @@ public:
     void ApplyStickyPreset(StickyPreset preset);
 
     // =========================================================================
+    // RICH TEXT SPAN METRICS & HELPERS
+    // =========================================================================
+    struct FormattedSpan {
+        std::string text;           ///< Slice of text within this span
+        const TextRun* run = nullptr;///< Pointer to active styling run (or nullptr for defaults)
+        double width = 0.0;         ///< Advance width in world millimeters
+    };
+
+    /**
+     * @brief Computes list of formatted styled spans covering a character range [rangeStart, rangeEnd).
+     * @param rangeStart Zero-indexed starting byte offset into PlainText().
+     * @param rangeEnd   Zero-indexed ending byte offset into PlainText().
+     * @return Vector of FormattedSpans with individual widths and run references.
+     */
+    [[nodiscard]] std::vector<FormattedSpan> GetSpansForRange(size_t rangeStart, size_t rangeEnd) const;
+
+    /**
+     * @brief Measures aggregate advance width of a character range across all overlapping styled runs.
+     * @param rangeStart Zero-indexed starting byte offset.
+     * @param rangeEnd   Zero-indexed ending byte offset.
+     * @return Cumulative advance width in world millimeters.
+     */
+    [[nodiscard]] double MeasureRange(size_t rangeStart, size_t rangeEnd) const;
+
+    /**
+     * @brief Computes typographical line metrics (ascent and total line height) for a range across runs.
+     * @param rangeStart Zero-indexed starting byte offset.
+     * @param rangeEnd   Zero-indexed ending byte offset.
+     * @param[out] outAscent Maximum font ascent among overlapping runs (mm).
+     * @param[out] outLineHeight Maximum line height among overlapping runs (mm).
+     */
+    void GetLineMetricsForRange(size_t rangeStart, size_t rangeEnd, double& outAscent, double& outLineHeight) const;
+
+    // =========================================================================
     // CONTENT HELPERS
     // =========================================================================
     [[nodiscard]] std::string PlainText() const;

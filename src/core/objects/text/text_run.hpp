@@ -42,17 +42,33 @@
 namespace Folio {
 
 /**
- * @brief One contiguous styled text span in a rich text document.
+ * @brief Identifies the nature of an inline element within a rich text container.
+ */
+enum class InlineElementType : uint8_t {
+    TextRun = 0,    ///< Standard styled vector typography span
+    InlineImage,    ///< Inline embedded raster/vector graphic
+    InlineMath,     ///< Inline LaTeX mathematical expression
+    InlineTable     ///< Embedded tabular grid data
+};
+
+/**
+ * @brief One contiguous styled text span or inline element in a rich text document.
  *
  * Multiple TextRun objects are stored in sequence inside TextBoxObject::runs.
  * The visual result is produced by iterating runs in order and laying out
- * each span with its specified style.
+ * each span with its specified style or inline element dimensions.
  *
  * Example (bold "Hello" followed by plain " world"):
  *   runs[0] = { text="Hello", bold=true,  fontSize=16 }
  *   runs[1] = { text=" world", bold=false, fontSize=16 }
  */
 struct TextRun {
+    // =========================================================================
+    // ELEMENT CLASSIFICATION
+    // =========================================================================
+
+    InlineElementType elementType = InlineElementType::TextRun; ///< Inline element classification
+
     // =========================================================================
     // CONTENT
     // =========================================================================
@@ -81,8 +97,17 @@ struct TextRun {
     // COLORS
     // =========================================================================
 
-    BLRgba32 color{0xFF, 0xFF, 0xFF, 0xFF};           ///< Text color (default white)
+    BLRgba32 color{0x1F, 0x29, 0x37, 0xFF};           ///< Text color (default dark graphite)
     BLRgba32 highlightColor{0x00, 0x00, 0x00, 0x00};  ///< Highlight fill (alpha=0 = none)
+
+    // =========================================================================
+    // RICH INLINE CONTENT (Math, Image, Table Containers)
+    // =========================================================================
+
+    std::string latexSource;    ///< LaTeX markup source when elementType == InlineMath
+    BLImage     renderedImage;  ///< Pre-rendered bitmap or cache of inline graphic/formula
+    double      inlineWidth  = 0.0; ///< Pre-measured width in canvas world millimeters
+    double      inlineHeight = 0.0; ///< Pre-measured height in canvas world millimeters
 
     // =========================================================================
     // INLINE LINK REFERENCE
@@ -118,7 +143,8 @@ struct TextRun {
      * list compact. Content (text) is not compared — only style attributes.
      */
     [[nodiscard]] bool SameStyleAs(const TextRun& other) const noexcept {
-        return fontFamily     == other.fontFamily
+        return elementType    == other.elementType
+            && fontFamily     == other.fontFamily
             && fontSize       == other.fontSize
             && bold           == other.bold
             && italic         == other.italic
@@ -128,6 +154,9 @@ struct TextRun {
             && subscript      == other.subscript
             && color.value    == other.color.value
             && highlightColor.value == other.highlightColor.value
+            && latexSource    == other.latexSource
+            && inlineWidth    == other.inlineWidth
+            && inlineHeight   == other.inlineHeight
             && linkRef        == other.linkRef;
     }
 };

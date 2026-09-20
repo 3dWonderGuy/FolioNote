@@ -405,6 +405,69 @@ public:
     }
 
     /**
+     * @brief Resolves single-click selection at world coordinates (clickX, clickY) using smallest-area priority.
+     *
+     * MATHEMATICAL HEURISTIC & PRIORITY ARBITRATION:
+     * ----------------------------------------------
+     * Problem: When small notes or ink strokes sit inside a giant container (like a ShapeObject rectangle),
+     * a naive z-order or first-hit query can "trap" the smaller items behind the container's broad bounds.
+     *
+     * Mathematical Model:
+     * - Candidate set C = { obj \in objects | obj->isVisible \land obj->isSelectable \land obj->HitTest(clickX, clickY) }
+     * - For each candidate obj \in C:
+     *     effectiveArea = obj->bounds.Area()
+     *     if (obj->type == ObjectType::InkContainer || obj->type == ObjectType::Text) {
+     *         effectiveArea *= 0.5; // 0.5x bias factor giving high priority to notes and strokes
+     *     }
+     * - Result = \argmin_{obj \in C} (effectiveArea)
+     *
+     * @param clickX World X coordinate in millimeters.
+     * @param clickY World Y coordinate in millimeters.
+     * @param circleRadiusMm Proximity radius for fine strokes (e.g. config.objectHitTestRadiusMm).
+     * @return std::shared_ptr<CanvasObject> Selected object with minimal effective area, or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<CanvasObject> HitTestSingleClick(double clickX, double clickY, double circleRadiusMm = 0.0) const {
+        std::vector<std::shared_ptr<CanvasObject>> candidates;
+
+        for (auto it = objects.rbegin(); it != objects.rend(); ++it) {
+            auto& obj = *it;
+            if (obj && obj->isVisible && obj->isSelectable) {
+                bool hit = obj->HitTest(clickX, clickY);
+                if (!hit && circleRadiusMm > 0.0) {
+                    hit = obj->HitTestCircle(clickX, clickY, circleRadiusMm);
+                }
+                if (hit) {
+                    candidates.push_back(obj);
+                }
+            }
+        }
+
+        if (candidates.empty()) return nullptr;
+        if (candidates.size() == 1) return candidates[0];
+
+        // Select candidate with smallest effective area
+        std::shared_ptr<CanvasObject> bestObj = nullptr;
+        double bestEffectiveArea = 1e18;
+
+        for (const auto& obj : candidates) {
+            double area = obj->bounds.Area();
+            if (area <= 0.0) area = 0.01;
+
+            // Apply 0.5x bias factor to InkContainer and Text
+            if (obj->type == ObjectType::InkContainer || obj->type == ObjectType::Text) {
+                area *= 0.5;
+            }
+
+            if (area < bestEffectiveArea) {
+                bestEffectiveArea = area;
+                bestObj = obj;
+            }
+        }
+
+        return bestObj;
+    }
+
+    /**
      * @brief Queries all objects intersecting the camera viewport frustum using spatial culling.
      *
      * MATHEMATICAL CULLING & RENDERING PIPELINE:

@@ -468,7 +468,20 @@ public:
                 for (uint32_t uid : candidateUids) {
                     auto obj = activePage->FindObjectByUid(uid);
                     if (obj && obj->isVisible && obj->isSelectable && obj->Intersects(lassoBox)) {
-                        obj->isSelected = 1;
+                        double objArea = obj->bounds.Area();
+                        if (objArea > 1e-4) {
+                            double isectArea = lassoBox.IntersectionArea(obj->bounds);
+                            double coverageRatio = isectArea / objArea;
+                            if (coverageRatio >= 0.50) {
+                                obj->isSelected = 1;
+                            }
+                        } else {
+                            // Degenerate/point-sized object fully inside lassoBox
+                            if (lassoBox.Contains((obj->bounds.minX + obj->bounds.maxX) * 0.5,
+                                                  (obj->bounds.minY + obj->bounds.maxY) * 0.5)) {
+                                obj->isSelected = 1;
+                            }
+                        }
                     }
                 }
                 selectionGizmo.SetSelectedObjects(activePage->objects);
@@ -526,7 +539,19 @@ public:
                     for (uint32_t uid : candidateUids) {
                         auto obj = activePage->FindObjectByUid(uid);
                         if (obj && obj->isVisible && obj->isSelectable && obj->Intersects(box)) {
-                            obj->isSelected = 1;
+                            double objArea = obj->bounds.Area();
+                            if (objArea > 1e-4) {
+                                double isectArea = box.IntersectionArea(obj->bounds);
+                                double coverageRatio = isectArea / objArea;
+                                if (coverageRatio >= 0.50) {
+                                    obj->isSelected = 1;
+                                }
+                            } else {
+                                if (box.Contains((obj->bounds.minX + obj->bounds.maxX) * 0.5,
+                                                 (obj->bounds.minY + obj->bounds.maxY) * 0.5)) {
+                                    obj->isSelected = 1;
+                                }
+                            }
                         }
                     }
                     selectionGizmo.SetSelectedObjects(activePage->objects);

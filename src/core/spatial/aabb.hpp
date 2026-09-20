@@ -87,6 +87,29 @@ struct AABB {
      * @return The area of the AABB
      */
     constexpr double Area() const noexcept { return Width() * Height(); }
+
+    /**
+     * @brief Computes the intersection AABB between this and another AABB.
+     * If they do not intersect, returns an AABB with zero width/height.
+     */
+    constexpr AABB Intersection(const AABB& other) const noexcept {
+        double ix0 = (minX > other.minX) ? minX : other.minX;
+        double iy0 = (minY > other.minY) ? minY : other.minY;
+        double ix1 = (maxX < other.maxX) ? maxX : other.maxX;
+        double iy1 = (maxY < other.maxY) ? maxY : other.maxY;
+
+        if (ix0 < ix1 && iy0 < iy1) {
+            return AABB(ix0, iy0, ix1, iy1);
+        }
+        return AABB(0.0, 0.0, 0.0, 0.0);
+    }
+
+    /**
+     * @brief Computes the area of intersection between this and another AABB.
+     */
+    constexpr double IntersectionArea(const AABB& other) const noexcept {
+        return Intersection(other).Area();
+    }
 };
 
 /**

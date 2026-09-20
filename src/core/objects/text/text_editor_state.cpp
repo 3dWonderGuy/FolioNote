@@ -59,6 +59,8 @@ void TextEditorState::Attach(TextBoxObject* target, DocumentSession* session) {
 
 void TextEditorState::Detach(DocumentSession* session) {
     if (m_target) {
+        // Ensure text and runs are strictly synchronized before saving/resetting state
+        m_target->SyncTextToRuns();
         if (session) {
             CommitTextEdit(session);
         }
@@ -104,36 +106,35 @@ void TextEditorState::CommitTextEdit(DocumentSession* session) {
 
 /**
  * @brief Recomputes lines, word wrap, and total container dimensions.
+ *
+ * Mathematical & Typographical Flow:
+ * - Line metrics: height and ascent are computed via m_target->GetLineMetricsForRange(start, end).
+ * - Span advances: computed via m_target->MeasureRange(start, end).
+ * - Word boundaries: detected via ASCII space or paragraph breaks ('\n').
+ * - Dynamic expansion: expands m_target->worldHeight and worldWidth to enclose all content.
  */
 void TextEditorState::ReflowLayout() {
     m_lines.clear();
     if (!m_target) return;
 
-    BLFont font = FontManager::Instance().GetFont(m_target->fontFamily, m_target->fontSize, m_target->isBold, m_target->isItalic);
-    BLFontMetrics fm = FontManager::Instance().GetMetrics(font);
-
-    // Compute line height with typographical padding
-    double lineHeight = fm.ascent + fm.descent + fm.line_gap;
-    if (lineHeight <= 0.001) {
-        lineHeight = m_target->fontSize * 1.25;
-    }
-    double ascent = (fm.ascent > 0.001) ? fm.ascent : (m_target->fontSize * 0.9);
-
     const std::string& fullText = m_target->text;
-    const double maxWrapWidth = m_target->worldWidth - 4.0; // 2mm internal margin on each side
+    const double maxWrapWidth = (std::max)(10.0, m_target->worldWidth - 4.0); // 2mm internal margin on each side
 
     double curY = 2.0; // 2mm top margin
-    size_t lineStart = 0;
     double maxLineWidth = 0.0;
 
     // Helper lambda to commit a line slice
     auto CommitLine = [&](size_t start, size_t count, const std::string& lineStr, double advanceW) {
+        double lineAscent = 0.0;
+        double lineHeight = 0.0;
+        m_target->GetLineMetricsForRange(start, start + count, lineAscent, lineHeight);
+
         TextLineLayout l;
         l.startCharIndex = start;
         l.charCount = count;
         l.localY = curY;
         l.height = lineHeight;
-        l.baselineY = curY + ascent;
+        l.baselineY = curY + lineAscent;
         l.width = advanceW;
         l.text = lineStr;
         m_lines.push_back(l);
@@ -150,41 +151,43 @@ void TextEditorState::ReflowLayout() {
         size_t i = 0;
         while (i < fullText.size()) {
             size_t newlinePos = fullText.find('\n', i);
-            std::string paragraph = (newlinePos != std::string::npos) 
-                ? fullText.substr(i, newlinePos - i)
-                : fullText.substr(i);
-            size_t paraLen = paragraph.size();
+            size_t paraEnd = (newlinePos != std::string::npos) ? newlinePos : fullText.size();
+            size_t paraLen = paraEnd - i;
             size_t paraStart = i;
 
             if (!m_target->isWrap || maxWrapWidth <= 10.0) {
-                // No word wrapping — measure entire paragraph
-                double w = FontManager::Instance().MeasureTextWidth(font, paragraph);
-                CommitLine(paraStart, paraLen, paragraph, w);
+                // No word wrapping — measure entire paragraph range
+                double w = m_target->MeasureRange(paraStart, paraEnd);
+                CommitLine(paraStart, paraLen, fullText.substr(paraStart, paraLen), w);
             } else {
-                // Greedy word wrapping
-                std::istringstream iss(paragraph);
-                std::string word;
-                std::string currentLine;
-                size_t currentLineStart = paraStart;
+                // Word wrapping using per-span width measurements
+                size_t lineStartIdx = paraStart;
+                size_t scanIdx = paraStart;
 
-                while (iss >> word) {
-                    std::string testLine = currentLine.empty() ? word : (currentLine + " " + word);
-                    double testW = FontManager::Instance().MeasureTextWidth(font, testLine);
+                while (scanIdx < paraEnd) {
+                    size_t nextSpace = fullText.find(' ', scanIdx);
+                    if (nextSpace > paraEnd) nextSpace = std::string::npos;
+                    size_t wordEnd = (nextSpace != std::string::npos) ? nextSpace : paraEnd;
+                    size_t candidateEnd = (nextSpace != std::string::npos) ? nextSpace + 1 : paraEnd;
 
-                    if (testW <= maxWrapWidth || currentLine.empty()) {
-                        currentLine = testLine;
+                    double testW = m_target->MeasureRange(lineStartIdx, wordEnd);
+                    if (testW <= maxWrapWidth || scanIdx == lineStartIdx) {
+                        scanIdx = candidateEnd;
                     } else {
-                        // Commit current line
-                        double curW = FontManager::Instance().MeasureTextWidth(font, currentLine);
-                        CommitLine(currentLineStart, currentLine.size(), currentLine, curW);
-                        currentLineStart += currentLine.size() + 1; // account for space
-                        currentLine = word;
+                        size_t actualLineEnd = scanIdx;
+                        if (actualLineEnd > lineStartIdx && fullText[actualLineEnd - 1] == ' ') {
+                            actualLineEnd--;
+                        }
+                        double curW = m_target->MeasureRange(lineStartIdx, actualLineEnd);
+                        CommitLine(lineStartIdx, actualLineEnd - lineStartIdx, fullText.substr(lineStartIdx, actualLineEnd - lineStartIdx), curW);
+                        lineStartIdx = scanIdx;
+                        scanIdx = candidateEnd;
                     }
                 }
 
-                if (!currentLine.empty() || paragraph.empty()) {
-                    double curW = FontManager::Instance().MeasureTextWidth(font, currentLine);
-                    CommitLine(currentLineStart, currentLine.size(), currentLine, curW);
+                if (lineStartIdx < paraEnd) {
+                    double curW = m_target->MeasureRange(lineStartIdx, paraEnd);
+                    CommitLine(lineStartIdx, paraEnd - lineStartIdx, fullText.substr(lineStartIdx, paraEnd - lineStartIdx), curW);
                 }
             }
 
@@ -395,14 +398,12 @@ size_t TextEditorState::FindClosestCharIndex(double worldX, double worldY) const
         }
     }
 
-    // 2. Locate character within bestLine using font measurements
-    BLFont font = FontManager::Instance().GetFont(m_target->fontFamily, m_target->fontSize, m_target->isBold, m_target->isItalic);
+    // 2. Locate character within bestLine using per-span font measurements
     size_t closestOffset = 0;
     double minDiff = 1e9;
 
-    for (size_t c = 0; c <= bestLine->text.size(); ++c) {
-        std::string sub = bestLine->text.substr(0, c);
-        double advance = FontManager::Instance().MeasureTextWidth(font, sub);
+    for (size_t c = 0; c <= bestLine->charCount; ++c) {
+        double advance = m_target->MeasureRange(bestLine->startCharIndex, bestLine->startCharIndex + c);
         double diff = std::abs(advance - localX);
         if (diff < minDiff) {
             minDiff = diff;
@@ -436,20 +437,16 @@ Point2D TextEditorState::GetCursorWorldPos() const {
         return Point2D{m_target ? m_target->worldX + 2.0 : 0.0, m_target ? m_target->worldY + 2.0 : 0.0};
     }
 
-    BLFont font = FontManager::Instance().GetFont(m_target->fontFamily, m_target->fontSize, m_target->isBold, m_target->isItalic);
-
     for (const auto& l : m_lines) {
         if (m_cursorIndex >= l.startCharIndex && m_cursorIndex <= l.startCharIndex + l.charCount) {
-            size_t localOffset = m_cursorIndex - l.startCharIndex;
-            std::string sub = l.text.substr(0, localOffset);
-            double adv = FontManager::Instance().MeasureTextWidth(font, sub);
+            double adv = m_target->MeasureRange(l.startCharIndex, m_cursorIndex);
             return Point2D{m_target->worldX + 2.0 + adv, m_target->worldY + l.localY};
         }
     }
 
     // Fallback: end of last line
     const auto& lastLine = m_lines.back();
-    double adv = FontManager::Instance().MeasureTextWidth(font, lastLine.text);
+    double adv = m_target->MeasureRange(lastLine.startCharIndex, lastLine.startCharIndex + lastLine.charCount);
     return Point2D{m_target->worldX + 2.0 + adv, m_target->worldY + lastLine.localY};
 }
 
@@ -467,19 +464,17 @@ std::vector<AABB> TextEditorState::GetSelectionBoxes() const {
     size_t selStart = SelectionStart();
     size_t selEnd = SelectionEnd();
 
-    BLFont font = FontManager::Instance().GetFont(m_target->fontFamily, m_target->fontSize, m_target->isBold, m_target->isItalic);
-
     for (const auto& l : m_lines) {
         size_t lineEnd = l.startCharIndex + l.charCount;
         if (selEnd <= l.startCharIndex || selStart >= lineEnd) {
             continue; // line not in selection
         }
 
-        size_t boxStart = (std::max)(selStart, l.startCharIndex) - l.startCharIndex;
-        size_t boxEnd = (std::min)(selEnd, lineEnd) - l.startCharIndex;
+        size_t boxStartIdx = (std::max)(selStart, l.startCharIndex);
+        size_t boxEndIdx = (std::min)(selEnd, lineEnd);
 
-        double x0 = FontManager::Instance().MeasureTextWidth(font, l.text.substr(0, boxStart));
-        double x1 = FontManager::Instance().MeasureTextWidth(font, l.text.substr(0, boxEnd));
+        double x0 = m_target->MeasureRange(l.startCharIndex, boxStartIdx);
+        double x1 = m_target->MeasureRange(l.startCharIndex, boxEndIdx);
 
         double wx0 = m_target->worldX + 2.0 + x0;
         double wx1 = m_target->worldX + 2.0 + x1;

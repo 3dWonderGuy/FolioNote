@@ -134,7 +134,7 @@ void TextBoxObject::SyncTextToRuns() {
         r.strikethrough = isStrikethrough;
         r.highlightColor = highlightColor;
         runs.push_back(r);
-    } else {
+    } else if (runs.size() == 1) {
         runs[0].text = text;
         runs[0].fontFamily = fontFamily;
         runs[0].fontSize = fontSize;
@@ -144,7 +144,113 @@ void TextBoxObject::SyncTextToRuns() {
         runs[0].underline = isUnderline;
         runs[0].strikethrough = isStrikethrough;
         runs[0].highlightColor = highlightColor;
+    } else {
+        // Multi-run container: ensure PlainText() matches text
+        if (text.empty()) {
+            text = PlainText();
+        } else {
+            std::string runText;
+            for (const auto& r : runs) runText += r.text;
+            if (runText != text) {
+                // Text was edited globally in editor: keep styling on primary run
+                runs[0].text = text;
+                runs.resize(1);
+            }
+        }
     }
+}
+
+std::vector<TextBoxObject::FormattedSpan> TextBoxObject::GetSpansForRange(size_t rangeStart, size_t rangeEnd) const {
+    std::vector<FormattedSpan> spans;
+    if (rangeStart >= rangeEnd) return spans;
+
+    std::string full = PlainText();
+    if (full.empty()) return spans;
+    rangeStart = (std::min)(rangeStart, full.size());
+    rangeEnd = (std::min)(rangeEnd, full.size());
+    if (rangeStart >= rangeEnd) return spans;
+
+    if (runs.empty()) {
+        FormattedSpan s;
+        s.text = full.substr(rangeStart, rangeEnd - rangeStart);
+        s.run = nullptr;
+        BLFont f = FontManager::Instance().GetFont(fontFamily, fontSize, isBold, isItalic);
+        s.width = FontManager::Instance().MeasureTextWidth(f, s.text);
+        spans.push_back(s);
+        return spans;
+    }
+
+    size_t curRunStart = 0;
+    for (const auto& r : runs) {
+        size_t curRunEnd = curRunStart + r.text.size();
+        if (rangeEnd <= curRunStart) break;
+        if (rangeStart < curRunEnd) {
+            size_t s = (std::max)(rangeStart, curRunStart);
+            size_t e = (std::min)(rangeEnd, curRunEnd);
+            FormattedSpan span;
+            span.text = r.text.substr(s - curRunStart, e - s);
+            span.run = &r;
+            if (r.elementType == InlineElementType::TextRun) {
+                BLFont rf = FontManager::Instance().GetFont(r.fontFamily, r.fontSize, r.bold, r.italic);
+                span.width = FontManager::Instance().MeasureTextWidth(rf, span.text);
+            } else {
+                span.width = r.inlineWidth;
+            }
+            spans.push_back(span);
+        }
+        curRunStart = curRunEnd;
+    }
+
+    if (spans.empty()) {
+        FormattedSpan s;
+        s.text = full.substr(rangeStart, rangeEnd - rangeStart);
+        s.run = nullptr;
+        BLFont f = FontManager::Instance().GetFont(fontFamily, fontSize, isBold, isItalic);
+        s.width = FontManager::Instance().MeasureTextWidth(f, s.text);
+        spans.push_back(s);
+    }
+    return spans;
+}
+
+double TextBoxObject::MeasureRange(size_t rangeStart, size_t rangeEnd) const {
+    auto spans = GetSpansForRange(rangeStart, rangeEnd);
+    double totalW = 0.0;
+    for (const auto& s : spans) {
+        totalW += s.width;
+    }
+    return totalW;
+}
+
+void TextBoxObject::GetLineMetricsForRange(size_t rangeStart, size_t rangeEnd, double& outAscent, double& outLineHeight) const {
+    auto spans = GetSpansForRange(rangeStart, rangeEnd);
+    double maxAscent = 0.0;
+    double maxHeight = 0.0;
+
+    for (const auto& s : spans) {
+        if (s.run && s.run->elementType == InlineElementType::TextRun) {
+            BLFont f = FontManager::Instance().GetFont(s.run->fontFamily, s.run->fontSize, s.run->bold, s.run->italic);
+            BLFontMetrics fm = FontManager::Instance().GetMetrics(f);
+            double h = fm.ascent + fm.descent + fm.line_gap;
+            if (h <= 0.001) h = s.run->fontSize * 1.25;
+            double a = (fm.ascent > 0.001) ? fm.ascent : (s.run->fontSize * 0.9);
+            maxAscent = (std::max)(maxAscent, a);
+            maxHeight = (std::max)(maxHeight, h);
+        } else if (s.run) {
+            maxAscent = (std::max)(maxAscent, s.run->inlineHeight);
+            maxHeight = (std::max)(maxHeight, s.run->inlineHeight);
+        }
+    }
+
+    if (maxHeight <= 0.001) {
+        BLFont f = FontManager::Instance().GetFont(fontFamily, fontSize, isBold, isItalic);
+        BLFontMetrics fm = FontManager::Instance().GetMetrics(f);
+        maxHeight = fm.ascent + fm.descent + fm.line_gap;
+        if (maxHeight <= 0.001) maxHeight = fontSize * 1.25;
+        maxAscent = (fm.ascent > 0.001) ? fm.ascent : (fontSize * 0.9);
+    }
+
+    outAscent = maxAscent;
+    outLineHeight = maxHeight;
 }
 
 void TextBoxObject::CompactRuns() {
@@ -249,8 +355,8 @@ void TextBoxObject::Render(BLContext& ctx, const Viewport& viewport) const {
         ctx.stroke_round_rect(rr);
     }
 
-    // OneNote-style Container Header Handle (shown when hovered or actively editing)
-    if (isHovered || isEditing) {
+    // OneNote-style Container Header Handle (shown when hovered, selected, or actively editing)
+    if (isHovered || isSelected || isEditing) {
         double headerH = 3.5;
         BLRoundRect topBar(worldX, worldY - headerH - 0.5, worldWidth, headerH, 2.0, 2.0);
         BLRgba32 barColor = (isEditing) ? BLRgba32(0x3B, 0x82, 0xF6, 0xD0) : BLRgba32(0x94, 0xA3, 0xB8, 0x90);
@@ -265,89 +371,163 @@ void TextBoxObject::Render(BLContext& ctx, const Viewport& viewport) const {
     }
 
     // =========================================================================
-    // LAYER 3: BLEND2D VECTOR TYPOGRAPHY PASS
+    // LAYER 3: BLEND2D VECTOR TYPOGRAPHY PASS (Rich Inline & Styled Runs)
     // =========================================================================
-    BLFont font = FontManager::Instance().GetFont(fontFamily, fontSize, isBold, isItalic);
-    if (font.is_valid()) {
-        BLFontMetrics fm = FontManager::Instance().GetMetrics(font);
-        double lineHeight = fm.ascent + fm.descent + fm.line_gap;
-        if (lineHeight <= 0.001) lineHeight = fontSize * 1.25;
-        double ascent = (fm.ascent > 0.001) ? fm.ascent : (fontSize * 0.9);
-
+    std::string fullText = PlainText();
+    if (!fullText.empty()) {
         double curY = worldY + 2.0;
         const double maxWrapWidth = (std::max)(10.0, worldWidth - 4.0);
 
-        auto drawFormattedLine = [&](const std::string& lineText, double yTop) {
-            double lineW = FontManager::Instance().MeasureTextWidth(font, lineText);
+        /**
+         * @brief Renders a single measured line slice with rich styled spans and inline elements.
+         *
+         * Mathematical Layout:
+         * - Span start X: lineX + \sum_{prev} span.width
+         * - Baseline: yTop + maxLineAscent
+         * - Text baseline render: ctx.fill_utf8_text(..., spanFont, ...)
+         */
+        auto drawFormattedLine = [&](size_t lineStart, size_t lineEnd, double yTop, double lineAscent, double lineH) {
+            double totalLineWidth = MeasureRange(lineStart, lineEnd);
             double lineX = worldX + 2.0;
-            if (alignment == 1 && maxWrapWidth > lineW) {
-                lineX += (maxWrapWidth - lineW) * 0.5; // Center
-            } else if (alignment == 2 && maxWrapWidth > lineW) {
-                lineX += (maxWrapWidth - lineW); // Right
+            if (alignment == 1 && maxWrapWidth > totalLineWidth) {
+                lineX += (maxWrapWidth - totalLineWidth) * 0.5; // Center alignment
+            } else if (alignment == 2 && maxWrapWidth > totalLineWidth) {
+                lineX += (maxWrapWidth - totalLineWidth); // Right alignment
             }
-            // Highlight background if set
-            if (highlightColor.a() > 0) {
-                ctx.set_fill_style(highlightColor);
-                ctx.fill_rect(BLRect(lineX - 0.5, yTop, lineW + 1.0, lineHeight));
-            }
-            // Text fill
-            double baselineY = yTop + ascent;
-            ctx.fill_utf8_text(BLPoint(lineX, baselineY), font, lineText.data(), lineText.size(), textColor);
 
-            // Underline decoration
-            if (isUnderline) {
-                ctx.set_stroke_style(textColor);
-                ctx.set_stroke_width(0.5);
-                ctx.stroke_line(lineX, baselineY + 1.2, lineX + lineW, baselineY + 1.2);
-            }
-            // Strikethrough decoration
-            if (isStrikethrough) {
-                ctx.set_stroke_style(textColor);
-                ctx.set_stroke_width(0.5);
-                double strikeY = baselineY - (ascent * 0.35);
-                ctx.stroke_line(lineX, strikeY, lineX + lineW, strikeY);
+            auto spans = GetSpansForRange(lineStart, lineEnd);
+            double spanX = lineX;
+
+            for (const auto& span : spans) {
+                if (span.width <= 0.0001 && span.text.empty()) continue;
+
+                // Resolve styles for this span
+                BLRgba32 spanTextColor = textColor;
+                BLRgba32 spanHighlightColor = highlightColor;
+                bool spanBold = isBold;
+                bool spanItalic = isItalic;
+                bool spanUnderline = isUnderline;
+                bool spanStrikethrough = isStrikethrough;
+                std::string spanFontFamily = fontFamily;
+                double spanFontSize = fontSize;
+
+                if (span.run) {
+                    spanTextColor = span.run->color;
+                    spanHighlightColor = span.run->highlightColor;
+                    spanBold = span.run->bold;
+                    spanItalic = span.run->italic;
+                    spanUnderline = span.run->underline;
+                    spanStrikethrough = span.run->strikethrough;
+                    spanFontFamily = span.run->fontFamily;
+                    spanFontSize = span.run->fontSize;
+                }
+
+                // Check for inline rich elements (InlineImage, InlineMath, InlineTable)
+                if (span.run && span.run->elementType != InlineElementType::TextRun) {
+                    if (!span.run->renderedImage.is_empty()) {
+                        // Center vertically within the line height
+                        double imgY = yTop + (lineH - span.run->inlineHeight) * 0.5;
+                        ctx.blit_image(BLPoint(spanX, imgY), span.run->renderedImage);
+                    } else if (span.run->elementType == InlineElementType::InlineMath) {
+                        // Fallback: draw LaTeX source text in italic font
+                        BLFont mathFont = FontManager::Instance().GetFont(spanFontFamily, spanFontSize, false, true);
+                        double baselineY = yTop + lineAscent;
+                        ctx.fill_utf8_text(BLPoint(spanX, baselineY), mathFont, span.run->latexSource.data(), span.run->latexSource.size(), spanTextColor);
+                    }
+                    spanX += span.width;
+                    continue;
+                }
+
+                // Standard TextRun formatting
+                BLFont spanFont = FontManager::Instance().GetFont(spanFontFamily, spanFontSize, spanBold, spanItalic);
+                if (!spanFont.is_valid()) {
+                    spanFont = FontManager::Instance().GetFont(fontFamily, fontSize, isBold, isItalic);
+                }
+
+                // Background highlight if present
+                if (spanHighlightColor.a() > 0) {
+                    ctx.set_fill_style(spanHighlightColor);
+                    ctx.fill_rect(BLRect(spanX - 0.5, yTop, span.width + 1.0, lineH));
+                }
+
+                // Text glyph vector rasterization
+                double baselineY = yTop + lineAscent;
+                ctx.fill_utf8_text(BLPoint(spanX, baselineY), spanFont, span.text.data(), span.text.size(), spanTextColor);
+
+                // Underline decoration
+                if (spanUnderline) {
+                    ctx.set_stroke_style(spanTextColor);
+                    ctx.set_stroke_width(0.5);
+                    ctx.stroke_line(spanX, baselineY + 1.2, spanX + span.width, baselineY + 1.2);
+                }
+
+                // Strikethrough decoration
+                if (spanStrikethrough) {
+                    ctx.set_stroke_style(spanTextColor);
+                    ctx.set_stroke_width(0.5);
+                    double strikeY = baselineY - (lineAscent * 0.35);
+                    ctx.stroke_line(spanX, strikeY, spanX + span.width, strikeY);
+                }
+
+                spanX += span.width;
             }
         };
 
-        std::string fullText = PlainText();
-        if (!fullText.empty()) {
-            size_t i = 0;
-            while (i < fullText.size()) {
-                size_t newlinePos = fullText.find('\n', i);
-                std::string paragraph = (newlinePos != std::string::npos)
-                    ? fullText.substr(i, newlinePos - i)
-                    : fullText.substr(i);
+        size_t i = 0;
+        while (i < fullText.size()) {
+            size_t newlinePos = fullText.find('\n', i);
+            size_t paraEnd = (newlinePos != std::string::npos) ? newlinePos : fullText.size();
+            size_t paraLen = paraEnd - i;
 
-                if (!isWrap || maxWrapWidth <= 10.0) {
-                    drawFormattedLine(paragraph, curY);
-                    curY += lineHeight;
-                } else {
-                    std::istringstream iss(paragraph);
-                    std::string word;
-                    std::string currentLine;
+            if (!isWrap || maxWrapWidth <= 10.0) {
+                // Entire paragraph rendered on single line
+                double lineAscent = 0.0, lineH = 0.0;
+                GetLineMetricsForRange(i, paraEnd, lineAscent, lineH);
+                drawFormattedLine(i, paraEnd, curY, lineAscent, lineH);
+                curY += lineH;
+            } else {
+                // Word wrapping using per-span width measurements
+                size_t lineStartIdx = i;
+                size_t scanIdx = i;
 
-                    while (iss >> word) {
-                        std::string testLine = currentLine.empty() ? word : (currentLine + " " + word);
-                        double testW = FontManager::Instance().MeasureTextWidth(font, testLine);
-                        if (testW <= maxWrapWidth || currentLine.empty()) {
-                            currentLine = testLine;
-                        } else {
-                            drawFormattedLine(currentLine, curY);
-                            curY += lineHeight;
-                            currentLine = word;
+                while (scanIdx < paraEnd) {
+                    // Find next word boundary
+                    size_t nextSpace = fullText.find(' ', scanIdx);
+                    if (nextSpace > paraEnd) nextSpace = std::string::npos;
+                    size_t wordEnd = (nextSpace != std::string::npos) ? nextSpace : paraEnd;
+                    size_t candidateEnd = (nextSpace != std::string::npos) ? nextSpace + 1 : paraEnd;
+
+                    double testW = MeasureRange(lineStartIdx, wordEnd);
+                    if (testW <= maxWrapWidth || scanIdx == lineStartIdx) {
+                        // Word fits, advance scan
+                        scanIdx = candidateEnd;
+                    } else {
+                        // Word overflows, commit current line slice [lineStartIdx, scanIdx]
+                        size_t actualLineEnd = scanIdx;
+                        if (actualLineEnd > lineStartIdx && fullText[actualLineEnd - 1] == ' ') {
+                            actualLineEnd--; // trim trailing space from measure
                         }
-                    }
-                    if (!currentLine.empty()) {
-                        drawFormattedLine(currentLine, curY);
-                        curY += lineHeight;
+                        double lineAscent = 0.0, lineH = 0.0;
+                        GetLineMetricsForRange(lineStartIdx, actualLineEnd, lineAscent, lineH);
+                        drawFormattedLine(lineStartIdx, actualLineEnd, curY, lineAscent, lineH);
+                        curY += lineH;
+                        lineStartIdx = scanIdx;
+                        scanIdx = candidateEnd;
                     }
                 }
 
-                if (newlinePos != std::string::npos) {
-                    i = newlinePos + 1;
-                } else {
-                    break;
+                if (lineStartIdx < paraEnd) {
+                    double lineAscent = 0.0, lineH = 0.0;
+                    GetLineMetricsForRange(lineStartIdx, paraEnd, lineAscent, lineH);
+                    drawFormattedLine(lineStartIdx, paraEnd, curY, lineAscent, lineH);
+                    curY += lineH;
                 }
+            }
+
+            if (newlinePos != std::string::npos) {
+                i = newlinePos + 1;
+            } else {
+                break;
             }
         }
     }

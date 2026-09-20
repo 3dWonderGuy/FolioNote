@@ -319,18 +319,60 @@ bool ShapeObject::HitTest(double worldXQuery, double worldYQuery) const {
     BLPath path;
     BuildPath(path);
 
-    // Inside fill
+    // 1. Inside fill (only tested if shape has an active infill)
     if (fillType != ShapeFillType::None) {
         if (path.hit_test(localPt, BL_FILL_RULE_NON_ZERO) == BL_HIT_TEST_IN)
             return true;
     }
 
-    // Proximity to outline stroke
-    double hitTol = (std::max)(strokeWidth * 0.5, 2.5);
+    // 2. Proximity to outline perimeter stroke
     if (outlineType != ShapeOutlineType::None || fillType == ShapeFillType::None) {
+        double hitTol = (std::max)(strokeWidth * 0.5, 2.5);
+
+        // A point is on or near the perimeter stroke if:
+        // (a) It lies within the expanded bounding envelope of the shape
+        // (b) AND either:
+        //     - the shape is unfilled, so it MUST NOT be deep in the interior (must be within hitTol of perimeter),
+        //     - or it lies within hitTol distance to the path boundary.
         if (localPt.x >= worldX - hitTol && localPt.x <= worldX + worldWidth  + hitTol &&
-            localPt.y >= worldY - hitTol && localPt.y <= worldY + worldHeight + hitTol)
+            localPt.y >= worldY - hitTol && localPt.y <= worldY + worldHeight + hitTol) {
+
+            if (fillType == ShapeFillType::None) {
+                // For unfilled shapes, clicks deep inside the interior MUST pass through!
+                // Fast path for rectangular shapes:
+                if (shapeType == ShapeType::Rectangle) {
+                    bool nearLeft   = std::abs(localPt.x - worldX) <= hitTol;
+                    bool nearRight  = std::abs(localPt.x - (worldX + worldWidth)) <= hitTol;
+                    bool nearTop    = std::abs(localPt.y - worldY) <= hitTol;
+                    bool nearBottom = std::abs(localPt.y - (worldY + worldHeight)) <= hitTol;
+                    return (nearLeft || nearRight || nearTop || nearBottom);
+                }
+
+                // For arbitrary closed vector paths:
+                // If the point is NOT inside the filled path, but within hitTol of bounds, check closest vertex / outline proximity
+                BLPoint closestVertex;
+                size_t vtxIdx = 0;
+                double dist = 0.0;
+                if (path.get_closest_vertex(localPt, hitTol, &vtxIdx, &dist) == BL_SUCCESS) {
+                    return true;
+                }
+
+                // Also check if point is inside the path but near the boundary (within hitTol of edges)
+                // If it's deep inside (hit_test == BL_HIT_TEST_IN and not near vertices), it passes through!
+                if (path.hit_test(localPt, BL_FILL_RULE_NON_ZERO) == BL_HIT_TEST_IN) {
+                    // Check if close to bounding edges
+                    bool nearEdge = (std::abs(localPt.x - worldX) <= hitTol ||
+                                     std::abs(localPt.x - (worldX + worldWidth)) <= hitTol ||
+                                     std::abs(localPt.y - worldY) <= hitTol ||
+                                     std::abs(localPt.y - (worldY + worldHeight)) <= hitTol);
+                    return nearEdge;
+                }
+
+                return false;
+            }
+
             return true;
+        }
     }
     return false;
 }
@@ -339,7 +381,15 @@ bool ShapeObject::HitTestCircle(double worldXQuery, double worldYQuery, double r
     AABB queryBox(worldXQuery - radiusMm, worldYQuery - radiusMm,
                   worldXQuery + radiusMm, worldYQuery + radiusMm);
     if (!bounds.Intersects(queryBox)) return false;
-    return HitTest(worldXQuery, worldYQuery) || bounds.Contains(worldXQuery, worldYQuery);
+
+    if (HitTest(worldXQuery, worldYQuery)) return true;
+
+    // For filled shapes, bounds.Contains or queryBox intersection can act as generous hit target;
+    // for unfilled shapes, it must NOT swallow clicks in the interior!
+    if (fillType != ShapeFillType::None) {
+        return bounds.Contains(worldXQuery, worldYQuery);
+    }
+    return false;
 }
 
 bool ShapeObject::HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const {
