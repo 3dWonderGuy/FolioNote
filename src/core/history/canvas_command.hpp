@@ -236,4 +236,47 @@ public:
     std::string GetName() const override;
 };
 
+/**
+ * @class ModifyTextCommand
+ * @brief Records reversible text string edits and container dimension changes for TextBoxObject.
+ *
+ * GENERAL WORKING PROCESS & INVARIANTS:
+ * - Stores previous and replacement text strings along with bounding box dimensions (width and height).
+ * - On Execute(): sets target text box to newText, recalibrates bounds, refreshes spatial index, and updates active editor state.
+ * - On Undo(): reverts target text box to previousText, restores previous dimensions, and refreshes R-Tree spatial index.
+ * - Input: target UID, previous/new text strings, previous/new width and height in millimeters.
+ * - Output: bidirectional state mutation on the target CanvasPage.
+ */
+class ModifyTextCommand : public ICanvasCommand {
+public:
+    uint32_t textBoxUid = 0;
+    std::string previousText;
+    std::string newText;
+    double previousWidth = 0.0;
+    double newWidth = 0.0;
+    double previousHeight = 0.0;
+    double newHeight = 0.0;
+
+    ModifyTextCommand(uint32_t uid, std::string prevText, std::string nextText,
+                      double prevW, double nextW, double prevH, double nextH);
+
+    void Execute(CanvasPage& page, CanvasEngine* engine = nullptr) override;
+    void Undo(CanvasPage& page, CanvasEngine* engine = nullptr) override;
+    AABB GetTargetBounds() const override;
+    std::string GetName() const override;
+};
+
+// =============================================================================
+// CONVENIENCE TYPE ALIASES (Matching Universal ICommand Design)
+// =============================================================================
+using ICommand = ICanvasCommand;
+using DeleteCommand = RemoveObjectsCommand;
+using TransformCommand = TransformObjectsCommand;
+
 } // namespace Folio
+
+// Expose standard aliases to global namespace for convenience
+using Folio::ICommand;
+using Folio::DeleteCommand;
+using Folio::TransformCommand;
+using Folio::ModifyTextCommand;

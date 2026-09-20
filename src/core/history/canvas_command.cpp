@@ -8,6 +8,7 @@
 #include "core/history/canvas_command.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/engine/canvas_engine.hpp"
+#include "core/objects/text/text_box.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {
@@ -526,6 +527,88 @@ AABB LockObjectsCommand::GetTargetBounds() const {
 
 std::string LockObjectsCommand::GetName() const {
     return targetLock ? "Lock Background Template" : "Unlock Objects";
+}
+
+// =========================================================================================
+// ModifyTextCommand Implementation
+// =========================================================================================
+
+/**
+ * @brief Constructs a reversible text modification command.
+ * @param uid Target TextBoxObject runtime unique identifier.
+ * @param prevText Pre-mutation text string.
+ * @param nextText Post-mutation text string.
+ * @param prevW Previous world width in mm.
+ * @param nextW New world width in mm.
+ * @param prevH Previous world height in mm.
+ * @param nextH New world height in mm.
+ */
+ModifyTextCommand::ModifyTextCommand(uint32_t uid, std::string prevText, std::string nextText,
+                                     double prevW, double nextW, double prevH, double nextH)
+    : textBoxUid(uid),
+      previousText(std::move(prevText)),
+      newText(std::move(nextText)),
+      previousWidth(prevW),
+      newWidth(nextW),
+      previousHeight(prevH),
+      newHeight(nextH) {}
+
+/**
+ * @brief Re-applies the text mutation and synchronizes typographical bounds into the R-Tree.
+ */
+void ModifyTextCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
+    auto obj = page.FindObjectByUid(textBoxUid);
+    if (obj && obj->type == ObjectType::Text) {
+        auto tb = std::static_pointer_cast<TextBoxObject>(obj);
+        tb->text = newText;
+        tb->worldWidth = newWidth;
+        tb->worldHeight = newHeight;
+        tb->SyncTextToRuns();
+        tb->UpdateBounds();
+        page.spatialIndex.Remove(tb->uid);
+        page.spatialIndex.Insert(tb->uid, tb->bounds);
+        page.isModified = true;
+        if (engine && engine->textEditor.GetTarget() == tb.get()) {
+            engine->textEditor.ReflowLayout();
+        }
+    }
+    if (engine) {
+        engine->isDirty = true;
+        engine->needsFullRebake = true;
+    }
+}
+
+/**
+ * @brief Reverses the text mutation, restoring prior text and bounds into the R-Tree.
+ */
+void ModifyTextCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
+    auto obj = page.FindObjectByUid(textBoxUid);
+    if (obj && obj->type == ObjectType::Text) {
+        auto tb = std::static_pointer_cast<TextBoxObject>(obj);
+        tb->text = previousText;
+        tb->worldWidth = previousWidth;
+        tb->worldHeight = previousHeight;
+        tb->SyncTextToRuns();
+        tb->UpdateBounds();
+        page.spatialIndex.Remove(tb->uid);
+        page.spatialIndex.Insert(tb->uid, tb->bounds);
+        page.isModified = true;
+        if (engine && engine->textEditor.GetTarget() == tb.get()) {
+            engine->textEditor.ReflowLayout();
+        }
+    }
+    if (engine) {
+        engine->isDirty = true;
+        engine->needsFullRebake = true;
+    }
+}
+
+AABB ModifyTextCommand::GetTargetBounds() const {
+    return AABB(0.0, 0.0, newWidth, newHeight);
+}
+
+std::string ModifyTextCommand::GetName() const {
+    return "Edit Text";
 }
 
 } // namespace Folio

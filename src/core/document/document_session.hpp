@@ -241,6 +241,15 @@ public:
     /// @brief Records a command to page history or appends to the active macro transaction.
     void RecordHistoryCommand(std::shared_ptr<CanvasPage> page, std::unique_ptr<Folio::ICanvasCommand> cmd);
 
+    /// @brief Retrieves the CommandManager (CommandHistory) for the currently active page.
+    Folio::CommandHistory* GetCommandManager();
+
+    /// @brief Executes a command directly on the active page and pushes it onto the undo stack.
+    void ExecuteCommand(std::unique_ptr<Folio::ICanvasCommand> cmd, CanvasEngine* engine = nullptr);
+
+    /// @brief Records a command that has already executed live on the active page into the undo history.
+    void RecordCommand(std::unique_ptr<Folio::ICanvasCommand> cmd);
+
     /// @brief Starts an atomic continuous eraser transaction bound to the active page.
     void BeginEraseTransaction();
 

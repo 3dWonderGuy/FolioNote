@@ -25,6 +25,7 @@
 #include "core/engine/live_layer_pipeline.hpp"
 #include "core/engine/selection_gizmo.hpp"
 #include "core/document/document_session.hpp"
+#include "core/history/canvas_command.hpp"
 #include "utils/usage_tracker.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"
@@ -757,6 +758,9 @@ public:
             shp->UpdateBounds();
 
             activePage->AddObject(shp);
+            if (session) {
+                session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(shp));
+            }
             ClearSelection(session);
             shp->isSelected = 1;
             selectionGizmo.SetSelectedObjects(activePage->objects);
@@ -822,6 +826,9 @@ public:
             arrow->UpdateBounds();
 
             activePage->AddObject(arrow);
+            if (session) {
+                session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(arrow));
+            }
 
             ClearSelection(session);
             arrow->isSelected = 1;
@@ -908,6 +915,9 @@ public:
         shp->UpdateBounds();
 
         activePage->AddObject(shp);
+        if (session) {
+            session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(shp));
+        }
 
         // Select the newly created shape so the user can immediately transform or operate with it
         ClearSelection(session);
@@ -1013,6 +1023,9 @@ public:
         shp->UpdateBounds();
 
         activePage->AddObject(shp);
+        if (session) {
+            session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(shp));
+        }
 
         // Select the newly inserted shape so the user can immediately transform/drag it
         ClearSelection(session);
@@ -1201,6 +1214,9 @@ public:
                         pdfObj->UpdateBounds();
 
                         activePage->AddObject(pdfObj);
+                        if (ctx->session) {
+                            ctx->session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(pdfObj));
+                        }
                         ctx->canvas->needsFullRebake = true;
                         ctx->canvas->isDirty = true;
                     }

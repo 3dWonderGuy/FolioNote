@@ -102,6 +102,17 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
         // --- TEXT INPUT FOR HEADLESS CONTROLLER ---
         case SDL_EVENT_TEXT_INPUT: {
             if (canvas.textEditor.IsActive()) {
+                if (stateMachine.hasPendingEmptyTextBox && stateMachine.pendingTextBoxUid != 0) {
+                    auto activePage = session.GetActivePage();
+                    if (activePage) {
+                        auto pendingBox = activePage->FindObjectByUid(stateMachine.pendingTextBoxUid);
+                        if (pendingBox) {
+                            session.RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(pendingBox));
+                        }
+                    }
+                    stateMachine.hasPendingEmptyTextBox = false;
+                    stateMachine.pendingTextBoxUid = 0;
+                }
                 canvas.textEditor.OnTextInput(event.text.text);
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
@@ -129,7 +140,8 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
                     newBox->highlightColor = canvas.defaultTextHighlightColor;
                     newBox->alignment = canvas.defaultTextAlignment;
                     activePage->AddObject(newBox);
-                    canvas.textEditor.Attach(newBox.get());
+                    session.RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(newBox));
+                    canvas.textEditor.Attach(newBox.get(), &session);
                     canvas.textEditor.OnTextInput(event.text.text);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
@@ -145,7 +157,7 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
             if (event.key.key == SDLK_ESCAPE) {
                 if (canvas.textEditor.IsActive()) {
                     auto target = canvas.textEditor.GetTarget();
-                    canvas.textEditor.Detach();
+                    canvas.textEditor.Detach(&session);
                     if (target && target->PlainText().empty()) {
                         auto activePage = session.GetActivePage();
                         if (activePage) activePage->RemoveObjectByUid(target->uid);
@@ -154,7 +166,23 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
                     canvas.isDirty = true;
                 }
             } else if (canvas.textEditor.IsActive()) {
-                canvas.textEditor.OnKeyDown(event.key.key, event.key.mod);
+                if (event.key.key == SDLK_Z && (event.key.mod & SDL_KMOD_CTRL)) {
+                    canvas.textEditor.CommitTextEdit(&session);
+                    if (event.key.mod & SDL_KMOD_SHIFT) {
+                        session.Redo(&canvas);
+                    } else {
+                        session.Undo(&canvas);
+                    }
+                    canvas.needsFullRebake = true;
+                    canvas.isDirty = true;
+                    break;
+                }
+                if (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) {
+                    canvas.textEditor.OnKeyDown(event.key.key, event.key.mod);
+                    canvas.textEditor.CommitTextEdit(&session);
+                } else {
+                    canvas.textEditor.OnKeyDown(event.key.key, event.key.mod);
+                }
                 canvas.needsFullRebake = true;
                 canvas.isDirty = true;
             }

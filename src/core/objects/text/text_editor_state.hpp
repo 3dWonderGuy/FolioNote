@@ -24,6 +24,8 @@
 #include "core/spatial/aabb.hpp"
 #include "core/engine/stroke_smoother.hpp"
 
+class DocumentSession;
+
 namespace Folio {
 
 class TextBoxObject;
@@ -33,18 +35,18 @@ class TextBoxObject;
  * @brief Metrics for a single formatted line of text within the text container.
  */
 struct TextLineLayout {
-    size_t startCharIndex = 0;  ///< Starting character index in flattened text
-    size_t charCount      = 0;  ///< Number of characters in this line
-    double localY         = 0.0;///< Top Y position relative to box worldY (mm)
-    double height         = 0.0;///< Line height (ascent + descent + lineGap) (mm)
-    double baselineY      = 0.0;///< Baseline relative to box worldY (mm)
-    double width          = 0.0;///< Total advance width of line (mm)
-    std::string text;           ///< Slice of text for this line
+    size_t startCharIndex = 0;  ///< Offset into TextBoxObject::text
+    size_t charCount = 0;       ///< Number of bytes in this line
+    double localY = 0.0;        ///< Y offset from container top in mm
+    double height = 0.0;        ///< Line height in mm
+    double baselineY = 0.0;     ///< Baseline Y offset in mm
+    double width = 0.0;         ///< Total advance width of line in mm
+    std::string text;           ///< Substring content
 };
 
 /**
  * @class TextEditorState
- * @brief Headless text controller managing caret, selection, and keystrokes.
+ * @brief Manages interactive editing state, cursor position, selection range, and text flow.
  */
 class TextEditorState {
 public:
@@ -54,13 +56,21 @@ public:
     /**
      * @brief Binds a target TextBoxObject for editing.
      * @param target Pointer to the text box object (or nullptr to detach).
+     * @param session Optional DocumentSession to commit any pending edits from previous target.
      */
-    void Attach(TextBoxObject* target);
+    void Attach(TextBoxObject* target, DocumentSession* session = nullptr);
 
     /**
-     * @brief Detaches the current text box and finalizes layout.
+     * @brief Detaches the current text box, finalizes layout, and commits text mutations into undo history.
+     * @param session Optional DocumentSession pointer to record ModifyTextCommand.
      */
-    void Detach();
+    void Detach(DocumentSession* session = nullptr);
+
+    /**
+     * @brief Commits current text buffer state to DocumentSession undo history if modified since baseline.
+     * @param session Target DocumentSession receiving the ModifyTextCommand.
+     */
+    void CommitTextEdit(DocumentSession* session);
 
     [[nodiscard]] bool IsActive() const noexcept { return m_target != nullptr; }
     [[nodiscard]] TextBoxObject* GetTarget() const noexcept { return m_target; }
@@ -160,6 +170,10 @@ private:
     TextBoxObject* m_target = nullptr;
     size_t m_cursorIndex = 0;
     size_t m_selectionAnchor = 0;
+
+    std::string m_baselineText;
+    double m_baselineWidth = 0.0;
+    double m_baselineHeight = 0.0;
 
     double m_lastBlinkTimeSec = 0.0;
     bool m_caretVisible = true;

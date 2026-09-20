@@ -164,8 +164,8 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                                 if (activePage) activePage->RemoveObjectByUid(canvas.textEditor.GetTarget()->uid);
                             }
                             canvas.ClearSelection(&session);
-                            canvas.textEditor.Detach();
-                            canvas.textEditor.Attach(textObj.get());
+                            canvas.textEditor.Detach(&session);
+                            canvas.textEditor.Attach(textObj.get(), &session);
                             canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, keyboard.shift);
                             hasPendingEmptyTextBox = false;
                             pendingTextBoxUid = 0;
@@ -179,7 +179,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     // Clicked non-text object:
                     if (canvas.textEditor.IsActive()) {
                         auto prevTarget = canvas.textEditor.GetTarget();
-                        canvas.textEditor.Detach();
+                        canvas.textEditor.Detach(&session);
                         if (prevTarget && prevTarget->PlainText().empty()) {
                             if (activePage) activePage->RemoveObjectByUid(prevTarget->uid);
                         }
@@ -200,7 +200,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     // If previous text box was empty, clean it up
                     if (canvas.textEditor.IsActive()) {
                         auto prevTarget = canvas.textEditor.GetTarget();
-                        canvas.textEditor.Detach();
+                        canvas.textEditor.Detach(&session);
                         if (prevTarget && prevTarget->PlainText().empty()) {
                             if (activePage) activePage->RemoveObjectByUid(prevTarget->uid);
                         }
@@ -221,7 +221,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                         newBox->highlightColor = canvas.defaultTextHighlightColor;
                         newBox->alignment = canvas.defaultTextAlignment;
                         activePage->AddObject(newBox);
-                        canvas.textEditor.Attach(newBox.get());
+                        canvas.textEditor.Attach(newBox.get(), &session);
                         canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, false);
                         hasPendingEmptyTextBox = true;
                         pendingTextBoxUid = newBox->uid;

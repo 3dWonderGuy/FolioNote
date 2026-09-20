@@ -170,6 +170,46 @@ void DocumentSession::RecordHistoryCommand(std::shared_ptr<CanvasPage> page, std
     }
 }
 
+/**
+ * @brief Retrieves the centralized CommandManager (CommandHistory) for the currently active page.
+ * @return Pointer to active page's CommandHistory, or nullptr if no page is active.
+ */
+Folio::CommandHistory* DocumentSession::GetCommandManager() {
+    auto activePage = GetActivePage();
+    return activePage ? &activePage->history : nullptr;
+}
+
+/**
+ * @brief Executes a command directly against the active page and stores it in the undo stack.
+ * @param cmd Unique pointer to polymorphic ICanvasCommand.
+ * @param engine Optional pointer to CanvasEngine to trigger viewport rebake and selection updates.
+ */
+void DocumentSession::ExecuteCommand(std::unique_ptr<Folio::ICanvasCommand> cmd, CanvasEngine* engine) {
+    auto activePage = GetActivePage();
+    if (!activePage || !cmd) return;
+    if (macroTx.isActive && macroTx.macro) {
+        cmd->Execute(*activePage, engine);
+        macroTx.macro->AddCommand(std::move(cmd));
+    } else {
+        activePage->history.ExecuteCommand(std::move(cmd), *activePage, engine);
+        NotifyHistoryChanged();
+    }
+    activePage->isModified = true;
+    NotifyPageModified(activePage);
+}
+
+/**
+ * @brief Records a command that was already executed live (e.g., inking, interactive dragging).
+ * @param cmd Unique pointer to polymorphic ICanvasCommand.
+ */
+void DocumentSession::RecordCommand(std::unique_ptr<Folio::ICanvasCommand> cmd) {
+    auto activePage = GetActivePage();
+    if (!activePage || !cmd) return;
+    RecordHistoryCommand(activePage, std::move(cmd));
+    activePage->isModified = true;
+    NotifyPageModified(activePage);
+}
+
 // -----------------------------------------------------------------------------
 // Continuous Compound Eraser Transaction API
 // -----------------------------------------------------------------------------

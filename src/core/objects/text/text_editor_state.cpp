@@ -27,6 +27,8 @@
 
 #include "core/objects/text/text_editor_state.hpp"
 #include "core/objects/text/text_box.hpp"
+#include "core/document/document_session.hpp"
+#include "core/history/canvas_command.hpp"
 #include "core/text/font_manager.hpp"
 #include <SDL3/SDL_keycode.h>
 #include <algorithm>
@@ -37,7 +39,10 @@ namespace Folio {
 
 TextEditorState::TextEditorState() = default;
 
-void TextEditorState::Attach(TextBoxObject* target) {
+void TextEditorState::Attach(TextBoxObject* target, DocumentSession* session) {
+    if (m_target && m_target != target) {
+        Detach(session);
+    }
     m_target = target;
     if (m_target) {
         m_target->isEditing = true;
@@ -45,19 +50,56 @@ void TextEditorState::Attach(TextBoxObject* target) {
         m_selectionAnchor = m_cursorIndex;
         m_caretVisible = true;
         m_lastBlinkTimeSec = 0.0;
+        m_baselineText = m_target->text;
+        m_baselineWidth = m_target->worldWidth;
+        m_baselineHeight = m_target->worldHeight;
         ReflowLayout();
     }
 }
 
-void TextEditorState::Detach() {
+void TextEditorState::Detach(DocumentSession* session) {
     if (m_target) {
+        if (session) {
+            CommitTextEdit(session);
+        }
         m_target->isEditing = false;
         m_target->isDirty = true;
         m_target = nullptr;
     }
+    m_baselineText.clear();
+    m_baselineWidth = 0.0;
+    m_baselineHeight = 0.0;
     m_cursorIndex = 0;
     m_selectionAnchor = 0;
     m_lines.clear();
+}
+
+/**
+ * @brief Commits modified text strings and dimension expansions into the session's undo stack.
+ */
+void TextEditorState::CommitTextEdit(DocumentSession* session) {
+    if (!session || !m_target) return;
+    if (m_target->text != m_baselineText ||
+        std::abs(m_target->worldWidth - m_baselineWidth) > 0.01 ||
+        std::abs(m_target->worldHeight - m_baselineHeight) > 0.01) {
+        auto activePage = session->GetActivePage();
+        if (activePage) {
+            session->RecordHistoryCommand(activePage, std::make_unique<Folio::ModifyTextCommand>(
+                m_target->uid,
+                m_baselineText,
+                m_target->text,
+                m_baselineWidth,
+                m_target->worldWidth,
+                m_baselineHeight,
+                m_target->worldHeight
+            ));
+            activePage->isModified = true;
+            session->NotifyPageModified(activePage);
+        }
+        m_baselineText = m_target->text;
+        m_baselineWidth = m_target->worldWidth;
+        m_baselineHeight = m_target->worldHeight;
+    }
 }
 
 /**

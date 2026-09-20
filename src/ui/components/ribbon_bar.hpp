@@ -2243,14 +2243,26 @@ public:
                         if (ImGui::Button("X##btn_del_note", ImVec2(24.0f, 24.0f))) {
                             if (canvas.textEditor.IsActive()) {
                                 auto target = canvas.textEditor.GetTarget();
-                                canvas.textEditor.Detach();
+                                canvas.textEditor.Detach(currentSession);
                                 if (target && currentSession) {
                                     auto activePage = currentSession->GetActivePage();
-                                    if (activePage) activePage->RemoveObjectByUid(target->uid);
+                                    if (activePage) {
+                                        auto obj = activePage->FindObjectByUid(target->uid);
+                                        if (obj) {
+                                            currentSession->RecordHistoryCommand(activePage, std::make_unique<Folio::RemoveObjectsCommand>(obj));
+                                            activePage->RemoveObject(obj);
+                                        }
+                                    }
                                 }
                             } else if (selectedTextBox && currentSession) {
                                 auto activePage = currentSession->GetActivePage();
-                                if (activePage) activePage->RemoveObjectByUid(selectedTextBox->uid);
+                                if (activePage) {
+                                    auto obj = activePage->FindObjectByUid(selectedTextBox->uid);
+                                    if (obj) {
+                                        currentSession->RecordHistoryCommand(activePage, std::make_unique<Folio::RemoveObjectsCommand>(obj));
+                                        activePage->RemoveObject(obj);
+                                    }
+                                }
                             }
                             canvas.needsFullRebake = true;
                             canvas.isDirty = true;
@@ -4047,7 +4059,7 @@ public:
                                 clone->worldX += 10.0;
                                 clone->worldY += 10.0;
                                 clone->UpdateBounds();
-                                activePage->AddObject(clone);
+                                currentSession->AddObject(clone);
 
                                 canvas.ClearSelection(currentSession);
                                 clone->isSelected = 1;
