@@ -117,6 +117,7 @@ else()
         ${APP_SOURCES}
         ${IMGUI_SOURCES}
         ${WIN32_RESOURCES}
+
     )
     set(APP_TARGET FolioNote)
 endif()
@@ -136,6 +137,7 @@ target_include_directories(${APP_TARGET} PRIVATE
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
 )
+
 
 # 7. Link Dependencies
 target_link_libraries(${APP_TARGET} PRIVATE
@@ -218,3 +220,93 @@ if(EXISTS "${PDFIUM_DIR}")
     endif()
 endif()
 
+
+
+
+
+# testing
+# 10. Standalone Local Test Executable
+if(NOT ANDROID)
+    add_executable(test_rtree
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_rtree.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/file_manager.cpp"
+        test/test_file_manager.cpp
+    )
+
+    target_include_directories(test_rtree PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+    )
+
+    target_link_libraries(test_rtree PRIVATE
+        blend2d::blend2d
+        SDL3::SDL3
+    )
+
+    if(WIN32)
+        target_link_libraries(test_rtree PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(test_rtree PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+endif()
+
+# 11. Standalone Local Test Executable: FileManager
+if(NOT ANDROID)
+    add_executable(test_file_manager
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_manager.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/file_manager.cpp"
+    )
+
+    target_include_directories(test_file_manager PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+    )
+
+    target_link_libraries(test_file_manager PRIVATE
+        SDL3::SDL3
+    )
+
+    if(WIN32)
+        target_link_libraries(test_file_manager PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(test_file_manager PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+endif()
+
+# 12. Standalone Local Test Executable: ThreadPool
+if(NOT ANDROID)
+    add_executable(test_thread_pool
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_thread_pool.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/file_manager.cpp"
+    )
+
+    target_include_directories(test_thread_pool PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+    )
+
+    target_link_libraries(test_thread_pool PRIVATE
+        SDL3::SDL3
+    )
+
+    if(WIN32)
+        target_link_libraries(test_thread_pool PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(test_thread_pool PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+endif()

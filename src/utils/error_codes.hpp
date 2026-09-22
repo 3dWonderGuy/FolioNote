@@ -4,25 +4,6 @@
 
 namespace Folio {
 
-/**
- * =========================================================================================
- * @file error_codes.hpp
- * @brief Standardized diagnostic error codes across all FolioNote subsystems.
- * =========================================================================================
- *
- * ARCHITECTURAL PURPOSE:
- * Provides strongly-typed, categorized error codes for application logging, error telemetry,
- * user-facing diagnostics, and debugging. Instead of ambiguous raw string errors, every error
- * condition is assigned a deterministic 4-digit code identifying its subsystem domain.
- *
- * NUMERIC RANGE PARTITIONING:
- * - 0000: Success / No Error
- * - 1000 - 1999: System, OS & General Infrastructure
- * - 2000 - 2999: Storage, SQLite Database & Serialization (Reserved for storage overhaul)
- * - 3000 - 3999: Document Hierarchy (Workspace, Notebook, Section, Page, Library)
- * - 4000 - 4999: Input Subsystem (Hardware Devices, Gestures, State Machine, Focus)
- * - 5000 - 5999: Engine, Rendering & Spatial Indexing
- */
 enum class FolioErrorCode : uint32_t {
     Success = 0,
 
@@ -36,13 +17,24 @@ enum class FolioErrorCode : uint32_t {
     SysFileAccessDenied        = 1004, ///< OS permissions rejected read/write
     SysFileCorrupted           = 1005, ///< File header or payload invalid/truncated
     SysPathResolutionFailed    = 1006, ///< Relative or symbolic path could not be resolved
+    SysFileWriteFailed         = 1007, ///< Write operation failed or truncated
+    SysFileReadFailed          = 1008, ///< Read operation failed or file handle invalid
+    SysFileRenameFailed        = 1009, ///< Atomic rename/swap failed
+    SysDirectoryCreateFailed   = 1010, ///< Failed to create directory hierarchy
+    SysDirectoryIterateFailed  = 1011, ///< Directory iterator failed or path inaccessible
+    SysFileDeleteFailed        = 1012, ///< Failed to delete file or directory tree
+
+    // 1050 - 1099: Concurrency & ThreadPool
+    ThreadPoolShuttingDown     = 1050, ///< Enqueue rejected because pool is shutting down
+    ThreadPoolWorkerException  = 1051, ///< Uncaught exception escaped a background task
+    ThreadPoolInitFailed       = 1052, ///< Failed to spawn worker threads
 
     // -------------------------------------------------------------------------
     // 2000 - 2999: Storage & SQLite Database Subsystem
     // -------------------------------------------------------------------------
     DbOpenFailed               = 2001, ///< Failed to connect or allocate SQLite handle
     DbSchemaMigrationFailed    = 2002, ///< DDL execution or schema upgrade failed
-    DbIndexCreationFailed     = 2003, ///< Relational or spatial index creation error
+    DbIndexCreationFailed      = 2003, ///< Relational or spatial index creation error
     DbDisconnected             = 2004, ///< Operation requested on a closed DB handle
     DbTransactionFailed        = 2005, ///< BEGIN, COMMIT, or ROLLBACK failed
     DbQueryFailed              = 2006, ///< PreparedStatement or exec query error
@@ -90,12 +82,6 @@ enum class FolioErrorCode : uint32_t {
     CanvasRenderContextError   = 5020  ///< Blend2D context allocation or rendering failure
 };
 
-/**
- * @brief Returns the canonical mnemonic string for an error code (e.g. "DocNotebookNotFound").
- *
- * @param code Error code enumeration value.
- * @return const char* Human-readable mnemonic identifier.
- */
 inline constexpr const char* FolioErrorCodeToString(FolioErrorCode code) noexcept {
     switch (code) {
         case FolioErrorCode::Success:                  return "Success";
@@ -108,6 +94,15 @@ inline constexpr const char* FolioErrorCodeToString(FolioErrorCode code) noexcep
         case FolioErrorCode::SysFileAccessDenied:      return "SysFileAccessDenied";
         case FolioErrorCode::SysFileCorrupted:         return "SysFileCorrupted";
         case FolioErrorCode::SysPathResolutionFailed:  return "SysPathResolutionFailed";
+        case FolioErrorCode::SysFileWriteFailed:       return "SysFileWriteFailed";
+        case FolioErrorCode::SysFileReadFailed:        return "SysFileReadFailed";
+        case FolioErrorCode::SysFileRenameFailed:      return "SysFileRenameFailed";
+        case FolioErrorCode::SysDirectoryCreateFailed: return "SysDirectoryCreateFailed";
+        case FolioErrorCode::SysDirectoryIterateFailed:return "SysDirectoryIterateFailed";
+        case FolioErrorCode::SysFileDeleteFailed:      return "SysFileDeleteFailed";
+        case FolioErrorCode::ThreadPoolShuttingDown:   return "ThreadPoolShuttingDown";
+        case FolioErrorCode::ThreadPoolWorkerException:return "ThreadPoolWorkerException";
+        case FolioErrorCode::ThreadPoolInitFailed:     return "ThreadPoolInitFailed";
 
         // 2000s: Storage & DB
         case FolioErrorCode::DbOpenFailed:             return "DbOpenFailed";
@@ -157,16 +152,6 @@ inline constexpr const char* FolioErrorCodeToString(FolioErrorCode code) noexcep
     }
 }
 
-/**
- * @brief Formats an error code and detailed message into a standardized diagnostic header.
- *
- * Example Output:
- *   "[ERR-3040: DocPageNotFound] Page GUID 'd46f2f6a' does not exist in section 'Lectures'"
- *
- * @param code Standardized FolioErrorCode enumeration value.
- * @param details Specific descriptive explanation of what, where, and why it occurred.
- * @return std::string Formatted log-ready string.
- */
 inline std::string FormatError(FolioErrorCode code, const std::string& details) {
     return "[ERR-" + std::to_string(static_cast<uint32_t>(code)) + ": " + 
            FolioErrorCodeToString(code) + "] " + details;
@@ -174,7 +159,6 @@ inline std::string FormatError(FolioErrorCode code, const std::string& details) 
 
 } // namespace Folio
 
-// Expose FolioErrorCode and FormatError to global scope so both namespaced and legacy code can use them seamlessly
 using FolioErrorCode = ::Folio::FolioErrorCode;
 using ::Folio::FormatError;
 using ::Folio::FolioErrorCodeToString;
