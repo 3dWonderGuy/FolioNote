@@ -1,28 +1,59 @@
 #include "r_tree.hpp"
+#include "utils/logger.hpp"
 #include <algorithm>
+#include <string>
 
+/**
+ * @brief Computes the surface area of a 2D bounding box: A = (maxX - minX) * (maxY - minY).
+ * Degenerate or inverted bounding boxes yield 0.0 area.
+ * 
+ * @param b Axis-Aligned Bounding Box to evaluate.
+ * @return Computed surface area as a positive double.
+ */
 double RTree::Area(const AABB& b) const noexcept {
+    if (b.IsEmpty()) return 0.0;
     double w = b.maxX - b.minX;
     double h = b.maxY - b.minY;
     return (w > 0.0 && h > 0.0) ? (w * h) : 0.0;
 }
 
+/**
+ * @brief Computes the union (minimum enclosing box) of two AABBs.
+ * 
+ * @param a First bounding box.
+ * @param b Second bounding box.
+ * @return Enclosing AABB by value.
+ */
 AABB RTree::Union(const AABB& a, const AABB& b) const noexcept {
-    AABB res = a;   // 1. Creates a brand-new TEMPORARY copy of 'a'
-    res.Merge(b);   // 2. Modifies ONLY the temporary copy
-    return res;     // 3. Returns the temporary copy by value
+    AABB res = a;
+    res.Merge(b);
+    return res;
 }
 
+/**
+ * @brief Resets the spatial index, freeing all nodes and clearing the UID lookup table.
+ */
 void RTree::Clear() noexcept {
+    if (!r_tree.empty()) {
+        LOG_INFO(RTree, "Clearing spatial index (purging " + std::to_string(uidToNode.size()) + 
+                        " objects across " + std::to_string(r_tree.size()) + " pool nodes).");
+    }
     r_tree.clear();
     freeIndices.clear();
+    uidToNode.clear();
     rootIndex = -1;
     cycleIndex = 0;
+    isRefitting = false;
 }
 
-int RTree::AllocateNode() {
+/**
+ * @brief Allocates a node slot, preferring recycled indices from freeIndices to minimize heap reallocations.
+ * 
+ * @return int32_t Valid index in r_tree pool.
+ */
+int32_t RTree::AllocateNode() {
     if (!freeIndices.empty()) {
-        int idx = freeIndices.back();
+        int32_t idx = freeIndices.back();
         freeIndices.pop_back();
         r_tree[idx].ObjBounds = AABB{};
         r_tree[idx].uid = 0;
@@ -33,11 +64,19 @@ int RTree::AllocateNode() {
     }
 
     r_tree.push_back(Node{});
-    return static_cast<int>(r_tree.size() - 1);
+    return static_cast<int32_t>(r_tree.size() - 1);
 }
 
-void RTree::FreeNode(int nodeIdx) {
-    if (nodeIdx < 0 || static_cast<size_t>(nodeIdx) >= r_tree.size()) return;
+/**
+ * @brief Recycles a node by marking its pointer links as dead (-2) and adding its index to freeIndices.
+ * 
+ * @param nodeIdx Index of node to free.
+ */
+void RTree::FreeNode(int32_t nodeIdx) {
+    if (nodeIdx < 0 || static_cast<size_t>(nodeIdx) >= r_tree.size()) {
+        LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "FreeNode called with out-of-bounds node index: " + std::to_string(nodeIdx));
+        return;
+    }
     r_tree[nodeIdx].left = -2;
     r_tree[nodeIdx].right = -2;
     r_tree[nodeIdx].parent = -2;
@@ -46,9 +85,17 @@ void RTree::FreeNode(int nodeIdx) {
     freeIndices.push_back(nodeIdx);
 }
 
-void RTree::InsertLeaf(int leafIdx) {
-    if (leafIdx < 0 || static_cast<size_t>(leafIdx) >= r_tree.size()) return;
-    const AABB targetBounds = r_tree[leafIdx].ObjBounds; // Value copy: prevents UAF if r_tree vector reallocates
+/**
+ * @brief Inserts a leaf into the dynamic hierarchy using the Surface Area Heuristic (SAH).
+ * 
+ * @param leafIdx Index of the pre-initialized leaf node in r_tree.
+ */
+void RTree::InsertLeaf(int32_t leafIdx) {
+    if (leafIdx < 0 || static_cast<size_t>(leafIdx) >= r_tree.size()) {
+        LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "InsertLeaf called with out-of-bounds leaf index: " + std::to_string(leafIdx));
+        return;
+    }
+    const AABB targetBounds = r_tree[leafIdx].ObjBounds; // Value copy: prevents UAF if r_tree reallocates
 
     if (rootIndex == -1) {
         rootIndex = leafIdx;
@@ -57,15 +104,16 @@ void RTree::InsertLeaf(int leafIdx) {
     }
 
     // STEP 1: Find best sibling based on surface area enlargement heuristic
-    int current = rootIndex;
+    int32_t current = rootIndex;
     size_t depth = 0;
-    const size_t maxDepth = r_tree.size() + 2; // Cycle guard
+    const size_t maxDepth = r_tree.size() + 2; // Cycle guard prevents infinite loop on corrupted trees
     while (!r_tree[current].IsLeaf() && depth++ < maxDepth) {
-        int left = r_tree[current].left;
-        int right = r_tree[current].right;
+        int32_t left = r_tree[current].left;
+        int32_t right = r_tree[current].right;
 
         if (left == -1 || static_cast<size_t>(left) >= r_tree.size() ||
             right == -1 || static_cast<size_t>(right) >= r_tree.size()) {
+            LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "Corrupted internal node " + std::to_string(current) + " missing valid left/right children in InsertLeaf.");
             break;
         }
 
@@ -93,12 +141,17 @@ void RTree::InsertLeaf(int leafIdx) {
         }
     }
 
-    // STEP 2: Create a new parent node and attach sibling + new leaf
-    int sibling = current;
-    int oldParent = r_tree[sibling].parent;
-    int newParentIdx = AllocateNode();
+    if (depth >= maxDepth) {
+        LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "Tree traversal depth limit (" + std::to_string(maxDepth) + ") exceeded in InsertLeaf - cyclic link detected!");
+    }
 
-    r_tree[newParentIdx].ObjBounds = Union(r_tree[sibling].ObjBounds, targetBounds);
+    // STEP 2: Create a new parent node and attach sibling + new leaf
+    int32_t sibling = current;
+    int32_t oldParent = r_tree[sibling].parent;
+    const AABB siblingBounds = r_tree[sibling].ObjBounds; // Value copy: prevents stale read if r_tree vector reallocates
+    int32_t newParentIdx = AllocateNode();
+
+    r_tree[newParentIdx].ObjBounds = Union(siblingBounds, targetBounds);
     r_tree[newParentIdx].uid = 0;
     r_tree[newParentIdx].left = sibling;
     r_tree[newParentIdx].right = leafIdx;
@@ -107,12 +160,14 @@ void RTree::InsertLeaf(int leafIdx) {
     r_tree[sibling].parent = newParentIdx;
     r_tree[leafIdx].parent = newParentIdx;
 
-    // STEP 3: Update Old Parent
+    // STEP 3: Update Old Parent link (explicitly verify left or right match)
     if (oldParent != -1 && static_cast<size_t>(oldParent) < r_tree.size()) {
         if (r_tree[oldParent].left == sibling) {
             r_tree[oldParent].left = newParentIdx;
-        } else {
+        } else if (r_tree[oldParent].right == sibling) {
             r_tree[oldParent].right = newParentIdx;
+        } else {
+            LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "Tree corruption detected in InsertLeaf: oldParent " + std::to_string(oldParent) + " child mismatch with sibling " + std::to_string(sibling));
         }
     } else {
         rootIndex = newParentIdx;
@@ -122,8 +177,16 @@ void RTree::InsertLeaf(int leafIdx) {
     RefitBoundsUp(newParentIdx);
 }
 
-void RTree::RemoveLeaf(int leafIdx) {
-    if (leafIdx < 0 || static_cast<size_t>(leafIdx) >= r_tree.size()) return;
+/**
+ * @brief Removes a leaf node from the hierarchy, promotes its sibling, and collapses its parent.
+ * 
+ * @param leafIdx Index of the leaf node in r_tree.
+ */
+void RTree::RemoveLeaf(int32_t leafIdx) {
+    if (leafIdx < 0 || static_cast<size_t>(leafIdx) >= r_tree.size()) {
+        LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "RemoveLeaf called with out-of-bounds leaf index: " + std::to_string(leafIdx));
+        return;
+    }
 
     if (leafIdx == rootIndex) {
         rootIndex = -1;
@@ -131,20 +194,23 @@ void RTree::RemoveLeaf(int leafIdx) {
         return;
     }
 
-    int parent = r_tree[leafIdx].parent;
+    int32_t parent = r_tree[leafIdx].parent;
     if (parent == -1 || static_cast<size_t>(parent) >= r_tree.size()) {
+        LOG_WARN_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "RemoveLeaf node " + std::to_string(leafIdx) + " has invalid parent index (" + std::to_string(parent) + ")");
         FreeNode(leafIdx);
         return;
     }
 
-    int grandParent = r_tree[parent].parent;
-    int sibling = (r_tree[parent].left == leafIdx) ? r_tree[parent].right : r_tree[parent].left;
+    int32_t grandParent = r_tree[parent].parent;
+    int32_t sibling = (r_tree[parent].left == leafIdx) ? r_tree[parent].right : r_tree[parent].left;
 
     if (grandParent != -1 && static_cast<size_t>(grandParent) < r_tree.size()) {
         if (r_tree[grandParent].left == parent) {
             r_tree[grandParent].left = sibling;
-        } else {
+        } else if (r_tree[grandParent].right == parent) {
             r_tree[grandParent].right = sibling;
+        } else {
+            LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "Tree corruption detected in RemoveLeaf: grandParent " + std::to_string(grandParent) + " child mismatch with parent " + std::to_string(parent));
         }
         if (sibling != -1 && static_cast<size_t>(sibling) < r_tree.size()) {
             r_tree[sibling].parent = grandParent;
@@ -163,23 +229,33 @@ void RTree::RemoveLeaf(int leafIdx) {
     }
 }
 
-int RTree::Balance(int iA) {
+/**
+ * @brief Evaluates tree rotations around node iA to minimize combined surface area.
+ * Bounding volume changes are strictly local to iA and its children; ancestor updates
+ * are handled sequentially by the caller (RefitBoundsUp) to prevent re-entrant lockouts.
+ * 
+ * @param iA Index of internal node to balance.
+ * @return The updated index of node iA.
+ */
+int32_t RTree::Balance(int32_t iA) {
     if (iA == -1 || static_cast<size_t>(iA) >= r_tree.size() || r_tree[iA].IsLeaf() || r_tree[iA].IsDead()) {
         return iA;
     }
 
-    int iB = r_tree[iA].left;
-    int iC = r_tree[iA].right;
+    int32_t iB = r_tree[iA].left;
+    int32_t iC = r_tree[iA].right;
 
     if (iB == -1 || static_cast<size_t>(iB) >= r_tree.size() || r_tree[iB].IsDead() ||
         iC == -1 || static_cast<size_t>(iC) >= r_tree.size() || r_tree[iC].IsDead()) {
         return iA;
     }
 
+    bool rotated = false;
+
     // Check rotations on left child iB
     if (!r_tree[iB].IsLeaf()) {
-        int iD = r_tree[iB].left;
-        int iE = r_tree[iB].right;
+        int32_t iD = r_tree[iB].left;
+        int32_t iE = r_tree[iB].right;
 
         if (iD != -1 && static_cast<size_t>(iD) < r_tree.size() && !r_tree[iD].IsDead() &&
             iE != -1 && static_cast<size_t>(iE) < r_tree.size() && !r_tree[iE].IsDead()) {
@@ -200,7 +276,7 @@ int RTree::Balance(int iA) {
 
                 r_tree[iB].ObjBounds = Union(r_tree[iE].ObjBounds, r_tree[iC].ObjBounds);
                 r_tree[iA].ObjBounds = Union(r_tree[iB].ObjBounds, r_tree[iD].ObjBounds);
-                return iA;
+                rotated = true;
             } else if (costE < areaB && costE < costD) {
                 r_tree[iB].right = iC;
                 r_tree[iA].right = iE;
@@ -210,15 +286,15 @@ int RTree::Balance(int iA) {
 
                 r_tree[iB].ObjBounds = Union(r_tree[iD].ObjBounds, r_tree[iC].ObjBounds);
                 r_tree[iA].ObjBounds = Union(r_tree[iB].ObjBounds, r_tree[iE].ObjBounds);
-                return iA;
+                rotated = true;
             }
         }
     }
 
-    // Check rotations on right child iC
-    if (!r_tree[iC].IsLeaf()) {
-        int iF = r_tree[iC].left;
-        int iG = r_tree[iC].right;
+    // Check rotations on right child iC (if we didn't already rotate left)
+    if (!rotated && !r_tree[iC].IsLeaf()) {
+        int32_t iF = r_tree[iC].left;
+        int32_t iG = r_tree[iC].right;
 
         if (iF != -1 && static_cast<size_t>(iF) < r_tree.size() && !r_tree[iF].IsDead() &&
             iG != -1 && static_cast<size_t>(iG) < r_tree.size() && !r_tree[iG].IsDead()) {
@@ -239,7 +315,6 @@ int RTree::Balance(int iA) {
 
                 r_tree[iC].ObjBounds = Union(r_tree[iG].ObjBounds, r_tree[iB].ObjBounds);
                 r_tree[iA].ObjBounds = Union(r_tree[iC].ObjBounds, r_tree[iF].ObjBounds);
-                return iA;
             } else if (costG < areaC && costG < costF) {
                 r_tree[iC].right = iB;
                 r_tree[iA].left = iG;
@@ -249,7 +324,6 @@ int RTree::Balance(int iA) {
 
                 r_tree[iC].ObjBounds = Union(r_tree[iF].ObjBounds, r_tree[iB].ObjBounds);
                 r_tree[iA].ObjBounds = Union(r_tree[iC].ObjBounds, r_tree[iG].ObjBounds);
-                return iA;
             }
         }
     }
@@ -257,8 +331,17 @@ int RTree::Balance(int iA) {
     return iA;
 }
 
-void RTree::RefitBoundsUp(int nodeIdx) {
-    int current = nodeIdx;
+/**
+ * @brief Walks upwards from nodeIdx to rootIndex, balancing each node and refitting bounding boxes.
+ * Includes re-entrancy prevention to guard against recursive calls.
+ * 
+ * @param nodeIdx Index of starting node to refit upwards.
+ */
+void RTree::RefitBoundsUp(int32_t nodeIdx) {
+    if (isRefitting) return;
+    isRefitting = true;
+
+    int32_t current = nodeIdx;
     size_t depth = 0;
     const size_t maxDepth = r_tree.size() + 2; // Cycle guard prevents infinite loops
 
@@ -266,8 +349,8 @@ void RTree::RefitBoundsUp(int nodeIdx) {
         current = Balance(current);
         if (current == -1 || static_cast<size_t>(current) >= r_tree.size()) break;
 
-        int left = r_tree[current].left;
-        int right = r_tree[current].right;
+        int32_t left = r_tree[current].left;
+        int32_t right = r_tree[current].right;
 
         if (left != -1 && right != -1 &&
             static_cast<size_t>(left) < r_tree.size() && static_cast<size_t>(right) < r_tree.size()) {
@@ -275,25 +358,38 @@ void RTree::RefitBoundsUp(int nodeIdx) {
         }
         current = r_tree[current].parent;
     }
+
+    if (depth >= maxDepth) {
+        LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "Tree refitting depth limit (" + std::to_string(maxDepth) + ") exceeded in RefitBoundsUp - cyclic link detected!");
+    }
+
+    isRefitting = false;
 }
 
+/**
+ * @brief Incrementally cycles leaves (remove + reinsert) over frames to continuously optimize
+ * the bounding volume hierarchy and eliminate structural degradation.
+ * 
+ * Maintains complete synchronization with uidToNode by routing through Remove(uid) and Insert(uid, b).
+ */
 void RTree::CycleTree() {
-    if (rootIndex == -1 || r_tree.empty()) return;
+    if (rootIndex == -1 || r_tree.empty() || uidToNode.empty()) return;
 
-    // Cycle a budget of leaves (up to 4 leaves per update call) to continuously optimize tree structure
+    // Cycle a small budget of leaves (up to 4 leaves per update call)
     size_t count = 0;
     size_t maxToCycle = std::min<size_t>(4, r_tree.size());
     size_t n = r_tree.size();
 
     while (count < maxToCycle && n > 0) {
         cycleIndex = cycleIndex % r_tree.size();
-        int candidate = static_cast<int>(cycleIndex);
+        int32_t candidate = static_cast<int32_t>(cycleIndex);
         cycleIndex++;
         n--;
 
-        if (candidate != rootIndex && !r_tree[candidate].IsDead() && r_tree[candidate].IsLeaf()) {
+        if (candidate != rootIndex && !r_tree[candidate].IsDead() && r_tree[candidate].IsLeaf() && r_tree[candidate].uid != 0) {
             uint32_t uid = r_tree[candidate].uid;
             AABB b = r_tree[candidate].ObjBounds;
+            
             Remove(uid);
             Insert(uid, b);
             count++;
@@ -301,68 +397,127 @@ void RTree::CycleTree() {
     }
 }
 
+/**
+ * @brief Inserts an object UID with its world-space AABB bounding box.
+ * Automatically updates uidToNode mapping in O(1) time.
+ * If the UID already exists, it is cleanly replaced to prevent orphaned nodes.
+ * 
+ * @param _uid Unique identifier of object.
+ * @param targetBounds Physical bounding box in world space.
+ */
 void RTree::Insert(const uint32_t _uid, const AABB& targetBounds) {
-    int newLeafIdx = AllocateNode();
+    if (_uid == 0) {
+        LOG_WARN_CODE(RTree, FolioErrorCode::CanvasObjectNotFound, "Attempted to insert object with reserved/invalid UID 0 into spatial index.");
+        return;
+    }
+
+    if (targetBounds.IsEmpty()) {
+        LOG_WARN_CODE(RTree, FolioErrorCode::CanvasInvalidTransform, "Inserting object UID " + std::to_string(_uid) + " with empty/inverted bounding box.");
+    }
+
+    // If UID is already registered, remove old node first to prevent duplicate/orphaned entries
+    auto it = uidToNode.find(_uid);
+    if (it != uidToNode.end()) {
+        int32_t oldIdx = it->second;
+        uidToNode.erase(it);
+        RemoveLeaf(oldIdx);
+    }
+
+    int32_t newLeafIdx = AllocateNode();
     r_tree[newLeafIdx].ObjBounds = targetBounds;
     r_tree[newLeafIdx].uid = _uid;
     r_tree[newLeafIdx].left = -1;
     r_tree[newLeafIdx].right = -1;
     r_tree[newLeafIdx].parent = -1;
 
+    // Register UID to node mapping for O(1) removal and updates
+    uidToNode[_uid] = newLeafIdx;
+
     InsertLeaf(newLeafIdx);
 }
 
+/**
+ * @brief Removes an object UID from the spatial index in O(1) lookup + O(log N) tree re-linking.
+ * 
+ * @param _uid Unique identifier of object to remove.
+ */
 void RTree::Remove(const uint32_t _uid) {
+    if (_uid == 0) return;
     if (rootIndex == -1) return;
 
-    int targetIdx = -1;
-    for (size_t i = 0; i < r_tree.size(); ++i) {
-        if (!r_tree[i].IsDead() && r_tree[i].IsLeaf() && r_tree[i].uid == _uid) {
-            targetIdx = static_cast<int>(i);
-            break;
-        }
+    auto it = uidToNode.find(_uid);
+    if (it == uidToNode.end()) {
+        LOG_WARN_CODE(RTree, FolioErrorCode::CanvasObjectNotFound, "Attempted to remove unindexed object UID " + std::to_string(_uid) + " from spatial index.");
+        return;
     }
 
-    if (targetIdx == -1) return;
+    int32_t targetIdx = it->second;
+    uidToNode.erase(it);
+
+    if (targetIdx < 0 || static_cast<size_t>(targetIdx) >= r_tree.size() ||
+        r_tree[targetIdx].IsDead() || !r_tree[targetIdx].IsLeaf()) {
+        LOG_ERROR_CODE(RTree, FolioErrorCode::CanvasRTreeCorrupted, "Corrupted node index " + std::to_string(targetIdx) + " in uidToNode for UID " + std::to_string(_uid));
+        return;
+    }
+
     RemoveLeaf(targetIdx);
 }
 
+/**
+ * @brief Maintenance pass: runs an amortized cycle of leaf re-insertions.
+ */
 void RTree::Update() {
     if (rootIndex == -1) return;
-
-    // 1. Pass over internal nodes to apply balancing rotations
-    for (size_t i = 0; i < r_tree.size(); ++i) {
-        if (!r_tree[i].IsDead() && !r_tree[i].IsLeaf()) {
-            Balance(static_cast<int>(i));
-        }
-    }
-
-    // 2. Incremental tree cycling pass (round-robin leaf re-insertion)
     CycleTree();
 }
 
+/**
+ * @brief Updates the bounding box of an existing object.
+ * Executes in O(1) lookup + O(log N) tree repositioning.
+ * 
+ * @param _uid Object unique identifier.
+ * @param targetBounds Updated bounding box.
+ */
 void RTree::Update(const uint32_t _uid, const AABB& targetBounds) {
+    if (_uid == 0) return;
+    if (targetBounds.IsEmpty()) {
+        LOG_WARN_CODE(RTree, FolioErrorCode::CanvasInvalidTransform, "Updating object UID " + std::to_string(_uid) + " with empty/inverted bounding box.");
+    }
     Remove(_uid);
     Insert(_uid, targetBounds);
 }
 
+/**
+ * @brief Hierarchical bounding-box intersection query.
+ * Traverses down the tree using an explicit stack, pruning branches that do not intersect `area`.
+ * 
+ * Complexity: O(log N) average query time.
+ * 
+ * @param area Query bounding box (e.g. camera viewport).
+ * @return Vector of intersecting object UIDs.
+ */
 std::vector<uint32_t> RTree::Query(const AABB& area) const {
     std::vector<uint32_t> results;
     if (rootIndex == -1) return results;
 
-    std::vector<int> stack;
+    if (area.IsEmpty()) {
+        LOG_WARN_CODE(RTree, FolioErrorCode::CanvasInvalidTransform, "Spatial query requested with empty/inverted bounding box.");
+        return results;
+    }
+
+    std::vector<int32_t> stack;
     stack.reserve(64);
     stack.push_back(rootIndex);
 
     while (!stack.empty()) {
-        int current = stack.back();
+        int32_t current = stack.back();
         stack.pop_back();
 
         if (current < 0 || static_cast<size_t>(current) >= r_tree.size()) continue;
         const Node& node = r_tree[current];
         if (node.IsDead()) continue;
 
-        // Culling step: if bounding box does not intersect query area, skip subtree
+        // Culling step: if bounding box does not intersect query area, prune entire subtree
         if (!node.ObjBounds.Intersects(area)) continue;
 
         if (node.IsLeaf()) {
@@ -376,12 +531,16 @@ std::vector<uint32_t> RTree::Query(const AABB& area) const {
     return results;
 }
 
+/**
+ * @brief Retrieves all active object UIDs registered in the index.
+ * 
+ * @return Vector of all active object UIDs.
+ */
 std::vector<uint32_t> RTree::GetAll() const {
     std::vector<uint32_t> results;
-    for (const auto& node : r_tree) {
-        if (!node.IsDead() && node.IsLeaf()) {
-            results.push_back(node.uid);
-        }
+    results.reserve(uidToNode.size());
+    for (const auto& [uid, nodeIdx] : uidToNode) {
+        results.push_back(uid);
     }
     return results;
 }

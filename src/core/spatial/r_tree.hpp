@@ -3,148 +3,285 @@
 #include <vector>
 #include <memory>
 #include <algorithm>
+#include <unordered_map>
+#include <cstdint>
 #include "utils/logger.hpp"
 
 class CanvasObject;
 
 /**
- * @brief A dynamic bounding-volume hierarchy (BVH) / R-Tree implementation for spatial indexing.
+ * @brief Dynamic Bounding Volume Hierarchy (BVH) / R-Tree for fast 2D spatial indexing.
  * 
- * WHAT IT IS FOR:
- * This R-Tree is a spatial data structure designed to quickly find which objects (like strokes
- * or images) are currently visible on the screen. Instead of looping over millions of strokes
- * every frame to check if they are inside the viewport (which would be extremely slow), the R-Tree 
- * groups nearby objects into larger bounding boxes. 
+ * MATHEMATICAL FOUNDATION & WORKING PROCESS:
+ * ------------------------------------------
+ * 1. Bounding Volume Hierarchy (BVH):
+ *    - Leaves represent individual canvas objects (strokes, text boxes, images, shapes),
+ *      storing their unique object ID (`uid`) and their Axis-Aligned Bounding Box (AABB)
+ *      `[minX, minY, maxX, maxY]`.
+ *    - Internal nodes represent clusters of objects. The bounding box of an internal node
+ *      is the minimum enclosing bounding box (Union) of all its children:
+ *        B_parent.minX = min(B_left.minX, B_right.minX)
+ *        B_parent.minY = min(B_left.minY, B_right.minY)
+ *        B_parent.maxX = max(B_left.maxX, B_right.maxX)
+ *        B_parent.maxY = max(B_left.maxY, B_right.maxY)
  * 
- * HOW IT WORKS:
- * - Leaf Nodes: Represent the actual objects (e.g., ink strokes) and store their UID and bounding box.
- * - Internal Nodes: Represent groups of objects. Their bounding box is the union (enclosing box) 
- *   of all their children's bounding boxes.
+ * 2. Surface Area Heuristic (SAH) & Volume Enlargement Metric:
+ *    - During leaf insertion (`InsertLeaf`), we descend from `rootIndex` to locate the optimal
+ *      sibling node that minimizes total bounding volume expansion.
+ *    - For each candidate child C with current area A(C), inserting a new leaf with bounds B_new
+ *      results in a combined area A(Union(C, B_new)).
+ *    - The insertion cost for child C is:
+ *        Cost(C) = A(Union(C, B_new)) - A(C)
+ *      For non-leaf children, an additional dilation penalty equal to Cost(C) is added.
+ *    - The branch with the lower total cost is descended into.
+ *    - Minimizing area enlargement directly minimizes false-positive subtree traversals during viewport queries.
  * 
- * When querying the tree (e.g., "what's visible on screen?"), we check the root node. If the screen
- * intersects the root, we check its children. If a child's box doesn't intersect the screen, we completely 
- * ignore it (and all of its descendants), instantly culling thousands of unseen objects.
+ * 3. Fast O(1) UID Lookup Table:
+ *    - `uidToNode` maps an object UID (`uint32_t`) directly to its leaf index (`int32_t`) in the node pool.
+ *    - Deletion (`Remove`) and repositioning (`Update`) execute in O(1) index lookup + O(log N) tree re-linking,
+ *      eliminating O(N) linear vector scans over the entire scene.
  * 
- * MEMORY MANAGEMENT:
- * The tree nodes are stored in a contiguous `std::vector` (`r_tree`). This avoids cache misses and the 
- * overhead of allocating individual nodes on the heap. When nodes are deleted, their indices are added to 
- * `freeIndices` so they can be recycled later.
+ * 4. Incremental Re-balancing & Ancestor Refitting:
+ *    - `Balance(int32_t iA)` evaluates tree rotations (swapping grandchild nodes across sibling branches)
+ *      whenever subtree bounding area can be strictly reduced.
+ *    - Whenever a rotation mutates the bounding box of a subtree, `RefitBoundsUp` propagates bounding box
+ *      shrinkages and expansions up to the root, ensuring frustum culling never drops visible objects.
+ *    - `CycleTree()` incrementally re-inserts leaves over successive frames to prevent tree degradation
+ *      from repeated translations and zooms.
  */
 class RTree {
 private:
 
-    // A single node in the R-Tree. Can be either an internal branch or a leaf.
+    /**
+     * @brief A single node in the R-Tree pool. Internal nodes have children; leaves hold object UIDs.
+     */
     struct Node {
-        AABB ObjBounds;                                // The bounding box [minX, minY, maxX, maxY] enclosing this node and all descendants
-        uint32_t uid = 0;                              // The object UID (e.g. stroke ID). Only valid for leaf nodes. 0 for internal nodes.
-        int32_t left = -1;                             // Index of the left child node in the r_tree vector.
-        int32_t right = -1;                            // Index of the right child node in the r_tree vector.
-        int32_t parent = -1;                           // Index of the parent node in the r_tree vector.
+        AABB ObjBounds;                                ///< Bounding box enclosing this node and all its descendants.
+        uint32_t uid = 0;                              ///< Object UID. Non-zero for leaf nodes; 0 for internal nodes.
+        int32_t left = -1;                             ///< Index of left child in r_tree vector (-1 if leaf, -2 if dead).
+        int32_t right = -1;                            ///< Index of right child in r_tree vector (-1 if leaf, -2 if dead).
+        int32_t parent = -1;                           ///< Index of parent node in r_tree vector (-1 if root, -2 if dead).
 
-        // Helper function: A leaf node has no children. It holds the actual object UID.
-        constexpr bool IsLeaf() const noexcept { 
+        /**
+         * @brief Checks whether this node is a leaf (contains an object UID, no children).
+         * @return true if both left and right child indices are -1.
+         */
+        [[nodiscard]] constexpr bool IsLeaf() const noexcept { 
             return left == -1 && right == -1; 
         }
         
-        // Helper function: A dead node is one that has been deleted and is sitting in the free/recycled list.
-        constexpr bool IsDead() const noexcept {
+        /**
+         * @brief Checks whether this node is marked as dead (in freeIndices recycling list).
+         * @return true if node has been deallocated and recycled.
+         */
+        [[nodiscard]] constexpr bool IsDead() const noexcept {
             return left == -2 || right == -2;
         }
     };
 
-    // The flat pool of nodes. Storing them in a vector provides excellent CPU cache locality compared to pointers.
+    /// Contiguous node pool providing cache-friendly memory layout.
     std::vector<Node> r_tree;
 
-    // A stack of node indices that have been deleted and can be reused for new nodes.
-    std::vector<int> freeIndices; 
-    
-    // The index of the root node of the tree. -1 means the tree is empty.
-    int rootIndex = -1;
+    /// Recycled node indices available for immediate reuse without memory allocations.
+    std::vector<int32_t> freeIndices; 
 
-    // A counter used by CycleTree() to slowly re-insert leaves over multiple frames to incrementally optimize the tree.
+    /// Fast O(1) lookup mapping object UID to its leaf node index in r_tree.
+    std::unordered_map<uint32_t, int32_t> uidToNode;
+    
+    /// Root node index (-1 if tree is empty).
+    int32_t rootIndex = -1;
+
+    /// Round-robin cursor for incremental tree maintenance in CycleTree().
     size_t cycleIndex = 0;
 
-    /**
-     * @brief Calculates area of an AABB. Used to determine the "cost" of placing a node in a specific branch.
-     */
-    double Area(const AABB& b) const noexcept;
+    /// Re-entrancy guard flag to prevent infinite recursion during ancestor refitting passes.
+    bool isRefitting = false;
 
     /**
-     * @brief Computes the union (bounding box that encloses both) of two AABBs.
+     * @brief Computes 2D surface area of an AABB.
+     *   Area = (maxX - minX) * (maxY - minY)
+     * Returns 0.0 for empty or degenerate (inverted) boxes.
+     * 
+     * @param b Target bounding box.
+     * @return Area in world units as double (>= 0.0).
      */
-    AABB Union(const AABB& a, const AABB& b) const noexcept;
+    [[nodiscard]] double Area(const AABB& b) const noexcept;
+
+    /**
+     * @brief Calculates the smallest AABB that encloses both input boxes.
+     *   result.minX = min(a.minX, b.minX)
+     *   result.minY = min(a.minY, b.minY)
+     *   result.maxX = max(a.maxX, b.maxX)
+     *   result.maxY = max(a.maxY, b.maxY)
+     * 
+     * @param a First bounding box.
+     * @param b Second bounding box.
+     * @return New AABB enclosing both inputs, returned by value.
+     */
+    [[nodiscard]] AABB Union(const AABB& a, const AABB& b) const noexcept;
 
     // --- Internal Tree Mechanics ---
 
-    // Pulls a recycled node index from freeIndices, or pushes a new Node onto the vector if none are free.
-    int AllocateNode();
+    /**
+     * @brief Allocates a node slot, preferring recycled indices from freeIndices to minimize heap reallocations.
+     * 
+     * @return int32_t Valid 0-based index in r_tree pool.
+     */
+    int32_t AllocateNode();
     
-    // Marks a node as dead and adds its index to freeIndices for recycling.
-    void FreeNode(int nodeIdx);
+    /**
+     * @brief Marks a node as dead (-2 links) and pushes index to freeIndices stack for reuse.
+     * 
+     * @param nodeIdx Index of node to recycle.
+     */
+    void FreeNode(int32_t nodeIdx);
     
-    // Checks if the tree can be locally optimized by swapping children around to reduce overlapping bounding boxes.
-    int Balance(int nodeIdx);
+    /**
+     * @brief Evaluates tree rotations around node iA to minimize combined surface area.
+     * 
+     * Rotational Cost Metric:
+     *   Evaluates swapping grandchild nodes across left (iB) and right (iC) subtrees.
+     *   If a rotation strictly reduces the surface area, updates pointers and bounds.
+     *   If iA has a parent, propagates updated bounds upwards via RefitBoundsUp.
+     * 
+     * @param iA Internal node index to balance.
+     * @return int32_t The updated index of node iA.
+     */
+    int32_t Balance(int32_t iA);
     
-    // Walks up the tree from a node to the root, expanding bounding boxes to ensure parents always fully enclose their children.
-    void RefitBoundsUp(int nodeIdx);
+    /**
+     * @brief Traverses upwards from nodeIdx to rootIndex, recalculating bounding boxes
+     * and applying local balancing rotations.
+     * 
+     * Protected by `isRefitting` flag to prevent re-entrant recursion.
+     * 
+     * @param nodeIdx Starting node index to ascend from.
+     */
+    void RefitBoundsUp(int32_t nodeIdx);
     
-    // The core insertion logic: traverses down the tree to find the best place to put a new leaf to minimize volume expansion.
-    void InsertLeaf(int leafIdx);
+    /**
+     * @brief Traverses tree down from root using Surface Area Heuristic (SAH) to attach a new leaf node.
+     * 
+     * Workflow:
+     *   1. Descend greedily picking the child branch with minimum surface area expansion cost.
+     *   2. Create a new internal parent node holding both sibling and leaf.
+     *   3. Update old parent's child pointer (with explicit left/right check).
+     *   4. Refit ancestor bounds up to rootIndex.
+     * 
+     * @param leafIdx Index of pre-initialized leaf node in r_tree to insert.
+     */
+    void InsertLeaf(int32_t leafIdx);
     
-    // The core removal logic: removes a leaf and patches the hole left behind.
-    void RemoveLeaf(int leafIdx);
+    /**
+     * @brief Detaches a leaf node, collapses its parent, and promotes its sibling to grandparent.
+     * 
+     * @param leafIdx Index of leaf node to remove.
+     */
+    void RemoveLeaf(int32_t leafIdx);
     
-    // Incrementally removes and re-inserts a few leaves to fix degrading tree quality over time (especially after many moves).
+    /**
+     * @brief Cycles a small batch of leaves each frame (remove + reinsert) to incrementally
+     * eliminate structural degradation and maintain optimal query depth.
+     */
     void CycleTree();
 
 public:
 
+    RTree() = default;
+    ~RTree() = default;
+
+    // Non-copyable to prevent accidental tree duplication
+    RTree(const RTree&) = delete;
+    RTree& operator=(const RTree&) = delete;
+
+    // Move-constructible and move-assignable
+    RTree(RTree&&) noexcept = default;
+    RTree& operator=(RTree&&) noexcept = default;
+
     /**
-     * @brief Wipes the tree completely empty.
+     * @brief Clears all nodes, free indices, and UID mappings, resetting the spatial index to empty state.
      */
     void Clear() noexcept;
 
     /**
-     * @brief Inserts a new object into the spatial index.
-     * @param _uid Unique identifier for the object (e.g. stroke ID).
-     * @param targetBounds The physical bounding box of the object.
+     * @brief Inserts an object into the spatial index.
+     * If uid is already present, automatically updates its bounding box cleanly.
+     * 
+     * @param _uid Unique identifier of object (e.g. stroke or text box UID).
+     * @param targetBounds Axis-aligned bounding box of object in world coordinates.
      */
     void Insert(const uint32_t _uid, const AABB& targetBounds);
 
     /**
-     * @brief Removes an object from the spatial index.
-     * @param _uid The UID of the object to remove.
+     * @brief Removes an object from the spatial index in O(1) map lookup + O(log N) tree unlinking.
+     * 
+     * @param _uid Unique identifier of object to remove.
      */
     void Remove(const uint32_t _uid);
 
     /**
-     * @brief Maintenance function. Should be called periodically (e.g. every frame or tick).
-     * Applies rotations to balance the tree and incrementally cycles leaves to maintain optimal query performance.
+     * @brief Maintenance routine: balances internal nodes and incrementally cycles leaves.
+     * Call once per frame or viewport update.
      */
     void Update();
 
     /**
      * @brief Updates the bounding box of an existing object.
-     * @param _uid The UID of the object to update.
-     * @param targetBounds The new bounding box.
+     * Executes in O(1) map lookup + O(log N) tree repositioning.
+     * 
+     * @param _uid Object unique identifier.
+     * @param targetBounds New axis-aligned bounding box in world coordinates.
      */
     void Update(const uint32_t _uid, const AABB& targetBounds);
 
     /**
-     * @brief The most important function: queries the tree for objects inside an area.
-     * This traverses the tree, skipping branches that don't intersect the area, resulting in O(log N) lookup time.
-     * @param area The bounding box of the camera/viewport.
-     * @return A vector of UIDs for all objects whose bounding boxes intersect the query area.
+     * @brief Fast hierarchical spatial query: finds all objects whose bounds intersect the query area.
+     * Traversal complexity: O(log N) average, skipping culled subtrees.
+     * 
+     * @param area Query bounding box (e.g. camera viewport in world space).
+     * @return std::vector<uint32_t> Vector of object UIDs intersecting the query area.
      */
-    std::vector<uint32_t> Query(const AABB& area) const;
+    [[nodiscard]] std::vector<uint32_t> Query(const AABB& area) const;
 
     /**
-     * @brief Returns every single active object UID currently in the tree.
+     * @brief Retrieves all active object UIDs registered in the index.
+     * 
+     * @return std::vector<uint32_t> Vector of all active object UIDs.
      */
-    std::vector<uint32_t> GetAll() const;
+    [[nodiscard]] std::vector<uint32_t> GetAll() const;
 
+    /**
+     * @brief Checks whether an object UID is currently registered in the tree in O(1) time.
+     * 
+     * @param uid Object unique identifier.
+     * @return true if UID exists in uidToNode map.
+     */
+    [[nodiscard]] bool Contains(uint32_t uid) const noexcept {
+        return uidToNode.find(uid) != uidToNode.end();
+    }
+
+    /**
+     * @brief Returns total node count in the pool (including dead/recycled nodes).
+     */
     [[nodiscard]] size_t GetNodeCount() const noexcept { return r_tree.size(); }
+
+    /**
+     * @brief Returns number of recycled nodes available in freeIndices stack.
+     */
     [[nodiscard]] size_t GetFreeCount() const noexcept { return freeIndices.size(); }
-    [[nodiscard]] int GetRootIndex() const noexcept { return rootIndex; }
+
+    /**
+     * @brief Returns total number of active objects registered in the tree.
+     */
+    [[nodiscard]] size_t GetObjectCount() const noexcept { return uidToNode.size(); }
+
+    /**
+     * @brief Returns the root node index (-1 if empty).
+     */
+    [[nodiscard]] int32_t GetRootIndex() const noexcept { return rootIndex; }
+
+    /**
+     * @brief Checks whether the tree contains zero active objects.
+     */
     [[nodiscard]] bool IsEmpty() const noexcept { return rootIndex == -1; }
 };
