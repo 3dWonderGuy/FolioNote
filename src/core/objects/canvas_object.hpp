@@ -90,12 +90,76 @@ public:
     // Bounds & Spatial
     /********************************************* */
 
+    /**
+     * @brief Computes and updates the object's axis-aligned bounding box (bounds) in world coordinates.
+     */
     virtual void UpdateBounds() = 0;
+
+    /**
+     * @brief Tests if a single 2D world-space point intersects the object.
+     * @param worldX World X coordinate in millimeters.
+     * @param worldY World Y coordinate in millimeters.
+     * @return True if the point lies inside or on the object's active boundary.
+     */
     virtual bool HitTest(double worldX, double worldY) const = 0;
+
+    /**
+     * @brief Tests if a world-space circle (stylus tip, finger touch, or eraser point)
+     * intersects or contains this object.
+     *
+     * Mathematical Process:
+     *   1. Broad phase: Query AABB expanded by radiusMm against bounds.
+     *   2. Narrow phase: Check center point via HitTest(worldX, worldY).
+     *   3. Clamped distance check: Find closest point Q on object's AABB to center C:
+     *        Q_x = clamp(worldX, bounds.minX, bounds.maxX)
+     *        Q_y = clamp(worldY, bounds.minY, bounds.maxY)
+     *        distSq = (worldX - Q_x)^2 + (worldY - Q_y)^2
+     *      Returns true if distSq <= radiusMm^2.
+     *
+     * @param worldX Circle center X coordinate in millimeters.
+     * @param worldY Circle center Y coordinate in millimeters.
+     * @param radiusMm Detection radius in millimeters.
+     * @return True if the circle intersects the object.
+     */
     virtual bool HitTestCircle(double worldX, double worldY, double radiusMm) const {
         AABB queryBox(worldX - radiusMm, worldY - radiusMm, worldX + radiusMm, worldY + radiusMm);
-        return bounds.Intersects(queryBox) && (HitTest(worldX, worldY) || bounds.Contains(worldX, worldY));
+        if (!bounds.Intersects(queryBox)) {
+            return false;
+        }
+
+        // Direct interior hit
+        if (HitTest(worldX, worldY)) {
+            return true;
+        }
+
+        // Clamped Euclidean distance from (worldX, worldY) to object bounds
+        double clampedX = std::max(bounds.minX, std::min(worldX, bounds.maxX));
+        double clampedY = std::max(bounds.minY, std::min(worldY, bounds.maxY));
+        double dx = worldX - clampedX;
+        double dy = worldY - clampedY;
+        return (dx * dx + dy * dy) <= (radiusMm * radiusMm);
     }
+
+    /**
+     * @brief Continuous swept-volume hit test between two world-space points w0 and w1.
+     * Prevents high-speed eraser strokes from 'tunneling' or skipping through objects.
+     *
+     * Mathematical Process:
+     *   Given segment S(t) = w0 + t * (w1 - w0), for t in [0, 1]:
+     *   1. Broad phase: Construct swept bounding box expanded by radiusMm.
+     *   2. Check endpoints w0 and w1 with HitTestCircle.
+     *   3. Project object's bounding center C onto the segment S(t):
+     *        V = w1 - w0
+     *        lenSq = |V|^2
+     *        t = clamp(((C - w0) . V) / lenSq, 0.0, 1.0)
+     *        closestPoint = w0 + t * V
+     *   4. Evaluate HitTestCircle at the closest point along the swept path.
+     *
+     * @param w0 Starting point of the swept motion segment.
+     * @param w1 Ending point of the swept motion segment.
+     * @param radiusMm Radius of the swept sphere / capsule in millimeters.
+     * @return True if the swept volume intersects this object.
+     */
     virtual bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const {
         AABB sweptBox(
             std::min(w0.x, w1.x) - radiusMm,
@@ -103,20 +167,76 @@ public:
             std::max(w0.x, w1.x) + radiusMm,
             std::max(w0.y, w1.y) + radiusMm
         );
-        if (!bounds.Intersects(sweptBox)) return false;
-        return HitTestCircle(w0.x, w0.y, radiusMm) || HitTestCircle(w1.x, w1.y, radiusMm);
+        if (!bounds.Intersects(sweptBox)) {
+            return false;
+        }
+
+        // Check segment endpoints
+        if (HitTestCircle(w0.x, w0.y, radiusMm) || HitTestCircle(w1.x, w1.y, radiusMm)) {
+            return true;
+        }
+
+        // Compute object center C
+        Point2D center{ (bounds.minX + bounds.maxX) * 0.5, (bounds.minY + bounds.maxY) * 0.5 };
+
+        // Vector V = w1 - w0
+        double vx = w1.x - w0.x;
+        double vy = w1.y - w0.y;
+        double lenSq = vx * vx + vy * vy;
+
+        if (lenSq > 1e-6) {
+            // Projection factor t = ((C - w0) . V) / lenSq
+            double t = ((center.x - w0.x) * vx + (center.y - w0.y) * vy) / lenSq;
+            t = std::max(0.0, std::min(1.0, t));
+
+            Point2D proj{ w0.x + t * vx, w0.y + t * vy };
+            return HitTestCircle(proj.x, proj.y, radiusMm);
+        }
+
+        return false;
     }
+
+    /**
+     * @brief Tests if the object's geometry intersects a selection bounding box.
+     * @param selectionBounds Marquee / selection area AABB in world space.
+     * @return True if any part of the object intersects the selection bounds.
+     */
     virtual bool Intersects(const AABB& selectionBounds) const = 0;
+
+    /**
+     * @brief Gets the cached world-space axis-aligned bounding box.
+     */
     [[nodiscard]] const AABB& GetAABB() const noexcept { return bounds; }
 
     /********************************************* */
     // Geometry & Transforms
     /********************************************* */
 
+    /**
+     * @brief Applies a 2D affine transformation matrix to this object.
+     *
+     * Mathematical Model:
+     *   Maps coordinates from source space to transformed space using a 2x3 affine matrix:
+     *     [ x' ]   [ m00  m01  m02 ] [ x ]   [ m00*x + m01*y + m02 ]
+     *     [ y' ] = [ m10  m11  m12 ] [ y ] = [ m10*x + m11*y + m12 ]
+     *     [ 1  ]   [  0    0    1  ] [ 1 ]   [          1          ]
+     *   Where:
+     *     - m00, m11 represent non-uniform scaling / cosine rotation factors
+     *     - m01, m10 represent shear / sine rotation factors
+     *     - m02, m12 represent translation (dx, dy) in millimeters
+     *
+     * @param matrix 2D affine transformation matrix.
+     */
     virtual void ApplyTransform(const BLMatrix2D& matrix) = 0;
 
     /**
-     * @brief Bakes current affine transform matrix into intrinsic geometry coordinates (e.g. at the end of a drag).
+     * @brief Bakes the accumulated affine transform matrix into the object's intrinsic geometry.
+     *
+     * General Process:
+     *   Called upon completion of an interactive manipulation (e.g. mouse release after gizmo drag/rotation).
+     *   Multiplies every intrinsic vertex/point by the current `transform` matrix and resets `transform`
+     *   to identity (BLMatrix2D::make_identity()). This eliminates numerical drift from compounding matrices
+     *   and ensures subsequent bounds updates are exact.
      */
     virtual void BakeTransform() {}
 
@@ -124,6 +244,17 @@ public:
     // Rendering
     /********************************************* */
 
+    /**
+     * @brief Renders the object using the provided Blend2D graphics context.
+     *
+     * General Process:
+     *   1. Cull test: verifies that object `bounds` intersects `viewport.bounds`.
+     *   2. Applies object opacity and layer blending if applicable.
+     *   3. Renders vector paths, text layout, or image bitmaps into the target context.
+     *
+     * @param ctx Blend2D rendering context target.
+     * @param viewport Current visible camera viewport and zoom scale.
+     */
     virtual void Render(BLContext& ctx, const Viewport& viewport) const = 0;
 
     /********************************************* */
