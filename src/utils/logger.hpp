@@ -3,21 +3,24 @@
 #include <iostream>
 #include <mutex>
 #include <chrono>
-#include <iomanip>
-#include <sstream>
+#include <cstdint>
+#include <cstdio>
+#include <functional>
+#include <vector>
 #include "utils/file_logger.hpp"
 #include "utils/error_codes.hpp"
 
+// REMOVE WINDOWS PRINTOUT
+// ADD CLI SUPPORT FOR LIVE LOG TRACK
+
 namespace Folio {
 
-    // Log levels to filter messages
     enum class LogLevel {
         Info,
         Warn,
         Error
     };
 
-    // Standardized log sources for easy filtering and navigation in the UI
     enum class LogSource {
         General,
         FileLoader,
@@ -46,8 +49,7 @@ namespace Folio {
         Workspace
     };
 
-    // Helper to convert LogSource enum values into strings
-    inline const char* LogSourceToString(LogSource source) {
+    inline const char* LogSourceToString(LogSource source) noexcept {
         switch (source) {
             case LogSource::FileManager:       return "FileManager";
             case LogSource::FileLoader:        return "FileLoader";
@@ -77,62 +79,50 @@ namespace Folio {
         }
     }
 
-    // Returns a timestamp in the format "HH:MM:SS.mmm"
+    // Windows stack-allocated timestamp generator: "HH:MM:SS.mmm"
     inline std::string GetCurrentTimestamp() {
-        // all the time pulling and recording c++ mess
         auto now = std::chrono::system_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
         auto timer = std::chrono::system_clock::to_time_t(now);
         std::tm bt{};
-    
-        // for multiplatform
-    #if defined(_WIN32)
+
         localtime_s(&bt, &timer);
-    #else
-        localtime_r(&timer, &bt);
-    #endif
-        // Creates an in-memory string stream to assemble the formatted text. (I wish I knew what that ment)
-        std::ostringstream oss;
-        oss << std::put_time(&bt, "%H:%M:%S") << "." << std::setfill('0') << std::setw(3) << ms.count();
-        return oss.str();
+
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
+                      bt.tm_hour, bt.tm_min, bt.tm_sec, static_cast<int>(ms.count()));
+        return std::string(buf, 12);
     }
 
-    /**
-     * @brief Returns a reference to the static mutex used for synchronizing console output.
-    * 
-    * WHY WE NEED THIS:
-    * On multithreaded platforms (Android, Windows, Linux), multiple threads might try 
-    * to print to the console (std::cout/std::cerr) simultaneously. Without a lock, 
-    * their messages would get interleaved, making the log impossible to read.
-    * 
-    * HOW IT WORKS:
-    * 1. Creates a static std::mutex instance (which is initialized only once).
-    * 2. Returns a reference to it.
-    * 
-    * Thread Safety: The std::mutex handles the locking mechanism internally, ensuring that
-    * only one thread can hold the lock and write to the console at any given time.
-     */
     inline std::mutex& GetConsoleLogMutex() {
         static std::mutex s_logMtx;
         return s_logMtx;
     }
 
-    // Global flag for verbose info logging
     inline bool enableVerboseLogging = true;
 
+    // --- CLI / External Streamer Hook ---
+    using LogStreamListener = std::function<void(const FolioLogEntry&)>;
+
+    inline std::vector<LogStreamListener>& GetStreamListeners() {
+        static std::vector<LogStreamListener> s_listeners;
+        return s_listeners;
+    }
+
+    inline std::mutex& GetListenerMutex() {
+        static std::mutex s_listenerMtx;
+        return s_listenerMtx;
+    }
+
     /**
-    * @brief Writes a formatted log message to the console.
-    * 
-    * HOW IT WORKS:
-    * 1. Acquires a lock on the console mutex (via GetConsoleLogMutex) to ensure 
-    *    exclusive access to the output stream.
-    * 2. Checks for the message log level.
-    * 3. Prints the log level tag, a space, the message, and a newline character.
-    * 4. Releases the lock automatically when the std::lock_guard goes out of scope.
-    * 
-    * Thread Safety: The use of std::lock_guard ensures that log messages from 
-    * different threads do not get garbled or interleaved in the console output.
-    */
+     * @brief Registers a callback (CLI IPC server, socket stream, or custom viewer).
+     * Invoked whenever a log entry is produced.
+     */
+    inline void RegisterLogListener(LogStreamListener listener) {
+        std::lock_guard<std::mutex> lock(GetListenerMutex());
+        GetStreamListeners().push_back(std::move(listener));
+    }
+
     inline void LogConsole(LogLevel level, LogSource source, const std::string& msg) {
         if (level == LogLevel::Info && !enableVerboseLogging) {
             return;
@@ -140,7 +130,6 @@ namespace Folio {
 
         std::string timestamp = GetCurrentTimestamp();
         
-        // Convert the LogLevel enum to a readable string
         const char* levelStr = "INFO";
         if (level == LogLevel::Error) {
             levelStr = "ERROR";
@@ -150,22 +139,31 @@ namespace Folio {
 
         const char* sourceStr = LogSourceToString(source);
 
-        // Package into a structured entry
-        FolioLogEntry entry{timestamp, levelStr, sourceStr, msg};
-
-        // Locks error logging to current thread
+        // Windows console output
         {
             std::lock_guard<std::mutex> lock(GetConsoleLogMutex());
-            std::string formattedLine = "[" + timestamp + "] [" + levelStr + "] [" + sourceStr + "] " + msg;
+            std::ostream& out = (level == LogLevel::Error) ? std::cerr : std::cout;
+            out << '[' << timestamp << "] [" << levelStr << "] [" << sourceStr << "] " << msg << '\n';
             if (level == LogLevel::Error) {
-                std::cerr << formattedLine << std::endl;
-            } else {
-                std::cout << formattedLine << std::endl;
+                out.flush();
             }
         }
 
-        // Thread-safe File Redirection and Memory caching
+        // Structured entry for disk and CLI streaming
+        FolioLogEntry entry{timestamp, levelStr, sourceStr, msg};
+
+        // Local file backup
         ::Folio::FileLogger::Instance().WriteLog(entry);
+
+        // Broadcast to CLI listener if registered
+        {
+            std::lock_guard<std::mutex> lock(GetListenerMutex());
+            for (const auto& listener : GetStreamListeners()) {
+                if (listener) {
+                    listener(entry);
+                }
+            }
+        }
     }
 
 }

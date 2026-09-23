@@ -8,13 +8,15 @@
  * ARCHITECTURAL PURPOSE & DESIGN RATIONALE:
  * In a cross-platform application spanning Windows, Linux, macOS, and Android, file operations
  * and filesystem semantics diverge substantially:
- * 1. Unicode & Encoding:
+ *
+ * 1. Unicode & Encoding Fidelity:
  *    - Windows APIs natively operate on UTF-16 wide strings (`wchar_t`). Passing UTF-8 strings
  *      into standard narrow streams (`std::ofstream`, `fopen`, or narrow `std::filesystem::path`)
- *      causes the runtime to interpret paths through the system ANSI code page (e.g. CP_ACP 1252),
+ *      causes the MSVC runtime to interpret paths through the system ANSI code page (e.g. CP_ACP 1252),
  *      causing mojibake and `ERROR_FILE_NOT_FOUND` whenever paths contain non-ASCII characters
- *      (e.g., diacritics, CJK glyphs, Cyrillic, or emojis).
+ *      (e.g., diacritics, CJK glyphs, Cyrillic, Greek, or emojis).
  *    - POSIX systems (Linux, macOS, Android) treat paths natively as UTF-8 byte sequences.
+ *
  * 2. Sandboxing & System Directories:
  *    - Desktop operating systems store user documents under `Documents/FolioNote` (queried via
  *      `SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)`).
@@ -22,22 +24,27 @@
  *      routed through the app-private sandboxed internal directory (`SDL_GetPrefPath`).
  *    - Bundled read-only assets (icons, default presets, shaders) on Android reside inside the
  *      zipped `.apk` package, requiring abstract streaming (`SDL_IOStream` / `SDL_LoadFile`).
- * 3. Crash-Resilience & Atomic Persistence:
+ *
+ * 3. Crash-Resilience & Physical Persistence:
  *    - Overwriting files directly (via `std::ofstream(..., std::ios::trunc)`) is susceptible to
  *      truncation and permanent data loss if the application crashes or power is interrupted
  *      during serialization.
- *    - Atomic writes isolate file construction in an adjacent `.tmp` staging file, flush and
- *      sync file buffers, and replace the destination via an atomic filesystem rename.
+ *    - Atomic writes isolate file construction in an adjacent `.tmp` staging file, flush user-space
+ *      buffers, force physical OS drive sync (`_commit` / `fsync`), and replace the destination via
+ *      an atomic filesystem rename.
+ *
  * 4. Modularity & Decoupling:
  *    - Higher-level domain subsystems (e.g., `LibraryManager`, `Notebook`, `CanvasPage`,
- *      `PageRepository`, `SettingsManager`) should focus exclusively on in-memory data structures,
+ *      `PageRepository`, `SettingsManager`) focus exclusively on in-memory data structures,
  *      business logic, and vector graphics without coupling to OS filesystem calls.
  *    - All physical disk interactions, path transformations, and platform hooks are encapsulated
- *      behind this `FileManager` facade, allowing the underlying I/O backend to be replaced,
- *      mocked, or adapted without touching application logic.
+ *      behind this `FileManager` facade.
  */
 
+
+ // CREATE FOLDER FILE MANGER PUT FILE SAVEAR IN THERE ADN BREAK THIS FILE DOWN, INCLUDE FIEL LOGGER< MOVED TO DEDICATED DIRECTY NO LONGER UTIL
 #include <string>
+#include <string_view>
 #include <vector>
 #include <cstdint>
 #include <functional>
@@ -65,12 +72,12 @@ enum class FileType {
  * =========================================================================================
  */
 struct FileEntry {
-    std::string fullPath;       ///< Complete normalized UTF-8 filesystem path
-    std::string fileName;       ///< Leaf name including extension (e.g. "Calculus.notebook")
-    std::string stem;           ///< Base name without extension (e.g. "Calculus")
-    std::string extension;      ///< Extension including leading dot (e.g. ".notebook")
+    std::string fullPath;               ///< Complete normalized UTF-8 filesystem path
+    std::string fileName;               ///< Leaf name including extension (e.g. "Calculus.notebook")
+    std::string stem;                   ///< Base name without extension (e.g. "Calculus")
+    std::string extension;              ///< Extension including leading dot (e.g. ".notebook")
     FileType type = FileType::RegularFile; ///< Entry classification
-    uint64_t sizeBytes = 0;     ///< File size in bytes (0 for directories)
+    uint64_t sizeBytes = 0;             ///< File size in bytes (0 for directories)
 };
 
 /**
@@ -195,6 +202,19 @@ public:
     static bool HasExtension(const std::string& path, const std::string& ext);
 
     /**
+     * @brief Determines whether a path is absolute (rooted) rather than relative.
+     *
+     * Working Process:
+     * - On Windows: absolute paths begin with a drive letter (e.g. 'C:') or a UNC prefix ('\\\\').
+     * - On POSIX (Linux/macOS/Android): absolute paths begin with '/'.
+     * - Paths starting with '/' are treated as absolute on all platforms.
+     *
+     * @param path UTF-8 path string to evaluate.
+     * @return true if the path is absolute; false if relative or empty.
+     */
+    [[nodiscard]] static bool IsAbsolutePath(const std::string& path);
+
+    /**
      * @brief Sanitizes a filename or title string by replacing filesystem-illegal characters.
      *
      * Working Process:
@@ -231,14 +251,11 @@ public:
      *
      * Atomic Write Mechanics:
      * 1. Ensures the target parent directory exists via `CreateDirectories`.
-     * 2. Constructs a staging filename: `<targetPath>.tmp.<random_suffix>`.
+     * 2. Constructs a staging filename in the same directory: `<targetPath>.tmp.<random_suffix>`.
      * 3. Opens the staging file and writes the UTF-8 payload.
-     * 4. Flushes and explicitly syncs buffers to physical disk storage.
+     * 4. Flushes CRT buffers and commits to physical storage (`_commit` on Windows, `fsync` on POSIX).
      * 5. Atomically renames the staging file to the target path via OS atomic swap
      *    (`std::filesystem::rename` or Win32 `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)`).
-     *
-     * This guarantees that any abrupt crash, power failure, or process termination leaves
-     * the previous valid file completely intact instead of partially written or truncated.
      *
      * @param targetPath UTF-8 destination file path.
      * @param content Text string to persist.
@@ -249,7 +266,7 @@ public:
     /**
      * @brief Atomically writes a raw binary buffer to disk.
      *
-     * Follows the identical staging and atomic rename lifecycle as `WriteTextAtomic`.
+     * Follows the identical staging, physical flush, and atomic rename lifecycle as `WriteTextAtomic`.
      * Used for critical vector page payloads (`.ink`), databases, and binary blobs.
      *
      * @param targetPath UTF-8 destination file path.
@@ -320,9 +337,6 @@ public:
     /**
      * @brief Checks if two paths resolve to the same underlying physical filesystem entity.
      *
-     * Uses OS filesystem equivalence checks (resolving symlinks, case differences on Windows/macOS,
-     * and relative vs. absolute references).
-     *
      * @param pathA First UTF-8 path.
      * @param pathB Second UTF-8 path.
      * @return true if both paths refer to the same physical file/directory.
@@ -368,14 +382,23 @@ public:
     static bool CopyDirectoryRecursive(const std::string& sourceDir, const std::string& destinationDir);
 
     /**
-     * @brief Moves or renames a file or directory tree.
+     * @brief Compatibility alias for CopySingleFile with overwrite=true.
      *
-     * Working Process & Cross-Volume Safety:
-     * 1. Attempts an instantaneous atomic filesystem rename (`std::filesystem::rename`).
-     * 2. If the operation fails due to crossing physical storage partitions/volumes
-     *    (e.g., EXDEV error on POSIX or ERROR_NOT_SAME_DEVICE on Windows), automatically
-     *    executes a transactional recursive copy to destination followed by source deletion.
+     * NOTE: Named `CopyFileTo` (not `CopyFile`) to avoid collision with the Win32
+     * `#define CopyFile CopyFileA` preprocessor macro from <windows.h>, which expands
+     * any token named `CopyFile` to `CopyFileA` before the compiler can resolve it as
+     * a class member — even with parenthesized suppression `(FileManager::CopyFile)`.
      *
+     * @param sourcePath UTF-8 source file path.
+     * @param destinationPath UTF-8 target file path.
+     * @return true on success; false on failure.
+     */
+    static bool CopyFileTo(const std::string& sourcePath, const std::string& destinationPath) {
+        return CopySingleFile(sourcePath, destinationPath, /*overwrite=*/true);
+    }
+
+    /**
+     * @brief Moves or renames a file or directory tree with cross-volume safety fallbacks.
      * @param sourcePath Source file or folder.
      * @param destinationPath Target file or folder.
      * @return true if move succeeded; false on failure.
@@ -383,7 +406,11 @@ public:
     static bool Move(const std::string& sourcePath, const std::string& destinationPath);
 
     /**
-     * @brief Lists all direct children (files and subfolders) within a directory.
+     * @brief Lists all direct children within a directory matching an optional filter.
+     *
+     * Optimization: Filters by native extension early to avoid unnecessary UTF-8 string
+     * conversions, path normalizations, and memory allocations for discarded entries.
+     *
      * @param dirPath Directory to scan.
      * @param extensionFilter Optional extension filter (e.g. ".notebook"). Leave empty for all.
      * @return Vector of FileEntry metadata structs for matching children.
@@ -411,20 +438,6 @@ public:
     /**
      * @brief Computes a rapid 64-bit content hash (FNV-1a) and byte size for any file on disk.
      *
-     * Mathematical Algorithm (64-bit Fowler–Noll–Vo FNV-1a Hash):
-     * - Offset Basis ($h_0$):
-     *   $$h_0 = 14695981039346656037 \quad (\text{0xcbf29ce484222325})$$
-     * - Prime Multiplier ($p$):
-     *   $$p = 1099511628211 \quad (\text{0x100000001b3})$$
-     * - Iterative Hash State Update for byte $b_i$:
-     *   $$h_{i+1} = (h_i \oplus b_i) \times p \pmod{2^{64}}$$
-     *
-     * Working Process:
-     * 1. Opens file stream via OpenReadStream / wide file handle.
-     * 2. Streams file data in 64 KB memory chunks to maintain optimal L1/L2 cache locality.
-     * 3. Evaluates running FNV-1a state across every byte.
-     * 4. Populates outHash and outSize outputs.
-     *
      * @param filePath Full UTF-8 path to the file.
      * @param outHash Output receiving the 64-bit hash.
      * @param outSize Output receiving the exact file size in bytes.
@@ -435,13 +448,8 @@ public:
     /**
      * @brief Rapid non-blocking inspector to scan a PDF file and extract its page count.
      *
-     * Working Process & PDF Specification Details:
-     * 1. Header Check: Verifies standard '%PDF-' magic bytes at byte offset 0.
-     * 2. Linearized Scan: Reads first 4KB to locate ISO 32000-1 '/Linearized' parameter dictionary
-     *    and extracts '/N <page_count>' if present.
-     * 3. Trailer / Page Tree Catalog Scan: Reads trailing 64KB looking for '/Type /Pages /Count N'
-     *    dictionaries, excluding bookmark outline entries.
-     * 4. Token Sweep Fallback: Scans for uncompressed '/Type /Page' objects.
+     * Employs zero-heap window scanning across trailer structures and linearized tags
+     * to avoid memory overhead on multi-hundred-megabyte PDF files.
      *
      * @param filePath UTF-8 encoded PDF file path.
      * @return Detected page count (>= 1).
