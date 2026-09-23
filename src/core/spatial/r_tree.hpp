@@ -48,6 +48,8 @@ class CanvasObject;
  *      shrinkages and expansions up to the root, ensuring frustum culling never drops visible objects.
  *    - `CycleTree()` incrementally re-inserts leaves over successive frames to prevent tree degradation
  *      from repeated translations and zooms.
+ * 
+ * 5. User data safety feature, prevents rtree corruption, on first sign rtree rebuild is forced
  */
 class RTree {
 private:
@@ -71,7 +73,7 @@ private:
         }
         
         /**
-         * @brief Checks whether this node is marked as dead (in freeIndices recycling list).
+         * @brief Checks whether this node is marked as dead (in recycledNodeIndices recycling list).
          * @return true if node has been deallocated and recycled.
          */
         [[nodiscard]] constexpr bool IsDead() const noexcept {
@@ -82,8 +84,8 @@ private:
     /// Contiguous node pool providing cache-friendly memory layout.
     std::vector<Node> r_tree;
 
-    /// Recycled node indices available for immediate reuse without memory allocations.
-    std::vector<int32_t> freeIndices; 
+    /// Recycled node indices available for immediate reuse without heap allocations (LIFO free list).
+    std::vector<int32_t> recycledNodeIndices; 
 
     /// Fast O(1) lookup mapping object UID to its leaf node index in r_tree.
     std::unordered_map<uint32_t, int32_t> uidToNode;
@@ -96,6 +98,14 @@ private:
 
     /// Re-entrancy guard flag to prevent infinite recursion during ancestor refitting passes.
     bool isRefitting = false;
+
+    /// Re-entrancy guard flag to prevent recursive rebuild loops during emergency self-healing.
+    bool isRebuilding = false;
+
+    /// Circuit breaker: tracks consecutive rebuild attempts to prevent main-thread freeze / rebuild storms.
+    uint32_t consecutiveRebuilds = 0;
+    static constexpr uint32_t MAX_CONSECUTIVE_REBUILDS = 3;
+    bool isCircuitBroken = false;
 
     /**
      * @brief Computes 2D surface area of an AABB.
@@ -123,14 +133,14 @@ private:
     // --- Internal Tree Mechanics ---
 
     /**
-     * @brief Allocates a node slot, preferring recycled indices from freeIndices to minimize heap reallocations.
+     * @brief Allocates a node slot, preferring recycled indices from recycledNodeIndices to minimize heap reallocations.
      * 
      * @return int32_t Valid 0-based index in r_tree pool.
      */
     int32_t AllocateNode();
     
     /**
-     * @brief Marks a node as dead (-2 links) and pushes index to freeIndices stack for reuse.
+     * @brief Marks a node as dead (-2 links) and pushes index to recycledNodeIndices stack for reuse.
      * 
      * @param nodeIdx Index of node to recycle.
      */
@@ -266,9 +276,14 @@ public:
     [[nodiscard]] size_t GetNodeCount() const noexcept { return r_tree.size(); }
 
     /**
-     * @brief Returns number of recycled nodes available in freeIndices stack.
+     * @brief Returns number of recycled nodes available in recycledNodeIndices stack.
      */
-    [[nodiscard]] size_t GetFreeCount() const noexcept { return freeIndices.size(); }
+    [[nodiscard]] size_t GetRecycledNodeCount() const noexcept { return recycledNodeIndices.size(); }
+
+    /**
+     * @brief Backwards-compatible alias for GetRecycledNodeCount().
+     */
+    [[nodiscard]] size_t GetFreeCount() const noexcept { return GetRecycledNodeCount(); }
 
     /**
      * @brief Returns total number of active objects registered in the tree.
@@ -284,4 +299,63 @@ public:
      * @brief Checks whether the tree contains zero active objects.
      */
     [[nodiscard]] bool IsEmpty() const noexcept { return rootIndex == -1; }
+
+    /**
+     * @brief Performs complete self-healing reconstruction of the spatial index.
+     * 
+     * Working Process:
+     *   1. Scans existing active leaf nodes and the UID map to harvest all valid (UID, AABB) pairs.
+     *   2. Completely resets internal node pool, recycled indices, and UID lookup table via Clear().
+     *   3. Pre-allocates vector capacity (2N nodes for N leaves) to prevent repeated dynamic reallocations.
+     *   4. Re-inserts all active entities from scratch using the Surface Area Heuristic (SAH).
+     * 
+     * Guarantees:
+     *   - Re-establishes pristine hierarchy invariant with zero dangling or cyclic links.
+     *   - Runs in O(N log N) time; for typical canvases (thousands of strokes), executes in ~1-5ms.
+     *   - Safe against re-entrant calls via `isRebuilding` guard.
+     */
+    void Rebuild();
+
+    /**
+     * @brief Rebuilds the spatial index directly from an external list of (UID, AABB) pairs.
+     * 
+     * Working Process:
+     *   1. Completely clears existing pool and lookup structures.
+     *   2. Reserves necessary pool capacity.
+     *   3. Sequentially inserts each provided entity into the tree.
+     * 
+     * @param items Vector of pairs containing (object UID, world-space AABB).
+     */
+    void Rebuild(const std::vector<std::pair<uint32_t, AABB>>& items);
+
+    /**
+     * @brief Validates the structural integrity and mathematical invariants of the tree.
+     * 
+     * Working Process:
+     *   1. If tree is empty, verifies uidToNode is also empty.
+     *   2. Traverses down from rootIndex verifying:
+     *      - Node indices are within valid pool range [0, r_tree.size()).
+     *      - No dead nodes (-2) are present in the active hierarchy.
+     *      - Every internal node has valid left/right children whose parent pointers point back to it.
+     *      - Enclosing bounding box tightly fits children's bounding boxes.
+     *      - Traversal depth does not exceed maxDepth (ensures acyclic graph).
+     *   3. Confirms every entry in uidToNode maps to a leaf node with identical UID and bounds.
+     *   4. Confirms all recycledNodeIndices are marked dead (-2).
+     * 
+     * @return true if all invariants hold; false if any corruption or anomaly is detected.
+     */
+    [[nodiscard]] bool ValidateIntegrity() const noexcept;
+
+    /**
+     * @brief Checks whether the circuit breaker is currently tripped (protecting main thread from thrashing).
+     */
+    [[nodiscard]] bool IsCircuitBroken() const noexcept { return isCircuitBroken; }
+
+    /**
+     * @brief Resets the circuit breaker and consecutive rebuild counters to restore normal operation.
+     */
+    void ResetCircuitBreaker() noexcept {
+        consecutiveRebuilds = 0;
+        isCircuitBroken = false;
+    }
 };
