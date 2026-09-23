@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file package_importer.cpp
  * @brief Implementation of High-Performance Package & Archive Importer for FolioNote
@@ -20,7 +20,7 @@
  */
 
 #include "core/import/package_importer.hpp"
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/guid_generator.hpp"
 

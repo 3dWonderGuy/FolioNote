@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file package_exporter.cpp
  * @brief Implementation of High-Ratio 7-Zip Archival Exporter
@@ -17,7 +17,7 @@
 
 #include "core/export/package_exporter.hpp"
 #include "core/backup/backup_manager.hpp"
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 #include <filesystem>
 #include <cstdlib>

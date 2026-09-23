@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file import_manager.cpp
  * @brief Implementation of Unified Ingestion & Migration Subsystem Facade for FolioNote
@@ -21,7 +21,7 @@
 #include "core/document/notebook.hpp"
 #include "core/document/library/library.hpp"
 #include "core/storage/page_repository.hpp"
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/thread_pool.hpp"
 

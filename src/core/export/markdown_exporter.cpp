@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file markdown_exporter.cpp
  * @brief Implementation of Portable Markdown Exporter with Embedded Images and Vector Drawings
@@ -22,7 +22,7 @@
 #include "core/objects/ink_container.hpp"
 #include "core/objects/text_box.hpp"
 #include "core/objects/image_container.hpp"
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include <sstream>
 #include <fstream>
 #include <regex>

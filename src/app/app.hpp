@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <SDL3/SDL.h>
 // ANDROID: SDL_opengl.h is a desktop-only header (links against libGL / GLX).
 // Android devices only support OpenGL ES. Include the GLES2 header instead,
@@ -27,7 +27,7 @@
 #include "ui/views/notebook_hub.hpp"
 #include "ui/views/pdf_viewer_page.hpp"
 #include "input/input_manager.hpp"
-#include "utils/file_loader.hpp"
+#include "io/file_reader.hpp"
 #include "utils/usage_tracker.hpp"
 #include "app/theme_manager.hpp"
 #include <lunasvg.h>

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file library_trash.cpp
  * @brief Recycle bin (.trash/) isolation, restoration, and permanent purge operations
@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {

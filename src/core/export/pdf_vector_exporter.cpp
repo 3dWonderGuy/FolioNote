@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file pdf_vector_exporter.cpp
  * @brief Implementation of Standalone High-Fidelity Vector PDF Exporter
@@ -25,7 +25,7 @@
 #include "core/document/canvas_page.hpp"
 #include "core/objects/ink_container.hpp"
 #include "core/objects/text_box.hpp"
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 #include <fstream>
 #include <sstream>

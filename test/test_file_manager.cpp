@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file test_file_manager.cpp
  * @brief Standalone Local Diagnostic & Invariant Test Suite for Folio::FileManager
@@ -62,7 +62,7 @@
 #include <fstream>
 #include <algorithm>
 
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 
 #define TEST_ASSERT(cond, msg) \
     do { \

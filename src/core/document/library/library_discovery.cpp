@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file library_discovery.cpp
  * @brief Heuristics, marker management, and path sanitization for the Library Subsystem
@@ -18,8 +18,8 @@
 #include <chrono>
 #include <string>
 
-#include "utils/file_manager.hpp"
-#include "utils/package_marker.hpp"
+#include "io/file_manager.hpp"
+#include "io/package_marker.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {

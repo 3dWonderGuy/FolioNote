@@ -1,13 +1,14 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <vector>
-#include <filesystem>
 #include <fstream>
 #include <chrono>
 #include <algorithm>
-#include "utils/file_loader.hpp"
+
+#include "io/file_reader.hpp"
 #include "utils/logger.hpp"
+#include "io/file_manager.hpp"
 #include "core/document/document_session.hpp"
 #include "core/render/pdf_renderer.hpp"
 
@@ -38,23 +39,19 @@ public:
      * detected page count, and recommendation flags.
      *
      * Working Process:
-     * 1. Converts the incoming UTF-8 string to a native filesystem path via Folio::Utf8ToPath
-     *    to preserve wide Unicode characters on Windows and POSIX systems.
-     * 2. Validates that the input source file exists and is accessible.
-     * 3. Computes a 64-bit FNV-1a content hash for package deduplication.
-     * 4. Uses PdfRenderer::GetPageCount (PDFium) to accurately parse the document catalog,
+     * 1. Validates that the input source file exists via FileManager::Exists.
+     * 2. Computes a 64-bit FNV-1a content hash for package deduplication.
+     * 3. Uses PdfRenderer::GetPageCount (PDFium) to accurately parse the document catalog,
      *    page tree B-tree, compressed object streams (/ObjStm), and cross-reference streams.
-     * 5. If PDFium is unavailable or fails, gracefully falls back to FileLoader::DetectPdfPageCount.
-     * 6. Flags documents with >= 20 pages as long documents and populates recommendation warnings.
+     * 4. If PDFium is unavailable or fails, gracefully falls back to FileLoader::DetectPdfPageCount.
+     * 5. Flags documents with >= 20 pages as long documents and populates recommendation warnings.
      *
      * @param srcPath UTF-8 path to the PDF on disk.
      * @param outInfo Destination struct for populated metadata and page count.
      * @return true on successful inspection, false if file does not exist or cannot be read.
      */
     static bool InspectPdf(const std::string& srcPath, PdfDocumentInfo& outInfo) {
-        std::error_code ec;
-        auto fsPath = Utf8ToPath(srcPath);
-        if (srcPath.empty() || !std::filesystem::exists(fsPath, ec)) {
+        if (srcPath.empty() || !FileManager::Exists(srcPath)) {
             LOG_WARN(PdfStorage, "PDF file does not exist: " + srcPath);
             return false;
         }
@@ -70,7 +67,6 @@ public:
         std::snprintf(hashStr, sizeof(hashStr), "%016llx", static_cast<unsigned long long>(hash));
 
         // 1. Primary inspection: Query page count via PDFium engine
-        // Handles compressed object streams (/ObjStm), multi-level page trees, and linearized PDFs
         int pages = PdfRenderer::GetPageCount(srcPath);
 
         // 2. Fallback to lightweight byte scan if PDFium is not compiled or returned 0
@@ -82,7 +78,7 @@ public:
         }
 
         outInfo.originalPath = srcPath;
-        outInfo.originalFileName = PathToUtf8(fsPath.filename());
+        outInfo.originalFileName = FileManager::GetFileName(srcPath);
         outInfo.contentHash = hashStr;
         outInfo.fileSizeBytes = sz;
         outInfo.pageCount = pages;
@@ -109,9 +105,8 @@ public:
      * 1. Calls InspectPdf to validate source file and extract content hash.
      * 2. For ExternalLink mode, stores direct absolute path without copying bytes.
      * 3. For LocalCopy mode, ensures destination directory <notebookPkg>/imports/pdfs exists.
-     * 4. Copies the source file into imports/pdfs/pdf_<contentHash>.pdf using Utf8ToPath,
-     *    guaranteeing non-ASCII Unicode characters in filenames are safely preserved.
-     * 5. Populates outInfo with package-relative path and full disk path.
+     * 4. Copies the source file into imports/pdfs/pdf_<contentHash>.pdf via FileManager::CopyFileTo.
+     *    (Named CopyFileTo rather than CopyFile to avoid the Win32 CopyFileA macro collision.)
      *
      * @param srcPath UTF-8 path to the source PDF file.
      * @param session Active document session providing notebook workspace root.
@@ -145,28 +140,28 @@ public:
             return false;
         }
 
-        std::error_code ec;
-        std::filesystem::path pkgPath = Utf8ToPath(activeNb->filePath);
-        std::filesystem::path pdfDir = pkgPath / "imports" / "pdfs";
-        std::filesystem::create_directories(pdfDir, ec);
+        std::string importsDir = FileManager::JoinPath(activeNb->filePath, "imports");
+        std::string pdfDir = FileManager::JoinPath(importsDir, "pdfs");
+        FileManager::CreateDirectories(pdfDir);
 
         std::string filename = std::string("pdf_") + outInfo.contentHash + ".pdf";
-        std::filesystem::path destFile = pdfDir / Utf8ToPath(filename);
+        std::string destFile = FileManager::JoinPath(pdfDir, filename);
 
         // Copy only if not already deduplicated
-        if (!std::filesystem::exists(destFile, ec)) {
-            std::filesystem::copy_file(Utf8ToPath(srcPath), destFile, std::filesystem::copy_options::overwrite_existing, ec);
-            if (ec) {
-                LOG_ERROR(PdfStorage, "Failed to copy PDF into imports/pdfs/: " + ec.message());
+        // NOTE: Using CopyFileTo (not CopyFile) to avoid Win32 CopyFileA macro expansion
+        if (!FileManager::Exists(destFile)) {
+            if (!FileManager::CopyFileTo(srcPath, destFile)) {
+                LOG_ERROR(PdfStorage, FormatError(FolioErrorCode::SysFileWriteFailed, 
+                    "Failed to copy PDF into imports/pdfs/: " + destFile));
                 return false;
             }
-            LOG_INFO(PdfStorage, "Copied new PDF to package: " + PathToUtf8(destFile));
+            LOG_INFO(PdfStorage, "Copied new PDF to package: " + destFile);
         } else {
             LOG_INFO(PdfStorage, "PDF content hash already exists in package, deduplicating: " + filename);
         }
 
-        outInfo.packagePath = PathToUtf8(std::filesystem::path("imports") / "pdfs" / Utf8ToPath(filename));
-        outInfo.diskPath = PathToUtf8(destFile);
+        outInfo.packagePath = FileManager::JoinPath(FileManager::JoinPath("imports", "pdfs"), filename);
+        outInfo.diskPath = destFile;
         outInfo.isExternal = false;
         return true;
     }
@@ -176,8 +171,7 @@ public:
      *
      * Working Process:
      * 1. Checks if packagePath is already an absolute path (external link).
-     * 2. If relative, prepends the active notebook directory root path.
-     * 3. Returns the resulting path as a clean UTF-8 string via PathToUtf8.
+     * 2. If relative, prepends the active notebook directory root path via FileManager::JoinPath.
      *
      * @param packagePath Relative package path or external absolute path.
      * @param session Pointer to active document session for notebook directory lookup.
@@ -186,15 +180,14 @@ public:
     static std::string ResolveDiskPath(const std::string& packagePath, const DocumentSession* session) {
         if (packagePath.empty()) return "";
 
-        std::filesystem::path p = Utf8ToPath(packagePath);
-        if (p.is_absolute()) {
+        if (FileManager::IsAbsolutePath(packagePath)) {
             return packagePath;
         }
 
         if (session) {
             auto activeNb = session->workspace.GetActiveNotebook();
             if (activeNb && !activeNb->filePath.empty()) {
-                return PathToUtf8(Utf8ToPath(activeNb->filePath) / p);
+                return FileManager::JoinPath(activeNb->filePath, packagePath);
             }
         }
 

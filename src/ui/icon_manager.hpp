@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ANDROID: SDL_opengl.h is desktop-only. Use GLES3 header on Android.
 // GL_RGBA8 and VAOs are GLES3 features (not in GLES2/gl2.h).
 #if defined(__ANDROID__)
@@ -7,7 +7,7 @@
 #include <SDL3/SDL_opengl.h>
 #endif
 #include <lunasvg.h>
-#include "utils/file_loader.hpp"
+#include "io/file_reader.hpp"
 #include <string>
 #include <vector>
 #include <unordered_map>

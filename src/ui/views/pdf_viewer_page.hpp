@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <vector>
@@ -20,6 +20,7 @@
 #include "app/theme_manager.hpp"
 #include "ui/imgui_theme.hpp"
 #include "utils/logger.hpp"
+#include "io/file_manager.hpp"
 #include "utils/thread_pool.hpp"
 
 namespace Folio {
@@ -45,7 +46,7 @@ inline const std::vector<PdfHighlightColorPreset>& GetHighlightColorPresets() {
         { "Sky Blue",        IM_COL32(33, 150, 243, 115),  IM_COL32(0, 210, 255, 130),   ImVec4(0.13f, 0.59f, 0.95f, 1.0f) },
         { "Rose Pink",       IM_COL32(255, 64, 129, 115),  IM_COL32(255, 64, 129, 130),  ImVec4(1.00f, 0.25f, 0.51f, 1.0f) },
         { "Warm Orange",     IM_COL32(255, 152, 0, 115),   IM_COL32(255, 152, 0, 130),   ImVec4(1.00f, 0.60f, 0.00f, 1.0f) },
-        { "Lavender Purple", IM_COL32(171, 71, 188, 115), IM_COL32(186, 104, 200, 130), ImVec4(0.67f, 0.28f, 0.74f, 1.0f) }
+        { "Lavender Purple", IM_COL32(171, 71, 188, 115),  IM_COL32(186, 104, 200, 130), ImVec4(0.67f, 0.28f, 0.74f, 1.0f) }
     };
     return s_presets;
 }
@@ -717,7 +718,7 @@ public:
         hudInactivityTimer = 2.5f;
 
         loadingDocPath = filePath;
-        loadingDocName = PathToUtf8(Utf8ToPath(filePath).filename());
+        loadingDocName = FileManager::GetFileName(filePath);
         isLoading = true;
         loadingFinished.store(false);
         loadingFailed.store(false);
@@ -1665,16 +1666,16 @@ public:
 
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && isHThumbHovered) {
                     isDraggingHScrollbar = true;
-                    scrollbarGrabOffsetX = mousePos.x - thumbX;
+                    scrollbarGrabOffsetY = mousePos.x - thumbX;
                 } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && isHTrackHovered) {
                     float clickRatio = (mousePos.x - hsbX - thumbW * 0.5f) / (hsbW - thumbW);
                     scrollX = std::clamp(clickRatio * maxScrollX, 0.0f, maxScrollX);
                     isDraggingHScrollbar = true;
-                    scrollbarGrabOffsetX = thumbW * 0.5f;
+                    scrollbarGrabOffsetY = thumbW * 0.5f;
                 }
 
                 if (isDraggingHScrollbar && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                    float newThumbX = mousePos.x - scrollbarGrabOffsetX;
+                    float newThumbX = mousePos.x - scrollbarGrabOffsetY;
                     float newRatio = (newThumbX - hsbX) / (hsbW - thumbW);
                     scrollX = std::clamp(newRatio * maxScrollX, 0.0f, maxScrollX);
                 } else if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -1947,7 +1948,7 @@ public:
 
                                 if (ImGui::MenuItem("Create Link to Bookmark")) {
                                     std::string pageGuid = session.GetActivePage() ? session.GetActivePage()->guid : "";
-                                    std::string docTitle = std::filesystem::path(currentPdfPath).filename().string();
+                                    std::string docTitle = FileManager::GetFileName(currentPdfPath);
                                     std::string link = "[Bookmark: \"" + userBookmarks[b].title + "\" (" + docTitle + ", Page " +
                                                        std::to_string(userBookmarks[b].pageIndex + 1) + ")](folionote://page/" +
                                                        pageGuid + "?pdfPage=" + std::to_string(userBookmarks[b].pageIndex + 1) + ")";
@@ -1994,7 +1995,7 @@ public:
                 ContextMenuThemeScope ctxScope(theme);
                 if (ImGui::BeginPopup("##PdfCanvasContextMenu")) {
                     ImGui::PushFont(FolioTheme::FontNavBoldLarge ? FolioTheme::FontNavBoldLarge : FolioTheme::FontBold);
-                    std::string docTitle = std::filesystem::path(currentPdfPath).filename().string();
+                    std::string docTitle = FileManager::GetFileName(currentPdfPath);
                     ImGui::TextColored(theme.colorPrimary, "%s", docTitle.c_str());
                     ImGui::PopFont();
                     int targetPage = (contextMenuState.pageIndex >= 0) ? contextMenuState.pageIndex : activePageIndex;

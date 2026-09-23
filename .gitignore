@@ -24,3 +24,4 @@ src/android-project/**/*.apk
 src/android-project/**/*.aab
 *.apk
 *.aab
+.aider*

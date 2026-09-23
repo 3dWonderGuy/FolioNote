@@ -230,8 +230,7 @@ if(NOT ANDROID)
     add_executable(test_rtree
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_rtree.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/file_manager.cpp"
-        test/test_file_manager.cpp
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
     )
 
     target_include_directories(test_rtree PRIVATE
@@ -261,7 +260,7 @@ endif()
 if(NOT ANDROID)
     add_executable(test_file_manager
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_manager.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/file_manager.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
     )
 
     target_include_directories(test_file_manager PRIVATE
@@ -288,7 +287,7 @@ endif()
 if(NOT ANDROID)
     add_executable(test_thread_pool
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_thread_pool.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/file_manager.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
     )
 
     target_include_directories(test_thread_pool PRIVATE
@@ -307,6 +306,33 @@ if(NOT ANDROID)
     endif()
 
     set_target_properties(test_thread_pool PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+endif()
+
+# 13. Standalone Local Test Executable: FileSaver
+if(NOT ANDROID)
+    add_executable(test_file_saver
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_saver.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
+    )
+
+    target_include_directories(test_file_saver PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+    )
+
+    target_link_libraries(test_file_saver PRIVATE
+        SDL3::SDL3
+    )
+
+    if(WIN32)
+        target_link_libraries(test_file_saver PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(test_file_saver PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
 endif()

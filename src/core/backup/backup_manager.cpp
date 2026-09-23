@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file backup_manager.cpp
  * @brief Implementation of the 3-Tier Autonomous Backup & Disaster Recovery Engine
@@ -33,7 +33,7 @@
 #include <filesystem>
 #include <sqlite3.h>
 
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/thread_pool.hpp"
 #include "utils/logger.hpp"
 #include "app/settings_manager.hpp"

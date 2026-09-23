@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -17,9 +17,11 @@
 #include <filesystem>
 #include <cmath>
 #include <blend2d/blend2d.h>
+
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
 #include "core/render/pdf_renderer.hpp"
+#include "io/file_manager.hpp"
 
 namespace Folio {
 
@@ -67,9 +69,8 @@ public:
      * 1. Checks `resolvedDiskPath` first (direct absolute path on disk).
      * 2. If empty or missing, falls back to `pdfPath`.
      * 3. If missing and `fallbackDir` (e.g. notebook package root) is supplied, attempts
-     *    resolving relative path: `std::filesystem::path(fallbackDir) / pdfPath`.
-     * 4. Once verified, invokes Folio::PdfRenderer::RenderPage to decode the vector page
-     *    into a high-resolution Blend2D bitmap surface (at 150 DPI) and caches it.
+     *    resolving relative path via FileManager::JoinPath(fallbackDir, pdfPath).
+     * 4. Once verified, invokes Folio::PdfRenderer::RenderPage to decode the vector page.
      * 
      * @param fallbackDir Optional directory (such as notebook root folder) to locate relative assets.
      */
@@ -83,20 +84,21 @@ public:
             diskPath = pdfPath;
         }
 
-        std::error_code ec;
-        auto diskFsPath = Utf8ToPath(diskPath);
-        if (!diskPath.empty() && !std::filesystem::exists(diskFsPath, ec) && !fallbackDir.empty()) {
-            std::filesystem::path resolved = Utf8ToPath(fallbackDir) / Utf8ToPath(pdfPath);
-            if (std::filesystem::exists(resolved, ec)) {
-                diskPath = PathToUtf8(resolved);
+        // 1. If direct path fails, attempt fallback directory resolution
+        if (!diskPath.empty() && !FileManager::Exists(diskPath) && !fallbackDir.empty()) {
+            std::string resolved = FileManager::JoinPath(fallbackDir, pdfPath);
+            if (FileManager::Exists(resolved)) {
+                diskPath = resolved;
                 const_cast<PdfContainer*>(this)->resolvedDiskPath = diskPath;
-                diskFsPath = resolved;
             }
         }
-        if (diskPath.empty() || !std::filesystem::exists(diskFsPath, ec)) {
+
+        // 2. Final existence check before pushing to renderer
+        if (diskPath.empty() || !FileManager::Exists(diskPath)) {
             return;
         }
 
+        // 3. Render and cache
         auto res = Folio::PdfRenderer::RenderPage(diskPath, pageIndex, 150.0);
         if (res.success && !res.image.is_empty()) {
             cachedPageImage = res.image;

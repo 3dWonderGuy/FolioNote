@@ -1,13 +1,13 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <vector>
 #include <memory>
-#include <filesystem>
 #include <functional>
 #include <blend2d/blend2d.h>
 #include "utils/logger.hpp"
-#include "utils/file_loader.hpp"
+#include "io/file_reader.hpp"
+#include "io/file_manager.hpp"
 
 #if defined(FOLIO_HAS_PDFIUM) && __has_include(<fpdfview.h>)
 #include <fpdfview.h>
@@ -49,23 +49,23 @@ struct PdfOutlineItem {
 /**
  * @brief RAII container managing FPDF_DOCUMENT lifecycles across platforms.
  * Supports both standard native FPDF_LoadDocument descriptors and custom
- * FPDF_FILEACCESS streams (such as wide-character _wfopen streams for Windows Unicode paths).
+ * FPDF_FILEACCESS streams via SDL_IOStream to handle Unicode paths on Windows.
  * Automatically releases PDFium document handles and underlying file streams upon destruction.
  */
 struct PdfDocHolder {
     FPDF_DOCUMENT doc = nullptr;
-    FILE* fileHandle = nullptr;
+    SDL_IOStream* fileStream = nullptr;
 
     PdfDocHolder() = default;
-    PdfDocHolder(FPDF_DOCUMENT d, FILE* f = nullptr) : doc(d), fileHandle(f) {}
+    PdfDocHolder(FPDF_DOCUMENT d, SDL_IOStream* f = nullptr) : doc(d), fileStream(f) {}
     ~PdfDocHolder() {
         if (doc) {
             FPDF_CloseDocument(doc);
             doc = nullptr;
         }
-        if (fileHandle) {
-            fclose(fileHandle);
-            fileHandle = nullptr;
+        if (fileStream) {
+            SDL_CloseIO(fileStream);
+            fileStream = nullptr;
         }
     }
 
@@ -74,19 +74,19 @@ struct PdfDocHolder {
     PdfDocHolder& operator=(const PdfDocHolder&) = delete;
 
     PdfDocHolder(PdfDocHolder&& other) noexcept
-        : doc(other.doc), fileHandle(other.fileHandle) {
+        : doc(other.doc), fileStream(other.fileStream) {
         other.doc = nullptr;
-        other.fileHandle = nullptr;
+        other.fileStream = nullptr;
     }
 
     PdfDocHolder& operator=(PdfDocHolder&& other) noexcept {
         if (this != &other) {
             if (doc) FPDF_CloseDocument(doc);
-            if (fileHandle) fclose(fileHandle);
+            if (fileStream) SDL_CloseIO(fileStream);
             doc = other.doc;
-            fileHandle = other.fileHandle;
+            fileStream = other.fileStream;
             other.doc = nullptr;
-            other.fileHandle = nullptr;
+            other.fileStream = nullptr;
         }
         return *this;
     }
@@ -125,12 +125,9 @@ public:
      *
      * General Working Process:
      * 1. On Windows: Standard FPDF_LoadDocument accepts a char* string interpreted via the system ANSI code page.
-     *    When files are named with non-ASCII characters (e.g. French accents, Cyrillic, Chinese, Japanese, or emoji),
-     *    FPDF_LoadDocument fails to open the file. We fall back to std::filesystem::u8path and _wfopen to open
-     *    the file with full wide-character fidelity, connecting it to FPDF_LoadCustomDocument via an FPDF_FILEACCESS
-     *    block-reading callback.
-     * 2. On Linux / macOS / Android: System file paths are natively UTF-8. If FPDF_LoadDocument encounters an issue,
-     *    standard fopen is used as the custom fallback.
+     *    When files are named with non-ASCII characters, it fails. We fall back to FileManager::OpenReadStream
+     *    which handles Unicode paths flawlessly and delegates reading to PDFium via FPDF_FILEACCESS.
+     * 2. On POSIX: Native UTF-8 paths work out of the box.
      *
      * @param filePath Full UTF-8 encoded path to the PDF document.
      * @return PdfDocHolder RAII container wrapping the opened FPDF_DOCUMENT and any custom file handle.
@@ -146,40 +143,31 @@ public:
             return PdfDocHolder(doc, nullptr);
         }
 
-        // 2. Fallback: Wide/UTF-8 custom stream reader for non-ASCII paths
-        FILE* fp = nullptr;
-#if defined(_WIN32)
-        std::error_code ec;
-        auto p = Utf8ToPath(filePath);
-        if (std::filesystem::exists(p, ec)) {
-            fp = _wfopen(p.wstring().c_str(), L"rb");
+        // 2. Fallback: FileManager cross-platform stream reader for non-ASCII paths
+        if (!FileManager::Exists(filePath)) {
+            return {};
         }
-#else
-        fp = fopen(filePath.c_str(), "rb");
-#endif
 
-        if (fp) {
-            fseek(fp, 0, SEEK_END);
-            long sz = ftell(fp);
-            fseek(fp, 0, SEEK_SET);
-
+        SDL_IOStream* stream = FileManager::OpenReadStream(filePath);
+        if (stream) {
+            Sint64 sz = SDL_GetIOSize(stream);
             if (sz > 0) {
                 FPDF_FILEACCESS access{};
                 access.m_FileLen = static_cast<unsigned long>(sz);
-                access.m_Param = fp;
+                access.m_Param = stream;
                 access.m_GetBlock = [](void* param, unsigned long pos, unsigned char* buf, unsigned long size) -> int {
-                    FILE* f = static_cast<FILE*>(param);
-                    if (!f || !buf || size == 0) return 0;
-                    if (fseek(f, static_cast<long>(pos), SEEK_SET) != 0) return 0;
-                    return fread(buf, 1, size, f) == size ? 1 : 0;
+                    SDL_IOStream* s = static_cast<SDL_IOStream*>(param);
+                    if (!s || !buf || size == 0) return 0;
+                    if (SDL_SeekIO(s, static_cast<Sint64>(pos), SDL_IO_SEEK_SET) < 0) return 0;
+                    return SDL_ReadIO(s, buf, size) == size ? 1 : 0;
                 };
 
                 doc = FPDF_LoadCustomDocument(&access, nullptr);
                 if (doc) {
-                    return PdfDocHolder(doc, fp);
+                    return PdfDocHolder(doc, stream);
                 }
             }
-            fclose(fp);
+            SDL_CloseIO(stream);
         }
         return {};
     }
@@ -187,11 +175,6 @@ public:
 
     /**
      * @brief Accurately queries the total number of pages in a PDF document using PDFium.
-     * Accurately parses document catalogs, multi-level B-tree page hierarchies, compressed object
-     * streams (/ObjStm), linearized fast web view catalogs, and cross-reference streams.
-     *
-     * @param filePath Full UTF-8 path to the PDF document.
-     * @return Positive total page count on success, or 0 if the file could not be parsed.
      */
     static int GetPageCount(const std::string& filePath) {
         if (filePath.empty()) return 0;
@@ -252,7 +235,6 @@ public:
         FPDF_PAGE page = FPDF_LoadPage(doc, pageIndex);
         if (!page) {
             result.errorMessage = "PDFium failed to load page";
-            FPDF_CloseDocument(doc);
             return result;
         }
 
@@ -460,15 +442,6 @@ public:
      * Opens FPDF_DOCUMENT once, queries all page dimensions and outline, and reports progress.
      * Running this single-pass avoids re-opening and re-parsing a multi-hundred-page document
      * hundreds of times, reducing load time by over 98%.
-     *
-     * Mathematical Scaling:
-     * - Standard repeated opens: O(N * DocumentParseCost)
-     * - Single-pass query: O(DocumentParseCost + N * ConstantTimePageQuery)
-     *
-     * @param filePath Absolute or resolved disk path to PDF.
-     * @param outSummary Output struct with page count, page dimensions, and outline tree.
-     * @param progressCallback Optional progress reporter callback (currentProcessedPage, totalPages).
-     * @return true if opened and read successfully; false otherwise.
      */
     static bool InspectAndLoadDocStructure(
         const std::string& filePath,

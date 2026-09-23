@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file export_manager.cpp
  * @brief Implementation of High-Level Export Coordinator
@@ -23,7 +23,7 @@
 #include "core/document/notebook.hpp"
 #include "core/document/section.hpp"
 #include "core/document/canvas_page.hpp"
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/thread_pool.hpp"
 #include "utils/logger.hpp"
 

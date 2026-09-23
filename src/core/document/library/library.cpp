@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file library.cpp
  * @brief Lifecycle, Registration, Catalog Refreshing, and Organizational Routing
@@ -29,7 +29,7 @@
 #include <algorithm>
 #include <string>
 
-#include "utils/file_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {

@@ -9,7 +9,8 @@
 #include <iostream>
 #include "imgui.h"
 #include "input/pen_palette.hpp"
-#include "utils/file_loader.hpp"
+#include "io/file_reader.hpp"
+#include "io/file_writer.hpp"
 #include "utils/logger.hpp"
 
 #if defined(__ANDROID__)
@@ -526,7 +527,7 @@ public:
                 { "monthlyBackupsRetention", monthlyBackupsRetention }
             };
 
-            return FileLoader::WriteString(filepath, j.dump(2));
+            return Folio::FileWriter::WriteString(filepath, j.dump(2));
         } catch (const std::exception& ex) {
             LOG_ERROR(SettingsManager, std::string("JSON save error: ") + ex.what());
             return false;

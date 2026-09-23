@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================================
  * @file notebook_cloner.cpp
  * @brief High-Fidelity Package Container Initializer and Pure Filesystem Replicator
@@ -27,8 +27,8 @@
 #include <string>
 #include <memory>
 
-#include "utils/file_manager.hpp"
-#include "utils/package_marker.hpp"
+#include "io/file_manager.hpp"
+#include "io/package_marker.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {
