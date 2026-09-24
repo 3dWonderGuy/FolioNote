@@ -470,12 +470,24 @@ void BinarySerializer::SerializeObject(const std::shared_ptr<CanvasObject>& obj,
         writer.WriteU8(static_cast<uint8_t>(conn->endArrow));
         writer.WriteDouble(conn->arrowHeadSize);
         writer.WriteU8(static_cast<uint8_t>(conn->connectorStyle));
+    } else if (obj->type == ObjectType::AttachmentFile) {
+        /**
+         * AttachmentObject Serialization:
+         * Encodes top-left world coordinates, file path, display name, and mime type.
+         */
+        auto attach = std::static_pointer_cast<AttachmentObject>(obj);
+        writer.WriteDouble(attach->worldX);
+        writer.WriteDouble(attach->worldY);
+        writer.WriteString(attach->filePath);
+        writer.WriteString(attach->displayName);
+        writer.WriteString(attach->mimeType);
+        writer.WriteU8(attach->isEmbedded ? 1 : 0);
     } else {
         LOG_WARN(BinarySerializer, "Serializing generic object with type ID: " + std::to_string(static_cast<int>(obj->type)));
     }
 }
 
-std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& reader, SerializationStats& stats) {
+std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& reader, SerializationStats& stats, uint32_t version) {
     ObjectType type = static_cast<ObjectType>(reader.ReadU8());
     std::string objGuid = reader.ReadString();
 
@@ -730,6 +742,35 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
         }
         pdf->UpdateBounds();
         return pdf;
+
+    } else if (type == ObjectType::AttachmentFile) {
+        /**
+         * AttachmentObject Deserialization:
+         * Reconstructs an external file shortcut chip on the canvas.
+         */
+        auto attach = std::make_shared<AttachmentObject>();
+        attach->guuid = objGuid;
+        attach->uid = UIDGenerator::Next();
+        attach->bounds = bounds;
+        attach->transform = transform;
+        attach->zOrder = zOrder;
+        attach->opacity = opacity;
+        attach->isVisible = isVisible ? 1 : 0;
+        attach->isLocked = isLocked ? 1 : 0;
+        attach->isSelectable = isSelectable ? 1 : 0;
+
+        attach->worldX = reader.ReadDouble();
+        attach->worldY = reader.ReadDouble();
+        attach->filePath = reader.ReadString();
+        attach->displayName = reader.ReadString();
+        attach->mimeType = reader.ReadString();
+        if (version >= 4) {
+            attach->isEmbedded = (reader.ReadU8() != 0);
+        } else {
+            attach->isEmbedded = false;
+        }
+        attach->UpdateBounds();
+        return attach;
     }
 
     LOG_WARN(BinarySerializer, "Skipping unrecognized object type: " + std::to_string(static_cast<int>(type)));
@@ -924,7 +965,7 @@ bool BinarySerializer::DeserializePage(const uint8_t* blobData, size_t blobSize,
 
 
         for (uint32_t i = 0; i < objectCount; ++i) {
-            auto obj = DeserializeObject(reader, stats);
+            auto obj = DeserializeObject(reader, stats, version);
             if (obj) {
                 outPage.AddObject(obj);
             }
@@ -983,7 +1024,7 @@ bool BinarySerializer::ApplyJournalEntry(CanvasPage& page, const JournalEntry& e
             if (entry.payload.empty()) return false;
             ByteReader reader(entry.payload.data(), entry.payload.size());
             SerializationStats stats;
-            auto obj = DeserializeObject(reader, stats);
+            auto obj = DeserializeObject(reader, stats, FORMAT_VERSION);
             if (obj) {
                 page.AddObject(obj);
                 return true;

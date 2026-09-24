@@ -1,37 +1,29 @@
 #pragma once
 /**
  * @file attachment_container.hpp
- * @brief Canvas object representing a linked external file attachment.
+ * @brief Canvas object representing a file attachment chip pinned to the canvas.
  *
- * AttachmentObject is a non-resizable icon chip on the canvas that links to
- * an external file. The file is NEVER embedded in the .folio binary — it lives
- * in the notebook's companion folder:
+ * AttachmentObject is a lightweight, non-resizable interactive chip that provides access to
+ * an external or embedded file (documents, spreadsheets, executables, images, etc.).
  *
- *   <notebook_dir>/imports/files/<displayName>
+ * Attachment Modes:
+ *   - Link mode (isEmbedded == false):
+ *       filePath stores the original absolute path on disk. The file is NOT copied.
+ *       The chip renders a chain-link badge. If the file is moved or deleted, the link breaks.
+ *   - Embedded mode (isEmbedded == true):
+ *       The file was copied into the notebook sidecar folder at attach time.
+ *       filePath stores the sidecar-relative path (e.g. "attachments/<uuid>_filename.xlsx").
+ *       The chip renders an embed badge. Fully portable — works after moving the notebook.
  *
- * This keeps the .folio file small and predictable. The user is given the
- * option to "save file alongside notebook" at import time which copies the
- * file into that sidecar folder. If they choose not to, filePath is an
- * absolute path to wherever the file lives on the system.
+ * Interaction Model:
+ *   - Single-click:  Selects the chip; gizmo allows moving it.
+ *   - Double-click:  Opens the file in the OS default application via OpenFile().
+ *   - Right-click:   Shows a context menu with Open, Copy Path, and Remove from Page.
  *
- * Behavior:
- *   Double-click (or right-click → Open) on the chip calls OpenFile(), which
- *   delegates to the OS default handler — exactly "right-click → Open" in
- *   Windows Explorer. On Windows this uses ShellExecuteW; on other platforms
- *   a TODO stub is left with the cross-platform hook point.
- *
- * Rendering:
- *   A fixed 140×52px rectangle chip with:
- *     - File-type color band on the left edge
- *     - File extension badge (e.g. "PDF", "XLSX")
- *     - Truncated displayName label
- *   The chip is NOT resizable. Only body-move is available via the gizmo.
- *   GetCustomGizmoHandles returns an empty list, which causes the engine to
- *   fall through to the body-move path without any resize grips.
- *
- * Scalability:
- *   To add new file-type icons or color bands, edit the GetTypeColor() helper.
- *   No other files need modification.
+ * Key Design Principles:
+ *   1. Non-resizable Chip: Fixed-size badge (chipW x chipH mm) with body-move only.
+ *   2. Quick Launcher: OpenFile() uses ShellExecuteW on Windows.
+ *   3. Visual distinction: Embedded vs Link mode shown via a small corner badge.
  */
 
 #include <string>
@@ -44,6 +36,7 @@
 
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
+#include "core/text/font_manager.hpp"
 
 // Windows-only open-with-default-app support
 #if defined(_WIN32) || defined(_WIN64)
@@ -71,9 +64,14 @@ public:
     // FIELDS
     // =========================================================================
 
-    std::string filePath;       ///< Absolute path or sidecar-relative path to the file
+    std::string filePath;       ///< Absolute path (link mode) or sidecar-relative path (embedded mode)
     std::string displayName;    ///< Shown on the chip label (usually the filename)
     std::string mimeType;       ///< e.g. "application/pdf", "image/png", "text/plain"
+
+    /// Attachment mode:
+    ///   true  = file was copied into the notebook sidecar at attach time (portable, safe to move notebook).
+    ///   false = file path link to original location on disk (fast, but breaks if file is moved/renamed).
+    bool isEmbedded = false;
 
     double worldX    = 0.0;     ///< Chip position X (world mm, top-left)
     double worldY    = 0.0;     ///< Chip position Y (world mm, top-left)
@@ -91,9 +89,16 @@ public:
         UpdateBounds();
     }
 
+    /**
+     * @brief Constructs a named attachment chip.
+     * @param path     Absolute path (link) or sidecar-relative path (embedded).
+     * @param name     Display label shown on the chip.
+     * @param mime     Optional MIME type string, e.g. "application/pdf".
+     * @param embedded True if the file was copied into the notebook sidecar (embedded mode).
+     */
     AttachmentObject(const std::string& path, const std::string& name,
-                     const std::string& mime = "")
-        : filePath(path), displayName(name), mimeType(mime)
+                     const std::string& mime = "", bool embedded = false)
+        : filePath(path), displayName(name), mimeType(mime), isEmbedded(embedded)
     {
         type = ObjectType::AttachmentFile;
         UpdateBounds();
@@ -237,14 +242,12 @@ public:
         ctx.set_fill_style(BLRgba32(0x1E, 0x20, 0x28, static_cast<uint8_t>(opacity * 235)));
         ctx.fill_round_rect(BLRoundRect(x, y, w, h, r, r));
 
-        // Type color band on the left edge
+        // Type color band on the left edge (clip to round rect boundary)
         BLRgba32 bandCol = GetTypeColor();
         ctx.save();
-        BLRect bandRect(x, y, bw, h);
-        // Clip to rounded left corners only (approximate with round rect)
-        ctx.fill_round_rect(BLRoundRect(x, y, bw + r, h, r, r));  // left side fill
+        ctx.clip_to_rect(BLRect(x, y, bw, h));
         ctx.set_fill_style(bandCol);
-        ctx.fill_round_rect(BLRoundRect(x, y, bw + r, h, r, r));
+        ctx.fill_round_rect(BLRoundRect(x, y, w, h, r, r));
         ctx.restore();
 
         // Border
@@ -252,25 +255,65 @@ public:
         ctx.set_stroke_width(0.4);
         ctx.stroke_round_rect(BLRoundRect(x, y, w, h, r, r));
 
-        // File extension label (white text in band)
-        // Note: Blend2D BLFont text rendering requires font loading infrastructure.
-        // For now we draw a placeholder dot — full font rendering hooked in Phase 2.
-        ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 200));
-        ctx.fill_circle(x + bw * 0.5, y + h * 0.5, 1.2); // placeholder dot
+        // Extract uppercase extension for the badge
+        std::string ext = "";
+        auto dot = displayName.rfind('.');
+        if (dot != std::string::npos && dot + 1 < displayName.size()) {
+            ext = displayName.substr(dot + 1);
+            for (auto& c : ext) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            if (ext.size() > 4) ext = ext.substr(0, 4);
+        } else {
+            ext = "FILE";
+        }
+
+        // Draw extension inside the left color band
+        BLFont badgeFont = FontManager::Instance().GetFont("Segoe UI", 3.2f, true);
+        ctx.fill_utf8_text(BLPoint(x + 1.2, y + h * 0.5 + 1.1), badgeFont, ext.data(), ext.size(), BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+
+        // Draw display name label
+        BLFont labelFont = FontManager::Instance().GetFont("Segoe UI", 3.4f, false);
+
+        // Clip text so it doesn't bleed out of chip
+        ctx.save();
+        ctx.clip_to_rect(BLRect(x + bw + 2.0, y + 1.0, w - bw - 4.0, h - 2.0));
+        ctx.fill_utf8_text(BLPoint(x + bw + 2.5, y + h * 0.5 + 1.2), labelFont, displayName.data(), displayName.size(), BLRgba32(0xF0, 0xF2, 0xF5, static_cast<uint8_t>(opacity * 255)));
+        ctx.restore();
+
+        // Draw embedded / link mode badge in the bottom-right corner of the chip.
+        // Embedded: filled teal dot with 'E'.  Link: hollow grey dot with chain symbol.
+        {
+            const double badgeR  = 2.8;                              // Badge circle radius (mm)
+            const double badgeCX = x + w - badgeR - 1.2;            // Centre X
+            const double badgeCY = y + h - badgeR - 1.0;            // Centre Y
+
+            if (isEmbedded) {
+                // Filled teal circle = embedded/safe
+                ctx.set_fill_style(BLRgba32(0x00, 0xB3, 0x9A, 210));
+                ctx.fill_circle(BLCircle(badgeCX, badgeCY, badgeR));
+                // 'E' glyph
+                BLFont tinyFont = FontManager::Instance().GetFont("Segoe UI", 2.6f, true);
+                ctx.fill_utf8_text(BLPoint(badgeCX - 1.5, badgeCY + 1.0), tinyFont, "E", 1, BLRgba32(0xFF, 0xFF, 0xFF, 230));
+            } else {
+                // Hollow warning-amber circle = link (may break)
+                ctx.set_stroke_style(BLRgba32(0xE8, 0xB3, 0x00, 190));
+                ctx.set_stroke_width(0.5);
+                ctx.stroke_circle(BLCircle(badgeCX, badgeCY, badgeR));
+                // Chain-link '⚯' approximated with 'L'
+                BLFont tinyFont = FontManager::Instance().GetFont("Segoe UI", 2.6f, true);
+                ctx.fill_utf8_text(BLPoint(badgeCX - 1.3, badgeCY + 1.0), tinyFont, "L", 1, BLRgba32(0xE8, 0xB3, 0x00, 200));
+            }
+        }
 
         ctx.restore();
     }
 
     // =========================================================================
-    // DUPLICATION & PERSISTENCE
+    // DUPLICATION
     // =========================================================================
 
     std::unique_ptr<CanvasObject> Clone() const override {
         return std::make_unique<AttachmentObject>(*this);
     }
-
-    void Serialize(Serializer& /*writer*/) const override {}
-    void Deserialize(Deserializer& /*reader*/) override {}
 
 private:
     /**

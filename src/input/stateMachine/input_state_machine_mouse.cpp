@@ -192,6 +192,16 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                         }
                     }
 
+                    // Check for double-click on AttachmentObject to open file with native OS handler
+                    if (clickedObj->type == ObjectType::AttachmentFile && isLastClickDouble) {
+                        auto attachObj = std::dynamic_pointer_cast<Folio::AttachmentObject>(clickedObj);
+                        if (attachObj) {
+                            LOG_INFO(InputStateMachine, "Double-clicked attachment: opening file '" + attachObj->filePath + "'");
+                            attachObj->OpenFile();
+                            return;
+                        }
+                    }
+
                     // Clicked non-text object:
                     if (canvas.textEditor.IsActive()) {
                         auto prevTarget = canvas.textEditor.GetTarget();

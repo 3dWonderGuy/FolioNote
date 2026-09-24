@@ -72,11 +72,6 @@ public:
     uint8_t isTemporary  : 1 = 0;  // Transient guide / preview stroke
     uint8_t reserved     : 3 = 0;  // Reserved for future use
 
-    // forward decleration
-
-    class Serializer;
-    class Deserializer;
-    
     virtual ~CanvasObject() = default;                  // Virtual destructor for proper cleanup of derived classes
 
     /**
@@ -262,8 +257,10 @@ public:
     /********************************************* */
 
     virtual std::unique_ptr<CanvasObject> Clone() const = 0;
-    virtual void Serialize(Serializer& writer) const = 0;
-    virtual void Deserialize(Deserializer& reader) = 0;
+
+    // Legacy serialization stubs (persistence is handled by Folio::BinarySerializer)
+    virtual void Serialize(class Serializer& /*writer*/) const {}
+    virtual void Deserialize(class Deserializer& /*reader*/) {}
 
     /********************************************* */
     // Selection & Gizmo Interaction

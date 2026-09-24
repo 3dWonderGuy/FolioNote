@@ -53,7 +53,7 @@
  *
  * 5. Test_MemoryPoolAndHeavyChurn:
  *    - Node Recycling: Inserts 5,000 objects, deletes 3,000, and re-inserts 3,000 new ones.
- *      Validates that `freeIndices` recycles node slots rather than growing the vector indefinitely.
+ *      Validates that `recycledNodeIndices` recycles node slots rather than growing the vector indefinitely.
  *
  * 6. Test_CycleTreeIntegrity:
  *    - Dynamic Balancing & Loop Prevention: Simulates 300 frames of `Update()` / `CycleTree()`
@@ -333,7 +333,7 @@ bool Test_GroundTruthEquivalence() {
  * @brief Stress tests memory pooling under rapid creation and deletion cycles.
  * 
  * Simulates heavy editing (e.g. rapid undo/redo, continuous handwriting and erasing).
- * Tests whether deleted nodes are properly recycled through `freeIndices` without
+ * Tests whether deleted nodes are properly recycled through `recycledNodeIndices` without
  * causing memory fragmentation or unbounded vector allocation.
  */
 bool Test_MemoryPoolAndHeavyChurn() {
@@ -350,15 +350,17 @@ bool Test_MemoryPoolAndHeavyChurn() {
         tree.Insert(uid, AABB(x, y, x + 50.0, y + 50.0));
     }
     TEST_ASSERT(tree.GetAll().size() == BATCH_SIZE, "Phase 1: Initial insert count mismatch");
+    TEST_ASSERT(tree.GetRecycledNodeCount() == 0, "Phase 1: Recycled pool should initially be empty");
 
     // Phase 2: Erase 3,000 entities (creates holes in the internal node pool)
     for (uint32_t uid = 1; uid <= 3000; ++uid) {
         tree.Remove(uid);
     }
     TEST_ASSERT(tree.GetAll().size() == 2000, "Phase 2: Post-removal active count mismatch");
+    TEST_ASSERT(tree.GetRecycledNodeCount() > 0, "Phase 2: Recycled node pool should contain freed nodes");
 
     // Phase 3: Insert 3,000 new entities (UIDs 10001..13000)
-    // The engine should fill recycled slots from freeIndices rather than endlessly appending
+    // The engine should fill recycled slots from recycledNodeIndices rather than endlessly appending
     for (uint32_t uid = 10001; uid <= 13000; ++uid) {
         double x = pos(rng);
         double y = pos(rng);
@@ -404,6 +406,85 @@ bool Test_CycleTreeIntegrity() {
     AABB queryArea(0.0, 0.0, 100000.0, 100000.0);
     auto hits = tree.Query(queryArea);
     TEST_ASSERT(hits.size() == COUNT, "Continuous tree rotations orphaned or dropped nodes");
+    TEST_ASSERT(tree.ValidateIntegrity(), "Tree integrity should hold after 300 cycles");
+
+    return true;
+}
+
+// =========================================================================================
+// TEST CASE 7: Self-Healing Reconstruction & Structural Invariant Validation
+// =========================================================================================
+/**
+ * @brief Validates tree invariant checking and self-healing Rebuild functionality.
+ * 
+ * Tests:
+ *   1. ValidateIntegrity() on empty tree.
+ *   2. Rebuild(items) from external vector of (UID, AABB) pairs.
+ *   3. Self-healing Rebuild() restoring all active objects into a pristine hierarchy.
+ */
+bool Test_SelfHealingAndIntegrityValidation() {
+    // 1. Empty tree validation
+    RTree emptyTree;
+    TEST_ASSERT(emptyTree.ValidateIntegrity(), "Empty tree should satisfy all integrity invariants");
+
+    // 2. Direct Rebuild(items) from external collection
+    std::vector<std::pair<uint32_t, AABB>> externalItems;
+    for (uint32_t uid = 1; uid <= 400; ++uid) {
+        double p = static_cast<double>(uid * 10);
+        externalItems.emplace_back(uid, AABB(p, p, p + 8.0, p + 8.0));
+    }
+
+    RTree treeFromItems;
+    treeFromItems.Rebuild(externalItems);
+    TEST_ASSERT(treeFromItems.GetObjectCount() == 400, "Rebuild(items) count mismatch");
+    TEST_ASSERT(treeFromItems.ValidateIntegrity(), "Rebuild(items) produced invalid tree structure");
+
+    auto queryHits = treeFromItems.Query(AABB(0.0, 0.0, 5000.0, 5000.0));
+    TEST_ASSERT(queryHits.size() == 400, "Rebuild(items) query count mismatch");
+
+    // 3. Self-healing Rebuild() on populated tree
+    treeFromItems.Rebuild();
+    TEST_ASSERT(treeFromItems.GetObjectCount() == 400, "Self-healing Rebuild count mismatch");
+    TEST_ASSERT(treeFromItems.ValidateIntegrity(), "Self-healing Rebuild did not maintain integrity");
+
+    auto hitsAfterRebuild = treeFromItems.Query(AABB(0.0, 0.0, 5000.0, 5000.0));
+    TEST_ASSERT(hitsAfterRebuild.size() == 400, "Query mismatch after self-healing Rebuild");
+
+    return true;
+}
+
+// =========================================================================================
+// TEST CASE 8: Plugin / Extension Safety & Circuit Breaker Protection
+// =========================================================================================
+/**
+ * @brief Proves that rogue third-party plugins or extensions passing corrupted bounds
+ * (NaN, Inf, inverted, or extreme numbers) are rejected at the gate and never freeze the main thread.
+ */
+bool Test_PluginSafetyAndCircuitBreaker() {
+    RTree tree;
+
+    // 1. Buggy extension passes NaN coordinates
+    double nanVal = std::numeric_limits<double>::quiet_NaN();
+    double infVal = std::numeric_limits<double>::infinity();
+
+    tree.Insert(100, AABB(nanVal, 0.0, 10.0, 10.0));
+    TEST_ASSERT(!tree.Contains(100), "NaN bounding box must be rejected at the gate");
+
+    tree.Insert(101, AABB(0.0, -infVal, 10.0, 10.0));
+    TEST_ASSERT(!tree.Contains(101), "-Inf bounding box must be rejected at the gate");
+
+    tree.Insert(102, AABB(50.0, 50.0, 10.0, 10.0)); // Inverted box: min > max
+    TEST_ASSERT(!tree.Contains(102), "Inverted box must be rejected at the gate");
+
+    // Extreme float overflow check (> 100,000 km)
+    tree.Insert(103, AABB(0.0, 0.0, 1e20, 1e20));
+    TEST_ASSERT(!tree.Contains(103), "Overflow bounding box must be rejected at the gate");
+
+    // 2. Normal objects insert fine
+    tree.Insert(1, AABB(10.0, 10.0, 20.0, 20.0));
+    TEST_ASSERT(tree.Contains(1), "Valid object should insert normally");
+    TEST_ASSERT(tree.ValidateIntegrity(), "Tree should be fully valid");
+    TEST_ASSERT(!tree.IsCircuitBroken(), "Circuit breaker should not be tripped");
 
     return true;
 }
@@ -424,6 +505,8 @@ int main() {
     RUN_TEST_CASE(Test_GroundTruthEquivalence);
     RUN_TEST_CASE(Test_MemoryPoolAndHeavyChurn);
     RUN_TEST_CASE(Test_CycleTreeIntegrity);
+    RUN_TEST_CASE(Test_SelfHealingAndIntegrityValidation);
+    RUN_TEST_CASE(Test_PluginSafetyAndCircuitBreaker);
 
     auto tEnd = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(tEnd - tStart).count();

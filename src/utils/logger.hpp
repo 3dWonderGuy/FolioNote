@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <string>
 #include <iostream>
 #include <mutex>
@@ -10,8 +10,10 @@
 #include "io/file_logger.hpp"
 #include "utils/error_codes.hpp"
 
-// REMOVE WINDOWS PRINTOUT
-// ADD CLI SUPPORT FOR LIVE LOG TRACK
+
+#if defined(__ANDROID__)
+#include <SDL3/SDL.h>
+#endif
 
 namespace Folio {
 
@@ -79,14 +81,23 @@ namespace Folio {
         }
     }
 
-    // Windows stack-allocated timestamp generator: "HH:MM:SS.mmm"
+    /**
+     * @brief Multiplatform stack-allocated timestamp generator formatted as "HH:MM:SS.mmm".
+     * Uses thread-safe platform variants (localtime_s on Windows, localtime_r on Linux/macOS/Android).
+     * 
+     * @return Formatted timestamp string by value.
+     */
     inline std::string GetCurrentTimestamp() {
         auto now = std::chrono::system_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
         auto timer = std::chrono::system_clock::to_time_t(now);
         std::tm bt{};
 
+#if defined(_WIN32)
         localtime_s(&bt, &timer);
+#else
+        localtime_r(&timer, &bt);
+#endif
 
         char buf[16];
         std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
@@ -99,6 +110,7 @@ namespace Folio {
         return s_logMtx;
     }
 
+    /// When true, all INFO logs are streamed to console, disk, and listeners (like Klipper verbose logging)
     inline bool enableVerboseLogging = true;
 
     // --- CLI / External Streamer Hook ---
@@ -123,6 +135,21 @@ namespace Folio {
         GetStreamListeners().push_back(std::move(listener));
     }
 
+    /**
+     * @brief Central multiplatform logging dispatch function.
+     * 
+     * Working Process:
+     *   1. Checks verbose filter: if level is INFO and verbose logging is disabled, drops immediately.
+     *   2. Formats timestamp and severity string ("INFO", "WARN", "ERROR").
+     *   3. Console / Terminal Output:
+     *      - On Windows/Linux/macOS: Writes to std::cout or std::cerr (flushed on error).
+     *      - On Android: Forwarded to SDL_Log for native LogCat capture.
+     *   4. Disk File Persistence (FileLogger):
+     *      - Every entry (including INFO) is written to `folionote_session.log`.
+     *      - Buffered I/O: INFO writes to an OS memory buffer (~1-2 microseconds) without blocking the thread.
+     *      - ERROR entries trigger an immediate physical disk flush to guarantee persistence across crashes.
+     *   5. Real-Time Streaming: Broadcasts structured entry to any registered CLI/IPC listeners.
+     */
     inline void LogConsole(LogLevel level, LogSource source, const std::string& msg) {
         if (level == LogLevel::Info && !enableVerboseLogging) {
             return;
@@ -139,20 +166,31 @@ namespace Folio {
 
         const char* sourceStr = LogSourceToString(source);
 
-        // Windows console output
+        // Terminal / Console output
         {
             std::lock_guard<std::mutex> lock(GetConsoleLogMutex());
+#if defined(__ANDROID__)
+            // On Android, std::cout is redirected to /dev/null by default; route to logcat via SDL
+            if (level == LogLevel::Error) {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "[%s] [%s] %s", sourceStr, levelStr, msg.c_str());
+            } else if (level == LogLevel::Warn) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "[%s] [%s] %s", sourceStr, levelStr, msg.c_str());
+            } else {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "[%s] [%s] %s", sourceStr, levelStr, msg.c_str());
+            }
+#else
             std::ostream& out = (level == LogLevel::Error) ? std::cerr : std::cout;
             out << '[' << timestamp << "] [" << levelStr << "] [" << sourceStr << "] " << msg << '\n';
             if (level == LogLevel::Error) {
                 out.flush();
             }
+#endif
         }
 
         // Structured entry for disk and CLI streaming
         FolioLogEntry entry{timestamp, levelStr, sourceStr, msg};
 
-        // Local file backup
+        // Local file backup (writes INFO, WARN, and ERROR to folionote_session.log)
         ::Folio::FileLogger::Instance().WriteLog(entry);
 
         // Broadcast to CLI listener if registered

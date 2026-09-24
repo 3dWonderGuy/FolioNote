@@ -29,6 +29,17 @@
  *    Delegates runtime execution to `app.Run()`, maintaining 120Hz/60Hz adaptive frame pacing
  *    and continuous input state machine evaluation until the application terminates.
  */
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shlobj.h>
+#endif
+
 
 #include "app/app.hpp"
 #include <SDL3/SDL_main.h>
@@ -39,13 +50,7 @@
 #include <string_view>
 #include <filesystem>
 
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <shlobj.h>
-#endif
+
 
 #if defined(__ANDROID__)
 #include <android/log.h>

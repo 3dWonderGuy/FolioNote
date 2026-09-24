@@ -18,6 +18,7 @@
 #include "core/objects/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
+#include "core/objects/attachment_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/objects/text/text_editor_state.hpp"
 #include "core/storage/pdf_storage.hpp"
@@ -27,6 +28,8 @@
 #include "core/document/document_session.hpp"
 #include "core/history/canvas_command.hpp"
 #include "utils/usage_tracker.hpp"
+#include "utils/logger.hpp"
+#include "utils/error_codes.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"
 #include <vector>
@@ -41,6 +44,20 @@
 #include <functional>
 #include <chrono>
 #include <SDL3/SDL_dialog.h>
+
+// On Windows: include Win32 common dialog (GetOpenFileNameW) for reliable
+// native file pickers that always show — SDL3's IFileDialog path can silently
+// fail if COM initialisation or filter string parsing hits an edge case.
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <commdlg.h>  // GetOpenFileNameW / OPENFILENAMEW
+#endif
 
 struct PageTemplateDefaults {
     PaperStyle paperStyle = PaperStyle::Grid;
@@ -1197,6 +1214,274 @@ public:
 
         LOG_INFO(CanvasEngine, "Opening native image file dialog...");
         SDL_ShowOpenFileDialog(OnImageFileSelected, ctx, parentWin ? parentWin : sdlWindow, imageFilters, 4, nullptr, false);
+    }
+    // =========================================================================
+    // ATTACHMENT — MODAL-DEFERRED FLOW
+    // =========================================================================
+    // The attach flow is split into two phases so the user can choose Embed vs Link:
+    //   Phase 1: OpenAttachmentFileDialog() → OS file picker → stores pending state → sets m_attachModalOpen = true.
+    //   Phase 2: app.hpp draws the modal each frame. On user choice, calls CommitAttachment(embed, session).
+    // =========================================================================
+
+    /// True while the "Embed vs Link" modal is waiting for a user decision.
+    bool m_attachModalOpen = false;
+
+    /// File path chosen in the OS dialog, pending user's embed/link decision.
+    std::string m_pendingAttachPath;
+
+    /// Display name (filename leaf) for the pending attachment.
+    std::string m_pendingAttachName;
+
+    /// Session that was active when the file picker was opened.
+    DocumentSession* m_pendingAttachSession = nullptr;
+
+    // -------------------------------------------------------------------------
+    // Internal SDL callback context (cross-platform async path only)
+    // -------------------------------------------------------------------------
+    struct AttachmentFileDialogContext {
+        CanvasEngine* canvas   = nullptr;
+        DocumentSession* session = nullptr;
+    };
+
+    /**
+     * @brief SDL_ShowOpenFileDialog callback (cross-platform fallback only).
+     *
+     * Does NOT create the chip immediately. Stores the chosen path in canvas->m_pending*
+     * and sets m_attachModalOpen = true so the per-frame modal draw can handle it.
+     *
+     * @param userdata Heap-allocated AttachmentFileDialogContext* (deleted here).
+     * @param filelist Null-terminated array of selected paths, or nullptr on cancel.
+     * @param filter   Filter index (unused).
+     */
+    static void SDLCALL OnAttachmentFileSelected(void* userdata, const char* const* filelist, int /*filter*/) {
+        auto* ctx = static_cast<AttachmentFileDialogContext*>(userdata);
+        if (!ctx) return;
+
+        if (filelist && filelist[0] && filelist[0][0] != '\0') {
+            std::string selectedPath = filelist[0];
+            std::string filename = std::filesystem::path(selectedPath).filename().string();
+            if (filename.empty()) filename = selectedPath;
+
+            if (ctx->canvas) {
+                // Store pending state; the ImGui modal in app.hpp will call CommitAttachment().
+                ctx->canvas->m_pendingAttachPath    = selectedPath;
+                ctx->canvas->m_pendingAttachName    = filename;
+                ctx->canvas->m_pendingAttachSession = ctx->session;
+                ctx->canvas->m_attachModalOpen      = true;
+                LOG_INFO(CanvasEngine, "Attachment file selected (async): '" + filename + "' — awaiting embed/link decision.");
+            }
+        }
+
+        delete ctx;
+    }
+
+    /**
+     * @brief Opens a native OS file picker to select a file for attachment.
+     *
+     * Phase 1 of the attachment flow. After the user picks a file, the path is stored
+     * in m_pending* and m_attachModalOpen is set to true. The modal in app.hpp then
+     * renders each frame and calls CommitAttachment() once the user decides.
+     *
+     * No AttachmentObject is created here — that happens in CommitAttachment().
+     *
+     * @param parentWin SDL3 window (used to obtain the parent HWND on Windows).
+     * @param session   Active DocumentSession (stored for CommitAttachment to use).
+     */
+    void OpenAttachmentFileDialog(SDL_Window* parentWin, DocumentSession* session) {
+        if (!session) return;
+
+#if defined(_WIN32)
+        // ----------------------------------------------------------------
+        // WIN32 PATH: GetOpenFileNameW — synchronous, main-thread, reliable.
+        // ----------------------------------------------------------------
+        SDL_Window* win = parentWin ? parentWin : sdlWindow;
+        HWND hwnd = nullptr;
+        if (win) {
+            SDL_PropertiesID props = SDL_GetWindowProperties(win);
+            hwnd = static_cast<HWND>(
+                SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+        }
+
+        // Filter string: pairs of "Description\0*.ext\0" terminated with "\0\0".
+        const wchar_t kFilter[] =
+            L"All Files (*.*)\0*.*\0"
+            L"Documents (*.pdf;*.docx;*.xlsx;*.pptx;*.txt;*.md)\0*.pdf;*.docx;*.xlsx;*.pptx;*.txt;*.md\0"
+            L"Images (*.png;*.jpg;*.jpeg;*.webp)\0*.png;*.jpg;*.jpeg;*.webp\0"
+            L"\0";
+
+        wchar_t fileBuf[MAX_PATH] = {};
+
+        OPENFILENAMEW ofn   = {};
+        ofn.lStructSize     = sizeof(ofn);
+        ofn.hwndOwner       = hwnd;
+        ofn.lpstrFilter     = kFilter;
+        ofn.nFilterIndex    = 1;
+        ofn.lpstrFile       = fileBuf;
+        ofn.nMaxFile        = MAX_PATH;
+        ofn.Flags           = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
+                              OFN_EXPLORER    | OFN_NOCHANGEDIR;
+        ofn.lpstrTitle      = L"Select File to Attach";
+
+        LOG_INFO(CanvasEngine, "Opening Win32 attachment file dialog (GetOpenFileNameW)...");
+
+        if (::GetOpenFileNameW(&ofn)) {
+            // Convert the chosen wide path to UTF-8.
+            int utf8Len = WideCharToMultiByte(
+                CP_UTF8, 0, fileBuf, -1, nullptr, 0, nullptr, nullptr);
+
+            std::string selectedPath;
+            if (utf8Len > 0) {
+                selectedPath.resize(static_cast<size_t>(utf8Len) - 1);
+                WideCharToMultiByte(
+                    CP_UTF8, 0, fileBuf, -1,
+                    &selectedPath[0], utf8Len, nullptr, nullptr);
+            }
+
+            if (!selectedPath.empty()) {
+                std::string filename =
+                    std::filesystem::path(selectedPath).filename().string();
+                if (filename.empty()) filename = selectedPath;
+
+                // Store pending state; the ImGui modal in app.hpp calls CommitAttachment().
+                m_pendingAttachPath    = selectedPath;
+                m_pendingAttachName    = filename;
+                m_pendingAttachSession = session;
+                m_attachModalOpen      = true;
+                LOG_INFO(CanvasEngine, "Attachment file selected: '" + filename + "' — awaiting embed/link decision.");
+            }
+        } else {
+            // User cancelled or dialog error — CommDlgExtendedError() gives details.
+            DWORD err = CommDlgExtendedError();
+            if (err != 0) {
+                LOG_INFO(CanvasEngine,
+                    "GetOpenFileNameW failed, CommDlgExtendedError=" +
+                    std::to_string(static_cast<unsigned long>(err)));
+            }
+        }
+
+#else
+        // ----------------------------------------------------------------
+        // CROSS-PLATFORM FALLBACK: SDL_ShowOpenFileDialog (async callback).
+        // ----------------------------------------------------------------
+        auto* ctx = new AttachmentFileDialogContext{ this, session };
+        LOG_INFO(CanvasEngine, "Opening SDL attachment file dialog...");
+        SDL_ShowOpenFileDialog(
+            OnAttachmentFileSelected, ctx,
+            parentWin ? parentWin : sdlWindow,
+            nullptr, 0, nullptr, false);
+#endif
+    }
+
+    /**
+     * @brief Phase 2 of the attachment flow: creates and places the AttachmentObject chip.
+     *
+     * Called by app.hpp after the user clicks "Embed" or "Link" in the modal dialog.
+     *
+     * Working Process:
+     *   1. If embed == true:
+     *        a. Resolves the notebook sidecar folder: <notebook_dir>/attachments/.
+     *        b. Generates a UUID prefix to avoid collisions: <uuid>_<filename>.
+     *        c. Copies the source file using std::filesystem::copy_file.
+     *        d. filePath on the chip stores the sidecar-relative path.
+     *   2. Creates an AttachmentObject with isEmbedded set accordingly.
+     *   3. Places it at canvas centre, assigns UID/GUID, records undo command.
+     *   4. Clears all m_pending* state and closes the modal.
+     *
+     * @param embed   true = copy file into sidecar; false = store absolute path link.
+     * @param session Active DocumentSession (may differ from m_pendingAttachSession if needed).
+     */
+    void CommitAttachment(bool embed, DocumentSession* session) {
+        // Require both a chosen file and a valid session
+        if (m_pendingAttachPath.empty() || !session) {
+            m_attachModalOpen = false;
+            return;
+        }
+
+        std::string finalPath = m_pendingAttachPath;
+        bool embeddedOk = false;
+
+        if (embed) {
+            // Resolve sidecar attachments folder: <notebook_directory>/attachments/
+            auto activeNb = session->GetActiveNotebook();
+            std::string notebookDir = (activeNb) ? activeNb->filePath : "";
+            if (!notebookDir.empty()) {
+                namespace fs = std::filesystem;
+                fs::path attachDir = fs::path(notebookDir) / "attachments";
+
+                std::error_code ec;
+                fs::create_directories(attachDir, ec); // No-op if already exists
+
+                if (!ec) {
+                    // Prefix with a UUID to avoid filename collisions inside the sidecar.
+                    std::string safeFilename = GUIDGenerator::GenerateV4().substr(0, 8)
+                                             + "_" + m_pendingAttachName;
+                    fs::path destPath = attachDir / safeFilename;
+
+                    fs::copy_file(fs::path(m_pendingAttachPath), destPath,
+                                  fs::copy_options::overwrite_existing, ec);
+
+                    if (!ec) {
+                        // Store as sidecar-relative path so the notebook stays portable.
+                        finalPath  = "attachments/" + safeFilename;
+                        embeddedOk = true;
+                        LOG_INFO(CanvasEngine, "Embedded attachment: copied '" + m_pendingAttachName +
+                                              "' to sidecar as '" + safeFilename + "'");
+                    } else {
+                        // Copy failed — fall back to link mode with a warning.
+                        LOG_ERROR_CODE(CanvasEngine, Folio::FolioErrorCode::SysFileWriteFailed,
+                            "Failed to copy attachment to sidecar: " + ec.message() +
+                            " — falling back to link mode.");
+                        finalPath  = m_pendingAttachPath;
+                        embeddedOk = false;
+                    }
+                } else {
+                    LOG_ERROR_CODE(CanvasEngine, Folio::FolioErrorCode::SysDirectoryCreateFailed,
+                        "Failed to create attachments sidecar directory: " + ec.message() +
+                        " — falling back to link mode.");
+                }
+            } else {
+                // Notebook not yet saved to disk — cannot embed, fall back to link.
+                LOG_WARN(CanvasEngine,
+                    "Cannot embed attachment: notebook has no directory yet. Using link mode.");
+            }
+        }
+
+        // Compute canvas-centre world coordinates for chip placement.
+        Point2D centerWorld = transform.ScreenToWorld(
+            static_cast<float>(viewportW) * 0.5f,
+            static_cast<float>(viewportH) * 0.5f);
+
+        // Create the chip and place it at canvas centre.
+        auto attachObj = std::make_shared<Folio::AttachmentObject>(
+            finalPath, m_pendingAttachName, "", (embed && embeddedOk));
+        attachObj->worldX  = centerWorld.x - Folio::AttachmentObject::chipW * 0.5;
+        attachObj->worldY  = centerWorld.y - Folio::AttachmentObject::chipH * 0.5;
+        attachObj->guuid   = GUIDGenerator::GenerateV4();
+        attachObj->uid     = UIDGenerator::Next();
+        attachObj->UpdateBounds();
+
+        auto activePage = session->GetActivePage();
+        if (activePage) {
+            activePage->AddObject(attachObj);
+            session->RecordHistoryCommand(
+                activePage,
+                std::make_unique<Folio::AddObjectCommand>(attachObj));
+            activePage->isModified = true;
+            session->NotifyPageModified(activePage);
+        }
+
+        needsFullRebake = true;
+        isDirty         = true;
+
+        LOG_INFO(CanvasEngine, "Committed attachment '" + m_pendingAttachName +
+                               "' mode=" + std::string(embed && embeddedOk ? "embedded" : "link") +
+                               " path='" + finalPath + "'");
+
+        // Clear pending state and close modal
+        m_pendingAttachPath.clear();
+        m_pendingAttachName.clear();
+        m_pendingAttachSession = nullptr;
+        m_attachModalOpen      = false;
     }
 
     struct PdfFileDialogContext {

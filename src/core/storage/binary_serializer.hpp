@@ -12,6 +12,7 @@
 #include "core/objects/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
+#include "core/objects/attachment_container.hpp"
 
 namespace Folio {
 
@@ -155,8 +156,8 @@ public:
     /// Magic 4-byte header identifying valid FolioNote Canvas Page binary streams: "FNPG" (0x464E5047)
     static constexpr uint32_t MAGIC_HEADER = 0x464E5047;
 
-    /// Current binary format specification version (Version 3 includes complete self-contained page layout descriptor)
-    static constexpr uint32_t FORMAT_VERSION = 3;
+    /// Current binary format specification version (Version 4 includes isEmbedded flag for attachments)
+    static constexpr uint32_t FORMAT_VERSION = 4;
 
     /**
      * @brief Estimates raw uncompressed memory requirement for a page to optimize vector allocation.
@@ -181,7 +182,7 @@ public:
     /**
      * @brief Deserializes a single CanvasObject from a ByteReader stream.
      */
-    static std::shared_ptr<CanvasObject> DeserializeObject(ByteReader& reader, SerializationStats& stats);
+    static std::shared_ptr<CanvasObject> DeserializeObject(ByteReader& reader, SerializationStats& stats, uint32_t version = FORMAT_VERSION);
 
     /**
      * @brief Serializes a CanvasPage into a compressed binary BLOB (.ink format) with CRC32 integrity checksum.

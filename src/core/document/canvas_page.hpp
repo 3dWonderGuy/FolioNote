@@ -533,14 +533,16 @@ public:
      * Guarantees spatial and associative coherence if the objects array was modified directly.
      */
     void RebuildSpatialIndex() {
-        spatialIndex.Clear();
         objectMap.clear();
+        std::vector<std::pair<uint32_t, AABB>> items;
+        items.reserve(objects.size());
         for (const auto& obj : objects) {
             if (obj) {
                 objectMap[obj->uid] = obj;
-                spatialIndex.Insert(obj->uid, obj->bounds);
+                items.emplace_back(obj->uid, obj->bounds);
             }
         }
+        spatialIndex.Rebuild(items);
     }
 
     /**

@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <limits>
+#include <cmath>
 #include <blend2d/blend2d.h>
 
 /**
@@ -13,7 +14,33 @@ struct AABB {
     double maxX = -std::numeric_limits<double>::infinity();
     double maxY = -std::numeric_limits<double>::infinity();
 
+    /**
+     * @brief Checks whether all coordinates are finite numbers (not NaN, not Inf).
+     */
+    [[nodiscard]] constexpr bool IsFinite() const noexcept {
+        return (minX == minX) && (maxX == maxX) && (minY == minY) && (maxY == maxY) &&
+               (minX > -std::numeric_limits<double>::max()) &&
+               (maxX < std::numeric_limits<double>::max()) &&
+               (minY > -std::numeric_limits<double>::max()) &&
+               (maxY < std::numeric_limits<double>::max());
+    }
+
+    /**
+     * @brief Checks whether this bounding box has valid, finite, and non-inverted bounds within canvas limits.
+     */
+    [[nodiscard]] constexpr bool IsValid() const noexcept {
+        if (!IsFinite()) return false;
+        if (minX > maxX || minY > maxY) return false;
+        constexpr double MAX_COORD = 1e8; // 100,000 km in world mm
+        return (minX > -MAX_COORD && maxX < MAX_COORD &&
+                minY > -MAX_COORD && maxY < MAX_COORD);
+    }
+
+    /**
+     * @brief Checks whether the bounding box is empty, inverted, or non-finite.
+     */
     [[nodiscard]] constexpr bool IsEmpty() const noexcept {
+        if (!IsFinite()) return true;
         return minX > maxX || minY > maxY;
     }
 

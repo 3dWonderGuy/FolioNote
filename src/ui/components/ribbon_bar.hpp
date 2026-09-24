@@ -2308,42 +2308,12 @@ public:
                     );
 
                     // 2. File Attachment (storage options: Make a copy vs. System-wide path reference)
-                    static int s_attachMode = 0; // 0 = Copy in document, 1 = System-wide path reference
-                    static char s_attachFilePath[256] = "";
-                    sec.AddSplitButton("btn_insert_attach", iconAttach, "Attachment", "Attach a file to this notebook page", false,
-                        [&]() {},
-                        [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddCustom([&]() {
-                                ImGui::TextUnformatted("Attachment Storage Mode:");
-                                ImGui::Spacing();
-                                ImGui::RadioButton("Make a copy in document", &s_attachMode, 0);
-                                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
-                                ImGui::TextWrapped("Copies file into notebook bundle. Fully portable and self-contained.");
-                                ImGui::PopStyleColor();
-
-                                ImGui::Spacing();
-                                ImGui::RadioButton("Use system-wide path reference", &s_attachMode, 1);
-                                ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
-                                ImGui::TextWrapped("Links to file on disk (e.g. C:\\...). Always accesses live file.");
-                                ImGui::PopStyleColor();
-
-                                ImGui::Spacing();
-                                ImGui::Separator();
-                                ImGui::Spacing();
-                                ImGui::PushItemWidth(220.0f);
-                                ImGui::InputTextWithHint("##attach_path", "Selected file path...", s_attachFilePath, sizeof(s_attachFilePath));
-                                ImGui::PopItemWidth();
-                                ImGui::SameLine(0, 6.0f);
-                                if (ImGui::Button("Browse...")) {
-                                    // Open file browser
-                                }
-                                ImGui::Spacing();
-                                if (ImGui::Button("Attach to Canvas Page", ImVec2(-1, 26.0f))) {
-                                    ImGui::CloseCurrentPopup();
-                                }
-                            });
-                        }
-                    );
+                    sec.AddLargeButton("btn_insert_attach", iconAttach, "Attachment", "Attach a file to this notebook page", false,
+                        [&]() {
+                            // Direct click: open native file picker dialog and attach.
+                            // Pass canvas.sdlWindow so the OS dialog is parented to our window.
+                            canvas.OpenAttachmentFileDialog(canvas.sdlWindow, currentSession);
+                        });
 
                     sec.Render();
                 }

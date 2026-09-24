@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <SDL3/SDL.h>
 // ANDROID: SDL_opengl.h is a desktop-only header (links against libGL / GLX).
 // Android devices only support OpenGL ES. Include the GLES2 header instead,
@@ -19,6 +19,8 @@
 #include "app/window_state_manager.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
+#include "core/objects/attachment_container.hpp"
+#include "core/history/canvas_command.hpp"
 #include "ui/imgui_theme.hpp"
 #include "ui/components/ribbon_bar.hpp"
 #include "ui/components/modern_nav_panel.hpp"
@@ -71,6 +73,7 @@ public:
      * or context-dependent annotations spawned from the right-click menu.
      */
     Point2D generalContextMenuWorldPos{0.0, 0.0};
+    std::shared_ptr<Folio::AttachmentObject> rightClickedAttach = nullptr;
 
     /**
      * @brief GUID of the canvas page that was active in the previous frame.
@@ -1029,7 +1032,21 @@ public:
                         float localX = mousePos.x - canvasOrigin.x;
                         float localY = mousePos.y - canvasOrigin.y;
                         generalContextMenuWorldPos = canvas.transform.ScreenToWorld(localX, localY);
-                        ImGui::OpenPopup("##GeneralCanvasContextMenu");
+                        
+                        rightClickedAttach = nullptr;
+                        if (auto pg = session.GetActivePage()) {
+                            double hitRadius = 2.0 / canvas.transform.zoom; // 2mm world hit radius
+                            auto hit = pg->HitTestSingleClick(generalContextMenuWorldPos.x, generalContextMenuWorldPos.y, hitRadius);
+                            if (hit && hit->type == ObjectType::AttachmentFile) {
+                                rightClickedAttach = std::dynamic_pointer_cast<Folio::AttachmentObject>(hit);
+                            }
+                        }
+
+                        if (rightClickedAttach) {
+                            ImGui::OpenPopup("##AttachmentContextMenu");
+                        } else {
+                            ImGui::OpenPopup("##GeneralCanvasContextMenu");
+                        }
                     }
 
                     Point2D titleScreen = canvas.transform.WorldToScreen(80.0, 50.0);
@@ -1169,6 +1186,42 @@ public:
                             ImGui::EndPopup();
                         }
                     }
+
+                    // =========================================================================
+                    // ATTACHMENT RIGHT-CLICK CONTEXT MENU
+                    // =========================================================================
+                    {
+                        ContextMenuThemeScope ctxScope(themeManager);
+                        if (ImGui::BeginPopup("##AttachmentContextMenu")) {
+                            if (rightClickedAttach) {
+                                std::string modeStr = rightClickedAttach->isEmbedded ? "[Embedded]" : "[Link]";
+                                ImGui::PushFont(FolioTheme::FontNavBoldLarge ? FolioTheme::FontNavBoldLarge : FolioTheme::FontBold);
+                                ImGui::TextColored(themeManager.colorPrimary, "📎 %s %s", rightClickedAttach->displayName.c_str(), modeStr.c_str());
+                                ImGui::PopFont();
+                                ImGui::Separator();
+
+                                if (ImGui::MenuItem("Open", "Double-Click")) {
+                                    rightClickedAttach->OpenFile();
+                                }
+
+                                if (ImGui::MenuItem("Copy File Path")) {
+                                    SDL_SetClipboardText(rightClickedAttach->filePath.c_str());
+                                }
+
+                                ImGui::Separator();
+
+                                if (ImGui::MenuItem("Remove from Page", "Del")) {
+                                    if (auto pg = session.GetActivePage()) {
+                                        pg->RemoveObjectByUid(rightClickedAttach->uid);
+                                        session.RecordHistoryCommand(pg, std::make_unique<Folio::RemoveObjectsCommand>(rightClickedAttach));
+                                        canvas.isDirty = true;
+                                        canvas.needsFullRebake = true;
+                                    }
+                                }
+                            }
+                            ImGui::EndPopup();
+                        }
+                    }
                 }
                 ImGui::End();
                 ImGui::PopStyleVar();
@@ -1188,6 +1241,46 @@ public:
             // =========================================================
             // DIAGNOSTICS & MODAL OVERLAYS
             // =========================================================
+            
+            // 6. ATTACHMENT FLOW MODAL
+            // Triggered when OpenAttachmentFileDialog stores a pending file.
+            if (canvas.m_attachModalOpen) {
+                ImGui::OpenPopup("Attach File##Modal");
+            }
+
+            ImGui::SetNextWindowSize(ImVec2(380, 0), ImGuiCond_Appearing);
+            if (ImGui::BeginPopupModal("Attach File##Modal", nullptr, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
+                ImGui::Text("File: %s", canvas.m_pendingAttachName.c_str());
+                ImGui::Separator();
+                ImGui::Spacing();
+                
+                ImGui::TextWrapped("How would you like to attach this file?");
+                ImGui::Spacing();
+                
+                if (ImGui::Button("Embed in Notebook", ImVec2(-1, 30))) {
+                    canvas.CommitAttachment(true, canvas.m_pendingAttachSession);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::TextColored(themeManager.colorTextMuted, "Copies the file into the notebook sidecar. Portable and safe.");
+                ImGui::Spacing();
+                
+                if (ImGui::Button("Attach as Link", ImVec2(-1, 30))) {
+                    canvas.CommitAttachment(false, canvas.m_pendingAttachSession);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::TextColored(themeManager.colorTextMuted, "Stores the original absolute path. Breaks if the file is moved.");
+                
+                ImGui::Spacing();
+                ImGui::Separator();
+                if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+                    canvas.m_attachModalOpen = false;
+                    canvas.m_pendingAttachPath.clear();
+                    canvas.m_pendingAttachName.clear();
+                    canvas.m_pendingAttachSession = nullptr;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
             devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, session, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY, themeManager);
             tuningStudio.Render(themeManager);
             if (ribbon.showDemoOverlay) {
