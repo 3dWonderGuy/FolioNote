@@ -137,7 +137,11 @@ void SmartArrowObject::UpdateBounds() {
 }
 
 bool SmartArrowObject::HitTest(double worldX, double worldY) const {
+    if (!isVisible || !isSelectable) return false;
     if (!bounds.Contains(worldX, worldY)) return false;
+
+    // Fast-path: already selected arrow allows immediate interaction inside bounds
+    if (isSelected) return true;
 
     // Transform query point into local object space
     BLMatrix2D inv;
@@ -176,10 +180,6 @@ bool SmartArrowObject::HitTest(double worldX, double worldY) const {
     return false;
 }
 
-bool SmartArrowObject::Intersects(const AABB& selectionBounds) const {
-    return bounds.Intersects(selectionBounds);
-}
-
 // =============================================================================
 // TRANSFORMS & GIZMO HANDLES
 // =============================================================================
@@ -203,41 +203,6 @@ void SmartArrowObject::BakeTransform() {
     UpdateBounds();
 }
 
-bool SmartArrowObject::GetCustomGizmoHandles(std::vector<GizmoHandle>& outHandles,
-                                             const CanvasTransform& /*transform*/) const {
-    outHandles.clear();
-
-    GizmoHandle h0;
-    h0.customId = 0;
-    h0.worldPos = Point2D(x1, y1);
-    h0.role     = HandleRole::Custom;
-    outHandles.push_back(h0);
-
-    GizmoHandle h1;
-    h1.customId = 1;
-    h1.worldPos = Point2D(x2, y2);
-    h1.role     = HandleRole::Custom;
-    outHandles.push_back(h1);
-
-    return true;
-}
-
-bool SmartArrowObject::OnGizmoHandleDrag(int customId,
-                                        const Point2D& /*worldPos*/,
-                                        const Point2D& worldDelta) {
-    if (customId == 0) {
-        x1 += worldDelta.x;
-        y1 += worldDelta.y;
-        UpdateBounds();
-        return true;
-    } else if (customId == 1) {
-        x2 += worldDelta.x;
-        y2 += worldDelta.y;
-        UpdateBounds();
-        return true;
-    }
-    return false;
-}
 
 // =============================================================================
 // RENDERING
@@ -366,9 +331,6 @@ bool SmartArrowObject::FindSnapAnchor(const Point2D& queryPt,
 std::unique_ptr<CanvasObject> SmartArrowObject::Clone() const {
     return std::make_unique<SmartArrowObject>(*this);
 }
-
-void SmartArrowObject::Serialize(Serializer& /*writer*/) const {}
-void SmartArrowObject::Deserialize(Deserializer& /*reader*/) {}
 
 // =============================================================================
 // PRIVATE HELPERS

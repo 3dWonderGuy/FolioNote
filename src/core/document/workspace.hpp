@@ -105,9 +105,29 @@ public:
             for (const auto& entry : std::filesystem::directory_iterator(libPath, ec)) {
                 if (std::filesystem::is_directory(entry.status()) && entry.path().extension() == ".notebook") {
                     if (auto nb = repository.LoadNotebookHierarchy(entry.path().string())) {
-                        LOG_INFO(Notebook, "Workspace: Loaded notebook '" + nb->name + "' [" + nb->guid + "] from: " + entry.path().string());
-                        notebooks.push_back(nb);
-                        foundAny = true;
+                        // Check for duplicate notebooks by GUID or canonical filesystem path
+                        bool isDuplicate = false;
+                        for (const auto& existing : notebooks) {
+                            if (!existing) continue;
+                            if (existing->guid == nb->guid) {
+                                isDuplicate = true;
+                                break;
+                            }
+                            std::error_code eqEc;
+                            if (!existing->filePath.empty() && !nb->filePath.empty() &&
+                                std::filesystem::equivalent(existing->filePath, nb->filePath, eqEc)) {
+                                isDuplicate = true;
+                                break;
+                            }
+                        }
+
+                        if (!isDuplicate) {
+                            LOG_INFO(Notebook, "Workspace: Loaded notebook '" + nb->name + "' [" + nb->guid + "] from: " + entry.path().string());
+                            notebooks.push_back(nb);
+                            foundAny = true;
+                        } else {
+                            LOG_INFO(Notebook, "Workspace: Skipped duplicate notebook '" + nb->name + "' [" + nb->guid + "] at: " + entry.path().string());
+                        }
                     } else {
                         LOG_ERROR_CODE(Notebook, FolioErrorCode::DocNotebookLoadFailed, 
                                        "Failed to load notebook hierarchy from: " + entry.path().string());
@@ -126,7 +146,8 @@ public:
                     if (entry.path().extension() == ".foliolib" || 
                         std::filesystem::exists(entry.path() / "library.meta", ec) ||
                         Folio::LibraryManager::IsLibraryFolder(entry.path().string())) {
-                        if (entry.path() != defaultLib) {
+                        std::error_code eqEc;
+                        if (!std::filesystem::equivalent(entry.path(), defaultLib, eqEc)) {
                             scanLibraryFolder(entry.path());
                         }
                     }
@@ -134,10 +155,14 @@ public:
             }
         }
 
-        // 3. Scan any libraries residing directly in appRoot
+        // 3. Scan any libraries residing directly in appRoot (excluding Libraries folder itself)
         if (std::filesystem::exists(appRoot, ec)) {
             for (const auto& entry : std::filesystem::directory_iterator(appRoot, ec)) {
                 if (std::filesystem::is_directory(entry.status())) {
+                    std::error_code eqEc;
+                    if (std::filesystem::equivalent(entry.path(), librariesDir, eqEc)) {
+                        continue;
+                    }
                     if (entry.path().extension() == ".foliolib" || 
                         std::filesystem::exists(entry.path() / "library.meta", ec) ||
                         Folio::LibraryManager::IsLibraryFolder(entry.path().string())) {

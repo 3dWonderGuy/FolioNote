@@ -151,7 +151,7 @@ void DocumentSession::AddObject(const std::shared_ptr<CanvasObject>& obj) {
     }
     LOG_INFO(DocumentSession, "DocumentSession: Added CanvasObject UID " + std::to_string(obj->uid) +
              " to active page '" + activePage->title + "' [" + activePage->guid + "]");
-    activePage->AddObject(obj);
+    activePage->AddObject(obj, true);
     RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(obj));
     activePage->isModified = true;
     NotifyPageModified(activePage);

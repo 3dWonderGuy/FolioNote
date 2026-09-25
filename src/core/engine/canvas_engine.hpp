@@ -484,7 +484,7 @@ public:
                 std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(lassoBox);
                 for (uint32_t uid : candidateUids) {
                     auto obj = activePage->FindObjectByUid(uid);
-                    if (obj && obj->isVisible && obj->isSelectable && obj->Intersects(lassoBox)) {
+                    if (obj && obj->isVisible && obj->isSelectable && obj->bounds.Intersects(lassoBox)) {
                         double objArea = obj->bounds.Area();
                         if (objArea > 1e-4) {
                             double isectArea = lassoBox.IntersectionArea(obj->bounds);
@@ -555,7 +555,7 @@ public:
                     std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(box);
                     for (uint32_t uid : candidateUids) {
                         auto obj = activePage->FindObjectByUid(uid);
-                        if (obj && obj->isVisible && obj->isSelectable && obj->Intersects(box)) {
+                        if (obj && obj->isVisible && obj->isSelectable && obj->bounds.Intersects(box)) {
                             double objArea = obj->bounds.Area();
                             if (objArea > 1e-4) {
                                 double isectArea = box.IntersectionArea(obj->bounds);
@@ -799,7 +799,7 @@ public:
             shp->strokeWidth = shapeCreation.defaultStrokeWidth;
             shp->UpdateBounds();
 
-            activePage->AddObject(shp);
+            activePage->AddObject(shp, true);
             if (session) {
                 session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(shp));
             }
@@ -867,7 +867,7 @@ public:
             arrow->arrowHeadSize = 4.0;
             arrow->UpdateBounds();
 
-            activePage->AddObject(arrow);
+            activePage->AddObject(arrow, true);
             if (session) {
                 session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(arrow));
             }
@@ -956,7 +956,7 @@ public:
         }
         shp->UpdateBounds();
 
-        activePage->AddObject(shp);
+        activePage->AddObject(shp, true);
         if (session) {
             session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(shp));
         }
@@ -1064,7 +1064,7 @@ public:
         shp->strokeWidth = shapeCreation.defaultStrokeWidth;
         shp->UpdateBounds();
 
-        activePage->AddObject(shp);
+        activePage->AddObject(shp, true);
         if (session) {
             session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(shp));
         }
@@ -1462,7 +1462,7 @@ public:
 
         auto activePage = session->GetActivePage();
         if (activePage) {
-            activePage->AddObject(attachObj);
+            activePage->AddObject(attachObj, true);
             session->RecordHistoryCommand(
                 activePage,
                 std::make_unique<Folio::AddObjectCommand>(attachObj));
@@ -1523,7 +1523,7 @@ public:
                         pdfObj->EnsurePageLoaded();
                         pdfObj->UpdateBounds();
 
-                        activePage->AddObject(pdfObj);
+                        activePage->AddObject(pdfObj, true);
                         if (ctx->session) {
                             ctx->session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(pdfObj));
                         }
@@ -1641,8 +1641,26 @@ public:
             auto obj = activePage->FindObjectByUid(uid);
             if (!obj) continue;
 
+            // Eraser Target Filter:
+            // An eraser strictly targets freehand ink strokes and hand-drawn geometric shapes.
+            // Under no circumstances should an eraser drag delete PDFs, background images, text boxes,
+            // tables, media, or file attachment chips (which are removed via keyboard Delete or the Gizmo).
+            // We also guard against modifying locked objects.
+            if (obj->isLocked) {
+                continue;
+            }
+            if (obj->type != ObjectType::InkContainer && obj->type != ObjectType::Shape) {
+                continue;
+            }
+
             if (isStrokeEraser) {
-                if (obj->HitTestSwept(w0, w1, r)) {
+                bool hit = false;
+                if (obj->type == ObjectType::InkContainer) {
+                    hit = std::static_pointer_cast<InkContainer>(obj)->HitTestSwept(w0, w1, r);
+                } else if (obj->type == ObjectType::Shape) {
+                    hit = std::static_pointer_cast<Folio::ShapeObject>(obj)->HitTestSwept(w0, w1, r);
+                }
+                if (hit) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
                     session.RecordErasedObject(obj);
                     activePage->RemoveObject(obj);
@@ -1693,8 +1711,12 @@ public:
                         modified = true;
                     }
                 } else {
-                    // Non-stroke objects (e.g. image, text box, shape): delete on hit
-                    if (obj->HitTestSwept(w0, w1, r)) {
+                    // Non-stroke erasable objects (e.g. hand-drawn shapes): delete on hit
+                    bool hit = false;
+                    if (obj->type == ObjectType::Shape) {
+                        hit = std::static_pointer_cast<Folio::ShapeObject>(obj)->HitTestSwept(w0, w1, r);
+                    }
+                    if (hit) {
                         if (devMode) debugCollision.hitUids.push_back(obj->uid);
                         session.RecordErasedObject(obj);
                         activePage->RemoveObject(obj);

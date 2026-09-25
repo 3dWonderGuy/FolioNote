@@ -22,7 +22,7 @@
  *
  * Key Design Principles:
  *   1. Non-resizable Chip: Fixed-size badge (chipW x chipH mm) with body-move only.
- *   2. Quick Launcher: OpenFile() uses ShellExecuteW on Windows.
+ *   2. Quick Launcher: OpenFile() delegates to FileManager::OpenWithDefaultApp().
  *   3. Visual distinction: Embedded vs Link mode shown via a small corner badge.
  */
 
@@ -37,18 +37,8 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
 #include "core/text/font_manager.hpp"
-
-// Windows-only open-with-default-app support
-#if defined(_WIN32) || defined(_WIN64)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <shellapi.h>
-#endif
+#include "io/file_manager.hpp"
+#include "utils/logger.hpp"
 
 namespace Folio {
 
@@ -73,9 +63,6 @@ public:
     ///   false = file path link to original location on disk (fast, but breaks if file is moved/renamed).
     bool isEmbedded = false;
 
-    double worldX    = 0.0;     ///< Chip position X (world mm, top-left)
-    double worldY    = 0.0;     ///< Chip position Y (world mm, top-left)
-
     /// Fixed chip dimensions in world mm (not user-resizable)
     static constexpr double chipW = 50.0;
     static constexpr double chipH = 18.0;
@@ -84,16 +71,31 @@ public:
     // CONSTRUCTORS
     // =========================================================================
 
+    /**
+     * @brief Default constructor for deserialization and disk loading.
+     * 
+     * Working Process:
+     *   Used by BinarySerializer and database loaders to instantiate a blank object
+     *   before reading saved properties (filePath, world coordinates, transform, etc.)
+     *   from disk. Initializes the type tag and calculates initial default bounds.
+     */
     AttachmentObject() {
         type = ObjectType::AttachmentFile;
+        worldWidth = chipW;
+        worldHeight = chipH;
         UpdateBounds();
     }
 
     /**
-     * @brief Constructs a named attachment chip.
+     * @brief Parameterized constructor used when a user attaches a new file interactively.
+     * 
+     * Working Process:
+     *   Directly called when a user picks a file through the UI ribbon / file dialog.
+     *   Initializes the display label, paths, MIME type, and computes the world-space bounding box.
+     * 
      * @param path     Absolute path (link) or sidecar-relative path (embedded).
-     * @param name     Display label shown on the chip.
-     * @param mime     Optional MIME type string, e.g. "application/pdf".
+     * @param name     Display label shown on the chip badge.
+     * @param mime     Optional MIME type string, e.g. "application/pdf" or "image/png".
      * @param embedded True if the file was copied into the notebook sidecar (embedded mode).
      */
     AttachmentObject(const std::string& path, const std::string& name,
@@ -101,6 +103,8 @@ public:
         : filePath(path), displayName(name), mimeType(mime), isEmbedded(embedded)
     {
         type = ObjectType::AttachmentFile;
+        worldWidth = chipW;
+        worldHeight = chipH;
         UpdateBounds();
     }
 
@@ -109,71 +113,16 @@ public:
     // =========================================================================
 
     /**
-     * @brief Opens the linked file with the OS default application.
-     *
-     * Equivalent to right-click → Open in Windows Explorer.
-     * On Windows: ShellExecuteW(NULL, L"open", ...) with SW_SHOWNORMAL.
-     *
-     * TODO (cross-platform):
-     *   macOS: system("open \"<path>\"")  or  NSWorkspace::openURL
-     *   Linux: system("xdg-open \"<path>\"")
+     * @brief Opens the linked or embedded file with the OS default application.
+     * 
+     * Working Process:
+     *   Delegates directly to FileManager::OpenWithDefaultApp(), which handles
+     *   input validation, error logging, URI normalization, and cross-platform OS dispatch.
+     * 
+     * @return true if successfully launched by the operating system.
      */
-    void OpenFile() const {
-#if defined(_WIN32) || defined(_WIN64)
-        // Convert UTF-8 filePath to wide string for WinAPI
-        int wLen = MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, nullptr, 0);
-        if (wLen > 0) {
-            std::wstring wPath(wLen, 0);
-            MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, &wPath[0], wLen);
-            ShellExecuteW(nullptr, L"open", wPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        }
-#else
-        // TODO: macOS / Linux cross-platform open
-        (void)filePath;
-#endif
-    }
-
-    // =========================================================================
-    // BOUNDS & SPATIAL
-    // =========================================================================
-
-    void UpdateBounds() override {
-        // Transform the fixed-size chip corners through the accumulated matrix
-        BLPoint p[4] = {
-            transform.map_point(worldX,         worldY),
-            transform.map_point(worldX + chipW, worldY),
-            transform.map_point(worldX + chipW, worldY + chipH),
-            transform.map_point(worldX,         worldY + chipH)
-        };
-        double minX = p[0].x, maxX = p[0].x;
-        double minY = p[0].y, maxY = p[0].y;
-        for (int i = 1; i < 4; ++i) {
-            minX = (std::min)(minX, p[i].x);
-            maxX = (std::max)(maxX, p[i].x);
-            minY = (std::min)(minY, p[i].y);
-            maxY = (std::max)(maxY, p[i].y);
-        }
-        bounds = AABB(minX, minY, maxX, maxY);
-    }
-
-    bool HitTest(double wx, double wy) const override {
-        return bounds.Contains(wx, wy);
-    }
-
-    bool Intersects(const AABB& sel) const override {
-        return bounds.Intersects(sel);
-    }
-
-    // =========================================================================
-    // TRANSFORM
-    // =========================================================================
-
-    /**
-     * @brief Translation-only transform. Accumulates matrix, does not mutate worldX/Y.
-     */
-    void ApplyTransform(const BLMatrix2D& matrix) override {
-        transform.post_transform(matrix);
-        UpdateBounds();
+    bool OpenFile() const {
+        return FileManager::OpenWithDefaultApp(filePath);
     }
 
     /**
@@ -194,21 +143,10 @@ public:
     // =========================================================================
 
     /**
-     * @brief Returns false → engine falls through to standard body-move only.
-     *
-     * By returning false (no custom handles provided) AND having a valid AABB,
-     * the engine's HitTest on the body triggers a body-drag. The standard 8-point
-     * resize grips are NOT shown because GetCustomGizmoHandles returns false AND
-     * the chip is always a fixed size.
-     *
-     * TODO: If we ever want a "no-resize" contract in the gizmo, we can implement
-     * a GetResizeEnabled() virtual on CanvasObject. For now, attachment objects
-     * just look non-resizable by having a tiny AABB that makes corner grips trivially
-     * overlap and thus unusable.
+     * @brief File attachment chips are fixed size and use a locked MoveOnly gizmo (body drag only, no resize grips).
      */
-    bool GetCustomGizmoHandles(std::vector<GizmoHandle>& /*outHandles*/,
-                                const CanvasTransform& /*transform*/) const override {
-        return false; // Use body-move only
+    GizmoStyle GetGizmoStyle() const noexcept override {
+        return GizmoStyle::MoveOnly;
     }
 
     // =========================================================================

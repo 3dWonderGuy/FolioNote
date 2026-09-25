@@ -136,8 +136,13 @@ void InkContainer::UpdateBounds() {
  * @return true if point intersects any stroke outline or is within 1.5mm of centerline
  */
 bool InkContainer::HitTest(double worldX, double worldY) const {
+    if (!isVisible || !isSelectable) return false;
+
     // Tier 1: Stroke-level AABB Broadphase Culling
     if (!bounds.Contains(worldX, worldY)) return false;
+
+    // Fast-path: already selected container allows immediate interaction
+    if (isSelected) return true;
 
     // Map query point from world space into object local space
     BLMatrix2D invTransform;
@@ -158,7 +163,7 @@ bool InkContainer::HitTest(double worldX, double worldY) const {
 }
 
 /**
- * @brief Circle-to-stroke intersection test (for round erasers).
+ * @brief Circle-to-stroke intersection test (for round erasers and proximity selection).
  *
  * @param worldX Circle center X in world mm
  * @param worldY Circle center Y in world mm
@@ -166,6 +171,8 @@ bool InkContainer::HitTest(double worldX, double worldY) const {
  * @return true if circle intersects any stroke
  */
 bool InkContainer::HitTestCircle(double worldX, double worldY, double radiusMm) const {
+    if (!isVisible) return false;
+
     AABB queryBox(worldX - radiusMm, worldY - radiusMm, worldX + radiusMm, worldY + radiusMm);
     if (!bounds.Intersects(queryBox)) return false;
 
@@ -197,6 +204,8 @@ bool InkContainer::HitTestCircle(double worldX, double worldY, double radiusMm) 
  * @return true if swept capsule intersects any stroke
  */
 bool InkContainer::HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const {
+    if (!isVisible) return false;
+
     AABB sweptBox(
         (std::min)(w0.x, w1.x) - radiusMm,
         (std::min)(w0.y, w1.y) - radiusMm,
@@ -223,16 +232,82 @@ bool InkContainer::HitTestSwept(const Point2D& w0, const Point2D& w1, double rad
     return false;
 }
 
-bool InkContainer::Intersects(const AABB& selectionBounds) const {
-    return bounds.Intersects(selectionBounds);
-}
-
 // =============================================================================
 // 2. GEOMETRY & TRANSFORMS
 // =============================================================================
 
 void InkContainer::ApplyTransform(const BLMatrix2D& matrix) {
     transform.post_transform(matrix);
+    renderDirty = true;
+    UpdateBounds();
+}
+
+/**
+ * @brief Bakes the active affine transformation matrix directly into all stroke geometry.
+ *
+ * Mathematical Process & Geometric Transformation:
+ * 1. Early-out identity check:
+ *    If matrix M == I (m00=1, m11=1, others=0), no baking is necessary.
+ *
+ * 2. Determinant & Uniform Scale Factor:
+ *    The geometric area scaling factor is the determinant:
+ *      det = |m00 * m11 - m01 * m10|
+ *    The effective linear stroke thickness scaling factor is:
+ *      scaleFactor = sqrt(det)  (if det > 1e-6, else 1.0)
+ *
+ * 3. Affine Coordinate Mapping:
+ *    Every segment endpoint (p0, p1) and smoothed centerline vertex is mapped through M:
+ *      p' = [m00 * x + m10 * y + m20,  m01 * x + m11 * y + m21]^T
+ *    Segment thickness is scaled by scaleFactor to preserve visual stroke proportions.
+ *
+ * 4. Outline Contour Re-baking:
+ *    StrokeOutlineBuilder constructs fresh, artifact-free 2D closed polygon contours (BLPath)
+ *    from the transformed segment vertices with pristine round cap geometry.
+ *
+ * 5. State Reset:
+ *    Transform matrix is reset to identity M = I, render dirty flag is raised,
+ *    and the world-space bounding box (bounds) is recalculated.
+ */
+void InkContainer::BakeTransform() {
+    if (transform.m00 == 1.0 && transform.m01 == 0.0 &&
+        transform.m10 == 0.0 && transform.m11 == 1.0 &&
+        transform.m20 == 0.0 && transform.m21 == 0.0) {
+        return;
+    }
+
+    double det = std::abs(transform.m00 * transform.m11 - transform.m01 * transform.m10);
+    double scaleFactor = (det > 1e-6) ? std::sqrt(det) : 1.0;
+
+    for (auto& stroke : strokes) {
+        for (auto& seg : stroke.segments) {
+            BLPoint p0 = transform.map_point(seg.p0.x, seg.p0.y);
+            BLPoint p1 = transform.map_point(seg.p1.x, seg.p1.y);
+            seg.p0 = Point2D(p0.x, p0.y);
+            seg.p1 = Point2D(p1.x, p1.y);
+            seg.width = static_cast<float>(seg.width * scaleFactor);
+        }
+
+        for (auto& pt : stroke.centerline) {
+            BLPoint p = transform.map_point(pt.x, pt.y);
+            pt.x = p.x;
+            pt.y = p.y;
+        }
+
+        stroke.baseWidth *= scaleFactor;
+
+        // Re-bake 2D closed polygon outline (BLPath) with transformed coordinates
+        if (!stroke.segments.empty()) {
+            std::vector<StrokeOutlineBuilder::InputPoint> pts;
+            pts.reserve(stroke.segments.size() + 1);
+            pts.push_back({ stroke.segments[0].p0.x, stroke.segments[0].p0.y, stroke.segments[0].width });
+            for (const auto& s : stroke.segments) {
+                pts.push_back({ s.p1.x, s.p1.y, s.width });
+            }
+            stroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, CapType::Round, stroke.pattern);
+        }
+    }
+
+    transform = BLMatrix2D::make_identity();
     renderDirty = true;
     UpdateBounds();
 }
@@ -323,14 +398,6 @@ std::unique_ptr<CanvasObject> InkContainer::Clone() const {
     clone->isHighlighter = this->isHighlighter;
     clone->renderDirty = true;
     return clone;
-}
-
-void InkContainer::Serialize(Serializer& /*writer*/) const {
-    // Reserved for binary serialization
-}
-
-void InkContainer::Deserialize(Deserializer& /*reader*/) {
-    // Reserved for binary deserialization
 }
 
 // =============================================================================

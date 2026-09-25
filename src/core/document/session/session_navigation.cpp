@@ -82,8 +82,45 @@ bool DocumentSession::PreviousPage() {
  * @param pageGuid Persistent UUID v4 of the destination page.
  * @return true if page was located and activated; false if not found.
  */
+/**
+ * @brief Navigates directly to a CanvasPage by persistent GUID across the active notebook or workspace.
+ *
+ * GENERAL WORKING PROCESS & INVARIANT ASSURANCES:
+ * 1. Recursion Guard:
+ *    A thread-local recursion counter (`s_navDepth`) prevents cyclic or infinite navigation loops.
+ *    If re-entrant navigation reaches depth >= 3, it is automatically intercepted and aborted with a warning.
+ * 2. Active Notebook Resolution:
+ *    First attempts rapid lookup within the currently resident active notebook (`nb`):
+ *    - Scans root-level sections.
+ *    - Recursively scans section groups and nested sub-groups.
+ *    - When located, switches the active section tab (if needed) and points `activePageIndex` directly to the target.
+ *    - Emits observer events (`NotifyActiveSectionChanged`, `NotifyActivePageChanged`, `NotifyHistoryChanged`).
+ * 3. Cross-Notebook Direct Transition (Zero Recursion):
+ *    If the page is not in the active notebook, the workspace is scanned for other resident notebooks:
+ *    - When located inside `otherNb`, captures the target section and page index.
+ *    - Flushes unwritten modifications on the outgoing notebook asynchronously.
+ *    - Directly re-indexes `workspace.activeNotebookIndex` to `nbIdx`, bypassing ambiguous GUID lookups.
+ *    - Sets the active section and active page directly on `otherNb` in a single atomic operation.
+ *    - Avoids blind recursive re-entry to guarantee 100% loop-free transitions.
+ *
+ * @param pageGuid Persistent UUID v4 of the destination page.
+ * @return true if page was located and activated; false if not found.
+ */
 bool DocumentSession::NavigateToPage(const std::string& pageGuid) {
     if (pageGuid.empty()) return false;
+
+    // Guard against cyclic re-entrant calls
+    static thread_local int s_navDepth = 0;
+    if (s_navDepth >= 3) {
+        LOG_WARN(DocumentSession, "NavigateToPage: Cyclic recursion prevented for page GUID: " + pageGuid);
+        return false;
+    }
+    struct RecursionGuard {
+        int& depth;
+        explicit RecursionGuard(int& d) : depth(d) { ++depth; }
+        ~RecursionGuard() { --depth; }
+    } guard(s_navDepth);
+
     auto nb = GetActiveNotebook();
     if (!nb) return false;
 
@@ -132,16 +169,26 @@ bool DocumentSession::NavigateToPage(const std::string& pageGuid) {
     }
 
     // 3. Fallback: Search all other resident notebooks in the workspace for cross-notebook navigation
-    for (const auto& otherNb : workspace.notebooks) {
+    for (size_t nbIdx = 0; nbIdx < workspace.notebooks.size(); ++nbIdx) {
+        const auto& otherNb = workspace.notebooks[nbIdx];
         if (!otherNb || otherNb == nb) continue;
+
+        std::shared_ptr<Section> foundSection = nullptr;
+        size_t foundPageIndex = 0;
         bool foundInOther = false;
+
         auto checkSection = [&](const std::shared_ptr<Section>& sec) -> bool {
             if (!sec) return false;
-            for (const auto& p : sec->pages) {
-                if (p && p->guid == pageGuid) return true;
+            for (size_t pIdx = 0; pIdx < sec->pages.size(); ++pIdx) {
+                if (sec->pages[pIdx] && sec->pages[pIdx]->guid == pageGuid) {
+                    foundSection = sec;
+                    foundPageIndex = pIdx;
+                    return true;
+                }
             }
             return false;
         };
+
         for (const auto& sec : otherNb->sections) {
             if (checkSection(sec)) { foundInOther = true; break; }
         }
@@ -161,11 +208,31 @@ bool DocumentSession::NavigateToPage(const std::string& pageGuid) {
                 }
             }
         }
-        if (foundInOther) {
-            LOG_INFO(DocumentSession, "NavigateToPage: Found page [" + pageGuid + "] in notebook '" + otherNb->name + "'. Switching notebook.");
-            if (OpenNotebook(otherNb->guid)) {
-                return NavigateToPage(pageGuid);
+
+        if (foundInOther && foundSection) {
+            LOG_INFO(DocumentSession, "NavigateToPage: Found page [" + pageGuid + "] in notebook '" + otherNb->name + "'. Directly activating destination notebook.");
+
+            // Flush outgoing notebook changes
+            if (nb) {
+                workspace.FlushActiveNotebookAsync();
             }
+
+            auto oldNb = nb;
+            workspace.activeNotebookIndex = nbIdx;
+            NotifyActiveNotebookChanged(otherNb, oldNb);
+
+            otherNb->SetActiveSection(foundSection);
+            NotifyActiveSectionChanged(foundSection, oldSec);
+
+            foundSection->activePageIndex = foundPageIndex;
+            auto newPage = GetActivePage();
+            if (newPage) {
+                newPage->Touch();
+            }
+            NotifyActivePageChanged(newPage, oldPage);
+            NotifyHistoryChanged();
+            LOG_INFO(DocumentSession, "NavigateToPage: Activated page '" + (newPage ? newPage->title : "") + "' [" + pageGuid + "] in notebook '" + otherNb->name + "'");
+            return true;
         }
     }
 

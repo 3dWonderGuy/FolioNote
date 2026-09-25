@@ -298,18 +298,57 @@ public:
     // -------------------------------------------------------------------------
 
     /**
+     * @brief Finds the highest zOrder of any object spatially intersecting the given query bounds.
+     * 
+     * MATHEMATICAL & SPATIAL PROCESS:
+     * -------------------------------
+     * 1. Performs an O(log N) R-Tree bounding box query `spatialIndex.Query(queryBounds)`
+     *    to rapidly retrieve candidate UIDs overlapping the new object's footprint.
+     * 2. Resolves each UID via O(1) hash table lookup in `objectMap`.
+     * 3. Calculates max(zOrder) across all overlapping visible objects.
+     * 
+     * @param queryBounds The bounding box of the query area / new object.
+     * @return int32_t Highest zOrder found among overlapping objects, or 0 if empty canvas.
+     */
+    [[nodiscard]] int32_t GetHighestZUnder(const AABB& queryBounds) const {
+        if (queryBounds.IsEmpty()) return 0;
+
+        std::vector<uint32_t> candidateUids = spatialIndex.Query(queryBounds);
+        int32_t maxZ = 0;
+
+        for (uint32_t uid : candidateUids) {
+            auto it = objectMap.find(uid);
+            if (it != objectMap.end() && it->second && it->second->isVisible) {
+                if (it->second->bounds.Intersects(queryBounds)) {
+                    maxZ = (std::max)(maxZ, it->second->zOrder);
+                }
+            }
+        }
+        return maxZ;
+    }
+
+    /**
      * @brief Adds a canvas object to the page, registers it in the R-Tree, and inserts it into the fast UID map.
      *
      * MATHEMATICAL & TIME COMPLEXITY PROCESS:
+     * - Auto-Stacking: If `autoStackZ` is true and `obj->zOrder <= 1`, queries `GetHighestZUnder(obj->bounds)`
+     *   to place this object directly on top of whatever lies physically underneath it (z = highestUnder + 1).
      * - Vector Append: O(1) amortized insertion into `objects` to maintain rendering z-order.
      * - Fast UID Map: O(1) hash insertion into `objectMap[obj->uid] = obj`.
      * - Spatial Index: O(log N) R-Tree insertion with Axis-Aligned Bounding Box (AABB) expansion.
      * - Marks page dirty (`isModified = true`) and updates LRU timestamp.
      *
      * @param obj Shared pointer to any derived CanvasObject (Ink, Image, TextBox, PDF).
+     * @param autoStackZ If true and obj->zOrder <= 1, auto-increments zOrder above overlapping objects beneath it.
      */
-    void AddObject(const std::shared_ptr<CanvasObject>& obj) {
+    void AddObject(const std::shared_ptr<CanvasObject>& obj, bool autoStackZ = false) {
         if (!obj) return;
+        if (autoStackZ && obj->zOrder <= 1) {
+            int32_t highest = GetHighestZUnder(obj->bounds);
+            if (highest >= 1) {
+                obj->zOrder = highest + 1;
+            }
+        }
         objects.push_back(obj);
         objectMap[obj->uid] = obj;
         spatialIndex.Insert(obj->uid, obj->bounds);
@@ -493,6 +532,13 @@ public:
                 visible.push_back(it->second);
             }
         }
+
+        // Sort by ascending zOrder so lower layers render first, higher layers render on top.
+        // std::stable_sort preserves insertion order for objects sharing identical zOrder.
+        std::stable_sort(visible.begin(), visible.end(), [](const auto& a, const auto& b) {
+            return a->zOrder < b->zOrder;
+        });
+
         return visible;
     }
 

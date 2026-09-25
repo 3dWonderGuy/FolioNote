@@ -59,11 +59,6 @@ public:
     std::string displayName;     ///< Shown as overlay label (filename or video title)
     std::string thumbnailPath;   ///< Path to cached thumbnail image (empty = no thumb yet)
 
-    double worldX      = 0.0;    ///< Top-left X (world mm)
-    double worldY      = 0.0;    ///< Top-left Y (world mm)
-    double worldWidth  = 80.0;   ///< Width (world mm) — resizable, default 16:9 proportion
-    double worldHeight = 45.0;   ///< Height (world mm) — resizable
-
     double aspectRatio = 16.0 / 9.0; ///< Cached aspect ratio; used for corner-lock resize
 
     bool isPlaying = false;          ///< Playback state (stub)
@@ -74,14 +69,18 @@ public:
 
     VideoObject() {
         type = ObjectType::Video;
+        worldWidth = 80.0;
+        worldHeight = 45.0;
         UpdateBounds();
     }
 
     VideoObject(const std::string& url, const std::string& name,
                 double w = 80.0, double h = 45.0)
-        : sourceUrl(url), displayName(name), worldWidth(w), worldHeight(h)
+        : sourceUrl(url), displayName(name)
     {
         type = ObjectType::Video;
+        worldWidth = w;
+        worldHeight = h;
         aspectRatio = (h > 0.0) ? (w / h) : (16.0 / 9.0);
         UpdateBounds();
     }
@@ -152,43 +151,8 @@ public:
     }
 
     // =========================================================================
-    // BOUNDS & SPATIAL
-    // =========================================================================
-
-    void UpdateBounds() override {
-        BLPoint p[4] = {
-            transform.map_point(worldX,              worldY),
-            transform.map_point(worldX + worldWidth, worldY),
-            transform.map_point(worldX + worldWidth, worldY + worldHeight),
-            transform.map_point(worldX,              worldY + worldHeight)
-        };
-        double minX = p[0].x, maxX = p[0].x;
-        double minY = p[0].y, maxY = p[0].y;
-        for (int i = 1; i < 4; ++i) {
-            minX = (std::min)(minX, p[i].x);
-            maxX = (std::max)(maxX, p[i].x);
-            minY = (std::min)(minY, p[i].y);
-            maxY = (std::max)(maxY, p[i].y);
-        }
-        bounds = AABB(minX, minY, maxX, maxY);
-    }
-
-    bool HitTest(double wx, double wy) const override {
-        return bounds.Contains(wx, wy);
-    }
-
-    bool Intersects(const AABB& sel) const override {
-        return bounds.Intersects(sel);
-    }
-
-    // =========================================================================
     // TRANSFORM — full resize + translate
     // =========================================================================
-
-    void ApplyTransform(const BLMatrix2D& matrix) override {
-        transform.post_transform(matrix);
-        UpdateBounds();
-    }
 
     /**
      * @brief Bakes axis-aligned scale + translation into worldX/Y/W/H.
@@ -197,22 +161,8 @@ public:
      * the next corner-lock resize uses the correct ratio.
      */
     void BakeTransform() override {
-        if (std::abs(transform.m01) < 1e-6 && std::abs(transform.m10) < 1e-6) {
-            if (transform.m00 == 1.0 && transform.m11 == 1.0 &&
-                transform.m20 == 0.0 && transform.m21 == 0.0) return;
-
-            double p0x = transform.m00 * worldX + transform.m20;
-            double p0y = transform.m11 * worldY + transform.m21;
-            double p1x = transform.m00 * (worldX + worldWidth)  + transform.m20;
-            double p1y = transform.m11 * (worldY + worldHeight) + transform.m21;
-
-            worldX      = (std::min)(p0x, p1x);
-            worldY      = (std::min)(p0y, p1y);
-            worldWidth  = (std::max)(0.5, std::abs(p1x - p0x));
-            worldHeight = (std::max)(0.5, std::abs(p1y - p0y));
-
+        if (Folio::AABBUtils::BakeTransformedRect(worldX, worldY, worldWidth, worldHeight, transform, 0.5)) {
             if (worldHeight > 0.0) aspectRatio = worldWidth / worldHeight;
-            transform = BLMatrix2D::make_identity();
             UpdateBounds();
         }
     }
@@ -292,9 +242,6 @@ public:
     std::unique_ptr<CanvasObject> Clone() const override {
         return std::make_unique<VideoObject>(*this);
     }
-
-    void Serialize(Serializer& /*writer*/) const override {}
-    void Deserialize(Deserializer& /*reader*/) override {}
 };
 
 } // namespace Folio

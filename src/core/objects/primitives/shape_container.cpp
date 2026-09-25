@@ -53,13 +53,19 @@ namespace Folio {
 
 ShapeObject::ShapeObject() {
     type = ObjectType::Shape;
+    worldWidth = 60.0;
+    worldHeight = 40.0;
     UpdateBounds();
 }
 
 ShapeObject::ShapeObject(ShapeType shType, double x, double y, double w, double h)
-    : shapeType(shType), worldX(x), worldY(y), worldWidth(w), worldHeight(h)
+    : shapeType(shType)
 {
     this->type = ObjectType::Shape;
+    worldX = x;
+    worldY = y;
+    worldWidth = w;
+    worldHeight = h;
     UpdateBounds();
 }
 
@@ -307,7 +313,11 @@ double ShapeObject::DistSqPointToSegment(const Point2D& p,
 }
 
 bool ShapeObject::HitTest(double worldXQuery, double worldYQuery) const {
+    if (!isVisible || !isSelectable) return false;
     if (!bounds.Contains(worldXQuery, worldYQuery)) return false;
+
+    // Fast-path: already selected shape allows immediate interaction inside bounds
+    if (isSelected) return true;
 
     // Map query point through inverse transform to local shape space
     BLMatrix2D invTransform;
@@ -378,6 +388,8 @@ bool ShapeObject::HitTest(double worldXQuery, double worldYQuery) const {
 }
 
 bool ShapeObject::HitTestCircle(double worldXQuery, double worldYQuery, double radiusMm) const {
+    if (!isVisible) return false;
+
     AABB queryBox(worldXQuery - radiusMm, worldYQuery - radiusMm,
                   worldXQuery + radiusMm, worldYQuery + radiusMm);
     if (!bounds.Intersects(queryBox)) return false;
@@ -393,6 +405,8 @@ bool ShapeObject::HitTestCircle(double worldXQuery, double worldYQuery, double r
 }
 
 bool ShapeObject::HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const {
+    if (!isVisible) return false;
+
     AABB sweptBox(
         (std::min)(w0.x, w1.x) - radiusMm, (std::min)(w0.y, w1.y) - radiusMm,
         (std::max)(w0.x, w1.x) + radiusMm, (std::max)(w0.y, w1.y) + radiusMm
@@ -401,10 +415,6 @@ bool ShapeObject::HitTestSwept(const Point2D& w0, const Point2D& w1, double radi
     return HitTestCircle(w0.x, w0.y, radiusMm) ||
            HitTestCircle(w1.x, w1.y, radiusMm) ||
            HitTestCircle((w0.x + w1.x) * 0.5, (w0.y + w1.y) * 0.5, radiusMm);
-}
-
-bool ShapeObject::Intersects(const AABB& selectionBounds) const {
-    return bounds.Intersects(selectionBounds);
 }
 
 // =============================================================================
@@ -427,24 +437,7 @@ bool ShapeObject::Intersects(const AABB& selectionBounds) const {
  *   new worldHeight = max(0.5, |p1.y - p0.y|)
  */
 void ShapeObject::BakeTransform() {
-    // Only bake axis-aligned scale + translation (shear baking would require
-    // rebuilding vertex geometry, which is not yet supported)
-    if (std::abs(transform.m01) < 1e-6 && std::abs(transform.m10) < 1e-6) {
-        if (transform.m00 == 1.0 && transform.m11 == 1.0 &&
-            transform.m20 == 0.0 && transform.m21 == 0.0)
-            return; // Identity — nothing to bake
-
-        double p0x = transform.m00 * worldX               + transform.m20;
-        double p0y = transform.m11 * worldY               + transform.m21;
-        double p1x = transform.m00 * (worldX + worldWidth)  + transform.m20;
-        double p1y = transform.m11 * (worldY + worldHeight) + transform.m21;
-
-        worldX      = (std::min)(p0x, p1x);
-        worldY      = (std::min)(p0y, p1y);
-        worldWidth  = (std::max)(0.5, std::abs(p1x - p0x));
-        worldHeight = (std::max)(0.5, std::abs(p1y - p0y));
-
-        transform = BLMatrix2D::make_identity();
+    if (Folio::AABBUtils::BakeTransformedRect(worldX, worldY, worldWidth, worldHeight, transform, 0.5)) {
         UpdateBounds();
     }
 }

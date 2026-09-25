@@ -32,6 +32,8 @@ namespace Folio {
 
 TextBoxObject::TextBoxObject() {
     type = ObjectType::Text;
+    worldWidth = 70.0;
+    worldHeight = 20.0;
     TextRun r;
     r.color = textColor;
     r.fontSize = fontSize;
@@ -40,9 +42,12 @@ TextBoxObject::TextBoxObject() {
     UpdateBounds();
 }
 
-TextBoxObject::TextBoxObject(double x, double y, double w, double h)
-    : worldX(x), worldY(y), worldWidth(w), worldHeight(h) {
+TextBoxObject::TextBoxObject(double x, double y, double w, double h) {
     type = ObjectType::Text;
+    worldX = x;
+    worldY = y;
+    worldWidth = w;
+    worldHeight = h;
     TextRun r;
     r.color = textColor;
     r.fontSize = fontSize;
@@ -272,33 +277,39 @@ size_t TextBoxObject::CharCount() const noexcept {
 }
 
 void TextBoxObject::UpdateBounds() {
-    BLPoint p[4] = {
-        transform.map_point(worldX,              worldY),
-        transform.map_point(worldX + worldWidth, worldY),
-        transform.map_point(worldX + worldWidth, worldY + worldHeight),
-        transform.map_point(worldX,              worldY + worldHeight)
-    };
-    double minX = p[0].x, maxX = p[0].x;
-    double minY = p[0].y, maxY = p[0].y;
-    for (int i = 1; i < 4; ++i) {
-        minX = (std::min)(minX, p[i].x);
-        maxX = (std::max)(maxX, p[i].x);
-        minY = (std::min)(minY, p[i].y);
-        maxY = (std::max)(maxY, p[i].y);
-    }
-    bounds = AABB(minX, minY, maxX, maxY);
+    bounds = Folio::AABBUtils::ComputeTransformedBounds(worldX, worldY, worldWidth, worldHeight, transform);
 }
 
+/**
+ * @brief Evaluates whether a world-space point intersects the text box or its top grab bar.
+ * 
+ * Working Process:
+ *   1. Check visibility & selectability: Rejects hidden or non-selectable text boxes.
+ *   2. Expand bounding box vertically by 4.0mm at the top (hitBox.minY -= 4.0) to account
+ *      for the interactive text drag handle / grab bar.
+ *   3. Containment test: If (wx, wy) falls inside the expanded hitBox:
+ *      - If already selected (isSelected == true), returns true immediately to support
+ *        frictionless double-click text editing and drag operations.
+ *      - Otherwise returns true as an interior hit.
+ * 
+ * @param wx World X coordinate in mm.
+ * @param wy World Y coordinate in mm.
+ * @return True if (wx, wy) hits the text box or grab handle.
+ */
 bool TextBoxObject::HitTest(double wx, double wy) const {
+    if (!isVisible || !isSelectable) return false;
+
     // Include 4mm top grab bar area when testing for hit
     AABB hitBox = bounds;
     hitBox.minY -= 4.0;
-    return hitBox.Contains(wx, wy);
+    if (!hitBox.Contains(wx, wy)) return false;
+
+    // Fast-path: already selected text box allows immediate interaction
+    if (isSelected) return true;
+
+    return true;
 }
 
-bool TextBoxObject::Intersects(const AABB& sel) const {
-    return bounds.Intersects(sel);
-}
 
 void TextBoxObject::ApplyTransform(const BLMatrix2D& matrix) {
     transform.post_transform(matrix);
@@ -306,22 +317,8 @@ void TextBoxObject::ApplyTransform(const BLMatrix2D& matrix) {
 }
 
 void TextBoxObject::BakeTransform() {
-    if (std::abs(transform.m01) < 1e-6 && std::abs(transform.m10) < 1e-6) {
-        if (transform.m00 == 1.0 && transform.m11 == 1.0 &&
-            transform.m20 == 0.0 && transform.m21 == 0.0) return;
-
-        double p0x = transform.m00 * worldX + transform.m20;
-        double p0y = transform.m11 * worldY + transform.m21;
-        double p1x = transform.m00 * (worldX + worldWidth)  + transform.m20;
-        double p1y = transform.m11 * (worldY + worldHeight) + transform.m21;
-
-        worldX      = (std::min)(p0x, p1x);
-        worldY      = (std::min)(p0y, p1y);
-        worldWidth  = (std::max)(10.0, std::abs(p1x - p0x));
-        worldHeight = (std::max)(10.0, std::abs(p1y - p0y));
-
-        transform = BLMatrix2D::make_identity();
-        isDirty   = true;
+    if (Folio::AABBUtils::BakeTransformedRect(worldX, worldY, worldWidth, worldHeight, transform, 10.0)) {
+        isDirty = true;
         UpdateBounds();
     }
 }
@@ -567,8 +564,5 @@ void TextBoxObject::RenderWithEditor(BLContext& ctx, const Viewport& viewport, c
 std::unique_ptr<CanvasObject> TextBoxObject::Clone() const {
     return std::make_unique<TextBoxObject>(*this);
 }
-
-void TextBoxObject::Serialize(Serializer& /*writer*/) const {}
-void TextBoxObject::Deserialize(Deserializer& /*reader*/) {}
 
 } // namespace Folio

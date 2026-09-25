@@ -225,6 +225,37 @@ public:
     static std::string SanitizeFileName(const std::string& name, char replacement = '_');
 
     /**
+     * @brief Converts a filesystem path or relative specifier into a standard URI ("file:///...").
+     * 
+     * Working Process:
+     * - If the string already starts with a protocol ("file://", "http://", "https://"), returns as-is.
+     * - On Windows: normalizes backslashes to forward slashes; if starting with a drive letter (e.g. "C:/..."),
+     *   prepends "file:///"; otherwise prepends "file://".
+     * - On POSIX: prepends "file://" to the path.
+     * 
+     * @param path Local filesystem path or existing URL.
+     * @return Formatted URI string.
+     */
+    static std::string PathToFileUri(const std::string& path);
+
+    /**
+     * @brief Launches a file or URL with the operating system's default application.
+     * 
+     * Cross-Platform Working Process:
+     * - Converts file paths to standard file URIs via `PathToFileUri()`.
+     * - Calls `SDL_OpenURL()` which dispatches to:
+     *     - Windows: ShellExecuteW
+     *     - Linux:   xdg-open or freedesktop Portal OpenURI
+     *     - macOS:   NSWorkspace openURL
+     *     - Android: Intent (ACTION_VIEW)
+     * - If SDL_OpenURL reports failure on Windows, falls back to native Win32 `ShellExecuteW`.
+     * 
+     * @param pathOrUrl Target filesystem path or URL to open.
+     * @return true if successfully dispatched to the OS; false otherwise.
+     */
+    static bool OpenWithDefaultApp(const std::string& pathOrUrl);
+
+    /**
      * @brief Generates a collision-free path in a directory by appending numeric counters if needed.
      *
      * Working Process:

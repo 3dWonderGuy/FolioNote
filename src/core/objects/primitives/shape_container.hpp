@@ -68,11 +68,6 @@ public:
     ShapeFillType   fillType    = ShapeFillType::None;          ///< Default: no fill (transparent)
     ShapeOutlineType outlineType = ShapeOutlineType::Solid;
 
-    double worldX      = 0.0;    ///< Top-left corner X in world millimeters
-    double worldY      = 0.0;    ///< Top-left corner Y in world millimeters
-    double worldWidth  = 60.0;   ///< Width in world millimeters
-    double worldHeight = 40.0;   ///< Height in world millimeters
-
     BLRgba32 strokeColor{0x18, 0x1A, 0x20, 0xFF};        ///< Outline color (alpha always forced to 255 on render)
     BLRgba32 fillColor{0x00, 0x78, 0xD4, 0x40};          ///< Primary infill color
     BLRgba32 secondaryFillColor{0x00, 0xC4, 0xFF, 0x20}; ///< Secondary color (gradients only)
@@ -115,8 +110,7 @@ public:
     void UpdateBounds() override;
     bool HitTest(double worldXQuery, double worldYQuery) const override;
     bool HitTestCircle(double worldXQuery, double worldYQuery, double radiusMm) const override;
-    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const override;
-    bool Intersects(const AABB& selectionBounds) const override;
+    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const;
 
     // =========================================================================
     // TRANSFORM (partially inline — bake is trivial axis-aligned only)
@@ -172,17 +166,11 @@ public:
         return std::make_unique<ShapeObject>(*this);
     }
 
-    void Serialize(Serializer& /*writer*/) const override {}
-    void Deserialize(Deserializer& /*reader*/) override {}
-
     // =========================================================================
     // GIZMO HANDLES
     // The standard 8-point bounding box is used for all closed shapes.
-    // GetCustomGizmoHandles returns false so the engine generates the default grip set.
+    // (Uses default CanvasObject::GetGizmoStyle → GizmoStyle::BoundingBox)
     // =========================================================================
-
-    // (Uses default CanvasObject::GetCustomGizmoHandles → returns false)
-    // (Uses default CanvasObject::OnGizmoHandleDrag → returns false)
 
     // =========================================================================
     // IMGUI VECTOR ICONS (header-only — ImGui dependency must NOT enter .cpp)

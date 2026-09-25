@@ -117,13 +117,7 @@ public:
      * @param radiusMm Capsule radius in world millimeters
      * @return true if swept capsule intersects any stroke
      */
-    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const override;
-
-    /**
-     * @brief Checks if this container intersects a selection bounding box (e.g. lasso or marquee selection).
-     * @param selectionBounds Selection rectangle in world millimeters
-     */
-    bool Intersects(const AABB& selectionBounds) const override;
+    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const;
 
     // =========================================================================
     // 2. GEOMETRY & TRANSFORMS
@@ -134,6 +128,19 @@ public:
      * @param matrix 2D affine transformation matrix
      */
     void ApplyTransform(const BLMatrix2D& matrix) override;
+
+    /**
+     * @brief Bakes the accumulated affine transform matrix directly into all stroke segments
+     *        and centerline points, re-bakes the polygon outlines, and resets transform to identity.
+     */
+    void BakeTransform() override;
+
+    /**
+     * @brief Vector ink strokes use the standard locked BoundingBox gizmo.
+     */
+    GizmoStyle GetGizmoStyle() const noexcept override {
+        return GizmoStyle::BoundingBox;
+    }
 
     // =========================================================================
     // 3. VECTOR RENDERING PASS
@@ -162,9 +169,6 @@ public:
      * @brief Deep-copies this InkContainer entity.
      */
     std::unique_ptr<CanvasObject> Clone() const override;
-
-    void Serialize(Serializer& writer) const override;
-    void Deserialize(Deserializer& reader) override;
 
     // =========================================================================
     // 5. ERASER SLICING

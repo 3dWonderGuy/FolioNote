@@ -24,7 +24,7 @@
  * Gizmo Handles:
  *  - customId 0 = start endpoint (x1, y1)
  *  - customId 1 = end   endpoint (x2, y2)
- *  - OnGizmoHandleDrag updates the dragged point directly (no matrix needed
+ *  - TwoPoint gizmo drag updates the dragged endpoint directly (no matrix needed
  *    for individual endpoint adjustment — it is always a world translation).
  */
 
@@ -147,11 +147,6 @@ public:
      */
     bool HitTest(double worldX, double worldY) const override;
 
-    /**
-     * @brief Checks if this connector intersects an AABB selection rectangle.
-     * @param selectionBounds Query rectangle in world millimeters
-     */
-    bool Intersects(const AABB& selectionBounds) const override;
 
     // =========================================================================
     // TRANSFORMS & GIZMO HANDLES
@@ -170,24 +165,11 @@ public:
     void BakeTransform() override;
 
     /**
-     * @brief Returns the 2 draggable endpoint handles (start and end) for interactive editing.
-     * @param[out] outHandles Populated with handle 0 (start) and handle 1 (end)
-     * @param transform Current canvas viewport transform
-     * @return true if custom handles were provided
+     * @brief SmartArrow connectors use a locked TwoPoint gizmo (endpoint handles 0 and 1).
      */
-    bool GetCustomGizmoHandles(std::vector<GizmoHandle>& outHandles,
-                               const CanvasTransform& transform) const override;
-
-    /**
-     * @brief Handles dragging of endpoint handles.
-     * @param customId 0 for start point (x1,y1), 1 for end point (x2,y2)
-     * @param worldPos Current handle position
-     * @param worldDelta World displacement vector
-     * @return true if handle drag was processed
-     */
-    bool OnGizmoHandleDrag(int customId,
-                           const Point2D& worldPos,
-                           const Point2D& worldDelta) override;
+    GizmoStyle GetGizmoStyle() const noexcept override {
+        return GizmoStyle::TwoPoint;
+    }
 
     // =========================================================================
     // RENDERING
@@ -242,9 +224,6 @@ public:
      * @brief Clones this connector instance.
      */
     std::unique_ptr<CanvasObject> Clone() const override;
-
-    void Serialize(Serializer& writer) const override;
-    void Deserialize(Deserializer& reader) override;
 
 private:
     // =========================================================================

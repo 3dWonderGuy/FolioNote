@@ -17,3 +17,7 @@
 #include "core/objects/primitives/shape_container.hpp"
 #include "core/objects/connectors/connector_types.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
+
+// Backward compatibility aliases in global namespace
+using Folio::ShapeObject;
+using Folio::ShapeContainer;

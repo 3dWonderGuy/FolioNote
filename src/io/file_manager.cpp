@@ -27,6 +27,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <shellapi.h>
 #include <io.h>     // For _commit and _fileno
 #else
 #include <unistd.h> // For fsync and fileno
@@ -262,6 +263,58 @@ bool FileManager::IsAbsolutePath(const std::string& path) {
     //   Windows: drive letters ("C:\"), UNC ("\\server\share\"), rooted ("\")
     //   POSIX: Unix root ("/")
     return Utf8ToNativePath(path).is_absolute();
+}
+
+std::string FileManager::PathToFileUri(const std::string& path) {
+    if (path.empty()) return "";
+
+    // Already an absolute URI
+    if (path.rfind("file://", 0) == 0 ||
+        path.rfind("http://", 0) == 0 ||
+        path.rfind("https://", 0) == 0) {
+        return path;
+    }
+
+#if defined(_WIN32)
+    std::string normalized = NormalizeSeparators(path);
+    if (normalized.size() > 1 && normalized[1] == ':') {
+        return "file:///" + normalized;
+    }
+    return "file://" + normalized;
+#else
+    return "file://" + path;
+#endif
+}
+
+bool FileManager::OpenWithDefaultApp(const std::string& pathOrUrl) {
+    // Centralized guard: reject empty paths with an explicit error code
+    if (pathOrUrl.empty()) {
+        LOG_WARN_CODE(FileManager, FolioErrorCode::SysFileNotFound, "OpenWithDefaultApp rejected: path/URL string is empty.");
+        return false;
+    }
+
+    std::string targetUri = PathToFileUri(pathOrUrl);
+
+    // Cross-platform dispatch via SDL3 (Windows, macOS, Linux, Android)
+    if (SDL_OpenURL(targetUri.c_str())) {
+        return true;
+    }
+
+    LOG_WARN(FileManager, "SDL_OpenURL failed for (" + targetUri + "): " + SDL_GetError());
+
+#if defined(_WIN32)
+    // Native Win32 fallback via ShellExecuteW
+    std::filesystem::path nativeP = Utf8ToNativePath(pathOrUrl);
+    HINSTANCE res = ShellExecuteW(nullptr, L"open", nativeP.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(res) > 32) {
+        return true;
+    }
+    LOG_ERROR_CODE(FileManager, FolioErrorCode::SysFileAccessDenied, "ShellExecuteW fallback also failed for: " + pathOrUrl);
+#else
+    LOG_ERROR_CODE(FileManager, FolioErrorCode::SysFileAccessDenied, "Failed to launch default application for: " + pathOrUrl);
+#endif
+
+    return false;
 }
 
 std::string FileManager::DisambiguatePath(const std::string& parentDir, const std::string& baseStem, const std::string& extension) {

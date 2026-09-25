@@ -62,9 +62,6 @@ public:
     std::string url;            ///< "https://..." or "folio://notebook/page#sel"
     std::string displayText;    ///< Label shown in the pill badge
 
-    double worldX = 0.0;        ///< Top-left X (world mm)
-    double worldY = 0.0;        ///< Top-left Y (world mm)
-
     /// Fixed chip height; width adapts to displayText length (world mm)
     static constexpr double chipH    = 8.0;
     static constexpr double chipMinW = 20.0;
@@ -75,6 +72,8 @@ public:
 
     LinkObject() {
         type = ObjectType::Link;
+        worldWidth = chipMinW;
+        worldHeight = chipH;
         UpdateBounds();
     }
 
@@ -153,40 +152,14 @@ public:
     }
 
     void UpdateBounds() override {
-        double cw = GetChipWidth();
-        BLPoint p[4] = {
-            transform.map_point(worldX,      worldY),
-            transform.map_point(worldX + cw, worldY),
-            transform.map_point(worldX + cw, worldY + chipH),
-            transform.map_point(worldX,      worldY + chipH)
-        };
-        double minX = p[0].x, maxX = p[0].x;
-        double minY = p[0].y, maxY = p[0].y;
-        for (int i = 1; i < 4; ++i) {
-            minX = (std::min)(minX, p[i].x);
-            maxX = (std::max)(maxX, p[i].x);
-            minY = (std::min)(minY, p[i].y);
-            maxY = (std::max)(maxY, p[i].y);
-        }
-        bounds = AABB(minX, minY, maxX, maxY);
-    }
-
-    bool HitTest(double wx, double wy) const override {
-        return bounds.Contains(wx, wy);
-    }
-
-    bool Intersects(const AABB& sel) const override {
-        return bounds.Intersects(sel);
+        worldWidth = GetChipWidth();
+        worldHeight = chipH;
+        CanvasObject::UpdateBounds();
     }
 
     // =========================================================================
     // TRANSFORM — translation only
     // =========================================================================
-
-    void ApplyTransform(const BLMatrix2D& matrix) override {
-        transform.post_transform(matrix);
-        UpdateBounds();
-    }
 
     void BakeTransform() override {
         worldX += transform.m20;
@@ -195,9 +168,11 @@ public:
         UpdateBounds();
     }
 
-    bool GetCustomGizmoHandles(std::vector<GizmoHandle>& /*outHandles*/,
-                                const CanvasTransform& /*transform*/) const override {
-        return false; // body-move only
+    /**
+     * @brief Web bookmark cards are fixed size and use a locked MoveOnly gizmo.
+     */
+    GizmoStyle GetGizmoStyle() const noexcept override {
+        return GizmoStyle::MoveOnly;
     }
 
     // =========================================================================
@@ -254,9 +229,6 @@ public:
     std::unique_ptr<CanvasObject> Clone() const override {
         return std::make_unique<LinkObject>(*this);
     }
-
-    void Serialize(Serializer& /*writer*/) const override {}
-    void Deserialize(Deserializer& /*reader*/) override {}
 };
 
 } // namespace Folio

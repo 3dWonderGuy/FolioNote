@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -36,12 +36,6 @@ namespace Folio {
  */
 class PdfContainer : public CanvasObject {
 public:
-    double worldX = 0.0;
-    double worldY = 0.0;
-    // Standard A4 default dimensions in millimeters (210mm x 297mm)
-    double worldWidth = 210.0;
-    double worldHeight = 297.0;
-
     std::string pdfPath = "";             // Path relative to notebook package (e.g. "imports/pdfs/pdf_<hash>.pdf") or absolute external path
     std::string originalFileName = "";    // Original document name for UI / tooltip / search
     std::string resolvedDiskPath = "";    // Direct absolute path on disk if known
@@ -114,53 +108,36 @@ public:
 
     PdfContainer() {
         type = ObjectType::PDF;
+        worldWidth = 210.0;
+        worldHeight = 297.0;
         UpdateBounds();
     }
 
     PdfContainer(const std::string& path, const std::string& origName, int pageIdx, int totalPages,
                  double x = 0.0, double y = 0.0, double w = 210.0, double h = 297.0, bool asBackground = false)
-        : worldX(x), worldY(y), worldWidth(w), worldHeight(h),
-          pdfPath(path), originalFileName(origName), pageIndex(pageIdx), totalPageCount(totalPages),
+        : pdfPath(path), originalFileName(origName), pageIndex(pageIdx), totalPageCount(totalPages),
           isBackground(asBackground)
     {
         type = ObjectType::PDF;
+        worldX = x;
+        worldY = y;
+        worldWidth = w;
+        worldHeight = h;
         UpdateBounds();
-    }
-
-    void UpdateBounds() override {
-        double minX = worldX;
-        double minY = worldY;
-        double maxX = worldX + worldWidth;
-        double maxY = worldY + worldHeight;
-
-        if (worldWidth < 0.0) { minX = worldX + worldWidth; maxX = worldX; }
-        if (worldHeight < 0.0) { minY = worldY + worldHeight; maxY = worldY; }
-
-        BLPoint corners[4] = {
-            transform.map_point(minX, minY),
-            transform.map_point(maxX, minY),
-            transform.map_point(minX, maxY),
-            transform.map_point(maxX, maxY)
-        };
-
-        bounds = AABB{
-            (std::min)({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
-            (std::min)({corners[0].y, corners[1].y, corners[2].y, corners[3].y}),
-            (std::max)({corners[0].x, corners[1].x, corners[2].x, corners[3].x}),
-            (std::max)({corners[0].y, corners[1].y, corners[2].y, corners[3].y})
-        };
     }
 
     void ApplyTransform(const BLMatrix2D& matrix) override {
         if (isBackground) return; // Background layer is locked in place
-        transform.post_transform(matrix);
-        UpdateBounds();
+        CanvasObject::ApplyTransform(matrix);
     }
 
     bool HitTest(double queryWorldX, double queryWorldY) const override {
-        if (!isVisible || opacity <= 0.0f) return false;
+        if (!isVisible || !isSelectable) return false;
         if (isBackground) return false; // In background mode, let clicks pass through to canvas
         if (!bounds.Contains(queryWorldX, queryWorldY)) return false;
+
+        // Fast-path: already selected object allows immediate interaction inside bounds
+        if (isSelected) return true;
 
         BLMatrix2D inv;
         BLMatrix2D::invert(inv, transform);
@@ -182,27 +159,11 @@ public:
      *       pass freely over the page without selecting or moving it.
      */
     bool HitTestCircle(double worldXQuery, double worldYQuery, double /*radiusMm*/) const override {
-        if (!isVisible || opacity <= 0.0f) return false;
+        if (!isVisible || !isSelectable) return false;
         if (isBackground) return false;
         return HitTest(worldXQuery, worldYQuery);
     }
 
-    bool HitTestSwept(const Point2D& /*w0*/, const Point2D& /*w1*/, double /*radiusMm*/) const override {
-        // Erasers must never erase PDF document pages
-        return false;
-    }
-
-    /**
-     * @brief Marquee/lasso selection bounding box intersection.
-     * 
-     * @note Background PDF pages are excluded from marquee selection to prevent accidental
-     *       group movement of the background canvas page.
-     */
-    bool Intersects(const AABB& selectionBounds) const override {
-        if (!isVisible || opacity <= 0.0f) return false;
-        if (isBackground) return false;
-        return bounds.Intersects(selectionBounds);
-    }
 
     void Render(BLContext& ctx, const Viewport& viewport) const override {
         if (!isVisible || opacity <= 0.0f) return;
@@ -266,9 +227,6 @@ public:
     std::unique_ptr<CanvasObject> Clone() const override {
         return std::make_unique<PdfContainer>(*this);
     }
-
-    void Serialize(Serializer& /*writer*/) const override {}
-    void Deserialize(Deserializer& /*reader*/) override {}
 };
 
 } // namespace Folio

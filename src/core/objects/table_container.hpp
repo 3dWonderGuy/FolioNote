@@ -54,32 +54,12 @@ namespace Folio {
  */
 class TableObject : public CanvasObject {
 public:
-    double worldX = 0.0, worldY = 0.0;
-    double worldWidth = 80.0, worldHeight = 50.0;
     int    rows = 3, cols = 3;
 
     TableObject() {
         type = ObjectType::Table;
-        UpdateBounds();
-    }
-
-    // ---- Minimal interface to satisfy pure virtuals ----
-
-    void UpdateBounds() override {
-        bounds.minX = worldX;        bounds.minY = worldY;
-        bounds.maxX = worldX + worldWidth; bounds.maxY = worldY + worldHeight;
-    }
-
-    bool HitTest(double wx, double wy) const override {
-        return bounds.Contains(wx, wy);
-    }
-
-    bool Intersects(const AABB& sel) const override {
-        return bounds.Intersects(sel);
-    }
-
-    void ApplyTransform(const BLMatrix2D& matrix) override {
-        transform.post_transform(matrix);
+        worldWidth = 80.0;
+        worldHeight = 50.0;
         UpdateBounds();
     }
 
@@ -105,9 +85,6 @@ public:
     std::unique_ptr<CanvasObject> Clone() const override {
         return std::make_unique<TableObject>(*this);
     }
-
-    void Serialize(Serializer& /*w*/) const override {}
-    void Deserialize(Deserializer& /*r*/) override {}
 };
 
 } // namespace Folio

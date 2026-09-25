@@ -41,14 +41,6 @@ enum class StickyPreset : uint8_t {
 class TextBoxObject : public CanvasObject {
 public:
     // =========================================================================
-    // POSITION & GEOMETRY (World Millimeters)
-    // =========================================================================
-    double worldX      = 0.0;
-    double worldY      = 0.0;
-    double worldWidth  = 70.0;   ///< Container width in world mm
-    double worldHeight = 20.0;   ///< Container height in world mm (grows dynamically)
-
-    // =========================================================================
     // LAYER 1 & LAYER 2: 3-LAYER CONTAINER STYLING (Reused from ShapeObject)
     // =========================================================================
     ShapeFillType fillType        = ShapeFillType::None;        ///< Transparent default
@@ -137,7 +129,6 @@ public:
     // =========================================================================
     void UpdateBounds() override;
     bool HitTest(double wx, double wy) const override;
-    bool Intersects(const AABB& sel) const override;
     void ApplyTransform(const BLMatrix2D& matrix) override;
     void BakeTransform() override;
 
@@ -149,8 +140,6 @@ public:
     void RenderWithEditor(BLContext& ctx, const Viewport& viewport, const TextEditorState& editor) const;
 
     std::unique_ptr<CanvasObject> Clone() const override;
-    void Serialize(Serializer& writer) const override;
-    void Deserialize(Deserializer& reader) override;
 };
 
 } // namespace Folio

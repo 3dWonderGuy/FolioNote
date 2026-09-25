@@ -5,6 +5,7 @@
 #include <string>
 #include <blend2d/blend2d.h>
 #include "core/spatial/aabb.hpp"
+#include "core/spatial/aabb_utils.hpp"
 #include "core/engine/gizmo_types.hpp"
 #include "core/engine/stroke_smoother.hpp"
 
@@ -13,39 +14,22 @@ class CanvasTransform;
 
 /**
  * @brief Enumeration of all possible object types in the canvas.
- *
- * Each entry maps 1:1 to a concrete class in core/objects/:
- *   InkContainer   → ink_container.hpp         (pen/stylus/mouse strokes)
- *   Text           → text/text_box.hpp          (rich text box)
- *   Image          → image_container.hpp        (raster image)
- *   Video          → media/video_container.hpp  (video file or YouTube embed)
- *   PDF            → pdf_container.hpp          (PDF page view)
- *   Table          → table_container.hpp        (row/column table — Phase 2)
- *   AttachmentFile → attachment_container.hpp   (linked external file chip)
- *   Shape          → primitives/shape_container.hpp (closed 2D vector shape)
- *   Connector      → connectors/smart_arrow_container.hpp (line/arrow with endpoint handles)
- *   Audio          → media/audio_container.hpp  (audio file link chip)
- *   Link           → links/link_object.hpp      (URL or cross-note anchor chip)
- *   MathLaTeX      → (future: LaTeX equation renderer)
- *   Frame          → (future: grouped frame container)
- *
- * Scalability: add new types here and in binary_serializer.hpp dispatch.
- * No changes to the engine dispatch loop are needed — it is polymorphic.
  */
 enum class ObjectType {
-    InkContainer,
-    Text,
+    InkContainer,   
+    Text,           
     Image,
     Video,
     PDF,
     Table,
     AttachmentFile,
     Shape,
-    Connector,     ///< SmartArrowObject — 2-point line/arrow connector
+    Connector,   
     Audio,
-    Link,          ///< LinkObject — URL or folio:// cross-note anchor chip
-    MathLaTeX,
-    Frame,
+    Link,        
+    MathLaTeX,     
+    Frame,          // grouped frame container
+    Other,          // this is the mark for the custom objects made by third party plugins
 };
 
 
@@ -55,14 +39,24 @@ enum class ObjectType {
  */
 class CanvasObject {
 public:
-    std::string guuid = "";                              // to have searchable text and prevent user to user collisions and for persistent storage id (ink is not tracked)
-    std::string groupId = "";                            // UUID of parent logical group (empty if ungrouped)
+    std::string guuid = "";                             // to have searchable text and prevent user to user collisions and for persistent storage id (ink is not tracked)
+    std::string groupId = "";                           // UUID of parent logical group (empty if ungrouped)
     uint32_t uid = 0;                                   // Matches RTree UID index (deleted upon closing notebook)
-    ObjectType type = ObjectType::InkContainer;         // Fast type discriminator
+
+    ObjectType type = ObjectType::InkContainer;         // object type
+    
+    // Object position and size (disk saved)
+    double worldX      = 0.0;                           // Top-left X coordinate in world millimeters
+    double worldY      = 0.0;                           // Top-left Y coordinate in world millimeters
+    double worldWidth  = 0.0;                           // Extent width in world millimeters
+    double worldHeight = 0.0;                           // Extent height in world millimeters
+    // used for the interactive manipulation in the screen
+    BLMatrix2D transform = BLMatrix2D::make_identity(); // Used for transformation
+
     AABB bounds;                                        // Cached World-space AABB
-    BLMatrix2D transform = BLMatrix2D::make_identity();  // Local-to-world affine transform
+
     int32_t zOrder = 1;                                 // Draw order (higher = front, 0 = background)
-    float opacity = 1.0f;                               // Alpha scalar (0.0 to 1.0)
+    float opacity = 1.0f;                               // Alpha scalar
 
     // Packed state bitfields (1 byte total)
     uint8_t isVisible    : 1 = 1;  // Soft-visibility flag (skips rendering without spatial eviction)
@@ -86,9 +80,11 @@ public:
     /********************************************* */
 
     /**
-     * @brief Computes and updates the object's axis-aligned bounding box (bounds) in world coordinates.
+     * @brief Takes what ever the size of current object is and saves it as axis-aligned aabb bounds
      */
-    virtual void UpdateBounds() = 0;
+    virtual void UpdateBounds() {
+        bounds = Folio::AABBUtils::ComputeTransformedBounds(worldX, worldY, worldWidth, worldHeight, transform);
+    }
 
     /**
      * @brief Tests if a single 2D world-space point intersects the object.
@@ -96,107 +92,21 @@ public:
      * @param worldY World Y coordinate in millimeters.
      * @return True if the point lies inside or on the object's active boundary.
      */
-    virtual bool HitTest(double worldX, double worldY) const = 0;
+    virtual bool HitTest(double worldX, double worldY) const {
+        return bounds.Contains(worldX, worldY); // check if the point is inside the bounds of the object
+    }
 
     /**
-     * @brief Tests if a world-space circle (stylus tip, finger touch, or eraser point)
-     * intersects or contains this object.
-     *
-     * Mathematical Process:
-     *   1. Broad phase: Query AABB expanded by radiusMm against bounds.
-     *   2. Narrow phase: Check center point via HitTest(worldX, worldY).
-     *   3. Clamped distance check: Find closest point Q on object's AABB to center C:
-     *        Q_x = clamp(worldX, bounds.minX, bounds.maxX)
-     *        Q_y = clamp(worldY, bounds.minY, bounds.maxY)
-     *        distSq = (worldX - Q_x)^2 + (worldY - Q_y)^2
-     *      Returns true if distSq <= radiusMm^2.
-     *
-     * @param worldX Circle center X coordinate in millimeters.
-     * @param worldY Circle center Y coordinate in millimeters.
-     * @param radiusMm Detection radius in millimeters.
-     * @return True if the circle intersects the object.
-     */
+    * @brief Tests if a world-space circle (stylus tip, touch point, or eraser)
+    * intersects the object's boundary.
+    *
+    * @param worldX Circle center X in millimeters.
+    * @param worldY Circle center Y in millimeters.
+    * @param radiusMm Circle radius in millimeters.
+    */
     virtual bool HitTestCircle(double worldX, double worldY, double radiusMm) const {
-        AABB queryBox(worldX - radiusMm, worldY - radiusMm, worldX + radiusMm, worldY + radiusMm);
-        if (!bounds.Intersects(queryBox)) {
-            return false;
-        }
-
-        // Direct interior hit
-        if (HitTest(worldX, worldY)) {
-            return true;
-        }
-
-        // Clamped Euclidean distance from (worldX, worldY) to object bounds
-        double clampedX = std::max(bounds.minX, std::min(worldX, bounds.maxX));
-        double clampedY = std::max(bounds.minY, std::min(worldY, bounds.maxY));
-        double dx = worldX - clampedX;
-        double dy = worldY - clampedY;
-        return (dx * dx + dy * dy) <= (radiusMm * radiusMm);
+        return Folio::AABBUtils::IntersectsCircle(bounds, worldX, worldY, radiusMm);
     }
-
-    /**
-     * @brief Continuous swept-volume hit test between two world-space points w0 and w1.
-     * Prevents high-speed eraser strokes from 'tunneling' or skipping through objects.
-     *
-     * Mathematical Process:
-     *   Given segment S(t) = w0 + t * (w1 - w0), for t in [0, 1]:
-     *   1. Broad phase: Construct swept bounding box expanded by radiusMm.
-     *   2. Check endpoints w0 and w1 with HitTestCircle.
-     *   3. Project object's bounding center C onto the segment S(t):
-     *        V = w1 - w0
-     *        lenSq = |V|^2
-     *        t = clamp(((C - w0) . V) / lenSq, 0.0, 1.0)
-     *        closestPoint = w0 + t * V
-     *   4. Evaluate HitTestCircle at the closest point along the swept path.
-     *
-     * @param w0 Starting point of the swept motion segment.
-     * @param w1 Ending point of the swept motion segment.
-     * @param radiusMm Radius of the swept sphere / capsule in millimeters.
-     * @return True if the swept volume intersects this object.
-     */
-    virtual bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const {
-        AABB sweptBox(
-            std::min(w0.x, w1.x) - radiusMm,
-            std::min(w0.y, w1.y) - radiusMm,
-            std::max(w0.x, w1.x) + radiusMm,
-            std::max(w0.y, w1.y) + radiusMm
-        );
-        if (!bounds.Intersects(sweptBox)) {
-            return false;
-        }
-
-        // Check segment endpoints
-        if (HitTestCircle(w0.x, w0.y, radiusMm) || HitTestCircle(w1.x, w1.y, radiusMm)) {
-            return true;
-        }
-
-        // Compute object center C
-        Point2D center{ (bounds.minX + bounds.maxX) * 0.5, (bounds.minY + bounds.maxY) * 0.5 };
-
-        // Vector V = w1 - w0
-        double vx = w1.x - w0.x;
-        double vy = w1.y - w0.y;
-        double lenSq = vx * vx + vy * vy;
-
-        if (lenSq > 1e-6) {
-            // Projection factor t = ((C - w0) . V) / lenSq
-            double t = ((center.x - w0.x) * vx + (center.y - w0.y) * vy) / lenSq;
-            t = std::max(0.0, std::min(1.0, t));
-
-            Point2D proj{ w0.x + t * vx, w0.y + t * vy };
-            return HitTestCircle(proj.x, proj.y, radiusMm);
-        }
-
-        return false;
-    }
-
-    /**
-     * @brief Tests if the object's geometry intersects a selection bounding box.
-     * @param selectionBounds Marquee / selection area AABB in world space.
-     * @return True if any part of the object intersects the selection bounds.
-     */
-    virtual bool Intersects(const AABB& selectionBounds) const = 0;
 
     /**
      * @brief Gets the cached world-space axis-aligned bounding box.
@@ -210,37 +120,34 @@ public:
     /**
      * @brief Applies a 2D affine transformation matrix to this object.
      *
-     * Mathematical Model:
-     *   Maps coordinates from source space to transformed space using a 2x3 affine matrix:
-     *     [ x' ]   [ m00  m01  m02 ] [ x ]   [ m00*x + m01*y + m02 ]
-     *     [ y' ] = [ m10  m11  m12 ] [ y ] = [ m10*x + m11*y + m12 ]
-     *     [ 1  ]   [  0    0    1  ] [ 1 ]   [          1          ]
-     *   Where:
-     *     - m00, m11 represent non-uniform scaling / cosine rotation factors
-     *     - m01, m10 represent shear / sine rotation factors
-     *     - m02, m12 represent translation (dx, dy) in millimeters
-     *
      * @param matrix 2D affine transformation matrix.
      */
-    virtual void ApplyTransform(const BLMatrix2D& matrix) = 0;
+    virtual void ApplyTransform(const BLMatrix2D& matrix) {
+        transform.post_transform(matrix);
+        UpdateBounds();
+    }
 
     /**
      * @brief Bakes the accumulated affine transform matrix into the object's intrinsic geometry.
      *
      * General Process:
      *   Called upon completion of an interactive manipulation (e.g. mouse release after gizmo drag/rotation).
-     *   Multiplies every intrinsic vertex/point by the current `transform` matrix and resets `transform`
-     *   to identity (BLMatrix2D::make_identity()). This eliminates numerical drift from compounding matrices
-     *   and ensures subsequent bounds updates are exact.
+     *   For standard rectangular objects, delegates to Folio::AABBUtils::BakeTransformedRect to commit
+     *   scale and translation into (worldX, worldY, worldWidth, worldHeight) and reset transform to identity.
+     *   Objects with custom geometry (InkContainer, SmartArrowObject) override this.
      */
-    virtual void BakeTransform() {}
+    virtual void BakeTransform() {
+        if (Folio::AABBUtils::BakeTransformedRect(worldX, worldY, worldWidth, worldHeight, transform)) {
+            UpdateBounds();
+        }
+    }
 
     /********************************************* */
     // Rendering
     /********************************************* */
 
     /**
-     * @brief Renders the object using the provided Blend2D graphics context.
+     * @brief Different object require different type of rendering
      *
      * General Process:
      *   1. Cull test: verifies that object `bounds` intersects `viewport.bounds`.
@@ -258,41 +165,18 @@ public:
 
     virtual std::unique_ptr<CanvasObject> Clone() const = 0;
 
-    // Legacy serialization stubs (persistence is handled by Folio::BinarySerializer)
-    virtual void Serialize(class Serializer& /*writer*/) const {}
-    virtual void Deserialize(class Deserializer& /*reader*/) {}
-
     /********************************************* */
     // Selection & Gizmo Interaction
     /********************************************* */
 
     /**
-     * @brief Queries custom handles for this object. If returns false, the engine
-     * automatically generates the standard 8-point bounding box resize grips + 1 rotation pin.
-     * Custom objects (e.g. SmartArrow, Connectors, custom shapes) can override this to
-     * provide custom endpoint or vertex handles.
+     * @brief Returns the locked interaction gizmo style for this object.
+     * Default is GizmoStyle::BoundingBox (8 resize grips + rotation knob).
+     * Derived objects select their locked gizmo style (e.g. TwoPoint, MoveOnly, None).
+     *
+     * @return GizmoStyle interaction mode enum
      */
-    virtual bool GetCustomGizmoHandles(std::vector<GizmoHandle>& outHandles, const CanvasTransform& transform) const {
-        (void)outHandles;
-        (void)transform;
-        return false;
-    }
-
-    /**
-     * @brief Called when the user drags a custom handle returned by GetCustomGizmoHandles.
-     */
-    virtual bool OnGizmoHandleDrag(int customId, const Point2D& worldPos, const Point2D& worldDelta) {
-        (void)customId;
-        (void)worldPos;
-        (void)worldDelta;
-        return false;
-    }
-
-    /**
-     * @brief Optional custom selection overlay drawing (e.g., connector anchors, curve tangents).
-     */
-    virtual void RenderCustomSelection(BLContext& ctx, const CanvasTransform& transform) const {
-        (void)ctx;
-        (void)transform;
+    virtual GizmoStyle GetGizmoStyle() const noexcept {
+        return GizmoStyle::BoundingBox;
     }
 };

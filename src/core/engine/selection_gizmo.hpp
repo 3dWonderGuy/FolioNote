@@ -18,6 +18,7 @@
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/gizmo_types.hpp"
 #include "core/objects/canvas_object.hpp"
+#include "core/objects/connectors/smart_arrow_container.hpp"
 #include "core/document/document_session.hpp"
 #include "utils/logger.hpp"
 
@@ -207,18 +208,19 @@ public:
     void Render(BLContext& ctx, const CanvasTransform& transform) const {
         if (!hasSelection || selectedObjects.empty()) return;
 
-        // Check if single selected object provides custom handles and custom rendering
+        // Check if single selected object has locked TwoPoint or None gizmo style
         if (selectedObjects.size() == 1) {
-            std::vector<GizmoHandle> customHandles;
-            if (selectedObjects[0]->GetCustomGizmoHandles(customHandles, transform)) {
-                // Let the object draw its custom selection graphics if desired
-                selectedObjects[0]->RenderCustomSelection(ctx, transform);
+            GizmoStyle style = selectedObjects[0]->GetGizmoStyle();
+            if (style == GizmoStyle::None) return;
 
-                // Render custom handles in screen space
-                for (const auto& h : customHandles) {
-                    Point2D screen = transform.WorldToScreen(h.worldPos.x, h.worldPos.y);
-                    DrawHandle(ctx, static_cast<float>(screen.x), static_cast<float>(screen.y), false);
-                }
+            if (style == GizmoStyle::TwoPoint) {
+                auto arrow = std::static_pointer_cast<Folio::SmartArrowObject>(selectedObjects[0]);
+                Point2D s0 = transform.WorldToScreen(arrow->x1, arrow->y1);
+                Point2D s1 = transform.WorldToScreen(arrow->x2, arrow->y2);
+                bool is0Active = (activeRole == HandleRole::Custom && activeCustomId == 0);
+                bool is1Active = (activeRole == HandleRole::Custom && activeCustomId == 1);
+                DrawHandle(ctx, static_cast<float>(s0.x), static_cast<float>(s0.y), is0Active);
+                DrawHandle(ctx, static_cast<float>(s1.x), static_cast<float>(s1.y), is1Active);
                 return;
             }
         }
@@ -311,22 +313,6 @@ public:
             return;
         }
 
-        // Custom handles rendering if single selected object provides them (e.g. Line & Arrow draggable endpoints)
-        if (selectedObjects.size() == 1) {
-            std::vector<GizmoHandle> customHandles;
-            if (selectedObjects[0]->GetCustomGizmoHandles(customHandles, transform)) {
-                for (const auto& h : customHandles) {
-                    Point2D screen = transform.WorldToScreen(h.worldPos.x, h.worldPos.y);
-                    float hx = static_cast<float>(screen.x);
-                    float hy = static_cast<float>(screen.y);
-                    bool isHandleActive = (activeRole == HandleRole::Custom && activeCustomId == h.customId);
-                    DrawHandle(ctx, hx, hy, isHandleActive);
-                }
-                ctx.restore();
-                return;
-            }
-        }
-
         // Standard Axis-Aligned 8-point Bounding Box Rendering
         Point2D sMin = transform.WorldToScreen(bounds.minX, bounds.minY);
         Point2D sMax = transform.WorldToScreen(bounds.maxX, bounds.maxY);
@@ -352,6 +338,12 @@ public:
         ctx.set_stroke_style(borderCol);
         ctx.set_stroke_width(1.5);
         ctx.stroke_rect(left, top, width, height);
+
+        // Fixed-size / Move-only objects (e.g. attachment/audio chips): outline only, no resize or rotation grips
+        if (selectedObjects.size() == 1 && selectedObjects[0]->GetGizmoStyle() == GizmoStyle::MoveOnly) {
+            ctx.restore();
+            return;
+        }
 
         // 3. Rotation stem line and knob
         float rotStemY = top - ROTATION_ARM_LENGTH;
@@ -386,21 +378,41 @@ public:
         GizmoHitResult res;
         if (!hasSelection || selectedObjects.empty()) return res;
 
-        // Custom handles hit-test if single object provides them
+        // Locked gizmo handling for single selection
         if (selectedObjects.size() == 1) {
-            std::vector<GizmoHandle> customHandles;
-            if (selectedObjects[0]->GetCustomGizmoHandles(customHandles, transform)) {
-                for (const auto& h : customHandles) {
-                    Point2D screen = transform.WorldToScreen(h.worldPos.x, h.worldPos.y);
-                    float dx = screenX - static_cast<float>(screen.x);
-                    float dy = screenY - static_cast<float>(screen.y);
-                    if ((dx * dx + dy * dy) <= (HIT_RADIUS * HIT_RADIUS)) {
-                        res.hit = true;
-                        res.role = HandleRole::Custom;
-                        res.customId = h.customId;
-                        return res;
-                    }
+            GizmoStyle style = selectedObjects[0]->GetGizmoStyle();
+            if (style == GizmoStyle::None) return res;
+
+            if (style == GizmoStyle::TwoPoint) {
+                auto arrow = std::static_pointer_cast<Folio::SmartArrowObject>(selectedObjects[0]);
+                Point2D s0 = transform.WorldToScreen(arrow->x1, arrow->y1);
+                float dx0 = screenX - static_cast<float>(s0.x);
+                float dy0 = screenY - static_cast<float>(s0.y);
+                if ((dx0 * dx0 + dy0 * dy0) <= (HIT_RADIUS * HIT_RADIUS)) {
+                    res.hit = true;
+                    res.role = HandleRole::Custom;
+                    res.customId = 0;
+                    return res;
                 }
+
+                Point2D s1 = transform.WorldToScreen(arrow->x2, arrow->y2);
+                float dx1 = screenX - static_cast<float>(s1.x);
+                float dy1 = screenY - static_cast<float>(s1.y);
+                if ((dx1 * dx1 + dy1 * dy1) <= (HIT_RADIUS * HIT_RADIUS)) {
+                    res.hit = true;
+                    res.role = HandleRole::Custom;
+                    res.customId = 1;
+                    return res;
+                }
+
+                // If not hitting endpoint handles, check if clicking the connector body
+                Point2D worldPt = transform.ScreenToWorld(screenX, screenY);
+                if (arrow->HitTest(worldPt.x, worldPt.y)) {
+                    res.hit = true;
+                    res.role = HandleRole::Body;
+                    return res;
+                }
+                return res;
             }
         }
 
@@ -421,22 +433,27 @@ public:
             return (dx * dx + dy * dy) <= (HIT_RADIUS * HIT_RADIUS);
         };
 
-        // 1. Rotation knob
-        if (HitCircle(midX, top - ROTATION_ARM_LENGTH)) {
-            res.hit = true;
-            res.role = HandleRole::Rotation;
-            return res;
-        }
+        // For MoveOnly objects, skip rotation knob and resize handles entirely!
+        bool isMoveOnly = (selectedObjects.size() == 1 && selectedObjects[0]->GetGizmoStyle() == GizmoStyle::MoveOnly);
 
-        // 2. Corner and edge handles
-        if (HitCircle(left,  top))    { res.hit = true; res.role = HandleRole::TopLeft;      return res; }
-        if (HitCircle(midX,  top))    { res.hit = true; res.role = HandleRole::TopCenter;    return res; }
-        if (HitCircle(right, top))    { res.hit = true; res.role = HandleRole::TopRight;     return res; }
-        if (HitCircle(right, midY))   { res.hit = true; res.role = HandleRole::RightCenter;  return res; }
-        if (HitCircle(right, bottom)) { res.hit = true; res.role = HandleRole::BottomRight;  return res; }
-        if (HitCircle(midX,  bottom)) { res.hit = true; res.role = HandleRole::BottomCenter; return res; }
-        if (HitCircle(left,  bottom)) { res.hit = true; res.role = HandleRole::BottomLeft;   return res; }
-        if (HitCircle(left,  midY))   { res.hit = true; res.role = HandleRole::LeftCenter;   return res; }
+        if (!isMoveOnly) {
+            // 1. Rotation knob
+            if (HitCircle(midX, top - ROTATION_ARM_LENGTH)) {
+                res.hit = true;
+                res.role = HandleRole::Rotation;
+                return res;
+            }
+
+            // 2. Corner and edge handles
+            if (HitCircle(left,  top))    { res.hit = true; res.role = HandleRole::TopLeft;      return res; }
+            if (HitCircle(midX,  top))    { res.hit = true; res.role = HandleRole::TopCenter;    return res; }
+            if (HitCircle(right, top))    { res.hit = true; res.role = HandleRole::TopRight;     return res; }
+            if (HitCircle(right, midY))   { res.hit = true; res.role = HandleRole::RightCenter;  return res; }
+            if (HitCircle(right, bottom)) { res.hit = true; res.role = HandleRole::BottomRight;  return res; }
+            if (HitCircle(midX,  bottom)) { res.hit = true; res.role = HandleRole::BottomCenter; return res; }
+            if (HitCircle(left,  bottom)) { res.hit = true; res.role = HandleRole::BottomLeft;   return res; }
+            if (HitCircle(left,  midY))   { res.hit = true; res.role = HandleRole::LeftCenter;   return res; }
+        }
 
         // 3. Interior body (move)
         const float PADDING = 4.0f;
@@ -759,7 +776,7 @@ public:
             return true;
         }
 
-        // 4. Custom Handle Drag (Delegated to Object, e.g. SmartArrow endpoints)
+        // 4. TwoPoint Handle Drag (SmartArrow endpoints)
         if (activeRole == HandleRole::Custom && selectedObjects.size() == 1) {
             Point2D effectiveWorld = currentWorld;
             if (ShouldSnapToGrid()) {
@@ -767,7 +784,18 @@ public:
                 effectiveWorld.y = std::round(effectiveWorld.y / gridSpacingMm) * gridSpacingMm;
             }
             Point2D worldDelta = { effectiveWorld.x - lastDragWorld.x, effectiveWorld.y - lastDragWorld.y };
-            if (selectedObjects[0]->OnGizmoHandleDrag(activeCustomId, effectiveWorld, worldDelta)) {
+            auto arrow = std::static_pointer_cast<Folio::SmartArrowObject>(selectedObjects[0]);
+            if (activeCustomId == 0) {
+                arrow->x1 += worldDelta.x;
+                arrow->y1 += worldDelta.y;
+                arrow->UpdateBounds();
+                lastDragWorld = effectiveWorld;
+                RecalculateBounds();
+                return true;
+            } else if (activeCustomId == 1) {
+                arrow->x2 += worldDelta.x;
+                arrow->y2 += worldDelta.y;
+                arrow->UpdateBounds();
                 lastDragWorld = effectiveWorld;
                 RecalculateBounds();
                 return true;
