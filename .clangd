@@ -20,6 +20,7 @@ CompileFlags:
     - -Ic:/SoftwareDevelopment/FolioNote/third_party/sqlite3
     - -Ic:/SoftwareDevelopment/FolioNote/third_party/lunasvg/include
     - -Ic:/SoftwareDevelopment/FolioNote/third_party/nlohmann
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/SDL_image/include
   Remove:
     - /FS
     - /bigobj

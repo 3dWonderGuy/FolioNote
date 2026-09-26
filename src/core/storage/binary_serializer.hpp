@@ -8,7 +8,7 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container.hpp"
 #include "core/objects/text_box.hpp"
-#include "core/objects/image_container.hpp"
+#include "core/objects/media/images/image_container.hpp"
 #include "core/objects/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"

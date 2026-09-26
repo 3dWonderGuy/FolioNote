@@ -27,7 +27,7 @@
 #include "core/document/canvas_page.hpp"
 #include "core/objects/ink_container.hpp"
 #include "core/objects/text_box.hpp"
-#include "core/objects/image_container.hpp"
+#include "core/objects/media/images/image_container.hpp"
 #include <sstream>
 #include <iomanip>
 #include <regex>

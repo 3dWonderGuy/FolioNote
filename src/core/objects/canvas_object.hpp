@@ -14,6 +14,7 @@ struct Viewport;
 
 namespace Folio {
 struct ContextMenuItem;
+class IInteractiveOverlay;
 }
 
 
@@ -34,6 +35,7 @@ enum class ObjectType {
     Link,        
     MathLaTeX,     
     Frame,          // grouped frame container
+    Interactive,    // interactive overlay object (Layer 3)
     Other,          // this is the mark for the custom objects made by third party plugins
 };
 
@@ -78,6 +80,34 @@ public:
      */
     [[nodiscard]] bool IsGrouped() const noexcept {
         return !groupId.empty();
+    }
+
+    /********************************************* */
+    // Interactive Layer 3 Overlays
+    /********************************************* */
+
+    /**
+     * @brief Query whether this canvas object hosts an active interactive overlay subsystem (Layer 3).
+     * @return True if the object owns and presents a live interactive overlay; false otherwise.
+     */
+    [[nodiscard]] virtual bool HasLiveOverlay() const noexcept {
+        return false;
+    }
+
+    /**
+     * @brief Access the interactive overlay interface if this object hosts Layer 3 presentation.
+     * @return Pointer to IInteractiveOverlay interface, or nullptr if none hosted.
+     */
+    [[nodiscard]] virtual Folio::IInteractiveOverlay* GetOverlay() noexcept {
+        return nullptr;
+    }
+
+    /**
+     * @brief Const access to the interactive overlay interface.
+     * @return Const pointer to IInteractiveOverlay interface, or nullptr if none hosted.
+     */
+    [[nodiscard]] virtual const Folio::IInteractiveOverlay* GetOverlay() const noexcept {
+        return nullptr;
     }
 
     /********************************************* */

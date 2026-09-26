@@ -135,6 +135,7 @@ target_include_directories(${APP_TARGET} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil-cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lunasvg/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL_image/include
     ${IMGUI_DIR}
     ${IMGUI_DIR}/backends
 )
@@ -169,6 +170,7 @@ target_precompile_headers(${APP_TARGET} PRIVATE
 target_link_libraries(${APP_TARGET} PRIVATE
     blend2d::blend2d
     lunasvg::lunasvg
+    SDL3_image::SDL3_image
     InkStrokeModeler::stroke_modeler
     sqlite3
 )
@@ -194,7 +196,7 @@ else()
         OpenGL::GL
     )
     if(WIN32)
-        target_link_libraries(FolioNote PRIVATE dwmapi ole32 shell32 winspool)
+        target_link_libraries(FolioNote PRIVATE dwmapi ole32 shell32 winspool windowscodecs)
     endif()
 endif()
 

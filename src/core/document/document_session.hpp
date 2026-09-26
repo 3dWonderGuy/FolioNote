@@ -12,7 +12,7 @@
 #include "core/document/document_observer.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container.hpp"
-#include "core/objects/image_container.hpp"
+#include "core/objects/media/images/image_container.hpp"
 #include "core/objects/text_box.hpp"
 #include "core/engine/stroke_smoother.hpp"
 #include "core/engine/live_layer_pipeline.hpp"

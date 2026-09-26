@@ -14,7 +14,8 @@
 #include <blend2d/blend2d.h>
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container.hpp"
-#include "core/objects/image_container.hpp"
+#include "core/objects/media/images/image_container.hpp"
+#include "core/objects/media/images/image_decoder.hpp"
 #include "core/objects/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
@@ -1173,15 +1174,23 @@ public:
                 file.read(reinterpret_cast<char*>(rawBytes.data()), sz);
             }
 
-            BLImage blImg;
-            if (blImg.read_from_file(selectedPath.c_str()) == BL_SUCCESS && !blImg.is_empty()) {
-                std::string ext = std::filesystem::path(selectedPath).extension().string();
-                if (ext.empty()) ext = ".png";
+            auto decoded = Folio::ImageDecoder::DecodeFromMemory(rawBytes.data(), rawBytes.size(), selectedPath);
+            if (decoded.success && !decoded.image.is_empty()) {
+                std::string ext(Folio::ImageFormatToExtension(decoded.format));
+                if (ext.empty()) ext = "png";
+                ext = "." + ext;
                 std::string storedPath = DeduplicateAndSaveImage(selectedPath, rawBytes.data(), rawBytes.size(), ctx->session, ext);
 
-                auto img = std::make_shared<Folio::ImageContainer>();
-                img->SetImage(blImg, storedPath.empty() ? selectedPath : storedPath, 120.0);
+                const double screenDpi = ctx->canvas->transform.pixelsPerMm * 25.4;
+                auto img = std::make_shared<Folio::ImageObject>(decoded.image, storedPath.empty() ? selectedPath : storedPath, screenDpi);
+                img->naturalWidth = decoded.naturalWidth;
+                img->naturalHeight = decoded.naturalHeight;
+                img->imageFormat = decoded.format;
                 img->embeddedData = std::move(rawBytes);
+                img->isAnimated = decoded.isAnimated;
+                img->frames = std::move(decoded.frames);
+                img->currentFrameIndex = 0;
+                img->lastFrameTickMs = 0;
                 img->worldX = ctx->insertPosWorld.x - img->worldWidth * 0.5;
                 img->worldY = ctx->insertPosWorld.y - img->worldHeight * 0.5;
                 img->UpdateBounds();
@@ -1189,7 +1198,7 @@ public:
                 ctx->session->AddImage(img);
                 ctx->canvas->needsFullRebake = true;
                 ctx->canvas->isDirty = true;
-                LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "'");
+                LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "' (" + Folio::ImageFormatToString(decoded.format).data() + ")");
             }
         }
 
@@ -1206,14 +1215,18 @@ public:
         auto* ctx = new ImageFileDialogContext{ this, session, centerWorld };
 
         static const SDL_DialogFileFilter imageFilters[] = {
-            { "Image Files (*.png;*.jpg;*.jpeg;*.webp;*.bmp)", "png;jpg;jpeg;webp;bmp" },
+            { "Supported Images (*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif;*.tif;*.tiff;*.qoi;*.svg)", "png;jpg;jpeg;webp;bmp;gif;tif;tiff;qoi;svg" },
+            { "WebP Images (*.webp)", "webp" },
+            { "GIF Images (*.gif)", "gif" },
+            { "Vector Graphics (*.svg)", "svg" },
             { "PNG Images (*.png)", "png" },
             { "JPEG Images (*.jpg;*.jpeg)", "jpg;jpeg" },
+            { "TIFF Images (*.tif;*.tiff)", "tif;tiff" },
             { "All Files (*.*)", "*" }
         };
 
         LOG_INFO(CanvasEngine, "Opening native image file dialog...");
-        SDL_ShowOpenFileDialog(OnImageFileSelected, ctx, parentWin ? parentWin : sdlWindow, imageFilters, 4, nullptr, false);
+        SDL_ShowOpenFileDialog(OnImageFileSelected, ctx, parentWin ? parentWin : sdlWindow, imageFilters, static_cast<int>(sizeof(imageFilters) / sizeof(imageFilters[0])), nullptr, false);
     }
     // =========================================================================
     // ATTACHMENT — MODAL-DEFERRED FLOW
@@ -1564,21 +1577,29 @@ public:
         auto activePage = session->GetActivePage();
         if (!activePage) return false;
 
-        const char* mimeTypes[] = { "image/png", "image/jpeg", "image/bmp" };
+        const char* mimeTypes[] = { "image/png", "image/jpeg", "image/bmp", "image/gif", "image/webp", "image/svg+xml" };
         for (const char* mime : mimeTypes) {
             if (SDL_HasClipboardData(mime)) {
                 size_t dataSize = 0;
                 void* clipData = SDL_GetClipboardData(mime, &dataSize);
                 if (clipData && dataSize > 0) {
-                    BLImage clipImg;
-                    if (clipImg.read_from_data(clipData, dataSize) == BL_SUCCESS && !clipImg.is_empty()) {
-                        std::string ext = (std::strcmp(mime, "image/jpeg") == 0) ? ".jpg" :
-                                          (std::strcmp(mime, "image/bmp") == 0) ? ".bmp" : ".png";
+                    auto decoded = Folio::ImageDecoder::DecodeFromMemory(static_cast<const uint8_t*>(clipData), dataSize, mime);
+                    if (decoded.success && !decoded.image.is_empty()) {
+                        std::string ext(Folio::ImageFormatToExtension(decoded.format));
+                        if (ext.empty()) ext = "png";
+                        ext = "." + ext;
                         std::string relPath = DeduplicateAndSaveImage("", clipData, dataSize, session, ext);
 
-                        auto img = std::make_shared<Folio::ImageContainer>();
-                        img->SetImage(clipImg, relPath, 120.0);
+                        const double screenDpi = transform.pixelsPerMm * 25.4;
+                        auto img = std::make_shared<Folio::ImageObject>(decoded.image, relPath, screenDpi);
+                        img->naturalWidth = decoded.naturalWidth;
+                        img->naturalHeight = decoded.naturalHeight;
+                        img->imageFormat = decoded.format;
                         img->embeddedData.assign(static_cast<const uint8_t*>(clipData), static_cast<const uint8_t*>(clipData) + dataSize);
+                        img->isAnimated = decoded.isAnimated;
+                        img->frames = std::move(decoded.frames);
+                        img->currentFrameIndex = 0;
+                        img->lastFrameTickMs = 0;
 
                         Point2D centerWorld = transform.ScreenToWorld(static_cast<float>(viewportW) * 0.5f, static_cast<float>(viewportH) * 0.5f);
                         img->worldX = centerWorld.x - img->worldWidth * 0.5;
@@ -1589,7 +1610,7 @@ public:
                         needsFullRebake = true;
                         isDirty = true;
                         SDL_free(clipData);
-                        LOG_INFO(CanvasEngine, "Pasted image from clipboard (" + std::to_string(clipImg.width()) + "x" + std::to_string(clipImg.height()) + " px)");
+                        LOG_INFO(CanvasEngine, "Pasted image from clipboard (" + std::to_string(decoded.naturalWidth) + "x" + std::to_string(decoded.naturalHeight) + " px, " + Folio::ImageFormatToString(decoded.format).data() + ")");
                         return true;
                     }
                     SDL_free(clipData);
@@ -1820,6 +1841,36 @@ public:
         }
         contentMaxXMm = maxX;
         contentMaxYMm = maxY;
+
+        // ---------------------------------------------------------------------
+        // Animation Sequencer: Advance frames for visible animated images
+        // ---------------------------------------------------------------------
+        // Process & Timing Math:
+        //   1. Query current SDL ticks in milliseconds.
+        //   2. For each visible image object where IsAnimated() is true:
+        //      - Evaluates if (nowTicksMs - lastFrameTickMs >= frameDelay).
+        //      - If true, advances currentFrameIndex and blits next frame.
+        //      - Sets anyAnimFrameChanged = true, forcing a static layer rebake.
+        //   3. Retains hasVisibleAnimation flag to keep the main frame loop awake
+        //      without draining CPU when animated images are scrolled offscreen.
+        // ---------------------------------------------------------------------
+        const uint64_t nowTicksMs = SDL_GetTicks();
+        bool anyAnimFrameChanged = false;
+        bool hasVisibleAnimation = false;
+        for (const auto& obj : *finalRenderList) {
+            if (obj && obj->type == ObjectType::Image) {
+                auto* img = static_cast<Folio::ImageObject*>(obj.get());
+                if (img->IsAnimated()) {
+                    hasVisibleAnimation = true;
+                    if (img->UpdateAnimation(nowTicksMs)) {
+                        anyAnimFrameChanged = true;
+                    }
+                }
+            }
+        }
+        if (anyAnimFrameChanged) {
+            needsFullRebake = true;
+        }
 
         BLMatrix2D renderMatrix = transform.GetBlend2DTransformMatrix();
 
@@ -2169,6 +2220,9 @@ public:
 #endif
 
         isDirty = false;
+        if (hasVisibleAnimation) {
+            isDirty = true; // Request continuous frame presentation while an animated GIF is in view
+        }
     }
 
 private:

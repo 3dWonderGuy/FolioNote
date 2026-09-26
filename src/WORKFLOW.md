@@ -190,7 +190,6 @@ src/
 │   ├── objects/                          # Canvas element domain hierarchy (Polymorphic CanvasObject)
 │   │   ├── canvas_object.hpp             # Abstract base class: UID, AABB bounds, serialization, hit-test, render
 │   │   ├── attachment_container.hpp      # File attachment tiles with embedded icon, name, and size
-│   │   ├── image_container.hpp           # Embedded raster bitmap image container (PNG, JPEG, WebP)
 │   │   ├── ink_container.hpp / .cpp      # Continuous vector ink stroke containing pressure points and smoothed paths
 │   │   ├── pdf_container.hpp             # Embedded PDF page object with vector background caching
 │   │   ├── shape_container.hpp / .cpp    # Unified vector shapes container (Rect, Ellipse, Polygon, Waves)
@@ -201,9 +200,17 @@ src/
 │   │   │   └── smart_arrow_container.hpp # Smart connector with automatic bounding box magnetic docking
 │   │   ├── links/                        # Deep-linking canvas objects
 │   │   │   └── link_object.hpp           # Clickable hyperlinks referencing web URLs or internal pages
-│   │   ├── media/                        # Embedded audio and video playback containers
-│   │   │   ├── audio_container.hpp       # Voice note audio player container with waveform visualizer
-│   │   │   └── video_container.hpp       # Embedded video frame container
+│   │   ├── media/                        # Embedded audio, video, and image multimedia containers
+│   │   │   ├── audio/                    # Voice note audio player container with waveform visualizer
+│   │   │   │   ├── audio_container.hpp   # Header declaration & MoveOnly gizmo invariants
+│   │   │   │   └── audio_container.cpp   # Blend2D waveform chip rendering & playback logic
+│   │   │   ├── images/                   # Embedded raster image containers (PNG, JPEG, WebP, BMP, GIF, TIFF, QOI)
+│   │   │   │   ├── image_format.hpp      # ImageFormat enum and bidirectional MIME/ext converters
+│   │   │   │   ├── image_container.hpp   # Header declaration, hit-test math, aspect preservation
+│   │   │   │   └── image_container.cpp   # Surface decoding, inverse affine hit-testing, Blend2D blitting
+│   │   │   └── videos/                   # Linked video player containers (Local & YouTube)
+│   │   │       ├── video_container.hpp   # Header declaration, URL helpers, aspect ratio
+│   │   │       └── video_container.cpp   # Player card rendering, play/pause controls, YouTube badge
 │   │   ├── primitives/                   # Geometric primitives, dashers, and wave shapes
 │   │   │   ├── path_dasher.hpp           # Vector stroke dash and dot pattern generator
 │   │   │   ├── shape_types.hpp           # Geometric enumeration (Line, Arrow, DoubleArrow, Rect, Star, Callout)

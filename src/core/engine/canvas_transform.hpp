@@ -127,7 +127,8 @@ public:
         Point2D maxWorld = ScreenToWorld(viewportPixelW, viewportPixelH);
         return {
             AABB{ minWorld.x, minWorld.y, maxWorld.x, maxWorld.y },
-            zoom
+            zoom,
+            pixelsPerMm
         };
     }
 
