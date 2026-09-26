@@ -25,3 +25,21 @@ src/android-project/**/*.aab
 *.apk
 *.aab
 .aider*
+
+# Application Runtime Logs
+logs/
+*.log
+
+# ImGui Persistent State
+imgui.ini
+
+# Debug Symbols and Compiler Artifacts
+*.pdb
+*.obj
+*.idb
+*.ilk
+
+# Editor & Language Server Metadata
+.vscode/
+.clangd/
+.vs/
