@@ -343,6 +343,30 @@ bool FileManager::OpenWithDefaultApp(const std::string& pathOrUrl) {
     return false;
 }
 
+bool FileManager::SetClipboardText(const std::string& text) {
+    if (text.empty()) {
+        return false;
+    }
+    return SDL_SetClipboardText(text.c_str()) == 0;
+}
+
+std::string FileManager::GetClipboardText() {
+    if (!SDL_HasClipboardText()) {
+        return "";
+    }
+    char* clip = SDL_GetClipboardText();
+    if (!clip) {
+        return "";
+    }
+    std::string result(clip);
+    SDL_free(clip);
+    return result;
+}
+
+bool FileManager::HasClipboardText() {
+    return SDL_HasClipboardText();
+}
+
 std::string FileManager::DisambiguatePath(const std::string& parentDir, const std::string& baseStem, const std::string& extension) {
     std::string cleanStem = SanitizeFileName(baseStem.empty() ? "Untitled" : baseStem);
     std::string ext = extension;

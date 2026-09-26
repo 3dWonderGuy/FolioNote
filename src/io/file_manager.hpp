@@ -268,6 +268,28 @@ public:
     static bool OpenWithDefaultApp(const std::string& pathOrUrl);
 
     /**
+     * @brief Copies UTF-8 text string to the system clipboard.
+     *
+     * @param text String content to set onto the clipboard.
+     * @return true if successfully copied; false on failure.
+     */
+    static bool SetClipboardText(const std::string& text);
+
+    /**
+     * @brief Retrieves the current text from the system clipboard.
+     *
+     * @return String content from clipboard, or empty string if empty/inaccessible.
+     */
+    static std::string GetClipboardText();
+
+    /**
+     * @brief Checks whether the system clipboard currently contains non-empty text.
+     *
+     * @return true if text content is present on clipboard.
+     */
+    [[nodiscard]] static bool HasClipboardText();
+
+    /**
      * @brief Generates a collision-free path in a directory by appending numeric counters if needed.
      *
      * Working Process:

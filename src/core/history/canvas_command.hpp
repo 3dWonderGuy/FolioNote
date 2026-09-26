@@ -266,12 +266,45 @@ public:
     std::string GetName() const override;
 };
 
+/**
+ * @class RelinkAttachmentCommand
+ * @brief Records reversible file path and display name changes for AttachmentObject.
+ *
+ * GENERAL WORKING PROCESS & INVARIANTS:
+ * - Encapsulates bidirectional path mutations for canvas file attachment chips.
+ * - On Execute(): applies newPath and newDisplayName to target AttachmentObject, forces validity cache reset.
+ * - On Undo(): restores previousPath and previousDisplayName, forces validity cache reset.
+ * - Input: target UID, previous/new file paths, previous/new display names, previous/new embedded flags.
+ * - Output: atomic undo/redo state restoration on the target CanvasPage.
+ */
+class RelinkAttachmentCommand : public ICanvasCommand {
+public:
+    uint32_t attachmentUid = 0;
+    std::string previousPath;
+    std::string newPath;
+    std::string previousDisplayName;
+    std::string newDisplayName;
+    bool previousEmbedded = false;
+    bool newEmbedded = false;
+
+    RelinkAttachmentCommand(uint32_t uid,
+                           std::string prevPath, std::string nextPath,
+                           std::string prevName, std::string nextName,
+                           bool prevEmbed = false, bool nextEmbed = false);
+
+    void Execute(CanvasPage& page, CanvasEngine* engine = nullptr) override;
+    void Undo(CanvasPage& page, CanvasEngine* engine = nullptr) override;
+    AABB GetTargetBounds() const override;
+    std::string GetName() const override;
+};
+
 // =============================================================================
 // CONVENIENCE TYPE ALIASES (Matching Universal ICommand Design)
 // =============================================================================
 using ICommand = ICanvasCommand;
 using DeleteCommand = RemoveObjectsCommand;
 using TransformCommand = TransformObjectsCommand;
+using RelinkCommand = RelinkAttachmentCommand;
 
 } // namespace Folio
 
@@ -280,3 +313,5 @@ using Folio::ICommand;
 using Folio::DeleteCommand;
 using Folio::TransformCommand;
 using Folio::ModifyTextCommand;
+using Folio::RelinkAttachmentCommand;
+using Folio::RelinkCommand;

@@ -139,6 +139,31 @@ target_include_directories(${APP_TARGET} PRIVATE
     ${IMGUI_DIR}/backends
 )
 
+# Compile Definitions
+target_compile_definitions(${APP_TARGET} PRIVATE
+    IMGUI_DEFINE_MATH_OPERATORS
+)
+
+# 6.1 Precompiled Headers (PCH) for Fast Compilation
+target_precompile_headers(${APP_TARGET} PRIVATE
+    <vector>
+    <string>
+    <memory>
+    <algorithm>
+    <functional>
+    <unordered_map>
+    <unordered_set>
+    <cmath>
+    <cstdint>
+    <utility>
+    <filesystem>
+    <chrono>
+    <sstream>
+    <fstream>
+    <blend2d/blend2d.h>
+    <SDL3/SDL.h>
+    <imgui.h>
+)
 
 # 7. Link Dependencies
 target_link_libraries(${APP_TARGET} PRIVATE

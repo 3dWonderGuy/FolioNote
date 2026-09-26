@@ -36,6 +36,7 @@
 
 #include "app/context_menu_item.hpp"
 #include "core/objects/canvas_object.hpp"
+#include "core/objects/attachment_container.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/document/document_session.hpp"
 #include "core/engine/canvas_engine.hpp"
@@ -191,6 +192,22 @@ public:
                 engine.needsFullRebake = true;
             };
             actions.push_back(std::move(act));
+        }
+
+        // Attach undo/redo and dirty hooks for specialized objects
+        if (obj->type == ObjectType::AttachmentFile) {
+            auto attach = std::static_pointer_cast<AttachmentObject>(obj);
+            attach->onRelinkCallback = [page, &session, &engine, uid = attach->uid](
+                const std::string& oldPath, const std::string& newPath,
+                const std::string& oldName, const std::string& newName
+            ) {
+                session.RecordHistoryCommand(page, std::make_unique<Folio::RelinkAttachmentCommand>(
+                    uid, oldPath, newPath, oldName, newName
+                ));
+                page->isModified = true;
+                engine.isDirty = true;
+                engine.needsFullRebake = true;
+            };
         }
 
         // =====================================================================

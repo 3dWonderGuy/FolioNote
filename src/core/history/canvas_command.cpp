@@ -9,6 +9,7 @@
 #include "core/document/canvas_page.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/objects/text/text_box.hpp"
+#include "core/objects/attachment_container.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {
@@ -609,6 +610,67 @@ AABB ModifyTextCommand::GetTargetBounds() const {
 
 std::string ModifyTextCommand::GetName() const {
     return "Edit Text";
+}
+
+// =========================================================================================
+// RelinkAttachmentCommand Implementation
+// =========================================================================================
+
+RelinkAttachmentCommand::RelinkAttachmentCommand(
+    uint32_t uid,
+    std::string prevPath, std::string nextPath,
+    std::string prevName, std::string nextName,
+    bool prevEmbed, bool nextEmbed
+) : attachmentUid(uid),
+    previousPath(std::move(prevPath)),
+    newPath(std::move(nextPath)),
+    previousDisplayName(std::move(prevName)),
+    newDisplayName(std::move(nextName)),
+    previousEmbedded(prevEmbed),
+    newEmbedded(nextEmbed) {}
+
+void RelinkAttachmentCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
+    auto obj = page.FindObjectByUid(attachmentUid);
+    if (obj && obj->type == ObjectType::AttachmentFile) {
+        auto attach = std::static_pointer_cast<AttachmentObject>(obj);
+        attach->filePath = newPath;
+        if (!newDisplayName.empty()) {
+            attach->displayName = newDisplayName;
+        }
+        attach->isEmbedded = newEmbedded;
+        attach->IsFileValid("", true);
+        page.isModified = true;
+    }
+    if (engine) {
+        engine->isDirty = true;
+        engine->needsFullRebake = true;
+    }
+}
+
+void RelinkAttachmentCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
+    auto obj = page.FindObjectByUid(attachmentUid);
+    if (obj && obj->type == ObjectType::AttachmentFile) {
+        auto attach = std::static_pointer_cast<AttachmentObject>(obj);
+        attach->filePath = previousPath;
+        if (!previousDisplayName.empty()) {
+            attach->displayName = previousDisplayName;
+        }
+        attach->isEmbedded = previousEmbedded;
+        attach->IsFileValid("", true);
+        page.isModified = true;
+    }
+    if (engine) {
+        engine->isDirty = true;
+        engine->needsFullRebake = true;
+    }
+}
+
+AABB RelinkAttachmentCommand::GetTargetBounds() const {
+    return AABB(0.0, 0.0, AttachmentObject::chipW, AttachmentObject::chipH);
+}
+
+std::string RelinkAttachmentCommand::GetName() const {
+    return "Re-link Attachment";
 }
 
 } // namespace Folio
