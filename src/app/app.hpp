@@ -21,6 +21,7 @@
 #include "core/document/document_session.hpp"
 #include "core/objects/attachment_container.hpp"
 #include "core/history/canvas_command.hpp"
+#include "app/context_menu_manager.hpp"
 #include "ui/imgui_theme.hpp"
 #include "ui/components/ribbon_bar.hpp"
 #include "ui/components/modern_nav_panel.hpp"
@@ -73,7 +74,7 @@ public:
      * or context-dependent annotations spawned from the right-click menu.
      */
     Point2D generalContextMenuWorldPos{0.0, 0.0};
-    std::shared_ptr<Folio::AttachmentObject> rightClickedAttach = nullptr;
+    Folio::ContextMenuManager contextMenuManager;
 
     /**
      * @brief GUID of the canvas page that was active in the previous frame.
@@ -1033,19 +1034,16 @@ public:
                         float localY = mousePos.y - canvasOrigin.y;
                         generalContextMenuWorldPos = canvas.transform.ScreenToWorld(localX, localY);
                         
-                        rightClickedAttach = nullptr;
+                        std::shared_ptr<CanvasObject> hitObj = nullptr;
                         if (auto pg = session.GetActivePage()) {
                             double hitRadius = 2.0 / canvas.transform.zoom; // 2mm world hit radius
-                            auto hit = pg->HitTestSingleClick(generalContextMenuWorldPos.x, generalContextMenuWorldPos.y, hitRadius);
-                            if (hit && hit->type == ObjectType::AttachmentFile) {
-                                rightClickedAttach = std::dynamic_pointer_cast<Folio::AttachmentObject>(hit);
-                            }
+                            hitObj = pg->HitTestSingleClick(generalContextMenuWorldPos.x, generalContextMenuWorldPos.y, hitRadius);
                         }
 
-                        if (rightClickedAttach) {
-                            ImGui::OpenPopup("##AttachmentContextMenu");
+                        if (hitObj) {
+                            contextMenuManager.OpenForObject(hitObj, generalContextMenuWorldPos, session, canvas);
                         } else {
-                            ImGui::OpenPopup("##GeneralCanvasContextMenu");
+                            contextMenuManager.OpenForBackground(generalContextMenuWorldPos, session, canvas);
                         }
                     }
 
@@ -1110,118 +1108,10 @@ public:
                     // 2. Select All / Deselect objects via the interactive SelectionGizmo.
                     // 3. Create bidirectional Markdown link to this page: [Title](folionote://page/<guid>)
                     // 4. Viewport controls: Reset Zoom (100%) and Reset View to origin (0, 0).
-                    {
-                        ContextMenuThemeScope ctxScope(themeManager);
-                        if (ImGui::BeginPopup("##GeneralCanvasContextMenu")) {
-                            auto activePg = session.GetActivePage();
-                            const char* displayTitle = (canvas.pageTitle[0] != '\0') ? canvas.pageTitle : (activePg ? activePg->title.c_str() : "Untitled Page");
-
-                            ImGui::PushFont(FolioTheme::FontNavBoldLarge ? FolioTheme::FontNavBoldLarge : FolioTheme::FontBold);
-                            ImGui::TextColored(themeManager.colorPrimary, "%s", displayTitle);
-                            ImGui::PopFont();
-                            ImGui::TextColored(themeManager.colorTextMuted, "Pos: (%.1f, %.1f) mm  |  Zoom: %.0f%%", 
-                                               generalContextMenuWorldPos.x, generalContextMenuWorldPos.y, canvas.transform.zoom * 100.0);
-                            ImGui::Separator();
-
-                            // 1. Paste (enabled if clipboard has text)
-                            bool canPaste = SDL_HasClipboardText();
-                            if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPaste)) {
-                                char* clipText = SDL_GetClipboardText();
-                                if (clipText) {
-                                    if (clipText[0] != '\0') {
-                                        auto tb = std::make_shared<Folio::TextBoxObject>();
-                                        tb->worldX = generalContextMenuWorldPos.x;
-                                        tb->worldY = generalContextMenuWorldPos.y;
-                                        tb->text = clipText;
-                                        tb->UpdateBounds();
-                                        session.AddTextBox(tb);
-                                        canvas.isDirty = true;
-                                    }
-                                    SDL_free(clipText);
-                                }
-                            }
-
-                            // 2. Select All & Clear Selection
-                            if (ImGui::MenuItem("Select All", "Ctrl+A")) {
-                                auto allObjs = session.QueryVisible(canvas.GetViewport());
-                                for (auto& obj : allObjs) {
-                                    if (obj) obj->isSelected = 1;
-                                }
-                                canvas.selectionGizmo.SetSelectedObjects(allObjs);
-                                canvas.isDirty = true;
-                            }
-
-                            if (canvas.selectionGizmo.HasSelection()) {
-                                if (ImGui::MenuItem("Clear Selection", "Esc")) {
-                                    canvas.selectionGizmo.ClearSelection();
-                                    canvas.isDirty = true;
-                                }
-                            }
-
-                            ImGui::Separator();
-
-                            // 3. Create Link to This Page
-                            if (ImGui::MenuItem("Create Link to This Page")) {
-                                if (activePg) {
-                                    std::string linkMarkdown = "[" + std::string(displayTitle) + "](folionote://page/" + activePg->guid + ")";
-                                    SDL_SetClipboardText(linkMarkdown.c_str());
-                                }
-                            }
-
-                            ImGui::Separator();
-
-                            // 4. Zoom and Viewport Reset
-                            if (ImGui::MenuItem("Reset Zoom to 100%")) {
-                                canvas.transform.zoom = 1.0;
-                                canvas.isDirty = true;
-                            }
-
-                            if (ImGui::MenuItem("Reset View to Origin")) {
-                                canvas.transform.panXMm = 0.0;
-                                canvas.transform.panYMm = 0.0;
-                                canvas.transform.zoom = 1.0;
-                                canvas.isDirty = true;
-                            }
-
-                            ImGui::EndPopup();
-                        }
-                    }
-
                     // =========================================================================
-                    // ATTACHMENT RIGHT-CLICK CONTEXT MENU
+                    // GLOBAL UNIFIED CONTEXT MENU (Canvas Background & Canvas Objects)
                     // =========================================================================
-                    {
-                        ContextMenuThemeScope ctxScope(themeManager);
-                        if (ImGui::BeginPopup("##AttachmentContextMenu")) {
-                            if (rightClickedAttach) {
-                                std::string modeStr = rightClickedAttach->isEmbedded ? "[Embedded]" : "[Link]";
-                                ImGui::PushFont(FolioTheme::FontNavBoldLarge ? FolioTheme::FontNavBoldLarge : FolioTheme::FontBold);
-                                ImGui::TextColored(themeManager.colorPrimary, "📎 %s %s", rightClickedAttach->displayName.c_str(), modeStr.c_str());
-                                ImGui::PopFont();
-                                ImGui::Separator();
-
-                                if (ImGui::MenuItem("Open", "Double-Click")) {
-                                    rightClickedAttach->OpenFile();
-                                }
-
-                                if (ImGui::MenuItem("Copy File Path")) {
-                                    SDL_SetClipboardText(rightClickedAttach->filePath.c_str());
-                                }
-
-                                ImGui::Separator();
-
-                                if (ImGui::MenuItem("Remove from Page", "Del")) {
-                                    if (auto pg = session.GetActivePage()) {
-                                        pg->RemoveObjectByUid(rightClickedAttach->uid);
-                                        session.RecordHistoryCommand(pg, std::make_unique<Folio::RemoveObjectsCommand>(rightClickedAttach));
-                                        canvas.isDirty = true;
-                                        canvas.needsFullRebake = true;
-                                    }
-                                }
-                            }
-                            ImGui::EndPopup();
-                        }
-                    }
+                    contextMenuManager.Render(themeManager);
                 }
                 ImGui::End();
                 ImGui::PopStyleVar();

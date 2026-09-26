@@ -239,6 +239,18 @@ public:
     static std::string PathToFileUri(const std::string& path);
 
     /**
+     * @brief Opens a native OS file picker dialog to select an existing file.
+     *
+     * Working Process:
+     * - Desktop (Windows): Invokes GetOpenFileNameW with Unicode UTF-16 wide string conversion.
+     * - Returns the selected absolute normalized UTF-8 path, or an empty string if cancelled.
+     *
+     * @param title Dialog window title (e.g. "Select Attachment File").
+     * @return Selected UTF-8 path string, or empty string on cancellation or error.
+     */
+    static std::string ShowOpenFileDialog(const std::string& title = "Select File");
+
+    /**
      * @brief Launches a file or URL with the operating system's default application.
      * 
      * Cross-Platform Working Process:

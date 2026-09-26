@@ -388,6 +388,134 @@ public:
     }
 
     /**
+     * @brief Moves an object to the absolute front of the visual stacking order (highest zOrder).
+     *
+     * MATHEMATICAL & STACKING PROCESS:
+     * -------------------------------
+     * 1. Traverses existing page objects to evaluate the current supremum:
+     *    z_max = max_{o in Objects}(o.zOrder)
+     * 2. Sets target.zOrder = z_max + 1 to guarantee precedence during stable zOrder sort.
+     * 3. Relocates target pointer to the end of the `objects` vector, ensuring O(N) cache-friendly
+     *    in-order iteration naturally renders this object last (on top).
+     * 4. Flags page as modified and refreshes LRU timestamp.
+     *
+     * @param uid The unique 32-bit runtime ID of the target object.
+     */
+    void BringToFront(uint32_t uid) {
+        auto it = objectMap.find(uid);
+        if (it == objectMap.end() || !it->second) return;
+        auto obj = it->second;
+
+        int32_t maxZ = 1;
+        for (const auto& o : objects) {
+            if (o) maxZ = (std::max)(maxZ, o->zOrder);
+        }
+        obj->zOrder = maxZ + 1;
+
+        auto vit = std::find(objects.begin(), objects.end(), obj);
+        if (vit != objects.end()) {
+            objects.erase(vit);
+            objects.push_back(obj);
+        }
+        isModified = true;
+        Touch();
+    }
+
+    /**
+     * @brief Moves an object to the absolute back of the visual stacking order (lowest zOrder above background).
+     *
+     * MATHEMATICAL & STACKING PROCESS:
+     * -------------------------------
+     * 1. Traverses existing page objects (excluding target) to evaluate the current infimum:
+     *    z_min = min_{o in Objects \ {target}}(o.zOrder)
+     * 2. Sets target.zOrder = max(1, z_min - 1) ensuring non-negative layer order above canvas background.
+     * 3. Relocates target pointer to the beginning of the `objects` vector, ensuring O(N) cache-friendly
+     *    in-order iteration naturally renders this object first (underneath all others).
+     * 4. Flags page as modified and refreshes LRU timestamp.
+     *
+     * @param uid The unique 32-bit runtime ID of the target object.
+     */
+    void SendToBack(uint32_t uid) {
+        auto it = objectMap.find(uid);
+        if (it == objectMap.end() || !it->second) return;
+        auto obj = it->second;
+
+        int32_t minZ = 1;
+        for (const auto& o : objects) {
+            if (o && o != obj) minZ = (std::min)(minZ, o->zOrder);
+        }
+        obj->zOrder = (std::max)(1, minZ - 1);
+
+        auto vit = std::find(objects.begin(), objects.end(), obj);
+        if (vit != objects.end()) {
+            objects.erase(vit);
+            objects.insert(objects.begin(), obj);
+        }
+        isModified = true;
+        Touch();
+    }
+
+    /**
+     * @brief Steps an object forward by one layer in the visual stacking sequence.
+     *
+     * MATHEMATICAL & ORDERING PROCESS:
+     * -------------------------------
+     * 1. Locates the iterator index `vit` of the target object in the `objects` array.
+     * 2. If `vit + 1 != objects.end()`, swaps `*vit` with `*(vit + 1)`.
+     * 3. Reconciles layer integer: ensures `target.zOrder >= neighbor.zOrder` to guarantee
+     *    stable sorting precedence while preserving relative layer distances.
+     * 4. Flags page as modified and touches LRU access timestamp.
+     *
+     * @param uid Unique 32-bit runtime ID of target object.
+     */
+    void ShiftFront(uint32_t uid) {
+        auto it = objectMap.find(uid);
+        if (it == objectMap.end() || !it->second) return;
+        auto obj = it->second;
+
+        auto vit = std::find(objects.begin(), objects.end(), obj);
+        if (vit != objects.end() && (vit + 1) != objects.end()) {
+            auto nextIt = vit + 1;
+            std::iter_swap(vit, nextIt);
+            if ((*nextIt)->zOrder < (*vit)->zOrder) {
+                (*nextIt)->zOrder = (*vit)->zOrder;
+            }
+            isModified = true;
+            Touch();
+        }
+    }
+
+    /**
+     * @brief Steps an object backward by one layer in the visual stacking sequence.
+     *
+     * MATHEMATICAL & ORDERING PROCESS:
+     * -------------------------------
+     * 1. Locates the iterator index `vit` of the target object in the `objects` array.
+     * 2. If `vit != objects.begin()`, swaps `*vit` with `*(vit - 1)`.
+     * 3. Reconciles layer integer: ensures `target.zOrder <= neighbor.zOrder` to guarantee
+     *    lower layer precedence without dropping beneath the background layer (z >= 1).
+     * 4. Flags page as modified and touches LRU access timestamp.
+     *
+     * @param uid Unique 32-bit runtime ID of target object.
+     */
+    void ShiftBack(uint32_t uid) {
+        auto it = objectMap.find(uid);
+        if (it == objectMap.end() || !it->second) return;
+        auto obj = it->second;
+
+        auto vit = std::find(objects.begin(), objects.end(), obj);
+        if (vit != objects.end() && vit != objects.begin()) {
+            auto prevIt = vit - 1;
+            std::iter_swap(vit, prevIt);
+            if ((*prevIt)->zOrder > (*vit)->zOrder) {
+                (*prevIt)->zOrder = (*vit)->zOrder;
+            }
+            isModified = true;
+            Touch();
+        }
+    }
+
+    /**
      * @brief Replaces an existing object in-place, updating the fast UID map and R-Tree spatial index.
      * Maintains the exact rendering z-order position in the objects array.
      *

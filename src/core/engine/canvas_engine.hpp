@@ -1749,9 +1749,68 @@ public:
         if (viewportW <= 0 || viewportH <= 0) return;
         if (!isDirty && !needsFullRebake) return;
 
+        Viewport currentView = GetViewport();
+
+        // ---------------------------------------------------------------------
+        // Dynamic Selection Frustum Inclusion:
+        // When an object is created or moved outside the camera frustum, the R-tree
+        // spatial index retains its original off-screen bounding box until mouse release
+        // (when BakeTransform commits the geometry and updates the spatial index).
+        // If the user selects the object and drags it into the viewport, standard
+        // spatialIndex.Query(viewport.bounds) would cull it out because the R-tree has
+        // not yet been updated.
+        //
+        // Process & Working Details:
+        // 1. Fast-path check: Verify if all active selectedObjects already exist in visibleBakedObjects.
+        // 2. Slow-path fallback: If any selected object is missing, construct mergedObjects
+        //    combining visibleBakedObjects with the missing selected items and stable-sort by zOrder.
+        // 3. Avoids per-frame heap allocations when all selected items are already visible.
+        // ---------------------------------------------------------------------
+        const std::vector<std::shared_ptr<CanvasObject>>* finalRenderList = &visibleBakedObjects;
+        std::vector<std::shared_ptr<CanvasObject>> mergedObjects;
+
+        if (selectionGizmo.HasSelection()) {
+            bool hasMissingSelected = false;
+            for (const auto& selObj : selectionGizmo.selectedObjects) {
+                if (!selObj || !selObj->isVisible) continue;
+                bool found = false;
+                for (const auto& bakedObj : visibleBakedObjects) {
+                    if (bakedObj && bakedObj->uid == selObj->uid) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    hasMissingSelected = true;
+                    break;
+                }
+            }
+
+            if (hasMissingSelected) {
+                mergedObjects = visibleBakedObjects;
+                for (const auto& selObj : selectionGizmo.selectedObjects) {
+                    if (!selObj || !selObj->isVisible) continue;
+                    bool found = false;
+                    for (const auto& bakedObj : visibleBakedObjects) {
+                        if (bakedObj && bakedObj->uid == selObj->uid) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        mergedObjects.push_back(selObj);
+                    }
+                }
+                std::stable_sort(mergedObjects.begin(), mergedObjects.end(), [](const auto& a, const auto& b) {
+                    return a->zOrder < b->zOrder;
+                });
+                finalRenderList = &mergedObjects;
+            }
+        }
+
         // Track content bounds for automatic page border
         double maxX = 0.0, maxY = 0.0;
-        for (const auto& obj : visibleBakedObjects) {
+        for (const auto& obj : *finalRenderList) {
             if (!obj) continue;
             const AABB& b = obj->bounds;
             if (b.minX <= b.maxX && b.minY <= b.maxY) {
@@ -1762,7 +1821,6 @@ public:
         contentMaxXMm = maxX;
         contentMaxYMm = maxY;
 
-        Viewport currentView = GetViewport();
         BLMatrix2D renderMatrix = transform.GetBlend2DTransformMatrix();
 
         // 1. Static Baked Layer (Background grid + all visible objects)
@@ -1774,7 +1832,7 @@ public:
 
             staticCtx.save();
             staticCtx.set_transform(renderMatrix);
-            for (const auto& obj : visibleBakedObjects) {
+            for (const auto& obj : *finalRenderList) {
                 if (textEditor.IsActive() && obj.get() == textEditor.GetTarget()) {
                     continue; // Rendered live in real-time composite pass with caret and selection
                 }
@@ -1797,7 +1855,7 @@ public:
 
             staticCtx.save();
             staticCtx.set_transform(renderMatrix);
-            for (const auto& obj : visibleBakedObjects) {
+            for (const auto& obj : *finalRenderList) {
                 if (obj->type != ObjectType::InkContainer) continue;
                 auto* ink = static_cast<const InkContainer*>(obj.get());
                 if (!ink->renderDirty) continue;  // Skip clean containers

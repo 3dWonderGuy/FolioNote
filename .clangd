@@ -1,0 +1,38 @@
+CompileFlags:
+  Add:
+    - -std=c++20
+    - -fms-compatibility
+    - -fms-extensions
+    - -D_USE_MATH_DEFINES
+    - -DWIN32
+    - -D_WINDOWS
+    - -D_CRT_SECURE_NO_WARNINGS
+    - -DNOMINMAX
+    - -Ic:/SoftwareDevelopment/FolioNote/src
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/SDL/include
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/blend2d
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/blend2d/blend2d
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/imgui
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/imgui/backends
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/ink-stroke-modeler
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/abseil-cpp
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/sqlite3
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/lunasvg/include
+    - -Ic:/SoftwareDevelopment/FolioNote/third_party/nlohmann
+  Remove:
+    - /FS
+    - /bigobj
+    - /utf-8
+    - /W*
+    - -W*
+
+Diagnostics:
+  Suppress:
+    - unknown_warning_option
+    - pragma_once_in_main_file
+    - "*-unknown-warning-option"
+  UnusedIncludes: None
+  ClangTidy:
+    Remove:
+      - "*"

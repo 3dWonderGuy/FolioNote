@@ -32,8 +32,8 @@
 #include <cmath>
 
 #include <blend2d/blend2d.h>
-#include <imgui.h>
 
+#include "app/context_menu_item.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
 #include "core/text/font_manager.hpp"
@@ -109,15 +109,54 @@ public:
     }
 
     // =========================================================================
-    // FILE OPEN
+    // FILE OPEN & PATH MANAGEMENT
     // =========================================================================
 
     /**
-     * @brief Opens the linked or embedded file with the OS default application.
+     * @brief Checks whether the target file actually exists on the filesystem.
      * 
      * Working Process:
-     *   Delegates directly to FileManager::OpenWithDefaultApp(), which handles
-     *   input validation, error logging, URI normalization, and cross-platform OS dispatch.
+     *   - Verifies physical disk presence via FileManager::Exists(filePath) for both linked
+     *     and embedded attachments (protects against missing, deleted, or corrupted sidecar files).
+     *   - Uses a cached boolean flag to avoid performing synchronous OS filesystem stat calls
+     *     on every frame of the high-framerate render loop.
+     *
+     * @param forceCheck When true, bypasses the cache and queries disk immediately.
+     * @return true if the referenced file exists on disk; false otherwise.
+     */
+    bool IsFileValid(bool forceCheck = false) const {
+        if (forceCheck || !m_validityChecked) {
+            m_isFileValidCached = !filePath.empty() && FileManager::Exists(filePath);
+            m_validityChecked = true;
+        }
+        return m_isFileValidCached;
+    }
+
+    /**
+     * @brief Updates the target file path (re-linking a moved or renamed file).
+     *
+     * Working Process:
+     *   1. Updates `filePath` to `newPath`.
+     *   2. If `updateDisplayName` is true, extracts the new filename as `displayName`.
+     *   3. Forces a re-check of file existence so badge and border visuals update immediately.
+     *
+     * @param newPath Absolute filesystem path (or sidecar-relative path).
+     * @param updateDisplayName When true, refreshes displayName to match the new file name.
+     */
+    void SetFilePath(const std::string& newPath, bool updateDisplayName = true) {
+        filePath = newPath;
+        if (updateDisplayName) {
+            std::string fname = FileManager::GetFileName(newPath);
+            if (!fname.empty()) {
+                displayName = fname;
+            }
+        }
+        m_validityChecked = false;
+        IsFileValid(true);
+    }
+
+    /**
+     * @brief Opens the linked or embedded file with the OS default application.
      * 
      * @return true if successfully launched by the operating system.
      */
@@ -126,10 +165,83 @@ public:
     }
 
     /**
-     * @brief Bakes translation from transform into worldX/Y. Resets to identity.
+     * @brief Prompts user to select a replacement file on disk and updates filePath.
      *
-     * Attachment chips are never scaled or rotated (gizmo exposes no resize grips),
-     * so we only extract the translation components (m20, m21).
+     * Working Process:
+     *   Delegates to FileManager::ShowOpenFileDialog to display the native OS file picker.
+     *   If a file is selected and exists on disk, updates `filePath` and resets validation caches.
+     *
+     * @return true if a valid file was selected and relinked, false if cancelled.
+     */
+    bool LocateAndRelinkFile() {
+        std::string newPath = FileManager::ShowOpenFileDialog("Locate Attachment File");
+        if (!newPath.empty() && FileManager::Exists(newPath)) {
+            SetFilePath(newPath, false);
+            return true;
+        }
+        return false;
+    }
+
+    // =========================================================================
+    // TRANSFORM — Translation Only (Locked Scale & Rotation)
+    // =========================================================================
+
+
+    /**
+     * @brief Applies a 2D affine transformation while locking badge dimensions and rotation.
+     *
+     * Mathematical Process & Theory:
+     *   When an object is transformed as part of a multi-object group (e.g. scaling, rotating,
+     *   or translating around an arbitrary group pivot (cx, cy)), the full transformation matrix M is:
+     *
+     *     M = [ m00  m01  0 ]
+     *         [ m10  m11  0 ]
+     *         [ m20  m21  1 ]
+     *
+     *   If we applied M directly to an attachment badge, its visual chip dimensions (50mm x 18mm)
+     *   would distort (rubber-band stretch) and rotate awkwardly. As a fixed-size UI chip,
+     *   the badge must preserve its exact aspect ratio and horizontal orientation, but still
+     *   follow the spatial trajectory of the group.
+     *
+     *   To achieve this, the chip's anchor position (worldX, worldY) is projected through M:
+     *     x_new = (worldX * m00) + (worldY * m10) + m20
+     *     y_new = (worldX * m01) + (worldY * m11) + m21
+     *
+     *   The translational displacement of the anchor is:
+     *     dx = x_new - worldX
+     *     dy = y_new - worldY
+     *
+     *   We construct a pure translation matrix T = make_translation(dx, dy) and accumulate it
+     *   into `transform`. This guarantees that:
+     *     1. Scale factors (m00, m11) and shears/rotations (m01, m10) never distort the badge.
+     *     2. The chip's world position tracks the group selection correctly.
+     *
+     * @param matrix 2D affine transformation matrix passed from gizmo or group operation.
+     */
+    void ApplyTransform(const BLMatrix2D& matrix) override {
+        // Project current anchor point through incoming matrix to calculate translation delta
+        const double newX = (worldX * matrix.m00) + (worldY * matrix.m10) + matrix.m20;
+        const double newY = (worldX * matrix.m01) + (worldY * matrix.m11) + matrix.m21;
+
+        const double dx = newX - worldX;
+        const double dy = newY - worldY;
+
+        // Apply pure translation to maintain locked scale and rotation invariants
+        BLMatrix2D translationOnly = BLMatrix2D::make_translation(dx, dy);
+        transform.post_transform(translationOnly);
+        UpdateBounds();
+    }
+
+    /**
+     * @brief Bakes accumulated translation from transform into worldX/Y and resets to identity.
+     *
+     * Mathematical Process:
+     *   Because ApplyTransform guarantees that `transform` contains strictly translational
+     *   components (scale = 1.0, rotation = 0.0), baking simply transfers the translation
+     *   offsets (m20, m21) permanently into world-space coordinates:
+     *     worldX += transform.m20
+     *     worldY += transform.m21
+     *   The transform matrix is then reset to identity and world bounds are updated.
      */
     void BakeTransform() override {
         worldX += transform.m20;
@@ -164,11 +276,15 @@ public:
      * The type band color is determined by file extension via GetTypeColor().
      */
     void Render(BLContext& ctx, const Viewport& /*viewport*/) const override {
+        
+        // check if object is even visible
         if (!isVisible) return;
 
+        // create blend2d context and apply transformation
         ctx.save();
         ctx.apply_transform(transform);
 
+        // the look of our object
         const double x  = worldX;
         const double y  = worldY;
         const double w  = chipW;
@@ -176,7 +292,7 @@ public:
         const double r  = 2.0;          // Corner radius (mm)
         const double bw = 8.0;          // Type band width (mm)
 
-        // Background chip
+        // Draws main card body
         ctx.set_fill_style(BLRgba32(0x1E, 0x20, 0x28, static_cast<uint8_t>(opacity * 235)));
         ctx.fill_round_rect(BLRoundRect(x, y, w, h, r, r));
 
@@ -188,9 +304,17 @@ public:
         ctx.fill_round_rect(BLRoundRect(x, y, w, h, r, r));
         ctx.restore();
 
-        // Border
-        ctx.set_stroke_style(BLRgba32(0x3E, 0x44, 0x55, 200));
-        ctx.set_stroke_width(0.4);
+        
+        bool isBroken = !IsFileValid();
+
+        // Border (Warning red if broken, dark slate if valid)
+        if (isBroken) {
+            ctx.set_stroke_style(BLRgba32(0xE8, 0x11, 0x23, 230));
+            ctx.set_stroke_width(0.6);
+        } else {
+            ctx.set_stroke_style(BLRgba32(0x3E, 0x44, 0x55, 200));
+            ctx.set_stroke_width(0.4);
+        }
         ctx.stroke_round_rect(BLRoundRect(x, y, w, h, r, r));
 
         // Extract uppercase extension for the badge
@@ -208,23 +332,34 @@ public:
         BLFont badgeFont = FontManager::Instance().GetFont("Segoe UI", 3.2f, true);
         ctx.fill_utf8_text(BLPoint(x + 1.2, y + h * 0.5 + 1.1), badgeFont, ext.data(), ext.size(), BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
 
-        // Draw display name label
+        // Draw display name label (tinted warning red if broken)
         BLFont labelFont = FontManager::Instance().GetFont("Segoe UI", 3.4f, false);
+        BLRgba32 labelCol = isBroken 
+            ? BLRgba32(0xFF, 0x88, 0x88, static_cast<uint8_t>(opacity * 255)) 
+            : BLRgba32(0xF0, 0xF2, 0xF5, static_cast<uint8_t>(opacity * 255));
 
         // Clip text so it doesn't bleed out of chip
         ctx.save();
         ctx.clip_to_rect(BLRect(x + bw + 2.0, y + 1.0, w - bw - 4.0, h - 2.0));
-        ctx.fill_utf8_text(BLPoint(x + bw + 2.5, y + h * 0.5 + 1.2), labelFont, displayName.data(), displayName.size(), BLRgba32(0xF0, 0xF2, 0xF5, static_cast<uint8_t>(opacity * 255)));
+        ctx.fill_utf8_text(BLPoint(x + bw + 2.5, y + h * 0.5 + 1.2), labelFont, displayName.data(), displayName.size(), labelCol);
         ctx.restore();
 
-        // Draw embedded / link mode badge in the bottom-right corner of the chip.
-        // Embedded: filled teal dot with 'E'.  Link: hollow grey dot with chain symbol.
+        // Draw embedded / link / broken mode badge in the bottom-right corner of the chip.
+        // Embedded: filled teal dot with 'E'.
+        // Link Valid: hollow amber dot with 'L'.
+        // Link Broken: filled warning red dot with '!'.
         {
             const double badgeR  = 2.8;                              // Badge circle radius (mm)
             const double badgeCX = x + w - badgeR - 1.2;            // Centre X
             const double badgeCY = y + h - badgeR - 1.0;            // Centre Y
 
-            if (isEmbedded) {
+            if (isBroken) {
+                // Filled warning red circle with white '!'
+                ctx.set_fill_style(BLRgba32(0xE8, 0x11, 0x23, 235));
+                ctx.fill_circle(BLCircle(badgeCX, badgeCY, badgeR));
+                BLFont warnFont = FontManager::Instance().GetFont("Segoe UI", 2.6f, true);
+                ctx.fill_utf8_text(BLPoint(badgeCX - 0.7, badgeCY + 0.9), warnFont, "!", 1, BLRgba32(0xFF, 0xFF, 0xFF, 255));
+            } else if (isEmbedded) {
                 // Filled teal circle = embedded/safe
                 ctx.set_fill_style(BLRgba32(0x00, 0xB3, 0x9A, 210));
                 ctx.fill_circle(BLCircle(badgeCX, badgeCY, badgeR));
@@ -236,7 +371,7 @@ public:
                 ctx.set_stroke_style(BLRgba32(0xE8, 0xB3, 0x00, 190));
                 ctx.set_stroke_width(0.5);
                 ctx.stroke_circle(BLCircle(badgeCX, badgeCY, badgeR));
-                // Chain-link '⚯' approximated with 'L'
+                // Chain-link approximated with 'L'
                 BLFont tinyFont = FontManager::Instance().GetFont("Segoe UI", 2.6f, true);
                 ctx.fill_utf8_text(BLPoint(badgeCX - 1.3, badgeCY + 1.0), tinyFont, "L", 1, BLRgba32(0xE8, 0xB3, 0x00, 200));
             }
@@ -253,7 +388,75 @@ public:
         return std::make_unique<AttachmentObject>(*this);
     }
 
+    // =========================================================================
+    // CONTEXT MENU & OBJECT ACTIONS
+    // =========================================================================
+
+    /**
+     * @brief Injects domain-specific actions for this attachment into the context menu.
+     *
+     * Working Process:
+     *   Injects "Open File", "Locate / Re-link File..." (if broken), "Copy File Path",
+     *   and "Show in File Explorer" with explicit priority ordering.
+     *   Universal canvas actions (Delete, Layering, Duplicate) are automatically provided
+     *   by the ObjectActionRegistry.
+     *
+     * @param[in,out] actions Mutable vector of ContextMenuItem descriptors to inject into.
+     */
+    void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) override {
+        bool isValid = IsFileValid();
+
+        if (isValid) {
+            // 1. Open (Primary action when file is valid, order: 10)
+            Folio::ContextMenuItem openAct;
+            openAct.label = "Open";
+            openAct.shortcut = "Double-Click";
+            openAct.icon = "🚀";
+            openAct.iconKey = "open";
+            openAct.order = 10;
+            openAct.isEnabled = true;
+            openAct.onTrigger = [this]() { OpenFile(); };
+            actions.push_back(std::move(openAct));
+        } else {
+            // 1. Re-link (Replaces Open as primary action when broken/missing, order: 10)
+            Folio::ContextMenuItem relinkAct;
+            relinkAct.label = "Locate / Re-link File...";
+            relinkAct.icon = "⚠️";
+            relinkAct.iconKey = "warning";
+            relinkAct.order = 10;
+            relinkAct.isEnabled = true;
+            relinkAct.onTrigger = [this]() { LocateAndRelinkFile(); };
+            actions.push_back(std::move(relinkAct));
+        }
+
+        // 3. Copy File Path (order: 30)
+        Folio::ContextMenuItem copyPathAct;
+        copyPathAct.label = "Copy File Path";
+        copyPathAct.icon = "📋";
+        copyPathAct.iconKey = "copy";
+        copyPathAct.order = 30;
+        copyPathAct.onTrigger = [this]() { SDL_SetClipboardText(filePath.c_str()); };
+        actions.push_back(std::move(copyPathAct));
+
+        // 4. Show in File Explorer (order: 40)
+        Folio::ContextMenuItem explorerAct;
+        explorerAct.label = "Show in File Explorer";
+        explorerAct.icon = "📁";
+        explorerAct.iconKey = "folder";
+        explorerAct.order = 40;
+        explorerAct.isEnabled = isValid;
+        explorerAct.onTrigger = [this]() {
+            std::string parentDir = FileManager::GetParentPath(filePath);
+            if (!parentDir.empty() && FileManager::Exists(parentDir)) {
+                FileManager::OpenWithDefaultApp(parentDir);
+            }
+        };
+        actions.push_back(std::move(explorerAct));
+    }
+
 private:
+    mutable bool m_isFileValidCached = true;
+    mutable bool m_validityChecked = false;
     /**
      * @brief Returns a distinguishing color for the left type band based on extension.
      *

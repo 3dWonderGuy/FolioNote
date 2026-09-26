@@ -28,6 +28,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#include <commdlg.h>
 #include <io.h>     // For _commit and _fileno
 #else
 #include <unistd.h> // For fsync and fileno
@@ -283,6 +284,31 @@ std::string FileManager::PathToFileUri(const std::string& path) {
     return "file://" + normalized;
 #else
     return "file://" + path;
+#endif
+}
+
+std::string FileManager::ShowOpenFileDialog(const std::string& title) {
+#if defined(_WIN32)
+    wchar_t fileBuf[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.lpstrFile = fileBuf;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"All Files (*.*)\0*.*\0\0";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+
+    std::filesystem::path nativeTitle = Utf8ToNativePath(title);
+    if (!title.empty()) {
+        ofn.lpstrTitle = nativeTitle.c_str();
+    }
+
+    if (GetOpenFileNameW(&ofn)) {
+        return NormalizeSeparators(NativePathToUtf8(fileBuf));
+    }
+    return "";
+#else
+    (void)title;
+    return "";
 #endif
 }
 

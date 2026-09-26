@@ -10,6 +10,11 @@
 #include "core/engine/stroke_smoother.hpp"
 
 class CanvasTransform;
+struct Viewport;
+
+namespace Folio {
+struct ContextMenuItem;
+}
 
 
 /**
@@ -179,4 +184,25 @@ public:
     virtual GizmoStyle GetGizmoStyle() const noexcept {
         return GizmoStyle::BoundingBox;
     }
+
+    /********************************************* */
+    // Context Menu & Object Actions
+    /********************************************* */
+
+    /**
+     * @brief Virtual hook allowing derived objects to inject or customize actions in their context menu.
+     *
+     * Working Process:
+     *   Default base implementation is a no-op. Universal canvas object actions
+     *   (Delete, Bring to Front, Bring Forward, Send Backward, Send to Back, Duplicate)
+     *   are automatically registered and executed by ObjectActionRegistry in core/objects.
+     *
+     *   Subclasses override this hook only if they wish to inject domain-specific actions
+     *   (e.g., AttachmentObject: "Open", "Locate / Re-link", "Copy Path";
+     *         3D Model: "Reset Camera", "Toggle Wireframe", "Orbit Controls")
+     *   or modify/filter default behavior.
+     *
+     * @param[in,out] actions Mutable vector of ContextMenuItem descriptors where custom commands can be added or modified.
+     */
+    virtual void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) {}
 };

@@ -158,9 +158,36 @@ public:
     }
 
     // =========================================================================
-    // TRANSFORM — translation only
+    // TRANSFORM — Translation Only (Locked Scale & Rotation)
     // =========================================================================
 
+    /**
+     * @brief Applies a 2D affine transformation while locking card dimensions and rotation.
+     *
+     * Mathematical Process:
+     *   Maps anchor (worldX, worldY) through matrix M:
+     *     x_new = (worldX * m00) + (worldY * m10) + m20
+     *     y_new = (worldX * m01) + (worldY * m11) + m21
+     *   Extracts delta translation dx = x_new - worldX, dy = y_new - worldY and applies
+     *   only pure translation T(dx, dy) to maintain fixed bookmark card geometry.
+     *
+     * @param matrix 2D affine transformation matrix.
+     */
+    void ApplyTransform(const BLMatrix2D& matrix) override {
+        const double newX = (worldX * matrix.m00) + (worldY * matrix.m10) + matrix.m20;
+        const double newY = (worldX * matrix.m01) + (worldY * matrix.m11) + matrix.m21;
+
+        const double dx = newX - worldX;
+        const double dy = newY - worldY;
+
+        BLMatrix2D translationOnly = BLMatrix2D::make_translation(dx, dy);
+        transform.post_transform(translationOnly);
+        UpdateBounds();
+    }
+
+    /**
+     * @brief Bakes accumulated translation into worldX/Y and resets transform to identity.
+     */
     void BakeTransform() override {
         worldX += transform.m20;
         worldY += transform.m21;

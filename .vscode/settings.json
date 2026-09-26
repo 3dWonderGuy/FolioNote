@@ -1,0 +1,11 @@
+{
+    "clangd.arguments": [
+        "--background-index",
+        "--header-insertion=never",
+        "--clang-tidy=false",
+        "--completion-style=detailed",
+        "--fallback-style=none"
+    ],
+    "clangd.checkUpdates": false,
+    "C_Cpp.intelliSenseEngine": "disabled"
+}
