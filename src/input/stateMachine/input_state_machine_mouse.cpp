@@ -225,6 +225,17 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                         }
                     }
 
+                    // Check for click on AudioObject (play/pause toggle, scrubber seek)
+                    if (clickedObj->type == ObjectType::Audio) {
+                        auto audioObj = std::dynamic_pointer_cast<Folio::AudioObject>(clickedObj);
+                        if (audioObj) {
+                            audioObj->HandleCanvasClick(worldMm.x, worldMm.y, [&canvas]() {
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            });
+                        }
+                    }
+
                     // Check for click on InteractiveObject (WebOverlay, YouTube player, live widgets)
                     if (clickedObj->type == ObjectType::Interactive) {
                         auto io = std::dynamic_pointer_cast<Folio::InteractiveObject>(clickedObj);

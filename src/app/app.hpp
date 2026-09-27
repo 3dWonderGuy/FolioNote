@@ -665,6 +665,9 @@ public:
                                    ext == ".ts" || ext == ".m2ts" || ext == ".mpg" || ext == ".mpeg" || ext == ".wmv" || 
                                    ext == ".flv" || ext == ".3gp" || ext == ".m4v" || ext == ".ogv") {
                             canvas.InsertVideoFromFile(droppedPath, &session);
+                        } else if (ext == ".mp3" || ext == ".wav" || ext == ".m4a" || ext == ".flac" || 
+                                   ext == ".ogg" || ext == ".aac" || ext == ".opus" || ext == ".wma" || ext == ".aiff") {
+                            canvas.InsertAudioFromFile(droppedPath, &session);
                         }
                     }
                 }

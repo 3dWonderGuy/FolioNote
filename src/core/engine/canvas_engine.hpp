@@ -16,6 +16,7 @@
 #include "core/objects/ink_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/images/image_decoder.hpp"
+#include "core/objects/media/audio/audio_container.hpp"
 #include "core/objects/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
@@ -1887,6 +1888,128 @@ public:
 
         LOG_INFO(CanvasEngine, "Opening native video file dialog...");
         SDL_ShowOpenFileDialog(OnVideoFileSelected, ctx, parentWin ? parentWin : sdlWindow, videoFilters, static_cast<int>(sizeof(videoFilters) / sizeof(videoFilters[0])), nullptr, false);
+    }
+
+    // =========================================================================
+    // AUDIO FILE IMPORT FLOW
+    // =========================================================================
+
+    /**
+     * @brief Inserts an AudioObject from an audio file on disk into the active notebook.
+     *
+     * GENERAL WORKING PROCESS:
+     * -------------------------
+     * 1. Validates that file exists and format is supported (.mp3, .wav, .m4a, .flac, .ogg, .aac, .opus, .wma, .aiff).
+     * 2. Copies the audio file into the notebook package sidecar directory (imports/audio/) for portability.
+     * 3. Instantiates an AudioObject (75mm x 22mm) pinned at the center of the current canvas viewport.
+     * 4. Adds the audio object to the active page with undo/redo history tracking.
+     * 5. Triggers a full canvas rebake to render the audio badge.
+     *
+     * @param[in] filePath Path to the audio file on disk.
+     * @param[in] session  Active DocumentSession pointer.
+     * @return True if inserted successfully; false otherwise.
+     */
+    bool InsertAudioFromFile(const std::string& filePath, DocumentSession* session) {
+        if (!session) return false;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return false;
+
+        std::filesystem::path fspath(filePath);
+        if (!std::filesystem::exists(fspath)) {
+            LOG_ERROR(CanvasEngine, "InsertAudioFromFile: File not found: " + filePath);
+            return false;
+        }
+
+        std::string ext = fspath.extension().string();
+        for (auto& c : ext) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+
+        static const std::initializer_list<const char*> kSupportedAudioExts = {
+            ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".opus", ".wma", ".aiff"
+        };
+        bool supported = false;
+        for (const char* e : kSupportedAudioExts) {
+            if (ext == e) { supported = true; break; }
+        }
+        if (!supported) {
+            LOG_WARN(CanvasEngine, "InsertAudioFromFile: Unsupported audio format: " + ext);
+            return false;
+        }
+
+        // Copy file to notebook sidecar imports/audio/
+        std::string importedPath = filePath;
+        try {
+            auto activeNb = session->workspace.GetActiveNotebook();
+            if (activeNb && !activeNb->filePath.empty()) {
+                std::error_code ec;
+                std::filesystem::path pkgPath(activeNb->filePath);
+                std::filesystem::path importDir = pkgPath / "imports" / "audio";
+                std::filesystem::create_directories(importDir, ec);
+                if (!ec) {
+                    std::filesystem::path destPath = importDir / fspath.filename();
+                    if (!std::filesystem::exists(destPath)) {
+                        std::filesystem::copy_file(fspath, destPath,
+                                                   std::filesystem::copy_options::overwrite_existing, ec);
+                    }
+                    if (!ec) {
+                        importedPath = destPath.string();
+                    }
+                }
+            }
+        } catch (...) {
+            importedPath = filePath;
+        }
+
+        auto audioObj = std::make_shared<Folio::AudioObject>(importedPath, fspath.filename().string());
+
+        Point2D centerWorld = transform.ScreenToWorld(
+            static_cast<float>(viewportW) * 0.5f,
+            static_cast<float>(viewportH) * 0.5f
+        );
+        audioObj->worldX = centerWorld.x - Folio::AudioObject::chipW * 0.5;
+        audioObj->worldY = centerWorld.y - Folio::AudioObject::chipH * 0.5;
+        audioObj->UpdateBounds();
+
+        session->AddObject(audioObj);
+        needsFullRebake = true;
+        isDirty = true;
+
+        LOG_INFO(CanvasEngine, "Inserted AudioObject: " + importedPath);
+        return true;
+    }
+
+    struct AudioFileDialogContext {
+        CanvasEngine* canvas   = nullptr;
+        DocumentSession* session = nullptr;
+    };
+
+    static void SDLCALL OnAudioFileSelected(void* userdata, const char* const* filelist, int /*filter*/) {
+        auto* ctx = static_cast<AudioFileDialogContext*>(userdata);
+        if (!ctx) return;
+
+        if (filelist && filelist[0] && filelist[0][0] != '\0') {
+            std::string selectedPath = filelist[0];
+            ctx->canvas->InsertAudioFromFile(selectedPath, ctx->session);
+        }
+
+        delete ctx;
+    }
+
+    void OpenAudioFileDialog(SDL_Window* parentWin, DocumentSession* session) {
+        if (!session) return;
+
+        auto* ctx = new AudioFileDialogContext{ this, session };
+
+        static const SDL_DialogFileFilter audioFilters[] = {
+            { "Supported Audio Files (*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.aac;*.opus;*.wma)", "mp3;wav;m4a;flac;ogg;aac;opus;wma;aiff" },
+            { "MP3 Audio (*.mp3)", "mp3" },
+            { "WAV Audio (*.wav)", "wav" },
+            { "FLAC Audio (*.flac)", "flac" },
+            { "M4A/AAC Audio (*.m4a;*.aac)", "m4a;aac" },
+            { "All Files (*.*)", "*" }
+        };
+
+        LOG_INFO(CanvasEngine, "Opening native audio file dialog...");
+        SDL_ShowOpenFileDialog(OnAudioFileSelected, ctx, parentWin ? parentWin : sdlWindow, audioFilters, static_cast<int>(sizeof(audioFilters) / sizeof(audioFilters[0])), nullptr, false);
     }
 
     bool EraseSegment(float screenX0, float screenY0, float screenX1, float screenY1,

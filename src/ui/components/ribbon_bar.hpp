@@ -2429,12 +2429,15 @@ public:
                         }
                     );
 
-                    // 5. Audio ("vider")
-                    sec.AddSplitButton("btn_insert_audio", iconAudio, "Audio", "Insert an audio note or audio track", false,
-                        [&]() {},
+                    // 5. Audio
+                    sec.AddSplitButton("btn_insert_audio", iconAudio, "Audio", "Insert an audio track or voice note", false,
+                        [&]() {
+                            canvas.OpenAudioFileDialog(canvas.sdlWindow, currentSession);
+                        },
                         [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddItem("Record Audio Note (Microphone)", iconAudio, nullptr, [&]() {});
-                            menu.AddItem("From Audio File... (MP3, WAV, M4A)", iconAudio, nullptr, [&]() {});
+                            menu.AddItem("From Audio File... (MP3, WAV, FLAC, M4A)", iconAudio, nullptr, [&]() {
+                                canvas.OpenAudioFileDialog(canvas.sdlWindow, currentSession);
+                            });
                         }
                     );
 
