@@ -70,10 +70,10 @@ public:
     uint8_t reserved     : 3 = 0;  // Reserved alignment bits
 
     // Lifecycle & Rule of 5: ensure derived objects are copy-constructible for Clone()
-    CanvasObject() = default;
-    virtual ~CanvasObject() = default;
-    CanvasObject(const CanvasObject&) = default;
-    CanvasObject& operator=(const CanvasObject&) = default;
+    CanvasObject() = default;                            // 1. Default constructor
+    virtual ~CanvasObject() = default;                   // 2. Virtual destructor
+    CanvasObject(const CanvasObject&) = default;         // 3. Copy constructor
+    CanvasObject& operator=(const CanvasObject&) = default; // 4. Copy assignment operator
 
     // Checks if this object is bound to a parent logical group.
     [[nodiscard]] bool IsGrouped() const noexcept {
