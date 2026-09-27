@@ -635,6 +635,42 @@ public:
     }
 
     /**
+     * @brief Specialized hit-test for context menus that finds selectable objects first,
+     *        then falls back to hit-testing pinned background objects.
+     *
+     * Working Process:
+     *   1. Queries standard selectable objects via HitTestSingleClick.
+     *   2. If a foreground object (stroke, shape, text, chip) is hit, it is prioritized.
+     *   3. If no foreground object was hit, scans in reverse Z-order for pinned background
+     *      objects (isBackground == 1) so users can right-click them to restore/unlock.
+     *
+     * @param clickX World X coordinate in millimeters.
+     * @param clickY World Y coordinate in millimeters.
+     * @param circleRadiusMm Proximity radius in millimeters.
+     * @return Hit CanvasObject (foreground or background), or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<CanvasObject> HitTestForContextMenu(double clickX, double clickY, double circleRadiusMm = 0.0) const {
+        auto hit = HitTestSingleClick(clickX, clickY, circleRadiusMm);
+        if (hit) return hit;
+
+        // 2. Second priority: background / non-selectable objects (e.g. pinned background images)
+        for (auto it = objects.rbegin(); it != objects.rend(); ++it) {
+            auto& obj = *it;
+            if (obj && obj->isVisible && !obj->isSelectable) {
+                bool isHit = obj->HitTest(clickX, clickY);
+                if (!isHit && circleRadiusMm > 0.0) {
+                    isHit = obj->HitTestCircle(clickX, clickY, circleRadiusMm);
+                }
+                if (isHit) {
+                    return obj;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    /**
      * @brief Queries all objects intersecting the camera viewport frustum using spatial culling.
      *
      * MATHEMATICAL CULLING & RENDERING PIPELINE:

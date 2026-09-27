@@ -97,6 +97,9 @@ std::string GenerateStagingPath(const std::string& targetPath) {
     return targetPath + ".tmp." + std::to_string(now) + "_" + std::to_string(randVal);
 }
 
+std::mutex s_packageRootMutex;
+std::string s_activePackageRoot;
+
 } // anonymous namespace
 
 // =========================================================================================
@@ -157,6 +160,48 @@ std::string FileManager::GetTempDirectory() {
         return JoinPath(GetAppRootDirectory(), "cache/temp");
     }
     return NormalizeSeparators(NativePathToUtf8(tempPath));
+}
+
+void FileManager::SetActivePackageRoot(const std::string& root) {
+    std::lock_guard<std::mutex> lock(s_packageRootMutex);
+    s_activePackageRoot = NormalizeSeparators(root);
+}
+
+std::string FileManager::GetActivePackageRoot() {
+    std::lock_guard<std::mutex> lock(s_packageRootMutex);
+    return s_activePackageRoot;
+}
+
+std::string FileManager::ResolveAssetPath(const std::string& path) {
+    if (path.empty()) {
+        return "";
+    }
+
+    // 1. If path is already absolute and exists on disk, normalize and return
+    if (IsAbsolutePath(path) && Exists(path)) {
+        return NormalizeSeparators(path);
+    }
+
+    // 2. Check against the registered active notebook package root
+    std::string root = GetActivePackageRoot();
+    if (!root.empty()) {
+        std::string candidate = JoinPath(root, path);
+        if (Exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    // 3. Fallback: check if relative to application current working directory
+    if (Exists(path)) {
+        return NormalizeSeparators(path);
+    }
+
+    // 4. If not physically on disk yet, return candidate joined with active package root if available
+    if (!root.empty() && !IsAbsolutePath(path)) {
+        return JoinPath(root, path);
+    }
+
+    return NormalizeSeparators(path);
 }
 
 // =========================================================================================
@@ -308,6 +353,36 @@ std::string FileManager::ShowOpenFileDialog(const std::string& title) {
     return "";
 #else
     (void)title;
+    return "";
+#endif
+}
+
+std::string FileManager::ShowSaveFileDialog(const std::string& title, const std::string& defaultFileName) {
+#if defined(_WIN32)
+    wchar_t fileBuf[MAX_PATH] = {};
+    if (!defaultFileName.empty()) {
+        std::filesystem::path defPath = Utf8ToNativePath(defaultFileName);
+        wcsncpy_s(fileBuf, defPath.c_str(), _TRUNCATE);
+    }
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.lpstrFile = fileBuf;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"All Files (*.*)\0*.*\0PNG Image (*.png)\0*.png\0JPEG Image (*.jpg;*.jpeg)\0*.jpg;*.jpeg\0WebP Image (*.webp)\0*.webp\0GIF Image (*.gif)\0*.gif\0\0";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_EXPLORER;
+
+    std::filesystem::path nativeTitle = Utf8ToNativePath(title);
+    if (!title.empty()) {
+        ofn.lpstrTitle = nativeTitle.c_str();
+    }
+
+    if (GetSaveFileNameW(&ofn)) {
+        return NormalizeSeparators(NativePathToUtf8(fileBuf));
+    }
+    return "";
+#else
+    (void)title;
+    (void)defaultFileName;
     return "";
 #endif
 }

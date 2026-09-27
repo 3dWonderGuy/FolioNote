@@ -67,6 +67,11 @@ add_subdirectory(third_party/blend2d b2d EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/lunasvg lsvg EXCLUDE_FROM_ALL)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL_image/CMakeLists.txt")
+    set(SDLIMAGE_VENDORED ON CACHE BOOL "" FORCE)
+    set(SDLIMAGE_DEPS_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_WEBP ON CACHE BOOL "" FORCE)
+    set(SDLIMAGE_WEBP_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDLIMAGE_WEBP_VENDORED ON CACHE BOOL "" FORCE)
     add_subdirectory(third_party/SDL_image sdl_img EXCLUDE_FROM_ALL)
 endif()
 

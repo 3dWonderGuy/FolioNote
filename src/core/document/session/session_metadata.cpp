@@ -13,6 +13,7 @@
 
 #include "core/document/document_session.hpp"
 #include "app/settings_manager.hpp"
+#include "io/file_manager.hpp"
 #include <algorithm>
 
 // -----------------------------------------------------------------------------
@@ -242,6 +243,9 @@ void DocumentSession::NotifyActiveSectionChanged(const std::shared_ptr<Section>&
  */
 void DocumentSession::NotifyActiveNotebookChanged(const std::shared_ptr<Notebook>& newNb,
                                                  const std::shared_ptr<Notebook>& oldNb) {
+    // Synchronize the active notebook package root with FileManager for relative asset resolution
+    Folio::FileManager::SetActivePackageRoot(newNb ? newNb->filePath : "");
+
     auto snapshot = observers;
     for (auto* obs : snapshot) {
         if (obs) obs->OnActiveNotebookChanged(newNb, oldNb);

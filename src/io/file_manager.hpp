@@ -138,6 +138,35 @@ public:
      */
     static std::string GetTempDirectory();
 
+    /**
+     * @brief Sets the active notebook or package root directory used for relative asset resolution.
+     * Thread-safe and persistent across the active document session.
+     *
+     * @param root Absolute directory path of the active notebook bundle (e.g. ".../MyNotes.folionote").
+     */
+    static void SetActivePackageRoot(const std::string& root);
+
+    /**
+     * @brief Retrieves the currently registered active notebook package root directory.
+     *
+     * @return Normalized UTF-8 directory path, or empty string if no active notebook is open.
+     */
+    static std::string GetActivePackageRoot();
+
+    /**
+     * @brief Resolves an asset path (such as "imports/images/img_123.png") into an absolute physical path.
+     *
+     * Working Process:
+     *   1. If path is already absolute and exists on disk, normalizes separators and returns.
+     *   2. If a package root is registered, checks `<packageRoot>/<path>`. If found, returns it.
+     *   3. Checks if the path exists relative to the application working directory.
+     *   4. If file is not yet created on disk, returns `<packageRoot>/<path>` if package root is set.
+     *
+     * @param path Relative asset path or absolute disk path.
+     * @return Fully resolved, normalized filesystem path.
+     */
+    static std::string ResolveAssetPath(const std::string& path);
+
     // =====================================================================================
     // 2. PATH MANIPULATION & UNICODE NORMALIZATION
     // =====================================================================================
@@ -249,6 +278,15 @@ public:
      * @return Selected UTF-8 path string, or empty string on cancellation or error.
      */
     static std::string ShowOpenFileDialog(const std::string& title = "Select File");
+
+    /**
+     * @brief Opens a native OS save file dialog to select a destination path for saving a file.
+     *
+     * @param title Dialog window title (e.g. "Save Image As").
+     * @param defaultFileName Default file name suggested in the dialog (e.g. "image.png").
+     * @return Selected UTF-8 destination path string, or empty string on cancellation or error.
+     */
+    static std::string ShowSaveFileDialog(const std::string& title = "Save File", const std::string& defaultFileName = "");
 
     /**
      * @brief Launches a file or URL with the operating system's default application.

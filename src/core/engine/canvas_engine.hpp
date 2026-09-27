@@ -1174,23 +1174,14 @@ public:
                 file.read(reinterpret_cast<char*>(rawBytes.data()), sz);
             }
 
-            auto decoded = Folio::ImageDecoder::DecodeFromMemory(rawBytes.data(), rawBytes.size(), selectedPath);
-            if (decoded.success && !decoded.image.is_empty()) {
-                std::string ext(Folio::ImageFormatToExtension(decoded.format));
-                if (ext.empty()) ext = "png";
-                ext = "." + ext;
-                std::string storedPath = DeduplicateAndSaveImage(selectedPath, rawBytes.data(), rawBytes.size(), ctx->session, ext);
+            std::string ext = Folio::FileManager::GetExtension(selectedPath);
+            if (ext.empty()) ext = "png";
+            if (!ext.empty() && ext[0] != '.') ext = "." + ext;
+            std::string storedPath = DeduplicateAndSaveImage(selectedPath, rawBytes.data(), rawBytes.size(), ctx->session, ext);
 
-                const double screenDpi = ctx->canvas->transform.pixelsPerMm * 25.4;
-                auto img = std::make_shared<Folio::ImageObject>(decoded.image, storedPath.empty() ? selectedPath : storedPath, screenDpi);
-                img->naturalWidth = decoded.naturalWidth;
-                img->naturalHeight = decoded.naturalHeight;
-                img->imageFormat = decoded.format;
-                img->embeddedData = std::move(rawBytes);
-                img->isAnimated = decoded.isAnimated;
-                img->frames = std::move(decoded.frames);
-                img->currentFrameIndex = 0;
-                img->lastFrameTickMs = 0;
+            const double screenDpi = ctx->canvas->transform.pixelsPerMm * 25.4;
+            auto img = std::make_shared<Folio::ImageObject>(rawBytes.data(), rawBytes.size(), storedPath.empty() ? selectedPath : storedPath, screenDpi);
+            if (img->isLoaded) {
                 img->worldX = ctx->insertPosWorld.x - img->worldWidth * 0.5;
                 img->worldY = ctx->insertPosWorld.y - img->worldHeight * 0.5;
                 img->UpdateBounds();
@@ -1198,7 +1189,7 @@ public:
                 ctx->session->AddImage(img);
                 ctx->canvas->needsFullRebake = true;
                 ctx->canvas->isDirty = true;
-                LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "' (" + Folio::ImageFormatToString(decoded.format).data() + ")");
+                LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "' (" + Folio::ImageFormatToString(img->imageFormat).data() + ")");
             }
         }
 
@@ -1467,6 +1458,7 @@ public:
         // Create the chip and place it at canvas centre.
         auto attachObj = std::make_shared<Folio::AttachmentObject>(
             finalPath, m_pendingAttachName, "", (embed && embeddedOk));
+        attachObj->isFileValid = Folio::FileManager::Exists(finalPath);
         attachObj->worldX  = centerWorld.x - Folio::AttachmentObject::chipW * 0.5;
         attachObj->worldY  = centerWorld.y - Folio::AttachmentObject::chipH * 0.5;
         attachObj->guuid   = GUIDGenerator::GenerateV4();
@@ -1583,24 +1575,11 @@ public:
                 size_t dataSize = 0;
                 void* clipData = SDL_GetClipboardData(mime, &dataSize);
                 if (clipData && dataSize > 0) {
-                    auto decoded = Folio::ImageDecoder::DecodeFromMemory(static_cast<const uint8_t*>(clipData), dataSize, mime);
-                    if (decoded.success && !decoded.image.is_empty()) {
-                        std::string ext(Folio::ImageFormatToExtension(decoded.format));
-                        if (ext.empty()) ext = "png";
-                        ext = "." + ext;
-                        std::string relPath = DeduplicateAndSaveImage("", clipData, dataSize, session, ext);
+                    std::string relPath = DeduplicateAndSaveImage("", clipData, dataSize, session, ".png");
 
-                        const double screenDpi = transform.pixelsPerMm * 25.4;
-                        auto img = std::make_shared<Folio::ImageObject>(decoded.image, relPath, screenDpi);
-                        img->naturalWidth = decoded.naturalWidth;
-                        img->naturalHeight = decoded.naturalHeight;
-                        img->imageFormat = decoded.format;
-                        img->embeddedData.assign(static_cast<const uint8_t*>(clipData), static_cast<const uint8_t*>(clipData) + dataSize);
-                        img->isAnimated = decoded.isAnimated;
-                        img->frames = std::move(decoded.frames);
-                        img->currentFrameIndex = 0;
-                        img->lastFrameTickMs = 0;
-
+                    const double screenDpi = transform.pixelsPerMm * 25.4;
+                    auto img = std::make_shared<Folio::ImageObject>(static_cast<const uint8_t*>(clipData), dataSize, relPath, screenDpi);
+                    if (img->isLoaded) {
                         Point2D centerWorld = transform.ScreenToWorld(static_cast<float>(viewportW) * 0.5f, static_cast<float>(viewportH) * 0.5f);
                         img->worldX = centerWorld.x - img->worldWidth * 0.5;
                         img->worldY = centerWorld.y - img->worldHeight * 0.5;
@@ -1610,7 +1589,7 @@ public:
                         needsFullRebake = true;
                         isDirty = true;
                         SDL_free(clipData);
-                        LOG_INFO(CanvasEngine, "Pasted image from clipboard (" + std::to_string(decoded.naturalWidth) + "x" + std::to_string(decoded.naturalHeight) + " px, " + Folio::ImageFormatToString(decoded.format).data() + ")");
+                        LOG_INFO(CanvasEngine, "Pasted image from clipboard (" + std::to_string(img->naturalWidth) + "x" + std::to_string(img->naturalHeight) + " px, " + Folio::ImageFormatToString(img->imageFormat).data() + ")");
                         return true;
                     }
                     SDL_free(clipData);

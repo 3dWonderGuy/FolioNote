@@ -10,6 +10,7 @@
 #include "core/engine/canvas_engine.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/objects/attachment_container.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {
@@ -638,7 +639,8 @@ void RelinkAttachmentCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             attach->displayName = newDisplayName;
         }
         attach->isEmbedded = newEmbedded;
-        attach->IsFileValid("", true);
+        std::string resolved = attach->isEmbedded ? FileManager::ResolveAssetPath(attach->filePath) : attach->filePath;
+        attach->SetFileValid(!resolved.empty() && FileManager::Exists(resolved));
         page.isModified = true;
     }
     if (engine) {
@@ -656,7 +658,8 @@ void RelinkAttachmentCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             attach->displayName = previousDisplayName;
         }
         attach->isEmbedded = previousEmbedded;
-        attach->IsFileValid("", true);
+        std::string resolved = attach->isEmbedded ? FileManager::ResolveAssetPath(attach->filePath) : attach->filePath;
+        attach->SetFileValid(!resolved.empty() && FileManager::Exists(resolved));
         page.isModified = true;
     }
     if (engine) {

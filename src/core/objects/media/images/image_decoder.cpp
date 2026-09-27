@@ -23,225 +23,27 @@
 #else
 #include <SDL3_image/SDL_image.h>
 #endif
-
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <wincodec.h>
-
 /**
- * @brief Decodes image bytes using the native Windows Imaging Component (WIC).
+ * UNIFIED CROSS-PLATFORM DECODING ARCHITECTURE:
+ * ---------------------------------------------
+ * FolioNote avoids OS-dependent decoders (such as Windows WIC, Apple ImageIO, or Android Bitmap)
+ * to guarantee identical rendering fidelity, deterministic color blitting, and zero platform
+ * branching across Windows, Linux, macOS, and Android.
  *
- * Mathematical / Color Processing Context:
- *   WIC operates with OS-registered hardware codecs. On modern Windows (Windows 10/11),
- *   Microsoft ships the WebP Image Extension (registered under WIC), plus built-in codecs
- *   for TIFF, JPEG, PNG, GIF, BMP, and ICO.
+ * The decoding pipeline executes across 4 cross-platform layers:
+ *   1. LunaSVG Pipeline:
+ *      Parses vector SVG documents and rasterizes them into Blend2D PRGB32 pixel buffers.
+ *   2. SDL3_image Multi-Frame Animation Pipeline:
+ *      Parses multi-frame GIF and animated WebP containers via IMG_LoadAnimation_IO.
+ *      Automatically resolves inter-frame disposal methods into standalone frames.
+ *   3. Blend2D Native SIMD Pipeline:
+ *      JIT-accelerated (AVX2/NEON) decoding for high-frequency formats: PNG, JPEG, BMP, and QOI.
+ *   4. SDL3_image Extended Raster Pipeline:
+ *      Fallback decoder for static WebP, TIFF, TGA, ICO, AVIF, and PCX.
  *
- * Pixel Alignment & Premultiplication:
- *   WIC converts the source frame to GUID_WICPixelFormat32bppPBGRA (Premultiplied BGRA),
- *   where byte order in memory on little-endian x86/x64 is:
- *     Byte 0: Blue  (pb = (b * a + 127) / 255)
- *     Byte 1: Green (pg = (g * a + 127) / 255)
- *     Byte 2: Red   (pr = (r * a + 127) / 255)
- *     Byte 3: Alpha (a)
- *   This is identical bit-for-bit to Blend2D BL_FORMAT_PRGB32:
- *     uint32_t pixel = (a << 24) | (pr << 16) | (pg << 8) | pb;
- *   allowing direct single-pass pixel blit into BLImage without secondary color swizzling.
- *
- * @param[in]  data       Raw compressed byte buffer.
- * @param[in]  size       Size of data in bytes.
- * @param[out] outImage   Destination BLImage populated with PRGB32 raster data.
- * @param[out] outWidth   Native image width in pixels.
- * @param[out] outHeight  Native image height in pixels.
- * @return True if WIC decoded a valid frame, false on error or unsupported format.
+ * All pipelines output directly to Blend2D BL_FORMAT_PRGB32 (Premultiplied 32-bit ARGB/BGRA),
+ * matching the compositor memory layout for zero-copy blitting.
  */
-static bool DecodeWithWIC(
-    const uint8_t* data, 
-    size_t size, 
-    BLImage& outImage, 
-    std::vector<Folio::ImageFrame>& outFrames,
-    bool& outIsAnimated,
-    uint32_t& outWidth, 
-    uint32_t& outHeight)
-{
-    if (!data || size == 0) return false;
-
-    HRESULT initHr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    if (initHr == RPC_E_CHANGED_MODE) {
-        initHr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    }
-    const bool needsUninit = (initHr == S_OK || initHr == S_FALSE);
-
-    IWICImagingFactory* pFactory = NULL;
-    HRESULT hr = CoCreateInstance(
-        CLSID_WICImagingFactory,
-        NULL,
-        CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&pFactory)
-    );
-    if (FAILED(hr) || !pFactory) {
-        if (needsUninit) CoUninitialize();
-        return false;
-    }
-
-    IWICStream* pStream = NULL;
-    hr = pFactory->CreateStream(&pStream);
-    if (FAILED(hr) || !pStream) {
-        pFactory->Release();
-        if (needsUninit) CoUninitialize();
-        return false;
-    }
-
-    hr = pStream->InitializeFromMemory(const_cast<BYTE*>(data), static_cast<DWORD>(size));
-    if (FAILED(hr)) {
-        pStream->Release();
-        pFactory->Release();
-        if (needsUninit) CoUninitialize();
-        return false;
-    }
-
-    IWICBitmapDecoder* pDecoder = NULL;
-    hr = pFactory->CreateDecoderFromStream(
-        pStream,
-        NULL,
-        WICDecodeMetadataCacheOnDemand,
-        &pDecoder
-    );
-    if (FAILED(hr) || !pDecoder) {
-        pStream->Release();
-        pFactory->Release();
-        if (needsUninit) CoUninitialize();
-        return false;
-    }
-
-    UINT frameCount = 1;
-    hr = pDecoder->GetFrameCount(&frameCount);
-    if (FAILED(hr) || frameCount == 0) {
-        frameCount = 1;
-    }
-
-    // Parse WebP ANMF chunk durations if animated WebP container
-    std::vector<uint32_t> webpDelays;
-    if (size >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' &&
-        data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P') 
-    {
-        size_t pos = 12;
-        while (pos + 8 <= size) {
-            uint32_t chunkSize = 0;
-            std::memcpy(&chunkSize, data + pos + 4, 4);
-            if (std::memcmp(data + pos, "ANMF", 4) == 0) {
-                if (pos + 8 + 15 <= size) {
-                    // Duration is a 24-bit unsigned little-endian integer at offset 12..14 of ANMF chunk
-                    const uint32_t dur = static_cast<uint32_t>(data[pos + 8 + 12]) |
-                                        (static_cast<uint32_t>(data[pos + 8 + 13]) << 8) |
-                                        (static_cast<uint32_t>(data[pos + 8 + 14]) << 16);
-                    webpDelays.push_back(dur > 10 ? dur : 100);
-                }
-            }
-            pos += 8 + chunkSize + (chunkSize % 2);
-        }
-    }
-
-    outFrames.reserve(frameCount);
-
-    for (UINT i = 0; i < frameCount; ++i) {
-        IWICBitmapFrameDecode* pFrame = NULL;
-        hr = pDecoder->GetFrame(i, &pFrame);
-        if (FAILED(hr) || !pFrame) continue;
-
-        UINT w = 0, h = 0;
-        pFrame->GetSize(&w, &h);
-        if (w == 0 || h == 0) {
-            pFrame->Release();
-            continue;
-        }
-
-        if (i == 0) {
-            outWidth = static_cast<uint32_t>(w);
-            outHeight = static_cast<uint32_t>(h);
-        }
-
-        IWICFormatConverter* pConverter = NULL;
-        hr = pFactory->CreateFormatConverter(&pConverter);
-        if (FAILED(hr) || !pConverter) {
-            pFrame->Release();
-            continue;
-        }
-
-        // Convert directly to Premultiplied 32-bit BGRA (matches BL_FORMAT_PRGB32 on little-endian)
-        hr = pConverter->Initialize(
-            pFrame,
-            GUID_WICPixelFormat32bppPBGRA,
-            WICBitmapDitherTypeNone,
-            NULL,
-            0.0,
-            WICBitmapPaletteTypeCustom
-        );
-
-        if (SUCCEEDED(hr)) {
-            BLImage frameImg;
-            if (frameImg.create(static_cast<int>(w), static_cast<int>(h), BL_FORMAT_PRGB32) == BL_SUCCESS) {
-                BLImageData imgData;
-                if (frameImg.make_mutable(&imgData) == BL_SUCCESS) {
-                    hr = pConverter->CopyPixels(
-                        NULL,
-                        static_cast<UINT>(imgData.stride),
-                        static_cast<UINT>(imgData.stride * h),
-                        static_cast<BYTE*>(imgData.pixel_data)
-                    );
-                    if (SUCCEEDED(hr)) {
-                        uint32_t delayMs = 100;
-                        if (i < webpDelays.size()) {
-                            delayMs = webpDelays[i];
-                        } else {
-                            IWICMetadataQueryReader* pReader = NULL;
-                            if (SUCCEEDED(pFrame->GetMetadataQueryReader(&pReader)) && pReader) {
-                                PROPVARIANT propVal;
-                                PropVariantInit(&propVal);
-                                if (SUCCEEDED(pReader->GetMetadataByName(L"/grctlext/Delay", &propVal))) {
-                                    if (propVal.vt == VT_UI2) delayMs = propVal.uiVal * 10;
-                                    else if (propVal.vt == VT_UI4) delayMs = propVal.ulVal * 10;
-                                    PropVariantClear(&propVal);
-                                } else if (SUCCEEDED(pReader->GetMetadataByName(L"/Delay", &propVal)) ||
-                                           SUCCEEDED(pReader->GetMetadataByName(L"/features/Delay", &propVal))) {
-                                    if (propVal.vt == VT_UI4) delayMs = propVal.ulVal;
-                                    else if (propVal.vt == VT_UI2) delayMs = propVal.uiVal;
-                                    PropVariantClear(&propVal);
-                                }
-                                pReader->Release();
-                            }
-                        }
-                        if (delayMs <= 10) delayMs = 100;
-
-                        outFrames.push_back(Folio::ImageFrame{ std::move(frameImg), delayMs });
-                    }
-                }
-            }
-        }
-
-        pConverter->Release();
-        pFrame->Release();
-    }
-
-    pDecoder->Release();
-    pStream->Release();
-    pFactory->Release();
-    if (needsUninit) CoUninitialize();
-
-    if (!outFrames.empty()) {
-        outImage = outFrames[0].image;
-        outIsAnimated = (outFrames.size() > 1);
-        return true;
-    }
-
-    return false;
-}
-#endif
 
 namespace Folio {
 
@@ -310,6 +112,16 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
         return result;
     }
 
+    const auto& config = ObjectConfig::Get();
+    if (size > config.maxImageFileSizeBytes) {
+        result.errorMessage = "Image buffer size (" + std::to_string(size) + 
+                              " bytes) exceeds maximum configured limit (" + 
+                              std::to_string(config.maxImageFileSizeBytes) + " bytes)";
+        return result;
+    }
+
+    const uint32_t maxDecodedDim = config.maxDecodedPixelDimension;
+
     ImageFormat detectedFormat = ImageFormatFromExtension(filenameHint);
 
     // Sniff magic bytes if filename extension is absent, inaccurate, or mismatched
@@ -353,15 +165,24 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
                 naturalH = 512.0;
             }
 
-            // Scale to fit s_maxDecodedDimension if SVG viewbox is unusually large
-            const double maxDim = static_cast<double>(s_maxDecodedDimension);
-            double scale = 1.0;
-            if (naturalW > maxDim || naturalH > maxDim) {
-                scale = maxDim / (std::max)(naturalW, naturalH);
-            }
+            // High-DPI Vector Rasterization:
+            // SVG is resolution-independent vector geometry. If an SVG's native viewBox is small
+            // (e.g. 24x24 or 32x32 for UI icons), rasterizing at viewBox size causes severe pixelation
+            // and blurriness when scaled up on canvas.
+            // Mathematical working process:
+            //   maxNatural = max(naturalW, naturalH)
+            //   targetDim  = clamp(max(2048.0, maxNatural), 512.0, maxDecodedDim)
+            //   scale      = targetDim / maxNatural
+            //   renderW    = round(naturalW * scale)
+            //   renderH    = round(naturalH * scale)
+            // This ensures a 24x24 icon renders into a razor-sharp 2048x2048 PRGB32 surface.
+            const double maxDim = static_cast<double>(maxDecodedDim);
+            const double maxNatural = (std::max)(naturalW, naturalH);
+            const double targetCrispDim = (std::min)(maxDim, (std::max)(2048.0, maxNatural));
+            const double scale = (maxNatural > 0.0) ? (targetCrispDim / maxNatural) : 1.0;
 
-            const uint32_t renderW = (std::max)(1u, static_cast<uint32_t>(naturalW * scale));
-            const uint32_t renderH = (std::max)(1u, static_cast<uint32_t>(naturalH * scale));
+            const uint32_t renderW = (std::max)(1u, static_cast<uint32_t>(std::round(naturalW * scale)));
+            const uint32_t renderH = (std::max)(1u, static_cast<uint32_t>(std::round(naturalH * scale)));
 
             lunasvg::Bitmap bitmap = doc->renderToBitmap(renderW, renderH);
             if (bitmap.valid()) {
@@ -429,10 +250,10 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
                 result.format = (detectedFormat != ImageFormat::Unknown) ? detectedFormat : ImageFormat::GIF;
                 result.isAnimated = (anim->count > 1);
 
-                // RAM Protection: Compute uniform downsample factor if frames exceed s_maxDecodedDimension
+                // RAM Protection: Compute uniform downsample factor if frames exceed maxDecodedDim
                 double scale = 1.0;
-                if (result.naturalWidth > s_maxDecodedDimension || result.naturalHeight > s_maxDecodedDimension) {
-                    scale = static_cast<double>(s_maxDecodedDimension) /
+                if (result.naturalWidth > maxDecodedDim || result.naturalHeight > maxDecodedDim) {
+                    scale = static_cast<double>(maxDecodedDim) /
                             static_cast<double>((std::max)(result.naturalWidth, result.naturalHeight));
                 }
                 const int downW = (std::max)(1, static_cast<int>(std::round(result.naturalWidth * scale)));
@@ -507,9 +328,9 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
         result.naturalHeight = static_cast<uint32_t>(blImg.height());
         result.format = (detectedFormat != ImageFormat::Unknown) ? detectedFormat : ImageFormat::PNG;
 
-        // RAM Protection: If image exceeds s_maxDecodedDimension, downsample display proxy
-        if (result.naturalWidth > s_maxDecodedDimension || result.naturalHeight > s_maxDecodedDimension) {
-            const double scale = static_cast<double>(s_maxDecodedDimension) / 
+        // RAM Protection: If image exceeds maxDecodedDim, downsample display proxy
+        if (result.naturalWidth > maxDecodedDim || result.naturalHeight > maxDecodedDim) {
+            const double scale = static_cast<double>(maxDecodedDim) / 
                                 static_cast<double>((std::max)(result.naturalWidth, result.naturalHeight));
             const int downW = (std::max)(1, static_cast<int>(result.naturalWidth * scale));
             const int downH = (std::max)(1, static_cast<int>(result.naturalHeight * scale));
@@ -532,66 +353,8 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
         return result;
     }
 
-#if defined(_WIN32)
     // =========================================================================
-    // 3. WINDOWS NATIVE WIC PIPELINE (WebP, TIFF, JPEG-XR, HEIC, System Codecs)
-    // =========================================================================
-    {
-        BLImage wicImg;
-        std::vector<ImageFrame> wicFrames;
-        bool wicIsAnimated = false;
-        uint32_t wicW = 0, wicH = 0;
-        if (DecodeWithWIC(data, size, wicImg, wicFrames, wicIsAnimated, wicW, wicH) && !wicImg.is_empty()) {
-            result.naturalWidth = wicW;
-            result.naturalHeight = wicH;
-            result.format = (detectedFormat != ImageFormat::Unknown) ? detectedFormat : ImageFormat::WebP;
-            result.isAnimated = wicIsAnimated;
-            result.frames = std::move(wicFrames);
-
-            // RAM Protection: If image exceeds s_maxDecodedDimension, downsample display proxy
-            if (result.naturalWidth > s_maxDecodedDimension || result.naturalHeight > s_maxDecodedDimension) {
-                const double scale = static_cast<double>(s_maxDecodedDimension) / 
-                                    static_cast<double>((std::max)(result.naturalWidth, result.naturalHeight));
-                const int downW = (std::max)(1, static_cast<int>(std::round(result.naturalWidth * scale)));
-                const int downH = (std::max)(1, static_cast<int>(std::round(result.naturalHeight * scale)));
-
-                for (auto& f : result.frames) {
-                    BLImage downsampled;
-                    if (downsampled.create(downW, downH, BL_FORMAT_PRGB32) == BL_SUCCESS) {
-                        BLContext ctx(downsampled);
-                        ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
-                        ctx.blit_image(BLRect(0, 0, downW, downH), f.image);
-                        ctx.end();
-                        f.image = std::move(downsampled);
-                    }
-                }
-
-                if (!result.frames.empty()) {
-                    result.image = result.frames[0].image;
-                } else {
-                    BLImage downsampled;
-                    if (downsampled.create(downW, downH, BL_FORMAT_PRGB32) == BL_SUCCESS) {
-                        BLContext ctx(downsampled);
-                        ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
-                        ctx.blit_image(BLRect(0, 0, downW, downH), wicImg);
-                        ctx.end();
-                        result.image = std::move(downsampled);
-                    } else {
-                        result.image = std::move(wicImg);
-                    }
-                }
-            } else {
-                result.image = result.frames.empty() ? std::move(wicImg) : result.frames[0].image;
-            }
-
-            result.success = true;
-            return result;
-        }
-    }
-#endif
-
-    // =========================================================================
-    // 4. EXTENDED FORMAT FALLBACK PIPELINE (GIF, TGA, PCX, etc. via SDL3_image)
+    // 4. EXTENDED FORMAT FALLBACK PIPELINE (WebP, TIFF, TGA, ICO, etc. via SDL3_image)
     // =========================================================================
     SDL_IOStream* io = SDL_IOFromConstMem(data, size);
     if (io) {
@@ -602,7 +365,7 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
             if (detectedFormat != ImageFormat::Unknown) {
                 result.format = detectedFormat;
             } else {
-                result.format = ImageFormat::GIF;
+                result.format = ImageFormat::WebP;
             }
 
             SDL_Surface* rgbaSurf = (surf->format == SDL_PIXELFORMAT_RGBA32)
@@ -623,8 +386,8 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
 
                 if (!converted.is_empty()) {
                     // RAM Protection: Downsample if exceeds max threshold
-                    if (result.naturalWidth > s_maxDecodedDimension || result.naturalHeight > s_maxDecodedDimension) {
-                        const double scale = static_cast<double>(s_maxDecodedDimension) / 
+                    if (result.naturalWidth > maxDecodedDim || result.naturalHeight > maxDecodedDim) {
+                        const double scale = static_cast<double>(maxDecodedDim) / 
                                             static_cast<double>((std::max)(result.naturalWidth, result.naturalHeight));
                         const int downW = (std::max)(1, static_cast<int>(result.naturalWidth * scale));
                         const int downH = (std::max)(1, static_cast<int>(result.naturalHeight * scale));
@@ -652,7 +415,13 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
         }
     }
 
-    result.errorMessage = "Unsupported or corrupted image format";
+    const char* sdlErr = SDL_GetError();
+    if (sdlErr && *sdlErr) {
+        result.errorMessage = "Unsupported or corrupted image format (" + std::string(sdlErr) + ")";
+        SDL_ClearError();
+    } else {
+        result.errorMessage = "Unsupported or corrupted image format (unrecognized magic signature)";
+    }
     return result;
 }
 
@@ -660,10 +429,7 @@ DecodedImageResult ImageDecoder::DecodeFromMemory(
 // FILE RESOLUTION & LOADING
 // =============================================================================
 
-DecodedImageResult ImageDecoder::DecodeFromFile(
-    const std::string& filePath, 
-    const std::string& packageRoot) 
-{
+DecodedImageResult ImageDecoder::DecodeFromFile(const std::string& filePath) {
     DecodedImageResult result;
 
     if (filePath.empty()) {
@@ -671,13 +437,8 @@ DecodedImageResult ImageDecoder::DecodeFromFile(
         return result;
     }
 
-    std::string resolvedPath = filePath;
-    if (!FileManager::Exists(resolvedPath) && !packageRoot.empty()) {
-        std::string candidate = FileManager::JoinPath(packageRoot, filePath);
-        if (FileManager::Exists(candidate)) {
-            resolvedPath = candidate;
-        }
-    }
+    // Delegate path resolution to FileManager (automatically checks active package root or absolute disk paths)
+    std::string resolvedPath = FileManager::ResolveAssetPath(filePath);
 
     if (!FileManager::Exists(resolvedPath)) {
         result.errorMessage = "File does not exist: " + resolvedPath;

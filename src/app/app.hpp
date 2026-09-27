@@ -988,7 +988,13 @@ public:
 
                 if (canvasSize.x > 10.0f && canvasSize.y > 10.0f) {
                     bool isHovered = ImGui::IsWindowHovered();
-                    if (!isHovered && !canvas.liveLayer.HasActiveData() && sm.ActiveDevice == DeviceType::Mouse) {
+                    const bool isCanvasCapturingMouse = canvas.liveLayer.HasActiveData() || 
+                                                        canvas.selectionGizmo.isDragging || 
+                                                        canvas.marqueeBox.isActive || 
+                                                        (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso && sm.mouse.leftButton) ||
+                                                        (sm.currentAction == InteractionState::Panning && sm.mouse.leftButton);
+
+                    if (!isHovered && !isCanvasCapturingMouse && sm.ActiveDevice == DeviceType::Mouse) {
                         sm.mouse.leftButton = false;
                     }
 
@@ -1037,7 +1043,7 @@ public:
                         std::shared_ptr<CanvasObject> hitObj = nullptr;
                         if (auto pg = session.GetActivePage()) {
                             double hitRadius = 2.0 / canvas.transform.zoom; // 2mm world hit radius
-                            hitObj = pg->HitTestSingleClick(generalContextMenuWorldPos.x, generalContextMenuWorldPos.y, hitRadius);
+                            hitObj = pg->HitTestForContextMenu(generalContextMenuWorldPos.x, generalContextMenuWorldPos.y, hitRadius);
                         }
 
                         if (hitObj) {

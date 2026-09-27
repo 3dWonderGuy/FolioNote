@@ -29,8 +29,7 @@
  * Key Design Principles:
  *   1. Non-resizable Chip: Fixed-size badge (chipW x chipH mm) with body-move
  * only.
- *   2. Quick Launcher: OpenFile() delegates to
- * FileManager::OpenWithDefaultApp().
+ *   2. Quick Launcher: OpenFile() dispatches to the system default application.
  *   3. Visual distinction: Embedded vs Link mode shown via a small corner
  * badge.
  */
@@ -47,6 +46,7 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
 #include "core/text/font_manager.hpp"
+#include "core/objects/object_config.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 
@@ -75,13 +75,31 @@ public:
   ///   location on disk (fast, but breaks if file is moved/renamed).
   bool isEmbedded = false;
 
+  /// Cached file validity state (set once by parent loader/session, never checked per frame)
+  bool isFileValid = true;
+
   /// Optional callback invoked upon successful path re-linking for undo/redo recording
   std::function<void(const std::string& oldPath, const std::string& newPath,
                      const std::string& oldName, const std::string& newName)> onRelinkCallback = nullptr;
 
-  /// Fixed chip dimensions in world mm (not user-resizable)
-  static constexpr double chipW = 50.0;
-  static constexpr double chipH = 18.0;
+  /// Optional callback invoked when user clicks re-link action
+  std::function<void()> onRelinkRequested = nullptr;
+
+  /// Default chip dimensions in world mm (delegated to ObjectConfig)
+  static constexpr double defaultChipW = 50.0;
+  static constexpr double defaultChipH = 18.0;
+  static constexpr double chipW = defaultChipW;
+  static constexpr double chipH = defaultChipH;
+
+  static double GetDefaultChipWidth() noexcept {
+    const double w = ObjectConfig::Get().attachmentChipWidthMm;
+    return (w >= 10.0) ? w : defaultChipW;
+  }
+
+  static double GetDefaultChipHeight() noexcept {
+    const double h = ObjectConfig::Get().attachmentChipHeightMm;
+    return (h >= 5.0) ? h : defaultChipH;
+  }
 
   // =========================================================================
   // CONSTRUCTORS
@@ -98,8 +116,8 @@ public:
    */
   AttachmentObject() {
     type = ObjectType::AttachmentFile;
-    worldWidth = chipW;
-    worldHeight = chipH;
+    worldWidth = GetDefaultChipWidth();
+    worldHeight = GetDefaultChipHeight();
     UpdateBounds();
   }
 
@@ -124,8 +142,8 @@ public:
       : filePath(path), displayName(name), mimeType(mime),
         isEmbedded(embedded) {
     type = ObjectType::AttachmentFile;
-    worldWidth = chipW;
-    worldHeight = chipH;
+    worldWidth = GetDefaultChipWidth();
+    worldHeight = GetDefaultChipHeight();
     UpdateBounds();
   }
 
@@ -134,32 +152,20 @@ public:
   // =========================================================================
 
   /**
-   * @brief Checks whether the target file actually exists on the filesystem.
+   * @brief Returns whether the target file is valid (set by parent coordinator, never statted per frame).
+   * Pure in-memory check without performing synchronous OS filesystem stat calls during render ticks.
    *
-   * Working Process:
-   *   - Verifies physical disk presence via FileManager::Exists(filePath) for
-   * both linked and embedded attachments (protects against missing, deleted, or
-   * corrupted sidecar files).
-   *   - Uses a cached boolean flag to avoid performing synchronous OS
-   * filesystem stat calls on every frame of the high-framerate render loop.
-   *
-   * @param forceCheck When true, bypasses the cache and queries disk
-   * immediately.
-   * @return true if the referenced file exists on disk; false otherwise.
+   * @return true if valid; false if broken or missing.
    */
-  bool IsFileValid(bool forceCheck = false) const {
-    if (forceCheck || !m_validityChecked) {
-      m_isFileValidCached = !filePath.empty() && FileManager::Exists(filePath);
-      m_validityChecked = true;
-    }
-    return m_isFileValidCached;
+  [[nodiscard]] bool IsFileValid() const noexcept {
+    return isFileValid;
   }
 
   /**
-   * @brief Overload accepting optional notebookRootDir parameter for callers like CanvasCommand.
+   * @brief Updates the validity flag (called by parent coordinators or serializers).
    */
-  bool IsFileValid(const std::string& /*notebookRootDir*/, bool forceCheck) const {
-    return IsFileValid(forceCheck);
+  void SetFileValid(bool valid) noexcept {
+    isFileValid = valid;
   }
 
   /**
@@ -167,14 +173,10 @@ public:
    *
    * Working Process:
    *   1. Updates `filePath` to `newPath`.
-   *   2. If `updateDisplayName` is true, extracts the new filename as
-   * `displayName`.
-   *   3. Forces a re-check of file existence so badge and border visuals update
-   * immediately.
+   *   2. If `updateDisplayName` is true, extracts the leaf filename string via FileManager::GetFileName.
    *
    * @param newPath Absolute filesystem path (or sidecar-relative path).
-   * @param updateDisplayName When true, refreshes displayName to match the new
-   * file name.
+   * @param updateDisplayName When true, refreshes displayName to match the leaf file name.
    */
   void SetFilePath(const std::string &newPath, bool updateDisplayName = true) {
     filePath = newPath;
@@ -184,35 +186,33 @@ public:
         displayName = fname;
       }
     }
-    m_validityChecked = false;
-    IsFileValid(true);
   }
 
   /**
-   * @brief Opens the linked or embedded file with the OS default application.
+   * @brief Opens the linked or embedded file using FileManager::OpenWithDefaultApp.
    *
-   * @return true if successfully launched by the operating system.
+   * @return true if successfully dispatched.
    */
-  bool OpenFile() const { return FileManager::OpenWithDefaultApp(filePath); }
+  bool OpenFile() const {
+    return FileManager::OpenWithDefaultApp(filePath);
+  }
 
   /**
-   * @brief Prompts user to select a replacement file on disk and updates
-   * filePath.
-   *
-   * Working Process:
-   *   Delegates to FileManager::ShowOpenFileDialog to display the native OS
-   * file picker. If a file is selected and exists on disk, updates `filePath`
-   * and resets validation caches.
+   * @brief Prompts user to select a replacement file on disk and updates filePath.
    *
    * @return true if a valid file was selected and relinked, false if cancelled.
    */
   bool LocateAndRelinkFile() {
-    std::string newPath =
-        FileManager::ShowOpenFileDialog("Locate Attachment File");
+    if (onRelinkRequested) {
+      onRelinkRequested();
+      return true;
+    }
+    std::string newPath = FileManager::ShowOpenFileDialog("Locate Attachment File");
     if (!newPath.empty() && FileManager::Exists(newPath)) {
       std::string oldPath = filePath;
       std::string oldName = displayName;
       SetFilePath(newPath, false);
+      SetFileValid(true);
       if (onRelinkCallback) {
         onRelinkCallback(oldPath, filePath, oldName, displayName);
       }
@@ -335,8 +335,8 @@ public:
     // the look of our object
     const double x = worldX;
     const double y = worldY;
-    const double w = chipW;
-    const double h = chipH;
+    const double w = (worldWidth > 0.0) ? worldWidth : GetDefaultChipWidth();
+    const double h = (worldHeight > 0.0) ? worldHeight : GetDefaultChipHeight();
     const double r = 2.0;  // Corner radius (mm)
     const double bw = 8.0; // Type band width (mm)
 
@@ -508,7 +508,7 @@ public:
     explorerAct.icon = "📁";
     explorerAct.iconKey = "folder";
     explorerAct.order = 40;
-    explorerAct.isEnabled = isValid;
+    explorerAct.isEnabled = isFileValid;
     explorerAct.onTrigger = [this]() {
       std::string parentDir = FileManager::GetParentPath(filePath);
       if (!parentDir.empty() && FileManager::Exists(parentDir)) {
@@ -519,8 +519,6 @@ public:
   }
 
 private:
-  mutable bool m_isFileValidCached = true;
-  mutable bool m_validityChecked = false;
   /**
    * @brief Returns a distinguishing color for the left type band based on
    * extension.

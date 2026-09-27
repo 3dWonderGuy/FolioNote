@@ -177,6 +177,46 @@ public:
             actions.push_back(std::move(act));
         }
 
+        // Action: Set as Background / Unlock from Background (order: 190)
+        // Background elements are marked non-selectable (isSelectable = 0) and sent to back,
+        // so pen/lasso operations draw over them smoothly without selecting or moving them.
+        if (obj->type == ObjectType::Image) {
+            ContextMenuItem bgAct;
+            if (obj->isSelectable) {
+                bgAct.label = "Set as Background";
+                bgAct.icon = "🖼";
+                bgAct.iconKey = "pin_background";
+                bgAct.order = 190;
+                bgAct.isSeparatorBefore = true;
+                bgAct.onTrigger = [obj, page, &engine, &session]() {
+                    obj->isSelectable = 0;
+                    obj->isSelected = 0;
+                    page->SendToBack(obj->uid);
+                    engine.selectionGizmo.ClearSelection();
+                    engine.isDirty = true;
+                    engine.needsFullRebake = true;
+                    page->isModified = true;
+                    session.NotifyPageModified(page);
+                };
+            } else {
+                bgAct.label = "Unlock from Background";
+                bgAct.icon = "🔓";
+                bgAct.iconKey = "unpin_background";
+                bgAct.order = 190;
+                bgAct.isSeparatorBefore = true;
+                bgAct.onTrigger = [obj, page, &engine, &session]() {
+                    obj->isSelectable = 1;
+                    obj->isSelected = 1;
+                    engine.selectionGizmo.SetSelectedObjects({obj});
+                    engine.isDirty = true;
+                    engine.needsFullRebake = true;
+                    page->isModified = true;
+                    session.NotifyPageModified(page);
+                };
+            }
+            actions.push_back(std::move(bgAct));
+        }
+
         // Action: Duplicate (order: 300)
         {
             ContextMenuItem act;
@@ -207,6 +247,17 @@ public:
                 page->isModified = true;
                 engine.isDirty = true;
                 engine.needsFullRebake = true;
+            };
+        }
+
+        if (obj->type == ObjectType::Image) {
+            auto img = std::static_pointer_cast<ImageObject>(obj);
+            img->onVisualStateChanged = [page, &session, &engine]() {
+                engine.selectionGizmo.RecalculateBounds();
+                engine.isDirty = true;
+                engine.needsFullRebake = true;
+                page->isModified = true;
+                session.NotifyPageModified(page);
             };
         }
 

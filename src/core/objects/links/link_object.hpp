@@ -36,17 +36,7 @@
 
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
-
-#if defined(_WIN32) || defined(_WIN64)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <shellapi.h>
-#endif
+#include "io/file_manager.hpp"
 
 namespace Folio {
 
@@ -122,16 +112,7 @@ public:
             return;
         }
         if (IsExternal()) {
-#if defined(_WIN32) || defined(_WIN64)
-            int wLen = MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, nullptr, 0);
-            if (wLen > 0) {
-                std::wstring wUrl(wLen, 0);
-                MultiByteToWideChar(CP_UTF8, 0, url.c_str(), -1, &wUrl[0], wLen);
-                ShellExecuteW(nullptr, L"open", wUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-            }
-#else
-            // TODO: macOS / Linux: system("xdg-open \"" + url + "\"") etc.
-#endif
+            FileManager::OpenWithDefaultApp(url);
         }
     }
 

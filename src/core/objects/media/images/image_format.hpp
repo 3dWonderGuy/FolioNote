@@ -177,7 +177,7 @@ inline ImageFormat ImageFormatFromMimeType(std::string_view mime) {
  * @return True if the format can contain sequential multi-frame animations (e.g. GIF).
  */
 constexpr bool IsFormatAnimated(ImageFormat format) noexcept {
-    return format == ImageFormat::GIF;
+    return format == ImageFormat::GIF || format == ImageFormat::WebP;
 }
 
 } // namespace Folio

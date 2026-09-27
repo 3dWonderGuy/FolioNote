@@ -769,6 +769,11 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
         } else {
             attach->isEmbedded = false;
         }
+
+        // Parent deserializer validates physical file presence ONCE upon loading
+        std::string resolvedPath = attach->isEmbedded ? FileManager::ResolveAssetPath(attach->filePath) : attach->filePath;
+        attach->isFileValid = (!resolvedPath.empty() && FileManager::Exists(resolvedPath));
+
         attach->UpdateBounds();
         return attach;
     }

@@ -748,9 +748,11 @@ public:
                     sy = std::clamp(signedDistY / initH, 0.05, 50.0);
                 }
 
-                // Aspect-Ratio Lock for Corner Grips (TopLeft, TopRight, BottomRight, BottomLeft)
-                // When both scaleX and scaleY are active, it is a corner handle.
-                // Ratio lock ensures the width-to-height ratio does not change while sizing.
+                // Aspect-Ratio Lock:
+                // - Corner grips (TopLeft, TopRight, BottomRight, BottomLeft) where both scaleX and scaleY are true:
+                //   Enforce proportional uniform scaling preserving the object's native aspect ratio.
+                // - Edge/side grips (Left, Right, Top, Bottom) where only one axis is scaled:
+                //   Allow 1D squish / stretch along the targeted axis without locking, giving the user full creative control.
                 if (scaleX && scaleY) {
                     // Uniform scale factor preserving aspect ratio without axis flipping or runaway jumps
                     double s = 0.5 * (sx + sy);

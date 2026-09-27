@@ -45,6 +45,7 @@
 #include <blend2d/blend2d.h>
 
 #include "core/objects/media/images/image_format.hpp"
+#include "core/objects/object_config.hpp"
 
 namespace Folio {
 
@@ -86,18 +87,17 @@ struct DecodedImageResult {
 class ImageDecoder {
 public:
     // =========================================================================
-    // CONFIGURATION & MEMORY CONSTRAINTS
+    // CONFIGURATION & MEMORY CONSTRAINTS (DELEGATED TO OBJECTCONFIG)
     // =========================================================================
-
-    inline static uint32_t s_maxDecodedDimension = 4096; ///< Hard maximum pixel boundary for display proxy surfaces (4096px)
 
     /**
      * @brief Configures the upper pixel dimension limit for in-memory raster surfaces.
+     * Delegates directly to centralized ObjectConfig.
      * @param[in] maxDim Maximum allowed width or height in pixels (minimum 512, maximum 16384).
      */
     static void SetMaxDecodedDimension(uint32_t maxDim) noexcept {
         if (maxDim >= 512 && maxDim <= 16384) {
-            s_maxDecodedDimension = maxDim;
+            ObjectConfig::Get().maxDecodedPixelDimension = maxDim;
         }
     }
 
@@ -106,7 +106,7 @@ public:
      * @return Maximum dimension in pixels.
      */
     [[nodiscard]] static uint32_t GetMaxDecodedDimension() noexcept {
-        return s_maxDecodedDimension;
+        return ObjectConfig::Get().maxDecodedPixelDimension;
     }
 
     // =========================================================================
@@ -139,18 +139,14 @@ public:
      * @brief Decodes an image from a physical filesystem path or notebook package asset.
      *
      * Working Process:
-     *   1. Resolves path using Folio::FileManager (packageRoot-relative or absolute).
+     *   1. Resolves path using Folio::FileManager::ResolveAssetPath (handles notebook packages or absolute paths).
      *   2. Reads binary payload into memory via FileManager::ReadBinary for safe Unicode I/O.
      *   3. Delegates to DecodeFromMemory with filename hint.
      *
-     * @param[in] filePath Relative package path or absolute disk path.
-     * @param[in] packageRoot Optional notebook root directory for relative resolution.
+     * @param[in] filePath Relative package path (e.g. "imports/images/<hash>.png") or absolute disk path.
      * @return DecodedImageResult containing BLImage surface, natural dimensions, and format tag.
      */
-    static DecodedImageResult DecodeFromFile(
-        const std::string& filePath, 
-        const std::string& packageRoot = ""
-    );
+    static DecodedImageResult DecodeFromFile(const std::string& filePath);
 
     /**
      * @brief Helper to convert a raw 32-bit RGBA pixel buffer into a Blend2D PRGB32 surface.

@@ -5,43 +5,23 @@
  * @brief Canvas Object Container Representing Placed Raster Images on the Infinite Canvas
  * =========================================================================================
  *
- * ARCHITECTURAL DESIGN & INTERACTION MODEL:
- * -----------------------------------------
- * ImageObject encapsulates raster bitmap data (PNG, JPEG, WebP, BMP, GIF, TIFF, QOI)
- * rendered directly on the infinite canvas.
+ * ARCHITECTURAL DESIGN & UNIFIED COORDINATOR:
+ * -------------------------------------------
+ * ImageObject serves as the sole, high-level coordinator for image loading, decoding,
+ * format deduction, animation frame unpacking, and physical millimeter projection.
  *
- * LIFECYCLE: WHAT HAPPENS WHEN YOU INSERT AN IMAGE
- * ------------------------------------------------
- * 1. User Action:
- *    User clicks "Insert Image" (file dialog) or presses Ctrl+V (clipboard paste).
- * 2. In-Memory Decode:
- *    Raw bytes are decoded into a Blend2D BLImage raster surface.
- * 3. Package Deduplication:
- *    The asset is hashed and stored into the notebook companion package
- *    (e.g. "imports/images/<hash>.png") so the notebook remains fully portable.
- * 4. Physical DPI Projection & Clamping:
- *    ImageObject::SetImage() maps source pixels to canvas millimeters:
- *      mmPerPixel = 25.4 / screenDpi
- *      worldWidth = pixelWidth * mmPerPixel
- *      worldHeight = pixelHeight * mmPerPixel
- *    Clamps to a hard maximum limit (200mm) and minimum limit (5mm)
- *    while strictly preserving the source aspect ratio.
- * 5. Placement & Spatial Indexing:
- *    The object is centered at the cursor or viewport center, added to CanvasPage,
- *    and indexed into the R-Tree for sub-millisecond hit-testing.
- * 6. 120 FPS Rendering:
- *    Blend2D blits the cached hardware-accelerated BLImage directly onto the canvas,
- *    applying 2D affine transforms (gizmo scaling, pan, zoom, rotation).
+ * Callers and import pipelines simply save the raw payload to the notebook package sidecar
+ * (e.g. "imports/images/<hash>.ext"), instantiate an ImageObject, and call:
+ *   - LoadFromSource(relativePath, dpi) for files on disk, or
+ *   - LoadFromMemory(data, size, filenameHint, dpi) for clipboard paste / embedded payloads.
  *
- * Key Responsibilities:
- *   1. Spatial Footprint & Bounds: Tracks coordinates in world millimeters.
- *   2. Aspect Ratio Invariance: Locks proportions during interactive gizmo resize.
- *   3. Spatial Bounding & Hit-Testing: Inherits standard CanvasObject AABB queries.
- *   4. Hardware-Accelerated Rendering: High-performance Blend2D raster blits.
- *   5. Lazy Loading & Sidecar Integration: Decodes on demand from memory or disk.
+ * All codec delegation (Blend2D, SDL_image, LunaSVG), multi-frame extraction (GIF / animated WebP),
+ * RAM safety clamping, aspect-locked physical millimeter sizing, and AABB computation
+ * are handled internally.
  */
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include <algorithm>
@@ -54,12 +34,14 @@
 #include "core/spatial/aabb.hpp"
 #include "core/objects/media/images/image_format.hpp"
 #include "core/objects/media/images/image_decoder.hpp"
+#include "core/objects/object_config.hpp"
+#include "app/context_menu_item.hpp"
 
 namespace Folio {
 
 /**
  * @class ImageObject
- * @brief Canvas object representing a raster bitmap image.
+ * @brief Canvas object representing a raster bitmap image or multi-frame animation.
  */
 class ImageObject : public CanvasObject {
 public:
@@ -67,21 +49,121 @@ public:
     // FIELDS & ATTRIBUTES
     // =========================================================================
 
-    uint32_t naturalWidth = 0;              ///< Native source pixel width of the decoded image
-    uint32_t naturalHeight = 0;             ///< Native source pixel height of the decoded image
+    uint32_t naturalWidth = 0;                  ///< Native source pixel width of the decoded image
+    uint32_t naturalHeight = 0;                 ///< Native source pixel height of the decoded image
     ImageFormat imageFormat = ImageFormat::PNG; ///< Image compression/encoding format tag
-    std::string imagePath = "";             ///< Relative package path (e.g. "imports/images/<hash>.png")
-    std::vector<uint8_t> embeddedData;      ///< Raw binary payload (preserved for serialization)
-    BLImage cachedBlImage;                  ///< Decoded Blend2D raster surface used for rendering
-    bool isLoaded = false;                  ///< True when cachedBlImage is decoded and valid in memory
+    std::string imagePath = "";                 ///< Relative package path (e.g. "imports/images/<hash>.png")
+    std::vector<uint8_t> embeddedData;          ///< Raw binary payload (preserved for serialization)
+    BLImage cachedBlImage;                      ///< Decoded Blend2D raster surface used for rendering
+    bool isLoaded = false;                      ///< True when cachedBlImage is decoded and valid in memory
 
-    bool isAnimated = false;                ///< True if image contains multiple animation frames (e.g. animated GIF)
-    std::vector<ImageFrame> frames;         ///< Array of animation frames with per-frame delay timing
-    size_t currentFrameIndex = 0;           ///< Index of currently displayed animation frame
-    uint64_t lastFrameTickMs = 0;           ///< Timestamp (SDL_GetTicks) of last animation advance
+    bool isAnimated = false;                    ///< True if image contains multiple animation frames (e.g. animated GIF/WebP)
+    bool isAnimationPaused = false;             ///< When true, automatic frame advance is suspended
+    bool loadFailed = false;                    ///< Set when a load attempt fails to prevent infinite reload thrashing and log spamming
+    std::vector<ImageFrame> frames;             ///< Array of animation frames with per-frame delay timing
+    size_t currentFrameIndex = 0;               ///< Index of currently displayed animation frame
+    uint64_t lastFrameTickMs = 0;               ///< Timestamp (SDL_GetTicks) of last animation advance
+
+    // =========================================================================
+    // CONSTRUCTORS
+    // =========================================================================
 
     /**
-     * @brief Checks if it is an image or animation
+     * @brief Default constructor creating an uninitialized ImageObject.
+     * Sets type to ObjectType::Image, zero initial dimensions, and identity transform.
+     */
+    ImageObject();
+
+    /**
+     * @brief Data-centric constructor creating an ImageObject directly from a raw byte buffer.
+     * Operates purely in memory with no filesystem coupling.
+     *
+     * @param[in] data Pointer to raw image bytes.
+     * @param[in] size Size of the byte buffer.
+     * @param[in] filenameHint Optional filename or extension hint (e.g. "image.png") for codec deduction.
+     * @param[in] dpi Target display density in DPI for physical scaling (defaults to 96.0).
+     */
+    ImageObject(const uint8_t* data, size_t size, std::string_view filenameHint = "", double dpi = 96.0);
+
+    /**
+     * @brief Data-centric constructor creating an ImageObject from a std::vector buffer.
+     *
+     * @param[in] data Byte vector containing the image payload.
+     * @param[in] filenameHint Optional filename or extension hint for codec deduction.
+     * @param[in] dpi Target display density in DPI for physical scaling (defaults to 96.0).
+     */
+    ImageObject(const std::vector<uint8_t>& data, std::string_view filenameHint = "", double dpi = 96.0);
+
+    /**
+     * @brief File-centric constructor creating an ImageObject from a disk path or package companion asset.
+     *
+     * Working Process:
+     *   1. Sets imagePath to filePath.
+     *   2. Delegates loading and decoding to LoadFromFile(filePath, dpi).
+     *
+     * @param[in] filePath Relative package path (e.g. "imports/images/<hash>.png") or absolute disk path.
+     * @param[in] dpi Target display density in DPI for physical scaling (defaults to 96.0).
+     */
+    ImageObject(const std::string& filePath, double dpi = 96.0);
+
+    // =========================================================================
+    // UNIFIED LOADING & COORDINATION API
+    // =========================================================================
+
+    /**
+     * @brief Loads and decodes an image directly from a physical disk path or companion package asset.
+     *
+     * Working Process:
+     *   1. Resolves path using FileManager::ResolveAssetPath (handles package roots and disk paths).
+     *   2. Reads binary bytes into embeddedData via FileManager::ReadBinary for Unicode-safe I/O.
+     *   3. Delegates decoding and layout sizing to LoadFromMemory using resolved payload bytes.
+     *
+     * @param[in] filePath Relative package path or absolute filesystem path.
+     * @param[in] dpi Target display density in DPI for physical scaling (defaults to 96.0).
+     * @return True if file reading, decoding, and physical dimension calculation succeeded; false otherwise.
+     */
+    bool LoadFromFile(const std::string& filePath, double dpi = 96.0);
+
+    /**
+     * @brief Unified entry point to decode image bytes from an in-memory buffer (e.g. clipboard paste or embedded payloads).
+     *
+     * Working Process:
+     *   1. If filenameHint is provided, infer imagePath and format tag.
+     *   2. Cache raw bytes in embeddedData for lossless document serialization.
+     *   3. Delegate decoding to ImageDecoder::DecodeFromMemory(data, size, filenameHint).
+     *   4. Unpack static or animated frames into cachedBlImage and frames array.
+     *   5. Compute physical millimeter dimensions and update AABB bounds.
+     *
+     * @param[in] data Pointer to raw image bytes.
+     * @param[in] size Size of the byte buffer.
+     * @param[in] filenameHint Optional filename or extension hint (e.g. "clipboard.png") for codec deduction.
+     * @param[in] dpi Target display density in DPI for physical scaling (defaults to 96.0).
+     * @return True if loading and decoding succeeded; false on error.
+     */
+    bool LoadFromMemory(const uint8_t* data, size_t size, std::string_view filenameHint = "", double dpi = 96.0);
+
+    /**
+     * @brief Directly assigns a pre-rendered or programmatically generated raster surface (snapshots/previews).
+     *
+     * @param[in] img Blend2D raster image surface.
+     * @param[in] dpi Target display density in DPI for physical scaling (defaults to 96.0).
+     */
+    void SetSurface(const BLImage& img, double dpi = 96.0);
+
+    /**
+     * @brief Ensures the Blend2D raster surface is decoded and resident in memory.
+     * Automatically restores from embedded buffer or resolves imagePath via FileManager without duplicating decoding logic.
+     *
+     * @return True if the image surface is valid and ready for rendering; false otherwise.
+     */
+    bool EnsureLoaded();
+
+    // =========================================================================
+    // ANIMATION CONTROL & TIMING
+    // =========================================================================
+
+    /**
+     * @brief Checks if this image is an active multi-frame animation.
      * @return True if isAnimated is true and more than 1 frame is stored in memory.
      */
     [[nodiscard]] bool IsAnimated() const noexcept {
@@ -89,7 +171,7 @@ public:
     }
 
     /**
-     * @brief Responsible for update the frame of animated image
+     * @brief Advances animation frame if elapsed time exceeds the current frame's delay.
      *
      * Mathematical & Timing Model:
      *   deltaT = nowMs - lastFrameTickMs
@@ -106,107 +188,82 @@ public:
     bool UpdateAnimation(uint64_t nowMs);
 
     /**
-     * @brief Basicaly creates a setup needed for animated type of images (times, frames, etc)
-     * @param[in] animFrames Decoded animation frames with per-frame delay timers.
+     * @brief Toggles animation playback between playing and paused.
      */
-    void SetAnimatedFrames(std::vector<ImageFrame> animFrames);
-
-    // =========================================================================
-    // CONSTRUCTORS
-    // =========================================================================
+    void ToggleAnimationPlayPause() noexcept {
+        isAnimationPaused = !isAnimationPaused;
+    }
 
     /**
-     * @brief Default constructor creating an uninitialized ImageObject. Used for loading from data base
+     * @brief Steps forward to the next animation frame immediately.
      */
-    ImageObject();
+    void StepNextFrame() noexcept;
 
     /**
-     * @brief Constructor used to initialize the object with image data. Upon initial creation
-     
-     * @param[in] img Decoded Blend2D raster image surface.
-     * @param[in] path Associated file path or package reference (e.g. "imports/images/<hash>.png").
-     * @param[in] dpi Display density in DPI passed once at insertion (defaults to 96.0 fallback if <= 0).
+     * @brief Steps backward to the previous animation frame immediately.
      */
-    ImageObject(const BLImage& img, const std::string& path = "", double dpi = 0.0);
+    void StepPreviousFrame() noexcept;
+
+    /**
+     * @brief Resets playback to the initial animation frame (frame 0).
+     */
+    void ResetToFirstFrame() noexcept;
 
     // =========================================================================
-    // STATIC CONFIGURATION & HARD CONSTRAINTS
+    // STATIC CONFIGURATION & HARD CONSTRAINTS (DELEGATED TO OBJECTCONFIG)
     // =========================================================================
-
-    inline static double s_maxDimensionLimitMm = 200.0;    ///< Hard upper limit for physical width/height (200mm)
-    inline static double s_minDimensionLimitMm = 5.0;      ///< Hard lower limit to prevent sub-millimeter disappearance (5mm)
 
     /**
      * @brief Configures global hard maximum physical dimension constraint for placed images.
+     * Delegates directly to centralized ObjectConfig.
      * @param[in] maxMm Upper limit in millimeters (e.g. 200.0mm).
      */
     static void SetMaxDimensionLimitMm(double maxMm) noexcept {
-        if (maxMm >= 10.0) s_maxDimensionLimitMm = maxMm;
+        if (maxMm >= 10.0) ObjectConfig::Get().maxImageCanvasDimensionMm = maxMm;
+    }
+
+    [[nodiscard]] static double GetMaxDimensionLimitMm() noexcept {
+        return ObjectConfig::Get().maxImageCanvasDimensionMm;
+    }
+
+    /**
+     * @brief Configures global hard minimum physical dimension constraint for placed images.
+     * @param[in] minMm Lower limit in millimeters (e.g. 5.0mm).
+     */
+    static void SetMinDimensionLimitMm(double minMm) noexcept {
+        if (minMm >= 1.0) ObjectConfig::Get().minImageCanvasDimensionMm = minMm;
+    }
+
+    [[nodiscard]] static double GetMinDimensionLimitMm() noexcept {
+        return ObjectConfig::Get().minImageCanvasDimensionMm;
     }
 
     // =========================================================================
-    // IMAGE ASSIGNMENT & DECODING
+    // PHYSICAL DPI SCALING
     // =========================================================================
 
     /**
-     * @brief Converts whatever resoltion of image was used using Dpi into mm and scaled accordinly
+     * @brief Converts native pixel resolution into world millimeters via screen DPI,
+     *        enforcing hard maximum and minimum constraints while strictly preserving aspect ratio.
      *
-     * Working Process:
-     *   1. Screen Pixel to Millimeter Conversion:
-     *      Uses standard 1 inch = 25.4 mm ratio:
-     *        mmPerPixel = 25.4 / effectiveDpi
-     *        rawW = naturalWidth * mmPerPixel
-     *        rawH = naturalHeight * mmPerPixel
+     * Mathematical Derivation:
+     *   mmPerPixel = 25.4 / effectiveDpi
+     *   rawW = naturalWidth * mmPerPixel
+     *   rawH = naturalHeight * mmPerPixel
      *
-     *   2. Hard Maximum Limit (s_maxDimensionLimitMm):
-     *      If the image exceeds s_maxDimensionLimitMm, scales both dimensions down
-     *      proportionally to preserve the exact aspect ratio:
-     *        scale = s_maxDimensionLimitMm / max(rawW, rawH)
-     *        worldWidth = rawW * scale
-     *        worldHeight = rawH * scale
+     *   maxDimension = max(rawW, rawH)
+     *   if maxDimension > s_maxDimensionLimitMm:
+     *     downscale = s_maxDimensionLimitMm / maxDimension
+     *     rawW *= downscale, rawH *= downscale
      *
-     *   3. Hard Minimum Limit (s_minDimensionLimitMm):
-     *      If a tiny snip is smaller than s_minDimensionLimitMm, scales it up so it
-     *      doesn't become an unselectable speck on the canvas:
-     *        scale = s_minDimensionLimitMm / min(worldWidth, worldHeight)
-     *        worldWidth *= scale
-     *        worldHeight *= scale
+     *   minDimension = min(rawW, rawH)
+     *   if minDimension < s_minDimensionLimitMm:
+     *     upscale = s_minDimensionLimitMm / minDimension
+     *     rawW *= upscale, rawH *= upscale
      *
      * @param[in] dpi Target display density in dots-per-inch (defaults to 96.0 fallback if <= 0).
      */
     void CalculateDimensionsFromDpi(double dpi = 0.0);
-
-    /**
-     * @brief Assigns a decoded raster surface, caches it in memory, and computes physical
-     *        canvas millimeter dimensions from screen DPI with hard size clamping.
-     *
-     * Working Process:
-     *   1. Binds cached BLImage surface and sets isLoaded = true.
-     *   2. Deduces imageFormat from file extension if path is provided.
-     *   3. Captures source pixel dimensions (naturalWidth, naturalHeight).
-     *   4. Delegates to CalculateDimensionsFromDpi() to compute aspect-locked mm bounds.
-     *   5. Updates the spatial AABB bounding box for R-Tree indexing.
-     *
-     * @param[in] img In-memory decoded BLImage surface.
-     * @param[in] path Associated file path or package reference.
-     * @param[in] dpi Display density in DPI passed at assignment (defaults to 96.0 fallback if <= 0).
-     */
-    void SetImage(const BLImage& img, const std::string& path = "", double dpi = 0.0);
-
-    /**
-     * @brief Ensures the Blend2D raster surface is decoded and resident in memory.
-     *
-     * Working Process:
-     *   1. If already loaded and valid, returns true immediately.
-     *   2. If embeddedData is populated, decodes via BLImage::read_from_data.
-     *   3. If imagePath is populated, resolves against packageRoot via FileManager and
-     *      reads binary payload into memory via FileManager::ReadBinary for safe Unicode decoding.
-     *   4. Updates naturalWidth, naturalHeight, imageFormat, and isLoaded flag upon success.
-     *
-     * @param[in] packageRoot Optional base directory of the active notebook package.
-     * @return True if the image surface is valid and ready for rendering; false otherwise.
-     */
-    bool EnsureLoaded(const std::string& packageRoot = "");
 
     // =========================================================================
     // RENDERING
@@ -214,14 +271,6 @@ public:
 
     /**
      * @brief Renders the image surface or fallback placeholder onto the Blend2D context.
-     *
-     * Working Process:
-     *   1. Verifies visibility; returns immediately if hidden.
-     *   2. Lazily invokes EnsureLoaded() if the surface is not yet decoded.
-     *   3. Saves Blend2D context state and applies 2D affine transformation.
-     *   4. If surface is valid, blits cached BLImage into destination rectangle.
-     *   5. If surface is missing or unloaded, draws a placeholder card with outline.
-     *   6. Restores context state.
      *
      * @param[in,out] ctx Blend2D graphics rendering context.
      * @param[in] viewport Current camera viewport settings.
@@ -234,34 +283,44 @@ public:
 
     /**
      * @brief Computes the native or current aspect ratio (Width / Height).
-     *
      * @return Aspect ratio as double (Width / Height). Returns 1.0 if degenerate.
      */
     [[nodiscard]] double GetAspectRatio() const noexcept;
 
     /**
-     * @brief Resizes width while scaling height proportionally to maintain aspect ratio:
-     *        worldHeight = newWidth / aspect.
-     *
+     * @brief Resizes width while scaling height proportionally to maintain aspect ratio.
      * @param[in] newWidth Target width in world mm (must be positive).
      */
     void SetWidthPreservingAspect(double newWidth);
 
     /**
-     * @brief Resizes height while scaling width proportionally to maintain aspect ratio:
-     *        worldWidth = newHeight * aspect.
-     *
+     * @brief Resizes height while scaling width proportionally to maintain aspect ratio.
      * @param[in] newHeight Target height in world mm (must be positive).
      */
     void SetHeightPreservingAspect(double newHeight);
 
     // =========================================================================
-    // CLONING
+    // CONTEXT MENU & OBJECT ACTIONS
     // =========================================================================
 
     /**
-     * @brief Creates an exact polymorphic duplicate of this ImageObject.
+     * @brief Injects image-specific actions into the interactive right-click context menu.
+     * Adds: 100% Size Reset, Copy to Clipboard, Save Image As, and Animation Controls.
      *
+     * @param[in,out] actions Mutable vector of menu items to append actions to.
+     */
+    void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) override;
+
+    // =========================================================================
+    // CLONING
+    // =========================================================================
+
+    /// Callback invoked when internal context actions (e.g. Reset 100%, animation frame steps)
+    /// alter geometry or visual state, notifying the canvas engine to rebake and update gizmo bounds immediately.
+    std::function<void()> onVisualStateChanged;
+
+    /**
+     * @brief Creates an exact polymorphic duplicate of this ImageObject.
      * @return Unique pointer to cloned ImageObject.
      */
     [[nodiscard]] std::unique_ptr<CanvasObject> Clone() const override;

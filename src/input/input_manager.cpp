@@ -282,8 +282,14 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     // receives interaction rather than the host ImGui window frame.
     //
     // Mathematical formulation:
-    //   imguiHasFocus = WantCaptureMouse AND NOT (wasCanvasImageHovered OR isPdfCanvasHovered)
-    bool imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !(wasCanvasImageHovered || stateMachine.isPdfCanvasHovered));
+    //   imguiHasFocus = WantCaptureMouse AND NOT (wasCanvasImageHovered OR isPdfCanvasHovered OR isCanvasDragging)
+    const bool isCanvasDragging = canvas.selectionGizmo.isDragging || 
+                                  canvas.marqueeBox.isActive || 
+                                  canvas.liveLayer.HasActiveData() ||
+                                  (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso && stateMachine.mouse.leftButton) ||
+                                  (stateMachine.currentAction == InteractionState::Panning && stateMachine.mouse.leftButton);
+
+    bool imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !(wasCanvasImageHovered || stateMachine.isPdfCanvasHovered) && !isCanvasDragging);
     
     // Diagnostic log for genuine physical mouse clicks (excluding synthetic SDL touch/pen mouse events)
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {

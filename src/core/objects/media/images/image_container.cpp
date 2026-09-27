@@ -1,13 +1,18 @@
 /**
  * =========================================================================================
  * @file core/objects/media/images/image_container.cpp
- * @brief Implementation of ImageObject Methods and Raster Rendering Pipeline
+ * @brief Implementation of ImageObject High-Level Coordinator and Raster Rendering
  * =========================================================================================
  */
 
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/images/image_decoder.hpp"
 #include "io/file_manager.hpp"
+#include "utils/logger.hpp"
+
+#include <cmath>
+#include <algorithm>
+#include <SDL3/SDL.h>
 
 namespace Folio {
 
@@ -22,66 +27,139 @@ ImageObject::ImageObject() {
     UpdateBounds();
 }
 
-ImageObject::ImageObject(const BLImage& img, const std::string& path, double dpi) {
+ImageObject::ImageObject(const uint8_t* data, size_t size, std::string_view filenameHint, double dpi) {
     type = ObjectType::Image;
-    SetImage(img, path, dpi);
+    worldWidth = 0.0;
+    worldHeight = 0.0;
+    UpdateBounds();
+    LoadFromMemory(data, size, filenameHint, dpi);
 }
 
-// =============================================================================
-// IMAGE ASSIGNMENT & DECODING
-// =============================================================================
+ImageObject::ImageObject(const std::vector<uint8_t>& data, std::string_view filenameHint, double dpi)
+    : ImageObject(data.data(), data.size(), filenameHint, dpi) {}
 
-void ImageObject::CalculateDimensionsFromDpi(double dpi) {
-    
-    
-    // check if natural dimensions are set
-    if (naturalWidth == 0 || naturalHeight == 0) {
-        return;
-    }
-
-    // default to 96 dpi if not set
-    const double effectiveDpi = (dpi >= 10.0) ? dpi : 96.0;
-
-    // Convert pixel dimensions to physical millimeters: 1 inch = 25.4 mm
-    const double mmPerPixel = 25.4 / effectiveDpi;
-    double rawW = static_cast<double>(naturalWidth) * mmPerPixel;
-    double rawH = static_cast<double>(naturalHeight) * mmPerPixel;
-
-    // 1. Hard maximum limit clamping (preserves aspect ratio)
-    const double maxDimension = (std::max)(rawW, rawH);
-    if (maxDimension > s_maxDimensionLimitMm && maxDimension > 0.0) {
-        const double downscale = s_maxDimensionLimitMm / maxDimension;
-        rawW *= downscale;
-        rawH *= downscale;
-    }
-
-    // 2. Hard minimum limit clamping (prevents sub-millimeter disappearance)
-    const double minDimension = (std::min)(rawW, rawH);
-    if (minDimension < s_minDimensionLimitMm && minDimension > 0.0) {
-        const double upscale = s_minDimensionLimitMm / minDimension;
-        rawW *= upscale;
-        rawH *= upscale;
-    }
-
-    worldWidth = rawW;
-    worldHeight = rawH;
+ImageObject::ImageObject(const std::string& filePath, double dpi) {
+    type = ObjectType::Image;
+    worldWidth = 0.0;
+    worldHeight = 0.0;
+    UpdateBounds();
+    LoadFromFile(filePath, dpi);
 }
 
-void ImageObject::SetImage(const BLImage& img, const std::string& path, double dpi) {
-    cachedBlImage = img;
-    imagePath = path;
-    isLoaded = !img.is_empty();
-    frames.clear();
-    isAnimated = false;
-    currentFrameIndex = 0;
-    lastFrameTickMs = 0;
+bool ImageObject::LoadFromFile(const std::string& filePath, double dpi) {
+    loadFailed = false;
 
-    if (!path.empty()) {
-        ImageFormat detected = ImageFormatFromExtension(path);
+    if (filePath.empty()) {
+        isLoaded = false;
+        loadFailed = true;
+        LOG_WARN(CanvasObject, "ImageObject::LoadFromFile rejected: File path is empty.");
+        return false;
+    }
+
+    imagePath = filePath;
+
+    // Resolve relative companion package path or absolute filesystem disk path
+    const std::string resolvedPath = FileManager::ResolveAssetPath(filePath);
+    if (!FileManager::Exists(resolvedPath)) {
+        isLoaded = false;
+        loadFailed = true;
+        LOG_ERROR(CanvasObject, "ImageObject::LoadFromFile: File does not exist: " + resolvedPath);
+        return false;
+    }
+
+    std::vector<uint8_t> fileBuffer;
+    if (!FileManager::ReadBinary(resolvedPath, fileBuffer) || fileBuffer.empty()) {
+        isLoaded = false;
+        loadFailed = true;
+        LOG_ERROR(CanvasObject, "ImageObject::LoadFromFile: Failed to read binary bytes from: " + resolvedPath);
+        return false;
+    }
+
+    return LoadFromMemory(fileBuffer.data(), fileBuffer.size(), filePath, dpi);
+}
+
+bool ImageObject::LoadFromMemory(const uint8_t* data, size_t size, std::string_view filenameHint, double dpi) {
+    loadFailed = false;
+
+    if (!data || size == 0) {
+        isLoaded = false;
+        loadFailed = true;
+        LOG_WARN(CanvasObject, "ImageObject::LoadFromMemory rejected: Buffer pointer is null or size is 0 bytes.");
+        return false;
+    }
+
+    if (size > ObjectConfig::Get().maxImageFileSizeBytes) {
+        isLoaded = false;
+        loadFailed = true;
+        LOG_WARN(CanvasObject, "ImageObject::LoadFromMemory rejected: Buffer size (" + 
+                               std::to_string(size) + " bytes) exceeds maximum configured limit (" + 
+                               std::to_string(ObjectConfig::Get().maxImageFileSizeBytes) + " bytes).");
+        return false;
+    }
+
+    if (!filenameHint.empty()) {
+        ImageFormat detected = ImageFormatFromExtension(filenameHint);
         if (detected != ImageFormat::Unknown) {
             imageFormat = detected;
         }
+
+        // Only adopt filenameHint as persistent imagePath if it represents an actual filename or path,
+        // rather than just a bare extension hint (e.g. ".png" or "webp").
+        const bool isBareExtension = (filenameHint.front() == '.' && filenameHint.find_first_of("/\\") == std::string_view::npos) ||
+                                     (filenameHint.find_first_of("./\\") == std::string_view::npos);
+        if (!isBareExtension) {
+            imagePath = std::string(filenameHint);
+        }
     }
+
+    // Retain binary buffer for document persistence/serialization
+    embeddedData.assign(data, data + size);
+
+    DecodedImageResult result = ImageDecoder::DecodeFromMemory(data, size, filenameHint);
+    if (!result.success || (result.image.is_empty() && result.frames.empty())) {
+        isLoaded = false;
+        loadFailed = true;
+        const std::string hintStr = filenameHint.empty() ? "<in-memory payload>" : std::string(filenameHint);
+        const std::string reason = result.errorMessage.empty() ? "Unsupported format or corrupted payload" : result.errorMessage;
+        LOG_ERROR(CanvasObject, "ImageObject::LoadFromMemory failed to decode " + hintStr + " (" + std::to_string(size) + " bytes): " + reason);
+        return false;
+    }
+
+    if (result.isAnimated && result.frames.size() > 1) {
+        isAnimated = true;
+        isAnimationPaused = false;
+        frames = std::move(result.frames);
+        cachedBlImage = frames[0].image;
+        currentFrameIndex = 0;
+        lastFrameTickMs = 0;
+    } else {
+        isAnimated = false;
+        isAnimationPaused = false;
+        frames.clear();
+        cachedBlImage = std::move(result.image);
+    }
+
+    naturalWidth = result.naturalWidth;
+    naturalHeight = result.naturalHeight;
+    if (result.format != ImageFormat::Unknown) {
+        imageFormat = result.format;
+    }
+    isLoaded = true;
+
+    CalculateDimensionsFromDpi(dpi);
+    UpdateBounds();
+    return true;
+}
+
+void ImageObject::SetSurface(const BLImage& img, double dpi) {
+    cachedBlImage = img;
+    frames.clear();
+    isAnimated = false;
+    isAnimationPaused = false;
+    currentFrameIndex = 0;
+    lastFrameTickMs = 0;
+    isLoaded = !img.is_empty();
+    loadFailed = img.is_empty();
 
     if (isLoaded) {
         naturalWidth = static_cast<uint32_t>(img.width());
@@ -91,21 +169,90 @@ void ImageObject::SetImage(const BLImage& img, const std::string& path, double d
     UpdateBounds();
 }
 
-void ImageObject::SetAnimatedFrames(std::vector<ImageFrame> animFrames) {
-    frames = std::move(animFrames);
-    isAnimated = (frames.size() > 1);
-    currentFrameIndex = 0;
-    lastFrameTickMs = 0;
-    if (!frames.empty()) {
-        cachedBlImage = frames[0].image;
-        naturalWidth = static_cast<uint32_t>(cachedBlImage.width());
-        naturalHeight = static_cast<uint32_t>(cachedBlImage.height());
-        isLoaded = true;
+bool ImageObject::EnsureLoaded() {
+    if (isLoaded && !cachedBlImage.is_empty()) {
+        return true;
     }
+
+    // Suppress repeated reload thrashing and 120 FPS console log spamming if previous load failed
+    if (loadFailed) {
+        return false;
+    }
+
+    // Preserve custom bounds if already deserialized or set
+    const double savedW = worldWidth;
+    const double savedH = worldHeight;
+    bool ok = false;
+
+    if (!embeddedData.empty()) {
+        ok = LoadFromMemory(embeddedData.data(), embeddedData.size(), imagePath);
+    } else if (!imagePath.empty()) {
+        // Fallback: reload from package companion asset or physical filesystem path
+        ok = LoadFromFile(imagePath);
+    } else {
+        LOG_WARN(CanvasObject, "ImageObject::EnsureLoaded: No embedded buffer or valid image path available to restore image surface.");
+    }
+
+    if (ok && savedW > 0.0 && savedH > 0.0) {
+        worldWidth = savedW;
+        worldHeight = savedH;
+        UpdateBounds();
+    } else if (!ok) {
+        loadFailed = true;
+        LOG_ERROR(CanvasObject, "ImageObject::EnsureLoaded: Failed to restore surface for '" + imagePath + "'. Displaying placeholder fallback.");
+    }
+
+    return ok;
 }
 
+// =============================================================================
+// PHYSICAL DPI SCALING & DIMENSION CALCULATION
+// =============================================================================
+
+void ImageObject::CalculateDimensionsFromDpi(double dpi) {
+    if (naturalWidth == 0 || naturalHeight == 0) {
+        return;
+    }
+
+    // Default to configured standard desktop display density fallback
+    const double fallbackDpi = ObjectConfig::Get().defaultImageDpi;
+    const double effectiveDpi = (dpi >= 10.0) ? dpi : (fallbackDpi >= 10.0 ? fallbackDpi : 96.0);
+
+    // Convert pixel dimensions to physical millimeters: 1 inch = 25.4 mm
+    const double mmPerPixel = 25.4 / effectiveDpi;
+    double rawW = static_cast<double>(naturalWidth) * mmPerPixel;
+    double rawH = static_cast<double>(naturalHeight) * mmPerPixel;
+
+    // 1. Hard maximum limit clamping (preserves exact source aspect ratio)
+    const double maxLimitMm = ObjectConfig::Get().maxImageCanvasDimensionMm;
+    const double maxDimension = (std::max)(rawW, rawH);
+    if (maxLimitMm > 0.0 && maxDimension > maxLimitMm) {
+        const double downscale = maxLimitMm / maxDimension;
+        rawW *= downscale;
+        rawH *= downscale;
+    }
+
+    // 2. Hard minimum limit clamping (prevents sub-millimeter disappearance)
+    const double minLimitMm = ObjectConfig::Get().minImageCanvasDimensionMm;
+    const double minDimension = (std::min)(rawW, rawH);
+    if (minLimitMm > 0.0 && minDimension < minLimitMm) {
+        const double upscale = minLimitMm / minDimension;
+        rawW *= upscale;
+        rawH *= upscale;
+    }
+
+    worldWidth = rawW;
+    worldHeight = rawH;
+}
+
+// =============================================================================
+// ANIMATION CONTROL & TIMING
+// =============================================================================
+
 bool ImageObject::UpdateAnimation(uint64_t nowMs) {
-    if (!isAnimated || frames.size() <= 1) return false;
+    if (isAnimationPaused || !isAnimated || frames.size() <= 1) {
+        return false;
+    }
 
     if (lastFrameTickMs == 0) {
         lastFrameTickMs = nowMs;
@@ -129,38 +276,26 @@ bool ImageObject::UpdateAnimation(uint64_t nowMs) {
     return false;
 }
 
-bool ImageObject::EnsureLoaded(const std::string& packageRoot) {
-    if (isLoaded && !cachedBlImage.is_empty()) {
-        return true;
+void ImageObject::StepNextFrame() noexcept {
+    if (!frames.empty()) {
+        currentFrameIndex = (currentFrameIndex + 1) % frames.size();
+        cachedBlImage = frames[currentFrameIndex].image;
     }
+}
 
-    DecodedImageResult result;
-
-    // 1. Attempt decoding from raw embedded memory buffer if available
-    if (!embeddedData.empty()) {
-        result = ImageDecoder::DecodeFromMemory(embeddedData.data(), embeddedData.size(), imagePath);
+void ImageObject::StepPreviousFrame() noexcept {
+    if (!frames.empty()) {
+        currentFrameIndex = (currentFrameIndex == 0) ? (frames.size() - 1) : (currentFrameIndex - 1);
+        cachedBlImage = frames[currentFrameIndex].image;
     }
-    // 2. Otherwise attempt decoding from physical file on disk via FileManager
-    else if (!imagePath.empty()) {
-        result = ImageDecoder::DecodeFromFile(imagePath, packageRoot);
-    }
+}
 
-    if (result.success) {
-        cachedBlImage = std::move(result.image);
-        frames = std::move(result.frames);
-        isAnimated = result.isAnimated;
+void ImageObject::ResetToFirstFrame() noexcept {
+    if (!frames.empty()) {
         currentFrameIndex = 0;
+        cachedBlImage = frames[0].image;
         lastFrameTickMs = 0;
-        naturalWidth = result.naturalWidth;
-        naturalHeight = result.naturalHeight;
-        if (result.format != ImageFormat::Unknown) {
-            imageFormat = result.format;
-        }
-        isLoaded = true;
-        return true;
     }
-
-    return false;
 }
 
 // =============================================================================
@@ -224,6 +359,128 @@ void ImageObject::SetHeightPreservingAspect(double newHeight) {
     worldWidth = (aspect > 0.001) ? (newHeight * aspect) : worldWidth;
     UpdateBounds();
 }
+
+// =============================================================================
+// CONTEXT MENU & OBJECT ACTIONS
+// =============================================================================
+
+void ImageObject::CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) {
+    // 1. Reset to 100% Size (1:1 DPI projection)
+    Folio::ContextMenuItem resetSizeAct;
+    resetSizeAct.label = "Reset to 100% Size";
+    resetSizeAct.shortcut = "1:1";
+    resetSizeAct.icon = "🔍";
+    resetSizeAct.iconKey = "zoom_reset";
+    resetSizeAct.order = 50;
+    resetSizeAct.onTrigger = [this]() {
+        CalculateDimensionsFromDpi(96.0);
+        UpdateBounds();
+        if (onVisualStateChanged) {
+            onVisualStateChanged();
+        }
+    };
+    actions.push_back(std::move(resetSizeAct));
+
+    // 2. Copy Image to Clipboard
+    Folio::ContextMenuItem copyAct;
+    copyAct.label = "Copy Image to Clipboard";
+    copyAct.shortcut = "Ctrl+C";
+    copyAct.icon = "📋";
+    copyAct.iconKey = "copy";
+    copyAct.order = 51;
+    copyAct.onTrigger = [this]() {
+        if (!imagePath.empty()) {
+            FileManager::SetClipboardText(imagePath);
+        }
+    };
+    actions.push_back(std::move(copyAct));
+
+    // 3. Save Image As...
+    Folio::ContextMenuItem saveAct;
+    saveAct.label = "Save Image As...";
+    saveAct.icon = "💾";
+    saveAct.iconKey = "save";
+    saveAct.order = 52;
+    saveAct.onTrigger = [this]() {
+        std::string suggestedName = "image.png";
+        if (!imagePath.empty()) {
+            suggestedName = FileManager::GetFileName(imagePath);
+        }
+        std::string saveDest = FileManager::ShowSaveFileDialog("Save Image As", suggestedName);
+        if (!saveDest.empty()) {
+            bool saveOk = false;
+            if (!embeddedData.empty()) {
+                saveOk = FileManager::WriteBinaryAtomic(saveDest, embeddedData);
+            } else if (!cachedBlImage.is_empty()) {
+                saveOk = (cachedBlImage.write_to_file(saveDest.c_str()) == BL_SUCCESS);
+            }
+            if (!saveOk) {
+                LOG_ERROR(CanvasObject, "ImageObject: Failed to save image to '" + saveDest + "'.");
+            }
+        }
+    };
+    actions.push_back(std::move(saveAct));
+
+    // 4. Animation Controls (only visible if multi-frame animation)
+    if (IsAnimated()) {
+        Folio::ContextMenuItem pauseAct;
+        pauseAct.label = isAnimationPaused ? "Play Animation" : "Pause Animation";
+        pauseAct.icon = isAnimationPaused ? "▶" : "⏸";
+        pauseAct.iconKey = isAnimationPaused ? "play" : "pause";
+        pauseAct.order = 40;
+        pauseAct.isSeparatorBefore = true;
+        pauseAct.onTrigger = [this]() {
+            ToggleAnimationPlayPause();
+            if (onVisualStateChanged) {
+                onVisualStateChanged();
+            }
+        };
+        actions.push_back(std::move(pauseAct));
+
+        Folio::ContextMenuItem nextAct;
+        nextAct.label = "Next Frame";
+        nextAct.icon = "⏭";
+        nextAct.iconKey = "next";
+        nextAct.order = 41;
+        nextAct.onTrigger = [this]() {
+            StepNextFrame();
+            if (onVisualStateChanged) {
+                onVisualStateChanged();
+            }
+        };
+        actions.push_back(std::move(nextAct));
+
+        Folio::ContextMenuItem prevAct;
+        prevAct.label = "Previous Frame";
+        prevAct.icon = "⏮";
+        prevAct.iconKey = "prev";
+        prevAct.order = 42;
+        prevAct.onTrigger = [this]() {
+            StepPreviousFrame();
+            if (onVisualStateChanged) {
+                onVisualStateChanged();
+            }
+        };
+        actions.push_back(std::move(prevAct));
+
+        Folio::ContextMenuItem resetFrameAct;
+        resetFrameAct.label = "Reset to Frame 0";
+        resetFrameAct.icon = "⏮";
+        resetFrameAct.iconKey = "rewind";
+        resetFrameAct.order = 43;
+        resetFrameAct.onTrigger = [this]() {
+            ResetToFirstFrame();
+            if (onVisualStateChanged) {
+                onVisualStateChanged();
+            }
+        };
+        actions.push_back(std::move(resetFrameAct));
+    }
+}
+
+// =============================================================================
+// CLONING
+// =============================================================================
 
 std::unique_ptr<CanvasObject> ImageObject::Clone() const {
     return std::make_unique<ImageObject>(*this);

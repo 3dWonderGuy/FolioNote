@@ -12,6 +12,7 @@
 #include "io/file_reader.hpp"
 #include "io/file_writer.hpp"
 #include "utils/logger.hpp"
+#include "core/objects/object_config.hpp"
 
 #if defined(__ANDROID__)
 #include <SDL3/SDL.h>
@@ -132,6 +133,11 @@ public:
     int dailyBackupsRetention = 7;         ///< Number of rolling daily snapshots to retain
     int weeklyBackupsRetention = 4;        ///< Number of rolling weekly snapshots to retain
     int monthlyBackupsRetention = 12;      ///< Number of rolling monthly snapshots to retain
+
+    // ==========================================================================
+    // Canvas Objects & Media Constraints Configuration
+    // ==========================================================================
+    Folio::ObjectConfig objectConfig;
 
     // Has settings been loaded from disk
     bool isLoaded = false;
@@ -400,6 +406,38 @@ public:
                 if (jB.contains("monthlyBackupsRetention")) monthlyBackupsRetention = jB["monthlyBackupsRetention"].get<int>();
             }
 
+            // 9. Canvas Objects & Media Constraints Settings
+            if (j.contains("objects") && j["objects"].is_object()) {
+                const auto& jObj = j["objects"];
+                if (jObj.contains("maxDecodedPixelDimension")) {
+                    objectConfig.maxDecodedPixelDimension = jObj["maxDecodedPixelDimension"].get<uint32_t>();
+                }
+                if (jObj.contains("maxImageCanvasDimensionMm")) {
+                    objectConfig.maxImageCanvasDimensionMm = jObj["maxImageCanvasDimensionMm"].get<double>();
+                }
+                if (jObj.contains("minImageCanvasDimensionMm")) {
+                    objectConfig.minImageCanvasDimensionMm = jObj["minImageCanvasDimensionMm"].get<double>();
+                }
+                if (jObj.contains("defaultImageDpi")) {
+                    objectConfig.defaultImageDpi = jObj["defaultImageDpi"].get<double>();
+                }
+                if (jObj.contains("maxImageFileSizeBytes")) {
+                    objectConfig.maxImageFileSizeBytes = jObj["maxImageFileSizeBytes"].get<size_t>();
+                }
+                if (jObj.contains("maxAttachmentFileSizeBytes")) {
+                    objectConfig.maxAttachmentFileSizeBytes = jObj["maxAttachmentFileSizeBytes"].get<size_t>();
+                }
+                if (jObj.contains("attachmentChipWidthMm")) {
+                    objectConfig.attachmentChipWidthMm = jObj["attachmentChipWidthMm"].get<double>();
+                }
+                if (jObj.contains("attachmentChipHeightMm")) {
+                    objectConfig.attachmentChipHeightMm = jObj["attachmentChipHeightMm"].get<double>();
+                }
+            }
+
+            // Synchronize in-memory global ObjectConfig singleton
+            Folio::ObjectConfig::Get() = objectConfig;
+
             isLoaded = true;
             return true;
         } catch (const std::exception& ex) {
@@ -525,6 +563,21 @@ public:
                 { "dailyBackupsRetention", dailyBackupsRetention },
                 { "weeklyBackupsRetention", weeklyBackupsRetention },
                 { "monthlyBackupsRetention", monthlyBackupsRetention }
+            };
+
+            // Synchronize with global ObjectConfig in case limits were updated via API
+            objectConfig = Folio::ObjectConfig::Get();
+
+            // Canvas Objects & Media Constraints section
+            j["objects"] = {
+                { "maxDecodedPixelDimension", objectConfig.maxDecodedPixelDimension },
+                { "maxImageCanvasDimensionMm", objectConfig.maxImageCanvasDimensionMm },
+                { "minImageCanvasDimensionMm", objectConfig.minImageCanvasDimensionMm },
+                { "defaultImageDpi", objectConfig.defaultImageDpi },
+                { "maxImageFileSizeBytes", objectConfig.maxImageFileSizeBytes },
+                { "maxAttachmentFileSizeBytes", objectConfig.maxAttachmentFileSizeBytes },
+                { "attachmentChipWidthMm", objectConfig.attachmentChipWidthMm },
+                { "attachmentChipHeightMm", objectConfig.attachmentChipHeightMm }
             };
 
             return Folio::FileWriter::WriteString(filepath, j.dump(2));
