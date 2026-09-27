@@ -74,11 +74,24 @@ void DocumentSession::CommitStroke(FinishedStrokeData&& data, const PenTool& too
     container->isHighlighter = (tool.penType == PenType::Highlighter);
     
     Stroke stroke;
+    stroke.color = tool.color;
+    stroke.baseWidthMm = tool.baseSize;
+    stroke.strokePattern = tool.strokePattern;
+    stroke.capType = tool.capType;
+    stroke.blendMode = tool.blendMode;
+    stroke.penType = tool.penType;
+    stroke.opacity = tool.opacity;
+
+    if (!data.liveSegments.empty()) {
+        stroke.points.reserve(data.liveSegments.size() + 1);
+        stroke.points.push_back({ data.liveSegments[0].p0.x, data.liveSegments[0].p0.y, data.liveSegments[0].width * 0.5f });
+        for (const auto& s : data.liveSegments) {
+            stroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
+        }
+    }
+
     stroke.outlinePath = std::move(data.outlinePath);
     stroke.segments = std::move(data.liveSegments);
-    stroke.color = tool.color;
-    stroke.baseWidth = tool.baseSize;
-    stroke.pattern = tool.strokePattern;
     container->AddStroke(stroke);
 
     activePage->AddObject(container);
@@ -106,17 +119,28 @@ void DocumentSession::CommitStroke(std::vector<Segment1D>&& segments, const PenT
     container->isHighlighter = (tool.penType == PenType::Highlighter);
     
     Stroke stroke;
+    stroke.color = tool.color;
+    stroke.baseWidthMm = tool.baseSize;
+    stroke.strokePattern = tool.strokePattern;
+    stroke.capType = tool.capType;
+    stroke.blendMode = tool.blendMode;
+    stroke.penType = tool.penType;
+    stroke.opacity = tool.opacity;
+
     std::vector<StrokeOutlineBuilder::InputPoint> pts;
     pts.reserve(segments.size() + 1);
+    stroke.points.reserve(segments.size() + 1);
+
     pts.push_back({ segments[0].p0.x, segments[0].p0.y, segments[0].width });
+    stroke.points.push_back({ segments[0].p0.x, segments[0].p0.y, segments[0].width * 0.5f });
+
     for (const auto& s : segments) {
         pts.push_back({ s.p1.x, s.p1.y, s.width });
+        stroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
     }
+
     stroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, tool.capType, tool.strokePattern);
     stroke.segments = std::move(segments);
-    stroke.color = tool.color;
-    stroke.baseWidth = tool.baseSize;
-    stroke.pattern = tool.strokePattern;
     container->AddStroke(stroke);
 
     activePage->AddObject(container);

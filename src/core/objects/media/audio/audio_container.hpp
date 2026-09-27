@@ -126,6 +126,11 @@ public:
      */
     bool HandleCanvasClick(double wx, double wy, std::function<void()> onDirty = nullptr);
 
+    /**
+     * @brief Polymorphic pointer click hook delegating to audio playback and scrubbing.
+     */
+    bool OnPointerClick(const Folio::CanvasContext& ctx) override;
+
     // =========================================================================
     // TRANSFORM & GIZMO INVARIANTS
     // =========================================================================

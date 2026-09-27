@@ -330,9 +330,23 @@ inline bool SerializeStrokesToIsf(const std::vector<std::shared_ptr<CanvasObject
         if (!ink) continue;
 
         for (const auto& stroke : ink->strokes) {
-            if (stroke.centerline.size() < 2) continue;
+            std::vector<Point2D> pts;
+            if (!stroke.points.empty()) {
+                pts.reserve(stroke.points.size());
+                for (const auto& pt : stroke.points) {
+                    pts.push_back({ pt.x, pt.y });
+                }
+            } else if (!stroke.segments.empty()) {
+                pts.reserve(stroke.segments.size() + 1);
+                pts.push_back(stroke.segments[0].p0);
+                for (const auto& seg : stroke.segments) {
+                    pts.push_back(seg.p1);
+                }
+            }
 
-            const auto numPoints = static_cast<long>(stroke.centerline.size());
+            if (pts.size() < 2) continue;
+
+            const auto numPoints = static_cast<long>(pts.size());
             SAFEARRAYBOUND bound;
             bound.cElements = static_cast<ULONG>(numPoints * 2);
             bound.lLbound = 0;
@@ -343,7 +357,7 @@ inline bool SerializeStrokesToIsf(const std::vector<std::shared_ptr<CanvasObject
             LONG* coords = nullptr;
             ::SafeArrayAccessData(psa, reinterpret_cast<void**>(&coords));
             for (long p = 0; p < numPoints; ++p) {
-                BLPoint tp = ink->transform.map_point(stroke.centerline[p].x, stroke.centerline[p].y);
+                BLPoint tp = ink->transform.map_point(pts[p].x, pts[p].y);
                 coords[p * 2]     = static_cast<LONG>(std::round(tp.x * 100.0));
                 coords[p * 2 + 1] = static_cast<LONG>(std::round(tp.y * 100.0));
             }
@@ -370,7 +384,7 @@ inline bool SerializeStrokesToIsf(const std::vector<std::shared_ptr<CanvasObject
                     pDA->put_Color(winColor);
 
                     const double scale = std::hypot(ink->transform.m00, ink->transform.m01);
-                    const auto wHimetric = static_cast<long>(std::round(stroke.baseWidth * (scale > 1e-4 ? scale : 1.0) * 100.0));
+                    const auto wHimetric = static_cast<long>(std::round(stroke.baseWidthMm * (scale > 1e-4 ? scale : 1.0) * 100.0));
                     pDA->put_Width(static_cast<float>(wHimetric > 0 ? wHimetric : 50));
                     pDA->Release();
                 }
@@ -521,19 +535,19 @@ inline std::shared_ptr<InkContainer> ParseIsfToInkContainer(const uint8_t* isfDa
                     s.color = BLRgba32(r, g, b, 255);
 
                     const double widthMm = (winWidthFloat > 0.0f) ? (static_cast<double>(winWidthFloat) * 0.01) : 0.5;
-                    s.baseWidth = widthMm;
+                    s.baseWidthMm = static_cast<float>(widthMm);
 
                     s.segments.reserve(numPoints - 1);
-                    s.centerline.reserve(numPoints);
+                    s.points.reserve(numPoints);
 
                     for (long p = 0; p < numPoints; ++p) {
                         const double px = coords[p * 2] * 0.01;     // HIMETRIC -> mm
                         const double py = coords[p * 2 + 1] * 0.01; // HIMETRIC -> mm
-                        s.centerline.emplace_back(px, py);
+                        s.points.push_back({ px, py, static_cast<float>(widthMm * 0.5) });
                         if (p > 0) {
                             Segment1D seg;
-                            seg.p0 = s.centerline[p - 1];
-                            seg.p1 = Point2D(px, py);
+                            seg.p0 = Point2D{ s.points[p - 1].x, s.points[p - 1].y };
+                            seg.p1 = Point2D{ px, py };
                             seg.width = static_cast<float>(widthMm);
                             s.segments.push_back(seg);
                         }
@@ -541,9 +555,9 @@ inline std::shared_ptr<InkContainer> ParseIsfToInkContainer(const uint8_t* isfDa
 
                     // Build closed polygon outline contour (BLPath)
                     std::vector<StrokeOutlineBuilder::InputPoint> pts;
-                    pts.reserve(s.centerline.size());
-                    for (const auto& cp : s.centerline) {
-                        pts.push_back({ static_cast<float>(cp.x), static_cast<float>(cp.y), static_cast<float>(widthMm), 1.0f });
+                    pts.reserve(s.points.size());
+                    for (const auto& sp : s.points) {
+                        pts.push_back({ static_cast<float>(sp.x), static_cast<float>(sp.y), static_cast<float>(widthMm), 1.0f });
                     }
                     s.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, CapType::Round);
 

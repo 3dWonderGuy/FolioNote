@@ -48,6 +48,7 @@
 #include "core/history/canvas_command.hpp"
 #include "core/document/document_session.hpp"
 #include "core/engine/canvas_engine.hpp"
+#include "ui/imgui_theme.hpp"
 #include "core/objects/object_action_registry.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"

@@ -7,7 +7,7 @@
 #include "core/spatial/aabb.hpp"
 #include "core/spatial/aabb_utils.hpp"
 #include "core/engine/gizmo_types.hpp"
-#include "core/engine/stroke_smoother.hpp"
+#include "core/objects/canvas_context.hpp"
 
 class CanvasTransform;
 struct Viewport;
@@ -17,11 +17,10 @@ struct ContextMenuItem;
 class IInteractiveOverlay;
 }
 
-
 /**
- * @brief Enumeration of all possible object types in the canvas.
+ * @brief Discriminated type tag for all canvas entities.
  */
-enum class ObjectType {
+enum class ObjectType : uint8_t {
     InkContainer,   
     Text,           
     Image,
@@ -34,204 +33,145 @@ enum class ObjectType {
     Audio,
     Link,        
     MathLaTeX,     
-    Frame,          // grouped frame container
-    Other,          // this is the mark for the custom objects made by third party plugins
+    Frame,          // Grouped frame container
+    Other           // Custom extension / third-party plugin objects
 };
 
-
 /**
- * @brief Base class for all drawable objects on the canvas. This class provides a common interface for different types of objects,
- * such as ink strokes, text boxes, and images.
+ * @brief Abstract base class for all drawable canvas objects.
+ * Operates strictly in physical world millimeters with no filesystem coupling.
  */
 class CanvasObject {
 public:
-    std::string guuid = "";                             // to have searchable text and prevent user to user collisions and for persistent storage id (ink is not tracked)
+    std::string guuid = "";                             // Persistent UUID for database serialization
     std::string groupId = "";                           // UUID of parent logical group (empty if ungrouped)
-    uint32_t uid = 0;                                   // Matches RTree UID index (deleted upon closing notebook)
+    uint32_t uid = 0;                                   // Transient runtime ID matching spatial R-Tree
 
-    ObjectType type = ObjectType::InkContainer;         // object type
+    ObjectType type = ObjectType::InkContainer;         // Object type discriminator
     
-    // Object position and size (disk saved)
-    double worldX      = 0.0;                           // Top-left X coordinate in world millimeters
-    double worldY      = 0.0;                           // Top-left Y coordinate in world millimeters
-    double worldWidth  = 0.0;                           // Extent width in world millimeters
-    double worldHeight = 0.0;                           // Extent height in world millimeters
-    // used for the interactive manipulation in the screen
-    BLMatrix2D transform = BLMatrix2D::make_identity(); // Used for transformation
+    // World-space coordinates and dimensions in physical millimeters
+    double worldX      = 0.0;
+    double worldY      = 0.0;
+    double worldWidth  = 0.0;
+    double worldHeight = 0.0;
 
-    AABB bounds;                                        // Cached World-space AABB
+    BLMatrix2D transform = BLMatrix2D::make_identity(); // Active affine manipulation matrix
+    AABB bounds;                                        // Cached world-space bounding box for R-Tree queries
 
-    int32_t zOrder = 1;                                 // Draw order (higher = front, 0 = background)
-    float opacity = 1.0f;                               // Alpha scalar
+    int32_t zOrder = 1;                                 // Stacking order (higher = foreground)
+    float opacity = 1.0f;                               // Global alpha multiplier [0.0, 1.0]
 
     // Packed state bitfields (1 byte total)
-    uint8_t isVisible    : 1 = 1;  // Soft-visibility flag (skips rendering without spatial eviction)
-    uint8_t isLocked     : 1 = 0;  // Modification guard against transforms/deletion
-    uint8_t isSelectable : 1 = 1;  // Interactive hit-test filter
-    uint8_t isSelected   : 1 = 0;  // Selection highlight & bounding box grip trigger
-    uint8_t isTemporary  : 1 = 0;  // Transient guide / preview stroke
-    uint8_t reserved     : 3 = 0;  // Reserved for future use
+    uint8_t isVisible    : 1 = 1;  // False skips rendering passes
+    uint8_t isLocked     : 1 = 0;  // True blocks selection and transforms
+    uint8_t isSelectable : 1 = 1;  // Hit-test filter for interactive selection
+    uint8_t isSelected   : 1 = 0;  // True displays gizmo handles and highlights
+    uint8_t isTemporary  : 1 = 0;  // True skips document persistence (previews/guides)
+    uint8_t reserved     : 3 = 0;  // Reserved alignment bits
 
-    virtual ~CanvasObject() = default;                  // Virtual destructor for proper cleanup of derived classes
+    // Lifecycle & Rule of 5: ensure derived objects are copy-constructible for Clone()
+    CanvasObject() = default;
+    virtual ~CanvasObject() = default;
+    CanvasObject(const CanvasObject&) = default;
+    CanvasObject& operator=(const CanvasObject&) = default;
 
-    /**
-     * @brief Returns true if this object belongs to a logical group.
-     */
+    // Checks if this object is bound to a parent logical group.
     [[nodiscard]] bool IsGrouped() const noexcept {
         return !groupId.empty();
     }
 
-    /********************************************* */
-    // Interactive Layer 3 Overlays
-    /********************************************* */
+    // =========================================================================
+    // LAYER 3 INTERACTIVE OVERLAYS
+    // =========================================================================
 
-    /**
-     * @brief Query whether this canvas object hosts an active interactive overlay subsystem (Layer 3).
-     * @return True if the object owns and presents a live interactive overlay; false otherwise.
-     */
-    [[nodiscard]] virtual bool HasLiveOverlay() const noexcept {
-        return false;
-    }
+    // Queries if this object hosts an interactive overlay widget.
+    [[nodiscard]] virtual bool HasLiveOverlay() const noexcept { return false; }
 
-    /**
-     * @brief Access the interactive overlay interface if this object hosts Layer 3 presentation.
-     * @return Pointer to IInteractiveOverlay interface, or nullptr if none hosted.
-     */
-    [[nodiscard]] virtual Folio::IInteractiveOverlay* GetOverlay() noexcept {
-        return nullptr;
-    }
+    // Returns mutable pointer to the hosted Layer 3 overlay interface.
+    [[nodiscard]] virtual Folio::IInteractiveOverlay* GetOverlay() noexcept { return nullptr; }
 
-    /**
-     * @brief Const access to the interactive overlay interface.
-     * @return Const pointer to IInteractiveOverlay interface, or nullptr if none hosted.
-     */
-    [[nodiscard]] virtual const Folio::IInteractiveOverlay* GetOverlay() const noexcept {
-        return nullptr;
-    }
+    // Returns const pointer to the hosted Layer 3 overlay interface.
+    [[nodiscard]] virtual const Folio::IInteractiveOverlay* GetOverlay() const noexcept { return nullptr; }
 
-    /********************************************* */
-    // Bounds & Spatial
-    /********************************************* */
+    // =========================================================================
+    // BOUNDS & SPATIAL
+    // =========================================================================
 
-    /**
-     * @brief Takes what ever the size of current object is and saves it as axis-aligned aabb bounds
-     */
+    // Recalculates the world-space AABB incorporating the active transform.
     virtual void UpdateBounds() {
         bounds = Folio::AABBUtils::ComputeTransformedBounds(worldX, worldY, worldWidth, worldHeight, transform);
     }
 
-    /**
-     * @brief Tests if a single 2D world-space point intersects the object.
-     * @param worldX World X coordinate in millimeters.
-     * @param worldY World Y coordinate in millimeters.
-     * @return True if the point lies inside or on the object's active boundary.
-     */
-    virtual bool HitTest(double worldX, double worldY) const {
-        return bounds.Contains(worldX, worldY); // check if the point is inside the bounds of the object
+    // Tests if a world-space point intersects the object's boundary.
+    [[nodiscard]] virtual bool HitTest(double x, double y) const {
+        return bounds.Contains(x, y);
     }
 
-    /**
-    * @brief Tests if a world-space circle (stylus tip, touch point, or eraser)
-    * intersects the object's boundary.
-    *
-    * @param worldX Circle center X in millimeters.
-    * @param worldY Circle center Y in millimeters.
-    * @param radiusMm Circle radius in millimeters.
-    */
-    virtual bool HitTestCircle(double worldX, double worldY, double radiusMm) const {
-        return Folio::AABBUtils::IntersectsCircle(bounds, worldX, worldY, radiusMm);
+    // Tests if a world-space circle (stylus tip, touch, or eraser) intersects the object.
+    [[nodiscard]] virtual bool HitTestCircle(double cx, double cy, double radiusMm) const {
+        return Folio::AABBUtils::IntersectsCircle(bounds, cx, cy, radiusMm);
     }
 
-    /**
-     * @brief Gets the cached world-space axis-aligned bounding box.
-     */
+    // Retrieves the cached world-space axis-aligned bounding box.
     [[nodiscard]] const AABB& GetAABB() const noexcept { return bounds; }
 
-    /********************************************* */
-    // Geometry & Transforms
-    /********************************************* */
+    // =========================================================================
+    // GEOMETRY & TRANSFORMS
+    // =========================================================================
 
-    /**
-     * @brief Applies a 2D affine transformation matrix to this object.
-     *
-     * @param matrix 2D affine transformation matrix.
-     */
+    // Post-multiplies a transformation matrix and refreshes bounds.
     virtual void ApplyTransform(const BLMatrix2D& matrix) {
         transform.post_transform(matrix);
         UpdateBounds();
     }
 
-    /**
-     * @brief Bakes the accumulated affine transform matrix into the object's intrinsic geometry.
-     *
-     * General Process:
-     *   Called upon completion of an interactive manipulation (e.g. mouse release after gizmo drag/rotation).
-     *   For standard rectangular objects, delegates to Folio::AABBUtils::BakeTransformedRect to commit
-     *   scale and translation into (worldX, worldY, worldWidth, worldHeight) and reset transform to identity.
-     *   Objects with custom geometry (InkContainer, SmartArrowObject) override this.
-     */
+    // Commits accumulated matrix into intrinsic dimensions and resets transform to identity.
     virtual void BakeTransform() {
         if (Folio::AABBUtils::BakeTransformedRect(worldX, worldY, worldWidth, worldHeight, transform)) {
             UpdateBounds();
         }
     }
 
-    /********************************************* */
-    // Rendering
-    /********************************************* */
+    // =========================================================================
+    // RENDERING & LIFECYCLE
+    // =========================================================================
 
-    /**
-     * @brief Different object require different type of rendering
-     *
-     * General Process:
-     *   1. Cull test: verifies that object `bounds` intersects `viewport.bounds`.
-     *   2. Applies object opacity and layer blending if applicable.
-     *   3. Renders vector paths, text layout, or image bitmaps into the target context.
-     *
-     * @param ctx Blend2D rendering context target.
-     * @param viewport Current visible camera viewport and zoom scale.
-     */
+    // Draws the object to the target Blend2D context relative to viewport settings.
     virtual void Render(BLContext& ctx, const Viewport& viewport) const = 0;
 
-    /********************************************* */
-    // Duplication & Persistence
-    /********************************************* */
+    // Produces a deep polymorphic duplicate of this object.
+    [[nodiscard]] virtual std::unique_ptr<CanvasObject> Clone() const = 0;
 
-    virtual std::unique_ptr<CanvasObject> Clone() const = 0;
-
-    /********************************************* */
-    // Selection & Gizmo Interaction
-    /********************************************* */
-
-    /**
-     * @brief Returns the locked interaction gizmo style for this object.
-     * Default is GizmoStyle::BoundingBox (8 resize grips + rotation knob).
-     * Derived objects select their locked gizmo style (e.g. TwoPoint, MoveOnly, None).
-     *
-     * @return GizmoStyle interaction mode enum
-     */
-    virtual GizmoStyle GetGizmoStyle() const noexcept {
+    // Returns the manipulation gizmo configuration (e.g. 8-point box, two-point).
+    [[nodiscard]] virtual GizmoStyle GetGizmoStyle() const noexcept {
         return GizmoStyle::BoundingBox;
     }
 
-    /********************************************* */
-    // Context Menu & Object Actions
-    /********************************************* */
+    // Appends domain-specific actions into the right-click context menu.
+    virtual void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) {}
+
+    // =========================================================================
+    // POLYMORPHIC INTERACTION HOOKS
+    // =========================================================================
 
     /**
-     * @brief Virtual hook allowing derived objects to inject or customize actions in their context menu.
+     * @brief Polymorphic pointer click interaction hook.
      *
-     * Working Process:
-     *   Default base implementation is a no-op. Universal canvas object actions
-     *   (Delete, Bring to Front, Bring Forward, Send Backward, Send to Back, Duplicate)
-     *   are automatically registered and executed by ObjectActionRegistry in core/objects.
+     * GENERAL WORKING PROCESS:
+     * Dispatched by input arbiters (such as InputStateMachine) when a pointer click
+     * or double-click lands within this object's hit boundary. Derived objects override
+     * this method to execute actions (toggling media playback, launching external attachments,
+     * activating text editing) using the injected subsystems rather than requiring downward casts.
      *
-     *   Subclasses override this hook only if they wish to inject domain-specific actions
-     *   (e.g., AttachmentObject: "Open", "Locate / Re-link", "Copy Path";
-     *         3D Model: "Reset Camera", "Toggle Wireframe", "Orbit Controls")
-     *   or modify/filter default behavior.
-     *
-     * @param[in,out] actions Mutable vector of ContextMenuItem descriptors where custom commands can be added or modified.
+     * @param ctx Unified dependency injection context containing injected managers and click telemetry.
+     * @return true if the event was consumed and handled; false to fall through to default canvas selection.
      */
-    virtual void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) {}
+    virtual bool OnPointerClick(const Folio::CanvasContext& ctx) {
+        return false;
+    }
 };
+
+namespace Folio {
+using ::CanvasObject;
+using ::ObjectType;
+}

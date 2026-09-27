@@ -152,13 +152,12 @@ std::string HtmlSvgExporter::RenderSheetBlock(
                 if (stroke.segments.empty()) continue;
                 strokeCount++;
 
-                uint32_t val = stroke.color.value;
-                uint8_t a = (val >> 24) & 0xFF;
-                uint8_t r = (val >> 16) & 0xFF;
-                uint8_t g = (val >> 8) & 0xFF;
-                uint8_t b = val & 0xFF;
-                float alpha = a / 255.0f;
-                float w = std::max(0.5f, static_cast<float>(stroke.baseWidth * tile.uniformScale));
+                uint8_t a = stroke.color.a();
+                uint8_t r = stroke.color.r();
+                uint8_t g = stroke.color.g();
+                uint8_t b = stroke.color.b();
+                float alpha = (a / 255.0f) * stroke.opacity;
+                float w = std::max(0.5f, static_cast<float>(stroke.baseWidthMm * tile.uniformScale));
 
                 svgStrokes << "    <polyline fill=\"none\" stroke=\"rgba(" << (int)r << "," << (int)g << "," << (int)b << "," << alpha << ")\" "
                            << "stroke-width=\"" << w << "\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"";

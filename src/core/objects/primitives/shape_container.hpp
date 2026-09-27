@@ -37,6 +37,7 @@
 #include <imgui.h>
 
 #include "core/objects/canvas_object.hpp"
+#include "core/engine/stroke_smoother.hpp"
 #include "core/objects/primitives/shape_types.hpp"
 #include "core/objects/primitives/wave_shapes.hpp"
 #include "core/objects/connectors/connector_types.hpp"

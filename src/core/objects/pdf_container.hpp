@@ -225,7 +225,23 @@ public:
     }
 
     std::unique_ptr<CanvasObject> Clone() const override {
-        return std::make_unique<PdfContainer>(*this);
+        auto copy = std::make_unique<PdfContainer>();
+        copy->pdfPath = pdfPath;
+        copy->originalFileName = originalFileName;
+        copy->resolvedDiskPath = resolvedDiskPath;
+        copy->isExternalLink = isExternalLink;
+        copy->pageIndex = pageIndex;
+        copy->totalPageCount = totalPageCount;
+        copy->isBackground = isBackground;
+        copy->worldX = worldX;
+        copy->worldY = worldY;
+        copy->worldWidth = worldWidth;
+        copy->worldHeight = worldHeight;
+        copy->transform = transform;
+        copy->bounds = bounds;
+        copy->zOrder = zOrder;
+        copy->opacity = opacity;
+        return copy;
     }
 };
 

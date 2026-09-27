@@ -15,8 +15,12 @@
 #include "input/stateMachine/input_state_machine.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
-#include "core/objects/media/videos/video_container.hpp"
+#include "core/clipboard/clipboard_manager.hpp"
+#include "app/context_menu_manager.hpp"
+#include "io/file_manager.hpp"
 #include "utils/logger.hpp"
+#include <imgui.h>
+#include <cmath>
 
 void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& session, bool imguiWantsInput) {
     InteractionState oldAction = currentAction;
@@ -127,6 +131,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             isEraserActive = false;
             session.EndEraseTransaction(&canvas);
         }
+
         canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
     }
@@ -134,12 +139,14 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         if (justDown) {
             clickDownScreenX = mouse.x;
             clickDownScreenY = mouse.y;
+
             if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
                                                    canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
                 canvas.isDirty = true;
             } else {
                 Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
                 lastCanvasClickWorldMm = worldMm;
+
                 auto activePage = session.GetActivePage();
                 std::shared_ptr<CanvasObject> clickedObj = nullptr;
 
@@ -148,62 +155,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 }
 
                 if (clickedObj) {
-                    if (clickedObj->type == ObjectType::Text) {
-                        auto textObj = std::dynamic_pointer_cast<Folio::TextBoxObject>(clickedObj);
-                        if (textObj) {
-                            if (isLastClickDouble) {
-                                // Double-click on text box: Attach text editor and activate in-place editing
-                                if (canvas.textEditor.IsActive() && canvas.textEditor.GetTarget() &&
-                                    canvas.textEditor.GetTarget() != textObj.get() &&
-                                    canvas.textEditor.GetTarget()->PlainText().empty()) {
-                                    if (activePage) activePage->RemoveObjectByUid(canvas.textEditor.GetTarget()->uid);
-                                }
-                                canvas.ClearSelection(&session);
-                                canvas.textEditor.Detach(&session);
-                                canvas.textEditor.Attach(textObj.get(), &session);
-                                canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, keyboard.shift);
-                                hasPendingEmptyTextBox = false;
-                                pendingTextBoxUid = 0;
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
-                                LOG_INFO(InputStateMachine, "Double-click activated text editor on text box uid=" + std::to_string(textObj->uid));
-                                return;
-                            } else {
-                                // Single-click on text box: Select object, show gizmo/header handle, DO NOT activate text editor
-                                if (canvas.textEditor.IsActive()) {
-                                    auto prevTarget = canvas.textEditor.GetTarget();
-                                    canvas.textEditor.Detach(&session);
-                                    if (prevTarget && prevTarget->PlainText().empty()) {
-                                        if (activePage) activePage->RemoveObjectByUid(prevTarget->uid);
-                                    }
-                                }
-                                hasPendingEmptyTextBox = false;
-                                pendingTextBoxUid = 0;
-
-                                canvas.ClearSelection(&session);
-                                clickedObj->isSelected = 1;
-                                canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
-                                canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
-                                                                       canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm);
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
-                                LOG_INFO(InputStateMachine, "Single-click selected text box uid=" + std::to_string(clickedObj->uid));
-                                return;
-                            }
-                        }
-                    }
-
-                    // Check for double-click on AttachmentObject to open file with native OS handler
-                    if (clickedObj->type == ObjectType::AttachmentFile && isLastClickDouble) {
-                        auto attachObj = std::dynamic_pointer_cast<Folio::AttachmentObject>(clickedObj);
-                        if (attachObj) {
-                            LOG_INFO(InputStateMachine, "Double-clicked attachment: opening file '" + attachObj->filePath + "'");
-                            attachObj->OpenFile();
-                            return;
-                        }
-                    }
-
-                    // Clicked non-text object:
+                    // Detach any inactive/empty text editor
                     if (canvas.textEditor.IsActive()) {
                         auto prevTarget = canvas.textEditor.GetTarget();
                         canvas.textEditor.Detach(&session);
@@ -214,26 +166,35 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     hasPendingEmptyTextBox = false;
                     pendingTextBoxUid = 0;
 
-                    // Check for click on VideoObject (play/pause toggle, transport scrubber, mute)
-                    if (clickedObj->type == ObjectType::Video) {
-                        auto vidObj = std::dynamic_pointer_cast<Folio::VideoObject>(clickedObj);
-                        if (vidObj) {
-                            vidObj->HandleCanvasClick(worldMm.x, worldMm.y, isLastClickDouble, [&canvas]() {
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
-                            });
-                        }
+                    // ---------------------------------------------------------
+                    // UNIFIED CANVAS CONTEXT DISPATCH (C++20 DESIGNATED INIT)
+                    // ---------------------------------------------------------
+                    uint32_t clickModifiers = (keyboard.shift ? 1u : 0u) |
+                                              (keyboard.ctrl  ? 2u : 0u) |
+                                              (keyboard.alt   ? 4u : 0u);
+
+                    Folio::CanvasContext ctx{
+                        .stateMachine  = *this,
+                        .session       = session,
+                        .engine        = canvas,
+                        .fileManager   = nullptr,
+                        .clipboard     = &Folio::ClipboardManager::Instance(),
+                        .contextMenu   = nullptr,
+                        .worldX        = worldMm.x,
+                        .worldY        = worldMm.y,
+                        .isDoubleClick = isLastClickDouble,
+                        .modifiers     = clickModifiers
+                    };
+
+                    if (clickedObj->OnPointerClick(ctx)) {
+                        return;
                     }
 
-                    // Check for click on AudioObject (play/pause toggle, scrubber seek)
-                    if (clickedObj->type == ObjectType::Audio) {
-                        auto audioObj = std::dynamic_pointer_cast<Folio::AudioObject>(clickedObj);
-                        if (audioObj) {
-                            audioObj->HandleCanvasClick(worldMm.x, worldMm.y, [&canvas]() {
-                                canvas.needsFullRebake = true;
-                                canvas.isDirty = true;
-                            });
-                        }
+                    // Polymorphic pointer click hook:
+                    // TextBoxObject activates editor on double-click; AttachmentObject launches file;
+                    // VideoObject/AudioObject handles transport controls.
+                    if (clickedObj->OnPointerClick(ctx)) {
+                        return;
                     }
 
                     // Check for click on object with live overlay (WebOverlay, YouTube player, live widgets)
@@ -249,6 +210,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                     LOG_INFO(InputStateMachine, "Mouse direct click selected object uid=" + std::to_string(clickedObj->uid));
+                    return;
                 } else {
                     // Clicked on empty canvas:
                     // Commits pending edits, detaches the editor, deselects any active text box or objects
@@ -369,7 +331,6 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
             SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
         } else if (justDown) {
-            // Clean state isolation: suppress previous gizmo interactions when actively drawing
             if (canvas.selectionGizmo.HasSelection()) {
                 canvas.ClearSelection(&session);
                 canvas.selectionGizmo.ClearSelection();
@@ -395,13 +356,11 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 }
             }
         }
-
         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
     else if (currentAction == InteractionState::Text) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
         Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
-
         if (justDown) {
             auto activePage = session.GetActivePage();
             std::shared_ptr<Folio::TextBoxObject> clickedBox = nullptr;
@@ -425,7 +384,6 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, keyboard.shift);
                 canvas.isDirty = true;
             } else {
-                // OneNote Hybrid Pattern: Click anywhere on empty canvas to create text box
                 canvas.textEditor.Detach();
                 auto newBox = std::make_shared<Folio::TextBoxObject>(worldMm.x, worldMm.y, 70.0, 20.0);
                 session.AddTextBox(newBox);
@@ -447,8 +405,6 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     // -------------------------------------------------------------------------
     // 5. SCROLL WHEEL ZOOM
     // -------------------------------------------------------------------------
-    // Zoom around cursor position using configured multipliers:
-    //   scaleFactor = (wheelY > 0) ? config.mouseWheelZoomInFactor : config.mouseWheelZoomOutFactor
     if (mouse.wheelY != 0.0f) {
         if (isCanvasHovered && !imguiWantsInput) {
             float factor = (mouse.wheelY > 0.0f) ? config.mouseWheelZoomInFactor : config.mouseWheelZoomOutFactor;

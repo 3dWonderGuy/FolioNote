@@ -285,6 +285,11 @@ public:
     bool HandleCanvasClick(double worldXQuery, double worldYQuery, bool isDoubleClick,
                            std::function<void()> onDirty);
 
+    /**
+     * @brief Polymorphic pointer click hook delegating to video transport controls.
+     */
+    bool OnPointerClick(const Folio::CanvasContext& ctx) override;
+
     /** @brief Toggles audio mute. */
     void ToggleMute();
 

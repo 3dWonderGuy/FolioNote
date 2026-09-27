@@ -16,6 +16,7 @@
 #endif
 
 #include "core/objects/media/audio/audio_container.hpp"
+#include "core/engine/canvas_engine.hpp"
 #include "core/text/font_manager.hpp"
 #include "utils/logger.hpp"
 
@@ -287,6 +288,13 @@ bool AudioObject::HandleCanvasClick(double wx, double wy, std::function<void()> 
     }
 
     return false; // Landed on badge body (allows dragging with selection gizmo)
+}
+
+bool AudioObject::OnPointerClick(const Folio::CanvasContext& ctx) {
+    return HandleCanvasClick(ctx.worldX, ctx.worldY, [&ctx]() {
+        ctx.engine.needsFullRebake = true;
+        ctx.engine.isDirty = true;
+    });
 }
 
 // =============================================================================

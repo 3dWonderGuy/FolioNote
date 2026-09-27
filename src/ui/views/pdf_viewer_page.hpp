@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <string>
 #include <vector>
@@ -1350,7 +1350,8 @@ public:
                             auto ink = std::static_pointer_cast<InkContainer>(obj);
 
                             for (const auto& strk : ink->strokes) {
-                                float alpha = ink->isHighlighter ? 0.45f : (strk.color.a() / 255.0f);
+                                bool isHighlighter = (strk.blendMode == BlendMode::Multiply || ink->isHighlighter);
+                                float alpha = isHighlighter ? 0.45f : (strk.color.a() / 255.0f);
                                 ImVec4 baseCol(strk.color.r() / 255.0f, strk.color.g() / 255.0f, strk.color.b() / 255.0f, alpha);
                                 // Mathematical contrast inversion for dark mode: dark ink becomes light, colored ink preserves hue
                                 if (currentInvertState) {

@@ -367,7 +367,7 @@ void BinarySerializer::SerializeObject(const std::shared_ptr<CanvasObject>& obj,
 
         for (const auto& stroke : ink->strokes) {
             writer.WriteU32(stroke.color.value);
-            writer.WriteDouble(stroke.baseWidth);
+            writer.WriteDouble(static_cast<double>(stroke.baseWidthMm));
 
             uint32_t segCount = static_cast<uint32_t>(stroke.segments.size());
             writer.WriteU32(segCount);
@@ -567,7 +567,7 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
         for (uint32_t s = 0; s < strokeCount; ++s) {
             Stroke stroke;
             stroke.color.value = reader.ReadU32();
-            stroke.baseWidth = reader.ReadDouble();
+            stroke.baseWidthMm = static_cast<float>(reader.ReadDouble());
 
             uint32_t segCount = reader.ReadU32();
             if (segCount > ByteReader::MAX_SAFE_ARRAY_LEN) {
@@ -603,16 +603,19 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
 
                 std::vector<StrokeOutlineBuilder::InputPoint> pts;
                 pts.reserve(stroke.segments.size() + 1);
+                stroke.points.reserve(stroke.segments.size() + 1);
                 {
                     const auto& s0 = stroke.segments[0];
                     StrokeOutlineBuilder::InputPoint p0;
                     p0.x = s0.p0.x; p0.y = s0.p0.y; p0.width = s0.width;
                     pts.push_back(p0);
+                    stroke.points.push_back({ s0.p0.x, s0.p0.y, s0.width * 0.5f });
                 }
                 for (const auto& segItem : stroke.segments) {
                     StrokeOutlineBuilder::InputPoint p;
                     p.x = segItem.p1.x; p.y = segItem.p1.y; p.width = segItem.width;
                     pts.push_back(p);
+                    stroke.points.push_back({ segItem.p1.x, segItem.p1.y, segItem.width * 0.5f });
                 }
                 stroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, CapType::Round);
             }

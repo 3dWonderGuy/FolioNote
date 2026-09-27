@@ -2,199 +2,229 @@
 /**
  * =========================================================================================
  * @file core/objects/ink_container/ink_container.hpp
- * @brief Persistent Canvas Entity Holding Baked Vector Ink Strokes
+ * @brief High-Performance Baked Vector Ink Container and Stroke Geometry Model
  * =========================================================================================
  *
- * InkContainer inherits from CanvasObject and manages one or more finished vector strokes
- * grouped together. It provides:
- *  - Accurate world-space AABB bounding box calculation (taking stroke width & transforms into account)
- *  - Point-to-segment distance hit-testing (for selection and eraser tools)
- *  - Fast batch-rendered vector drawing via Blend2D with non-zero winding rules
- *  - Incremental dirty-flag tracking to avoid redundant rasterization
- *  - Eraser slicing / segment division into child fragment containers
+ * ARCHITECTURAL DESIGN:
+ * ---------------------
+ * `InkContainer` inherits from `CanvasObject` and acts as the persistent entity for freehand
+ * vector inking on the infinite canvas.
+ *
+ * It provides:
+ *  1. Dual-Representation Vector Model:
+ *     - Closed 2D polygon ribbon outline (BLPath) for zero-seam, hardware-accelerated
+ *       SIMD non-zero fill rendering via Blend2D.
+ *     - Discrete spatial centerline points (StrokePoint) and segments (Segment1D) for
+ *       precision distance-based hit testing, proximity selection, and point eraser slicing.
+ *  2. Rich Pen Semantics:
+ *     - Per-stroke BlendMode (Normal/SrcOver, Multiply for Highlighters, Additive for Glow/Neon).
+ *     - Configurable CapType (Round, Flat, Chisel, Square) and StrokePattern (Solid, Dashed, Dotted, DashDot).
+ *  3. Affine Geometry Transformations:
+ *     - Real-time interactive transformation via 2D affine matrix (BLMatrix2D).
+ *     - Geometric transform baking committing scaling, translation, and rotation directly into
+ *       centerline points, segments, and polygon outline hulls.
+ *  4. High-Performance Two-Tier Hit Testing & Eraser Slicing:
+ *     - Broadphase AABB query rejection.
+ *     - Narrowphase inverted-transform spatial evaluation (exact segment Euclidean distance,
+ *       continuous swept-capsule testing, and quadratic circle-segment eraser splitting).
  */
 
 #include <vector>
 #include <memory>
+#include <cstdint>
 #include <blend2d/blend2d.h>
 
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/objects/ink_container/stroke_smoother.hpp"
+#include "core/engine/stroke_smoother.hpp"
 #include "input/pen_palette.hpp"
 
 /**
- * @brief Baked vector stroke data representing a single stroke (pen down -> pen up).
- * 
- * Each stroke contains a 2D closed polygon outline (BLPath) for instant non-zero fill
- * rasterization, alongside centerline points and segments for hit-testing and geometric editing.
+ * @struct StrokePoint
+ * @brief Discrete centerline vertex holding spatial coordinates and pre-resolved stroke radius.
+ *
+ * Coordinates are in physical world millimeters (mm).
  */
-struct Stroke {
-    std::vector<Segment1D> segments;               ///< Ordered series of line segments (for hit-testing and geometric slicing)
-    std::vector<Point2D>   centerline;             ///< Original smoothed centerline points with pressure & time telemetry
-    BLPath                 outlinePath;            ///< Closed 2D vector polygon contour for rasterization
-    BLRgba32               color{0xFFFFFFFF};      ///< 32-bit RGBA color
-    double                 baseWidth = 3.0;        ///< Nominal baseline width in world millimeters (mm)
-    StrokePattern          pattern = StrokePattern::Solid; ///< Line pattern (Solid, Dashed, Dotted)
+struct StrokePoint {
+    double x = 0.0;     ///< Centerline X position in world millimeters (mm)
+    double y = 0.0;     ///< Centerline Y position in world millimeters (mm)
+    float  r = 0.25f;   ///< Pre-calculated stroke radius (half-thickness) in world millimeters (mm)
 };
 
 /**
- * @brief Persistent canvas entity holding baked vector ink strokes.
+ * @struct Stroke
+ * @brief Vector stroke entity encapsulating canonical centerline geometry and ephemeral render caches.
+ *
+ * DATA STORAGE CONTRACT:
+ * - Database & Serialization: ONLY the Canonical Centerline Vector Model and style attributes
+ *   are serialized to disk or SQLite. Polygons and segment trees are NEVER stored permanently.
+ * - Runtime Acceleration: `segments`, `outlinePath`, and `bounds` are transient caches generated
+ *   in memory via StrokeOutlineBuilder::GenerateRibbon() and StrokeCollision::BuildSegments()
+ *   upon document loading or when points are modified.
+ */
+struct Stroke {
+    // =========================================================================
+    // 1. CANONICAL CENTERLINE VECTOR MODEL (Serialized / Saved to Database)
+    // =========================================================================
+    std::vector<StrokePoint> points;       ///< Smoothed centerline vertices with precomputed radius (world mm)
+
+    PenType       penType       = PenType::Pen;           ///< Pen preset category (Ballpoint, Fountain, Calligraphy, Highlighter)
+    CapType       capType       = CapType::Round;         ///< Stroke endcap style (Round, Flat)
+    StrokePattern strokePattern = StrokePattern::Solid;   ///< Line pattern (Solid, Dashed, Dotted, DashDot)
+    BlendMode     blendMode     = BlendMode::Normal;      ///< Layer blend mode (Normal, Multiply, Additive)
+
+    BLRgba32      color{0x18, 0x1A, 0x20, 0xFF};          ///< 32-bit RGBA stroke color
+    union {
+        float     baseWidthMm = 0.5f;                     ///< Baseline nominal stroke thickness in millimeters (mm)
+        float     baseWidth;                              ///< Serialization and export compatibility alias
+    };
+    float         opacity       = 1.0f;                   ///< Stroke opacity multiplier [0.0, 1.0]
+
+    // =========================================================================
+    // 2. TRANSIENT RUNTIME ACCELERATION CACHES (Ephemeral in RAM — Never Saved)
+    // =========================================================================
+    std::vector<Segment1D>   segments;     ///< Swept segment tree for distance hit-testing & eraser slicing
+    BLPath                   outlinePath;  ///< Closed 2D polygon contour ribbon for hardware-accelerated Blend2D rasterization
+    AABB                     bounds;       ///< Axis-aligned bounding box in millimeters (mm) for spatial R-Tree indexing
+
+    /**
+     * @brief Maps internal BlendMode to Blend2D composite operator.
+     * @return BLCompOp enumeration value.
+     */
+    [[nodiscard]] BLCompOp GetBlend2DCompOp() const noexcept {
+        switch (blendMode) {
+            case BlendMode::Multiply: return BL_COMP_OP_MULTIPLY;
+            case BlendMode::Additive: return BL_COMP_OP_PLUS;
+            case BlendMode::Normal:
+            default:                  return BL_COMP_OP_SRC_OVER;
+        }
+    }
+};
+
+/**
+ * @class InkContainer
+ * @brief Persistent canvas entity holding one or more finished vector ink strokes.
  */
 class InkContainer final : public CanvasObject {
 public:
-    std::vector<Stroke> strokes;       ///< List of strokes contained within this container
-    bool isHighlighter = false;        ///< If true, drawn with semi-transparent highlighter blending (MULTIPLY op)
+    std::vector<Stroke> strokes;       ///< Collection of baked vector strokes belonging to this container
+    bool isHighlighter = false;        ///< Legacy container-level highlighter flag (synced with BlendMode::Multiply)
+    mutable bool renderDirty = true;   ///< Dirty flag indicating background composite cache requires updating
 
     /**
-     * @brief Incremental rendering dirty flag.
-     * When true, new strokes have been added or existing strokes modified since the last Render() call.
-     * The canvas engine uses this to re-stroke only dirty containers onto the static background layer.
-     */
-    mutable bool renderDirty = true;
-
-    /**
-     * @brief Marks this container as needing a full rasterization pass on the next frame.
-     */
-    void InvalidateCache();
-
-    /**
-     * @brief Constructs an empty ink container with ObjectType::InkContainer.
+     * @brief Constructs an empty InkContainer with ObjectType::InkContainer.
      */
     InkContainer();
 
     /**
-     * @brief Appends a finished vector stroke to this container and updates bounding box.
-     * @param stroke Finished stroke to add
+     * @brief Flags this container as requiring re-rasterization on the next render pass.
+     */
+    void InvalidateCache() noexcept;
+
+    /**
+     * @brief Appends a finished stroke to the container and updates the world-space bounding box.
+     * @param stroke Vector stroke to append.
      */
     void AddStroke(const Stroke& stroke);
 
     // =========================================================================
-    // 1. BOUNDS & SPATIAL QUERIES
+    // BOUNDS & SPATIAL QUERIES
     // =========================================================================
 
     /**
-     * @brief Computes the Axis-Aligned Bounding Box (AABB) in world coordinates.
-     * 
-     * Algorithm:
-     * 1. Iterates through every segment or pre-baked 2D outline path in local coordinates.
-     * 2. Accounts for the visual thickness of each segment by adding/subtracting half-width (radius).
-     * 3. Transforms the 4 corners of the local bounding box using the container's affine matrix:
-     *      p' = [m00*x + m10*y + m20, m01*x + m11*y + m21]^T
-     * 4. Enclosing AABB derived from min/max extrema with a 2.0 mm antialiasing safety margin.
+     * @brief Recomputes the cached world-space AABB incorporating all strokes and the active transform matrix.
      */
     void UpdateBounds() override;
 
     /**
-     * @brief Performs precise geometric hit testing for a world-space point (e.g., stylus or eraser).
-     *
-     * 2-Tier Culling Strategy:
-     * - Tier 1: AABB broadphase bounding box test in world coordinates.
-     * - Tier 2: Inverted affine mapping into local space followed by:
-     *     a. BLPath::hit_test with BL_FILL_RULE_NON_ZERO.
-     *     b. StrokeCollisionEngine segment-to-point distance check (tolerance 1.5 mm).
-     *
-     * @param worldX Query X in world millimeters
-     * @param worldY Query Y in world millimeters
-     * @return true if point hits any stroke
+     * @brief Tests if a 2D world-space coordinate intersects any stroke in this container.
+     * @param x World X coordinate in millimeters (mm).
+     * @param y World Y coordinate in millimeters (mm).
+     * @return true if coordinate intersects stroke polygon or lies within tolerance distance.
      */
-    bool HitTest(double worldX, double worldY) const override;
+    [[nodiscard]] bool HitTest(double x, double y) const noexcept override;
 
     /**
-     * @brief Evaluates whether any stroke segment intersects an eraser circle of radiusMm.
-     *
-     * @param worldX Eraser circle center X in world millimeters
-     * @param worldY Eraser circle center Y in world millimeters
-     * @param radiusMm Eraser circle radius in world millimeters
-     * @return true if circle overlaps any stroke
+     * @brief Tests if a circular query kernel (stylus tip, touch point, or eraser) intersects any stroke.
+     * @param cx Circle center X in world millimeters (mm).
+     * @param cy Circle center Y in world millimeters (mm).
+     * @param radiusMm Circle radius in world millimeters (mm).
+     * @return true if circle kernel overlaps any stroke.
      */
-    bool HitTestCircle(double worldX, double worldY, double radiusMm) const override;
+    [[nodiscard]] bool HitTestCircle(double cx, double cy, double radiusMm) const noexcept override;
 
     /**
-     * @brief Evaluates whether any stroke segment intersects a continuous swept capsule from w0 to w1.
-     * Prevents fast-moving eraser skips / tunneling with continuous swept-line collision.
-     *
-     * @param w0 Segment start in world coordinates
-     * @param w1 Segment end in world coordinates
-     * @param radiusMm Capsule radius in world millimeters
-     * @return true if swept capsule intersects any stroke
+     * @brief Continuous swept-capsule collision test against all strokes between coordinates w0 and w1.
+     * Prevents fast-moving eraser tunneling and trajectory skipping.
+     * @param w0 Capsule start coordinate in world millimeters (mm).
+     * @param w1 Capsule end coordinate in world millimeters (mm).
+     * @param radiusMm Capsule radius in world millimeters (mm).
+     * @return true if swept capsule intersects any stroke.
      */
-    bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const;
+    [[nodiscard]] bool HitTestSwept(const Point2D& w0, const Point2D& w1, double radiusMm) const;
 
     // =========================================================================
-    // 2. GEOMETRY & TRANSFORMS
+    // GEOMETRY & TRANSFORMS
     // =========================================================================
 
     /**
-     * @brief Applies a post-multiplication affine transform matrix (translate, scale, rotate).
-     * @param matrix 2D affine transformation matrix
+     * @brief Applies a post-multiplication 2D affine transformation matrix to this container.
+     * @param matrix 2D affine matrix to apply.
      */
     void ApplyTransform(const BLMatrix2D& matrix) override;
 
     /**
-     * @brief Bakes the accumulated affine transform matrix directly into all stroke segments
-     *        and centerline points, re-bakes the polygon outlines, and resets transform to identity.
+     * @brief Bakes the accumulated affine transform matrix into intrinsic stroke vertices,
+     * recomputes 2D closed polygon contours, and resets transform matrix to identity.
      */
     void BakeTransform() override;
 
     /**
-     * @brief Vector ink strokes use the standard locked BoundingBox gizmo.
+     * @brief Specifies standard 8-point bounding box gizmo interaction for vector ink containers.
+     * @return GizmoStyle::BoundingBox.
      */
-    GizmoStyle GetGizmoStyle() const noexcept override {
+    [[nodiscard]] GizmoStyle GetGizmoStyle() const noexcept override {
         return GizmoStyle::BoundingBox;
     }
 
     // =========================================================================
-    // 3. VECTOR RENDERING PASS
+    // RENDERING & LIFECYCLE
     // =========================================================================
 
     /**
-     * @brief Renders the vector strokes into the given Blend2D context using 2D closed polygon outlines.
-     * 
-     * Pipeline:
-     * 1. Viewport frustum culling: rejects completely off-screen containers.
-     * 2. Graphics context state isolation: save() / apply_transform() / restore().
-     * 3. Winding Rule: BL_FILL_RULE_NON_ZERO ensures self-overlapping loops fuse into a solid silhouette.
-     * 4. Composition Mode: BL_COMP_OP_MULTIPLY for highlighters, BL_COMP_OP_SRC_OVER for opaque pens.
-     * 5. Fast-Path: Renders cached 2D closed polygon outline (BLPath) with zero seams.
-     *
-     * @param ctx Blend2D raster context
-     * @param viewport Active canvas viewport for frustum culling
+     * @brief Draws vector strokes into the target Blend2D context using non-zero winding rules.
+     * @param ctx Blend2D rendering context.
+     * @param viewport Active canvas viewport for frustum culling.
      */
     void Render(BLContext& ctx, const Viewport& viewport) const override;
 
-    // =========================================================================
-    // 4. DUPLICATION & PERSISTENCE
-    // =========================================================================
-
     /**
-     * @brief Deep-copies this InkContainer entity.
+     * @brief Produces a deep clone of this InkContainer and all contained strokes.
+     * @return Polymorphic unique_ptr to cloned CanvasObject.
      */
-    std::unique_ptr<CanvasObject> Clone() const override;
+    [[nodiscard]] std::unique_ptr<CanvasObject> Clone() const override;
 
     // =========================================================================
-    // 5. ERASER SLICING
+    // ERASER SLICING
     // =========================================================================
 
     /**
-     * @brief Erases segments within an eraser radius and slices affected strokes into surviving sub-strokes.
-     *
-     * Math:
-     * - Maps eraser circle to local coordinates using inverted affine matrix.
-     * - Radius scaled by 1 / hypot(m00, m01).
-     * - Splits segments into sub-chains and rebuilds clean 2D closed polygon contours.
-     *
-     * @param worldX Eraser center X in world mm
-     * @param worldY Eraser center Y in world mm
-     * @param radius Eraser circle radius in world mm
-     * @param[out] outNewFragments Receives newly spawned split fragment containers
-     * @return true if any stroke was modified or sliced
+     * @brief Slices strokes overlapping the circular eraser kernel into surviving sub-stroke fragments.
+     * @param worldX Eraser center X in world millimeters (mm).
+     * @param worldY Eraser center Y in world millimeters (mm).
+     * @param radius Eraser circle radius in world millimeters (mm).
+     * @param[out] outNewFragments Destination vector populated with newly spawned split containers.
+     * @return true if any stroke was sliced or modified.
      */
     bool SliceStrokeAt(double worldX, double worldY, double radius,
                        std::vector<std::shared_ptr<InkContainer>>& outNewFragments);
 
     /**
-     * @brief Overload without fragment output list (discards split sub-fragments).
+     * @brief Overload without output fragment list (discards split sub-fragments).
+     * @param worldX Eraser center X in world millimeters (mm).
+     * @param worldY Eraser center Y in world millimeters (mm).
+     * @param radius Eraser circle radius in world millimeters (mm).
+     * @return true if any stroke was sliced or modified.
      */
     bool SliceStrokeAt(double worldX, double worldY, double radius);
 };

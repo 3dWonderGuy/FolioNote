@@ -1,5 +1,7 @@
 #pragma once
 #include "imgui.h"
+#include "core/objects/primitives/shape_container.hpp"
+#include "core/objects/connectors/smart_arrow_container.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
 #include "input/input_state_machine.hpp"

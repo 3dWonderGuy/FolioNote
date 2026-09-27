@@ -1,0 +1,39 @@
+================================================================================
+FOLIONOTE: TEMPORARILY DEACTIVATED OBJECT SUBSYSTEMS
+================================================================================
+Date: 2026-09-27
+Status: PARKED / ISOLATED
+
+1. PURPOSE & RATIONALE
+--------------------------------------------------------------------------------
+To accelerate and isolate the development of the high-performance Vector Ink
+Container and stroke perfection pipeline, the following subsystems have been
+temporarily marked inactive in the canvas pipeline:
+
+  [X] PDF Container (src/core/objects/pdf_container.hpp)
+  [X] Text Container / Typography Engine (src/core/objects/text/text_box.hpp)
+
+RATIONALE:
+- Any modification to base container definitions (`CanvasObject`, `Point2D`,
+  `LiveLayerPipeline`) was causing cascading recompilation and type resolution
+  errors across PDF raster caching and rich-text layout engines.
+- By isolating these two subsystems, we eliminate header coupling loops and
+  ensure that 100% of focus is placed on perfecting:
+    * Dual-representation centerline vector ink model
+    * Spline smoothing (Catmull-Rom / Chaikin / RDP decimation)
+    * Real-time 2D offset polygon ribbon tessellation (Blend2D BLPath)
+    * Swept-capsule eraser collision & quadratic circle-segment slicing
+    * High-efficiency Layer 1 bake & Layer 2 live preview compositing
+
+2. RE-ACTIVATION PREREQUISITES & ROADMAP
+--------------------------------------------------------------------------------
+Before re-activating PDF and Text containers:
+1. Ink Container & Stroke Smoother Stabilization:
+   - Centerline model finalized and serialized cleanly to SQLite / Binary format.
+   - Smooth 120Hz/60Hz latency-free stylus input response verified.
+2. Decoupling Interface Architecture:
+   - Text and PDF should interact with CanvasEngine strictly via polymorphic
+     `CanvasObject` interfaces and event handlers, not direct internal header coupling.
+   - Move inline UI manipulation logic from `ribbon_bar.hpp` into translation units (.cpp)
+     to prevent cyclic template instantiation failures.
+================================================================================

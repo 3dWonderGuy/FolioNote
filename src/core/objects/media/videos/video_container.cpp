@@ -21,6 +21,7 @@
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/media/images/image_decoder.hpp"
 #include "core/spatial/aabb_utils.hpp"
+#include "core/engine/canvas_engine.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 
@@ -531,6 +532,13 @@ bool VideoObject::HandleCanvasClick(double wx, double wy, bool isDoubleClick,
     }
 
     return false;
+}
+
+bool VideoObject::OnPointerClick(const Folio::CanvasContext& ctx) {
+    return HandleCanvasClick(ctx.worldX, ctx.worldY, ctx.isDoubleClick, [&ctx]() {
+        ctx.engine.needsFullRebake = true;
+        ctx.engine.isDirty = true;
+    });
 }
 
 void VideoObject::Stop() {

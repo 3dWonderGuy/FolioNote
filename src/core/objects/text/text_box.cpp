@@ -23,7 +23,10 @@
 
 #include "core/objects/text/text_box.hpp"
 #include "core/objects/text/text_editor_state.hpp"
+#include "core/engine/canvas_engine.hpp"
+#include "core/document/document_session.hpp"
 #include "core/text/font_manager.hpp"
+#include "utils/logger.hpp"
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -559,6 +562,26 @@ void TextBoxObject::RenderWithEditor(BLContext& ctx, const Viewport& viewport, c
     }
 
     ctx.restore();
+}
+
+bool TextBoxObject::OnPointerClick(const Folio::CanvasContext& ctx) {
+    if (ctx.isDoubleClick) {
+        if (ctx.engine.textEditor.IsActive() && ctx.engine.textEditor.GetTarget() &&
+            ctx.engine.textEditor.GetTarget() != this &&
+            ctx.engine.textEditor.GetTarget()->PlainText().empty()) {
+            auto activePage = ctx.session.GetActivePage();
+            if (activePage) activePage->RemoveObjectByUid(ctx.engine.textEditor.GetTarget()->uid);
+        }
+        ctx.engine.ClearSelection(&ctx.session);
+        ctx.engine.textEditor.Detach(&ctx.session);
+        ctx.engine.textEditor.Attach(this, &ctx.session);
+        ctx.engine.textEditor.OnMouseDown(ctx.worldX, ctx.worldY, (ctx.modifiers & 1u) != 0);
+        ctx.engine.needsFullRebake = true;
+        ctx.engine.isDirty = true;
+        LOG_INFO(CanvasObject, "Double-click activated text editor on text box uid=" + std::to_string(uid));
+        return true;
+    }
+    return false;
 }
 
 std::unique_ptr<CanvasObject> TextBoxObject::Clone() const {
