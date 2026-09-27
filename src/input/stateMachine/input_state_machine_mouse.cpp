@@ -236,12 +236,9 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                         }
                     }
 
-                    // Check for click on InteractiveObject (WebOverlay, YouTube player, live widgets)
-                    if (clickedObj->type == ObjectType::Interactive) {
-                        auto io = std::dynamic_pointer_cast<Folio::InteractiveObject>(clickedObj);
-                        if (io) {
-                            canvas.interactiveOverlayHost.SetFocusedObject(io.get());
-                        }
+                    // Check for click on object with live overlay (WebOverlay, YouTube player, live widgets)
+                    if (clickedObj->HasLiveOverlay()) {
+                        canvas.interactiveOverlayHost.SetFocusedObject(clickedObj.get());
                     }
 
                     canvas.ClearSelection(&session);

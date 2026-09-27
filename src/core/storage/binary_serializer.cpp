@@ -482,6 +482,38 @@ void BinarySerializer::SerializeObject(const std::shared_ptr<CanvasObject>& obj,
         writer.WriteString(attach->displayName);
         writer.WriteString(attach->mimeType);
         writer.WriteU8(attach->isEmbedded ? 1 : 0);
+    } else if (obj->type == ObjectType::Video) {
+        /**
+         * VideoObject Serialization:
+         * Encodes world geometry, source URL / path, display name, aspect ratio,
+         * volume, loop, and mute properties.
+         */
+        auto vid = std::static_pointer_cast<VideoObject>(obj);
+        writer.WriteDouble(vid->worldX);
+        writer.WriteDouble(vid->worldY);
+        writer.WriteDouble(vid->worldWidth);
+        writer.WriteDouble(vid->worldHeight);
+        writer.WriteString(vid->sourceUrl);
+        writer.WriteString(vid->displayName);
+        writer.WriteString(vid->thumbnailPath);
+        writer.WriteDouble(vid->aspectRatio);
+        writer.WriteFloat(vid->volume);
+        writer.WriteBool(vid->isLooping);
+        writer.WriteBool(vid->isMuted);
+    } else if (obj->type == ObjectType::Audio) {
+        /**
+         * AudioObject Serialization:
+         * Encodes world coordinates, audio file path, display label, and volume.
+         */
+        auto aud = std::static_pointer_cast<AudioObject>(obj);
+        writer.WriteDouble(aud->worldX);
+        writer.WriteDouble(aud->worldY);
+        writer.WriteDouble(aud->worldWidth);
+        writer.WriteDouble(aud->worldHeight);
+        writer.WriteString(aud->filePath);
+        writer.WriteString(aud->displayName);
+        writer.WriteDouble(aud->durationSeconds);
+        writer.WriteU32(static_cast<uint32_t>(aud->volume));
     } else {
         LOG_WARN(BinarySerializer, "Serializing generic object with type ID: " + std::to_string(static_cast<int>(obj->type)));
     }
@@ -776,6 +808,64 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
 
         attach->UpdateBounds();
         return attach;
+
+    } else if (type == ObjectType::Video) {
+        /**
+         * VideoObject Deserialization:
+         * Reconstitutes canvas video player container with source URL, aspect ratio,
+         * volume, loop, and mute settings.
+         */
+        auto vid = std::make_shared<VideoObject>();
+        vid->guuid = objGuid;
+        vid->uid = UIDGenerator::Next();
+        vid->bounds = bounds;
+        vid->transform = transform;
+        vid->zOrder = zOrder;
+        vid->opacity = opacity;
+        vid->isVisible = isVisible ? 1 : 0;
+        vid->isLocked = isLocked ? 1 : 0;
+        vid->isSelectable = isSelectable ? 1 : 0;
+
+        vid->worldX = reader.ReadDouble();
+        vid->worldY = reader.ReadDouble();
+        vid->worldWidth = reader.ReadDouble();
+        vid->worldHeight = reader.ReadDouble();
+        vid->sourceUrl = reader.ReadString();
+        vid->displayName = reader.ReadString();
+        vid->thumbnailPath = reader.ReadString();
+        vid->aspectRatio = reader.ReadDouble();
+        vid->volume = reader.ReadFloat();
+        vid->isLooping = reader.ReadBool();
+        vid->isMuted = reader.ReadBool();
+        vid->UpdateBounds();
+        return vid;
+
+    } else if (type == ObjectType::Audio) {
+        /**
+         * AudioObject Deserialization:
+         * Reconstitutes canvas audio badge with audio file path, label, duration, and volume.
+         */
+        auto aud = std::make_shared<AudioObject>();
+        aud->guuid = objGuid;
+        aud->uid = UIDGenerator::Next();
+        aud->bounds = bounds;
+        aud->transform = transform;
+        aud->zOrder = zOrder;
+        aud->opacity = opacity;
+        aud->isVisible = isVisible ? 1 : 0;
+        aud->isLocked = isLocked ? 1 : 0;
+        aud->isSelectable = isSelectable ? 1 : 0;
+
+        aud->worldX = reader.ReadDouble();
+        aud->worldY = reader.ReadDouble();
+        aud->worldWidth = reader.ReadDouble();
+        aud->worldHeight = reader.ReadDouble();
+        aud->filePath = reader.ReadString();
+        aud->displayName = reader.ReadString();
+        aud->durationSeconds = reader.ReadDouble();
+        aud->volume = static_cast<int>(reader.ReadU32());
+        aud->UpdateBounds();
+        return aud;
     }
 
     LOG_WARN(BinarySerializer, "Skipping unrecognized object type: " + std::to_string(static_cast<int>(type)));

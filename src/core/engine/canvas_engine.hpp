@@ -13,11 +13,11 @@
 #endif
 #include <blend2d/blend2d.h>
 #include "core/objects/canvas_object.hpp"
-#include "core/objects/ink_container.hpp"
+#include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/images/image_decoder.hpp"
 #include "core/objects/media/audio/audio_container.hpp"
-#include "core/objects/shape_container.hpp"
+#include "core/objects/primitives/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
 #include "core/objects/attachment_container.hpp"

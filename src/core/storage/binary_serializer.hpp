@@ -6,10 +6,12 @@
 #include <array>
 #include "core/document/canvas_page.hpp"
 #include "core/objects/canvas_object.hpp"
-#include "core/objects/ink_container.hpp"
+#include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/text_box.hpp"
 #include "core/objects/media/images/image_container.hpp"
-#include "core/objects/shape_container.hpp"
+#include "core/objects/media/videos/video_container.hpp"
+#include "core/objects/media/audio/audio_container.hpp"
+#include "core/objects/primitives/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
 #include "core/objects/attachment_container.hpp"
@@ -156,8 +158,8 @@ public:
     /// Magic 4-byte header identifying valid FolioNote Canvas Page binary streams: "FNPG" (0x464E5047)
     static constexpr uint32_t MAGIC_HEADER = 0x464E5047;
 
-    /// Current binary format specification version (Version 4 includes isEmbedded flag for attachments)
-    static constexpr uint32_t FORMAT_VERSION = 4;
+    /// Current binary format specification version (Version 5 includes Video and Audio objects)
+    static constexpr uint32_t FORMAT_VERSION = 5;
 
     /**
      * @brief Estimates raw uncompressed memory requirement for a page to optimize vector allocation.

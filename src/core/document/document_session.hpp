@@ -11,7 +11,7 @@
 #include "core/document/workspace.hpp"
 #include "core/document/document_observer.hpp"
 #include "core/objects/canvas_object.hpp"
-#include "core/objects/ink_container.hpp"
+#include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text_box.hpp"

@@ -1,7 +1,9 @@
 #pragma once
 /**
- * @file ink_container.hpp
- * @brief Persistent canvas entity holding baked vector ink strokes.
+ * =========================================================================================
+ * @file core/objects/ink_container/ink_container.hpp
+ * @brief Persistent Canvas Entity Holding Baked Vector Ink Strokes
+ * =========================================================================================
  *
  * InkContainer inherits from CanvasObject and manages one or more finished vector strokes
  * grouped together. It provides:
@@ -18,7 +20,7 @@
 
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/engine/stroke_smoother.hpp"
+#include "core/objects/ink_container/stroke_smoother.hpp"
 #include "input/pen_palette.hpp"
 
 /**

@@ -42,6 +42,7 @@
 #include "core/engine/canvas_engine.hpp"
 #include "core/history/canvas_command.hpp"
 #include "core/objects/media/videos/video_container.hpp"
+#include "core/clipboard/clipboard_manager.hpp"
 
 #include <SDL3/SDL.h>  // for SDL_OpenURL in "Open in Native Player" action
 
@@ -220,6 +221,46 @@ public:
             actions.push_back(std::move(bgAct));
         }
 
+        // Action: Copy (order: 280)
+        {
+            ContextMenuItem act;
+            act.label = "Copy";
+            act.shortcut = "Ctrl+C";
+            act.icon = "📋";
+            act.iconKey = "copy";
+            act.order = 280;
+            act.isSeparatorBefore = true;
+            act.onTrigger = [obj, &session]() {
+                auto selected = session.GetSelectedObjects();
+                if (selected.empty()) {
+                    selected = { obj };
+                }
+                ClipboardManager::Instance().CopyObjects(selected);
+            };
+            actions.push_back(std::move(act));
+        }
+
+        // Action: Cut (order: 290)
+        {
+            ContextMenuItem act;
+            act.label = "Cut";
+            act.shortcut = "Ctrl+X";
+            act.icon = "✂";
+            act.iconKey = "cut";
+            act.order = 290;
+            act.onTrigger = [obj, &session, &engine]() {
+                auto selected = session.GetSelectedObjects();
+                if (selected.empty()) {
+                    selected = { obj };
+                }
+                ClipboardManager::Instance().CutObjects(selected, session);
+                engine.selectionGizmo.ClearSelection();
+                engine.isDirty = true;
+                engine.needsFullRebake = true;
+            };
+            actions.push_back(std::move(act));
+        }
+
         // Action: Duplicate (order: 300)
         {
             ContextMenuItem act;
@@ -228,7 +269,6 @@ public:
             act.icon = "📄";
             act.iconKey = "duplicate";
             act.order = 300;
-            act.isSeparatorBefore = true;
             act.onTrigger = [&session, &engine]() {
                 session.DuplicateSelection(10.0);
                 engine.isDirty = true;

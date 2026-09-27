@@ -35,9 +35,9 @@
  *    - Highlighter strokes utilize BL_COMP_OP_MULTIPLY to preserve underlying text and linework.
  */
 
-#include "core/objects/ink_container.hpp"
-#include "core/engine/stroke_collision.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
+#include "core/objects/ink_container/ink_container.hpp"
+#include "core/objects/ink_container/stroke_collision.hpp"
+#include "core/objects/ink_container/stroke_outline_builder.hpp"
 
 #include <algorithm>
 #include <cmath>

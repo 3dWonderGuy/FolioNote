@@ -201,7 +201,7 @@ else()
         OpenGL::GL
     )
     if(WIN32)
-        target_link_libraries(FolioNote PRIVATE dwmapi ole32 shell32 winspool windowscodecs)
+        target_link_libraries(FolioNote PRIVATE dwmapi ole32 oleaut32 shell32 winspool windowscodecs)
     endif()
 endif()
 

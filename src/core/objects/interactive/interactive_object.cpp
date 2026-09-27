@@ -16,7 +16,7 @@ namespace Folio {
 // =============================================================================
 
 InteractiveObject::InteractiveObject() {
-    type = ObjectType::Interactive;
+    type = ObjectType::Video;
     worldX = 0.0;
     worldY = 0.0;
     worldWidth = 160.0;  // Default 160mm x 90mm (standard 16:9 card)
@@ -28,7 +28,7 @@ InteractiveObject::InteractiveObject(double x, double y, double width, double he
                                      std::unique_ptr<IInteractiveOverlay> overlay)
     : overlayInstance(std::move(overlay))
 {
-    type = ObjectType::Interactive;
+    type = ObjectType::Video;
     worldX = x;
     worldY = y;
     worldWidth = (width > 0.0) ? width : 160.0;
@@ -52,7 +52,7 @@ InteractiveObject::InteractiveObject(const InteractiveObject& other)
       isInteracting(false)
 {
     // Clone spatial properties and type
-    type = ObjectType::Interactive;
+    type = ObjectType::Video;
     worldX = other.worldX;
     worldY = other.worldY;
     worldWidth = other.worldWidth;
@@ -86,7 +86,7 @@ InteractiveObject& InteractiveObject::operator=(const InteractiveObject& other) 
 
     CanvasObject::operator=(other);
     isInteracting = false;
-    type = ObjectType::Interactive;
+    type = ObjectType::Video;
     worldX = other.worldX;
     worldY = other.worldY;
     worldWidth = other.worldWidth;

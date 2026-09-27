@@ -19,6 +19,7 @@
 #include "app/window_state_manager.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
+#include "core/clipboard/clipboard_manager.hpp"
 #include "core/objects/attachment_container.hpp"
 #include "core/history/canvas_command.hpp"
 #include "app/context_menu_manager.hpp"
@@ -632,8 +633,24 @@ public:
                     else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
                     else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                     else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
+                    else if (event.key.key == SDLK_C && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                        auto selected = session.GetSelectedObjects();
+                        if (!selected.empty()) {
+                            Folio::ClipboardManager::Instance().CopyObjects(selected);
+                        }
+                    }
+                    else if (event.key.key == SDLK_X && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                        auto selected = session.GetSelectedObjects();
+                        if (!selected.empty()) {
+                            Folio::ClipboardManager::Instance().CutObjects(selected, session);
+                            canvas.selectionGizmo.ClearSelection();
+                            canvas.isDirty = true;
+                            canvas.needsFullRebake = true;
+                        }
+                    }
                     else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        canvas.InsertImageFromClipboard(&session);
+                        Point2D centerWorld = canvas.transform.ScreenToWorld(static_cast<float>(canvas.viewportW) * 0.5f, static_cast<float>(canvas.viewportH) * 0.5f);
+                        Folio::ClipboardManager::Instance().Paste(session, canvas, centerWorld.x, centerWorld.y);
                     }
                     else if (event.key.key == SDLK_Z && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
                         if (SDL_GetModState() & SDL_KMOD_SHIFT) {
@@ -706,8 +723,24 @@ public:
                             else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
                             else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
                             else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
+                            else if (event.key.key == SDLK_C && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                                auto selected = session.GetSelectedObjects();
+                                if (!selected.empty()) {
+                                    Folio::ClipboardManager::Instance().CopyObjects(selected);
+                                }
+                            }
+                            else if (event.key.key == SDLK_X && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
+                                auto selected = session.GetSelectedObjects();
+                                if (!selected.empty()) {
+                                    Folio::ClipboardManager::Instance().CutObjects(selected, session);
+                                    canvas.selectionGizmo.ClearSelection();
+                                    canvas.isDirty = true;
+                                    canvas.needsFullRebake = true;
+                                }
+                            }
                             else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                                canvas.InsertImageFromClipboard(&session);
+                                Point2D centerWorld = canvas.transform.ScreenToWorld(static_cast<float>(canvas.viewportW) * 0.5f, static_cast<float>(canvas.viewportH) * 0.5f);
+                                Folio::ClipboardManager::Instance().Paste(session, canvas, centerWorld.x, centerWorld.y);
                             }
                             else if (event.key.key == SDLK_Z && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
                                 if (SDL_GetModState() & SDL_KMOD_SHIFT) {

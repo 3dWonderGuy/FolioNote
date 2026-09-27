@@ -21,7 +21,7 @@
 #include <utility>
 #include "core/spatial/aabb.hpp"
 #include "core/objects/canvas_object.hpp"
-#include "core/objects/ink_container.hpp"
+#include "core/objects/ink_container/ink_container.hpp"
 
 class CanvasPage;
 class CanvasEngine;

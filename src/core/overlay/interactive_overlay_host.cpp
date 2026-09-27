@@ -68,13 +68,7 @@ void InteractiveOverlayHost::RenderOverlays(BLContext& screenCtx, const Viewport
         }
 
         // Bridge to InteractiveObject for coordinate projection
-        InteractiveObject* io = nullptr;
-        if (obj->type == ObjectType::Interactive) {
-            io = static_cast<InteractiveObject*>(obj);
-        } else {
-            io = dynamic_cast<InteractiveObject*>(obj);
-        }
-
+        InteractiveObject* io = dynamic_cast<InteractiveObject*>(obj);
         if (!io) continue;
 
         const OverlayRect screenRect = io->ComputeScreenRect(vp);
@@ -97,13 +91,7 @@ void InteractiveOverlayHost::RenderOverlays(BLContext& screenCtx, const Viewport
             continue;
         }
 
-        InteractiveObject* io = nullptr;
-        if (obj->type == ObjectType::Interactive) {
-            io = static_cast<InteractiveObject*>(obj.get());
-        } else {
-            io = dynamic_cast<InteractiveObject*>(obj.get());
-        }
-
+        InteractiveObject* io = dynamic_cast<InteractiveObject*>(obj.get());
         if (!io) continue;
 
         const OverlayRect screenRect = io->ComputeScreenRect(vp);
@@ -129,13 +117,7 @@ bool InteractiveOverlayHost::HandleInput(const SDL_Event& event, const Viewport&
         return false;
     }
 
-    InteractiveObject* io = nullptr;
-    if (activeObject->type == ObjectType::Interactive) {
-        io = static_cast<InteractiveObject*>(activeObject);
-    } else {
-        io = dynamic_cast<InteractiveObject*>(activeObject);
-    }
-
+    InteractiveObject* io = dynamic_cast<InteractiveObject*>(activeObject);
     if (!io || !io->isInteracting) {
         return false;
     }
@@ -159,10 +141,7 @@ void InteractiveOverlayHost::SetFocusedObject(CanvasObject* obj) {
     ClearFocusedObject();
 
     if (obj && obj->HasLiveOverlay()) {
-        InteractiveObject* io = (obj->type == ObjectType::Interactive)
-            ? static_cast<InteractiveObject*>(obj)
-            : dynamic_cast<InteractiveObject*>(obj);
-
+        InteractiveObject* io = dynamic_cast<InteractiveObject*>(obj);
         if (io) {
             focusedObject = obj;
             io->SetInteracting(true);
@@ -174,10 +153,7 @@ void InteractiveOverlayHost::ClearFocusedObject() {
     if (!focusedObject) return;
 
     if (focusedObject->HasLiveOverlay()) {
-        InteractiveObject* io = (focusedObject->type == ObjectType::Interactive)
-            ? static_cast<InteractiveObject*>(focusedObject)
-            : dynamic_cast<InteractiveObject*>(focusedObject);
-
+        InteractiveObject* io = dynamic_cast<InteractiveObject*>(focusedObject);
         if (io) {
             io->SetInteracting(false);
         }

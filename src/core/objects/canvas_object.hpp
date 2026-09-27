@@ -35,7 +35,6 @@ enum class ObjectType {
     Link,        
     MathLaTeX,     
     Frame,          // grouped frame container
-    Interactive,    // interactive overlay object (Layer 3)
     Other,          // this is the mark for the custom objects made by third party plugins
 };
 

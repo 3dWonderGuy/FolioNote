@@ -1,6 +1,7 @@
 #pragma once
 #include "imgui.h"
 #include "core/engine/canvas_engine.hpp"
+#include "core/clipboard/clipboard_manager.hpp"
 #include "input/input_state_machine.hpp"
 #include "app/theme_manager.hpp"
 #include "ui/imgui_theme.hpp"
@@ -2424,7 +2425,10 @@ public:
                             });
                             menu.AddSeparator();
                             menu.AddItem("Paste from Clipboard", 0, "Ctrl+V", [&]() {
-                                canvas.InsertImageFromClipboard(currentSession);
+                                if (currentSession) {
+                                    Point2D centerWorld = canvas.transform.ScreenToWorld(static_cast<float>(canvas.viewportW) * 0.5f, static_cast<float>(canvas.viewportH) * 0.5f);
+                                    Folio::ClipboardManager::Instance().Paste(*currentSession, canvas, centerWorld.x, centerWorld.y);
+                                }
                             });
                         }
                     );
