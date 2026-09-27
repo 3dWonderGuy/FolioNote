@@ -59,6 +59,29 @@
  *      a 14-byte BITMAPFILEHEADER (bfType = 0x4D42, bfOffBits) is prepended.
  */
 
+#include <vector>
+#include <memory>
+#include <string>
+#include <cmath>
+#include <cstring>
+#include <algorithm>
+#include <type_traits>
+
+#include <blend2d/blend2d.h>
+
+#include "core/document/document_session.hpp"
+#include "core/engine/canvas_engine.hpp"
+#include "core/objects/canvas_object.hpp"
+#include "core/objects/ink_container/ink_container.hpp"
+#include "core/objects/media/images/image_container.hpp"
+#include "core/objects/text/text_box.hpp"
+#include "core/objects/interactive/interactive_object.hpp"
+#include "core/overlay/web_overlay.hpp"
+#include "core/engine/stroke_outline_builder.hpp"
+#include "utils/logger.hpp"
+#include "utils/guid_generator.hpp"
+#include "utils/uid_generator.hpp"
+
 #if defined(_WIN32)
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -69,7 +92,13 @@
 #endif
 
 #include <windows.h>
-#include <initguid.h>
+#include <ole2.h>
+#include <oleauto.h>
+
+#ifndef interface
+#define interface struct
+#endif
+
 #include <msinkaut.h>
 
 #ifdef min
@@ -87,27 +116,12 @@
 #ifdef Polygon
 #undef Polygon
 #endif
-
-#include <vector>
-#include <memory>
-#include <string>
-#include <cmath>
-#include <cstring>
-#include <algorithm>
-
-#include <blend2d/blend2d.h>
-
-#include "core/document/document_session.hpp"
-#include "core/engine/canvas_engine.hpp"
-#include "core/objects/ink_container/ink_container.hpp"
-#include "core/objects/media/images/image_container.hpp"
-#include "core/objects/text/text_box.hpp"
-#include "core/objects/interactive/interactive_object.hpp"
-#include "core/overlay/web_overlay.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
-#include "utils/logger.hpp"
-#include "utils/guid_generator.hpp"
-#include "utils/uid_generator.hpp"
+#ifdef GetObject
+#undef GetObject
+#endif
+#ifdef SendMessage
+#undef SendMessage
+#endif
 
 namespace Folio::PlatformWin32Clipboard {
 
@@ -357,7 +371,7 @@ inline bool SerializeStrokesToIsf(const std::vector<std::shared_ptr<CanvasObject
 
                     const double scale = std::hypot(ink->transform.m00, ink->transform.m01);
                     const auto wHimetric = static_cast<long>(std::round(stroke.baseWidth * (scale > 1e-4 ? scale : 1.0) * 100.0));
-                    pDA->put_Width(wHimetric > 0 ? wHimetric : 50);
+                    pDA->put_Width(static_cast<float>(wHimetric > 0 ? wHimetric : 50));
                     pDA->Release();
                 }
                 pStroke->Release();
