@@ -166,12 +166,17 @@ int main(int argc, char* argv[])
     // -------------------------------------------------------------------------
     // APPLICATION LIFECYCLE INITIALIZATION
     // -------------------------------------------------------------------------
+#if defined(_WIN32)
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+#endif
+
     Application app;
     if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
 #if defined(_WIN32)
         if (hSingleInstanceMutex) {
             CloseHandle(hSingleInstanceMutex);
         }
+        CoUninitialize();
 #endif
         return -1;
     }
@@ -180,6 +185,7 @@ int main(int argc, char* argv[])
     app.Shutdown();
 
 #if defined(_WIN32)
+    CoUninitialize();
     if (hSingleInstanceMutex) {
         CloseHandle(hSingleInstanceMutex);
     }

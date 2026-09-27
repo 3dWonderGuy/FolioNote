@@ -661,6 +661,10 @@ public:
                         }
                         if (ext == ".pdf") {
                             ImportExternalPdf(droppedPath);
+                        } else if (ext == ".mp4" || ext == ".mkv" || ext == ".webm" || ext == ".mov" || ext == ".avi" || 
+                                   ext == ".ts" || ext == ".m2ts" || ext == ".mpg" || ext == ".mpeg" || ext == ".wmv" || 
+                                   ext == ".flv" || ext == ".3gp" || ext == ".m4v" || ext == ".ogv") {
+                            canvas.InsertVideoFromFile(droppedPath, &session);
                         }
                     }
                 }

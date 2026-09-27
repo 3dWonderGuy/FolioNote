@@ -65,6 +65,8 @@ public:
      */
     void UpdateActiveOverlays(uint64_t nowMs, double deltaSec,
                              const std::vector<CanvasObject*>& visibleObjects);
+    void UpdateActiveOverlays(uint64_t nowMs, double deltaSec,
+                             const std::vector<std::shared_ptr<CanvasObject>>& visibleObjects);
 
     // =========================================================================
     // RENDERING
@@ -85,6 +87,8 @@ public:
      */
     void RenderOverlays(BLContext& screenCtx, const Viewport& vp,
                         const std::vector<CanvasObject*>& visibleObjects);
+    void RenderOverlays(BLContext& screenCtx, const Viewport& vp,
+                        const std::vector<std::shared_ptr<CanvasObject>>& visibleObjects);
 
     // =========================================================================
     // INPUT DISPATCH

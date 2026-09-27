@@ -165,6 +165,19 @@ void DocumentSession::AddImage(const std::shared_ptr<Folio::ImageObject>& img) {
 }
 
 /**
+ * @brief Convenience helper to add a VideoObject to the active page.
+ *
+ * Delegates to AddObject() which handles:
+ *   - Spatial R-Tree index insertion
+ *   - UID assignment
+ *   - Page dirty marking
+ *   - Undo command recording
+ */
+void DocumentSession::AddVideo(const std::shared_ptr<Folio::VideoObject>& vid) {
+    AddObject(vid);
+}
+
+/**
  * @brief Convenience helper to add a TextBoxObject to the active page.
  */
 void DocumentSession::AddTextBox(const std::shared_ptr<Folio::TextBoxObject>& textBox) {

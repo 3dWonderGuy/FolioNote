@@ -90,6 +90,75 @@ struct ObjectConfig {
     double attachmentChipHeightMm = 18.0;
 
     // =========================================================================
+    // VIDEO CONSTRAINTS & LIMITS
+    // =========================================================================
+
+    /**
+     * @brief Maximum video file size allowed for local import (default: 4 GB).
+     *
+     * Memory Safety Note:
+     *   Video files are NOT loaded into RAM — they are streamed from disk by libVLC.
+     *   This limit guards only against filesystem indexing of absurdly large files
+     *   and prevents accidental import of entire ISO disc images.
+     *   Math: 4 * 1024^3 = 4,294,967,296 bytes (4 GB limit)
+     */
+    size_t maxVideoFileSizeBytes = static_cast<size_t>(4) * 1024 * 1024 * 1024;
+
+    /**
+     * @brief Default canvas width in world millimeters for newly dropped video objects (default: 80.0 mm ≈ 3.15 in).
+     *
+     * At 96 DPI: 80mm * 3.7795 px/mm ≈ 302 pixels wide.
+     * Paired with defaultVideoHeightMm = 45.0mm for standard 16:9 aspect ratio.
+     */
+    double defaultVideoWidthMm  = 80.0;
+
+    /**
+     * @brief Default canvas height in world millimeters for newly dropped video objects (default: 45.0 mm).
+     *
+     * 80.0 / 45.0 = 1.7778 ≈ 16:9 aspect ratio (the global standard for modern video content).
+     */
+    double defaultVideoHeightMm = 45.0;
+
+    /**
+     * @brief Minimum canvas dimension in world millimeters for video objects (default: 20.0 mm).
+     *
+     * Below 20mm, transport controls would be unreadable and unclickable.
+     */
+    double minVideoCanvasDimensionMm = 20.0;
+
+    /**
+     * @brief Maximum canvas dimension in world millimeters for video objects (default: 500.0 mm).
+     *
+     * Prevents video containers from growing to canvas-filling sizes that degrade inking performance.
+     */
+    double maxVideoCanvasDimensionMm = 500.0;
+
+    /**
+     * @brief Default audio volume for newly created video objects (range: 0.0 to 2.0).
+     *
+     * 1.0 = 100% (original media volume).
+     * 2.0 = 200% (digital boost via libVLC's software amplifier).
+     */
+    float defaultVideoVolume = 1.0f;
+
+    /**
+     * @brief Enable hardware-accelerated video decoding (D3D11VA on Windows, MediaCodec on Android).
+     *
+     * When true: libVLC passes "--avcodec-hw=any" to enable hardware acceleration.
+     * When false: CPU software decoding only (compatibility fallback for old GPU drivers).
+     * Default: true (hardware decoding is strongly preferred for 4K / high-FPS content).
+     */
+    bool enableHardwareVideoDecoding = true;
+
+    /**
+     * @brief Duration in milliseconds before video transport controls auto-hide after mouse inactivity.
+     *
+     * Keeps the canvas clean during playback; controls reappear on mouse hover.
+     * Default: 3000ms (3 seconds).
+     */
+    uint32_t videoControlsFadeDelayMs = 3000;
+
+    // =========================================================================
     // GLOBAL SINGLETON ACCESS
     // =========================================================================
 

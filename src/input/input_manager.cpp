@@ -94,6 +94,15 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     stateMachine.latestEventTimeSec = stateMachine.EventTimestampToSec(event.common.timestamp);
 
     // -----------------------------------------------------------------------------
+    // STAGE 2.5: LAYER 3 INTERACTIVE OVERLAY EVENT ROUTING
+    // -----------------------------------------------------------------------------
+    if (canvas.interactiveOverlayHost.HandleInput(event, canvas.GetViewport(), canvas.interactiveOverlayHost.GetFocusedObject())) {
+        canvas.needsFullRebake = true;
+        canvas.isDirty = true;
+        return;
+    }
+
+    // -----------------------------------------------------------------------------
     // STAGE 3: HARDWARE-SPECIFIC INPUT ROUTING
     // -----------------------------------------------------------------------------
     // Distribute the raw event to dedicated hardware handlers.

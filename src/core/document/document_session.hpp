@@ -13,6 +13,7 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
+#include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text_box.hpp"
 #include "core/engine/stroke_smoother.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
@@ -296,6 +297,9 @@ public:
 
     /// @brief Convenience helper to add a TextBoxObject to the active page.
     void AddTextBox(const std::shared_ptr<Folio::TextBoxObject>& textBox);
+
+    /// @brief Convenience helper to add a VideoObject to the active page with undo tracking.
+    void AddVideo(const std::shared_ptr<Folio::VideoObject>& vid);
 
     /// @brief Selects all visible, selectable, unlocked objects on the active page.
     size_t SelectAll();

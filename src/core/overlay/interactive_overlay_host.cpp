@@ -34,6 +34,21 @@ void InteractiveOverlayHost::UpdateActiveOverlays(uint64_t nowMs, double deltaSe
     }
 }
 
+void InteractiveOverlayHost::UpdateActiveOverlays(uint64_t nowMs, double deltaSec,
+                                                 const std::vector<std::shared_ptr<CanvasObject>>& visibleObjects)
+{
+    for (const auto& obj : visibleObjects) {
+        if (!obj || !obj->isVisible || !obj->HasLiveOverlay()) {
+            continue;
+        }
+
+        IInteractiveOverlay* overlay = obj->GetOverlay();
+        if (overlay) {
+            overlay->OnUpdate(nowMs, deltaSec);
+        }
+    }
+}
+
 // =============================================================================
 // RENDERING
 // =============================================================================
@@ -58,6 +73,35 @@ void InteractiveOverlayHost::RenderOverlays(BLContext& screenCtx, const Viewport
             io = static_cast<InteractiveObject*>(obj);
         } else {
             io = dynamic_cast<InteractiveObject*>(obj);
+        }
+
+        if (!io) continue;
+
+        const OverlayRect screenRect = io->ComputeScreenRect(vp);
+        if (screenRect.IsEmpty()) {
+            continue;
+        }
+
+        IInteractiveOverlay* overlay = io->GetOverlay();
+        if (overlay) {
+            overlay->OnRenderOverlay(screenCtx, screenRect);
+        }
+    }
+}
+
+void InteractiveOverlayHost::RenderOverlays(BLContext& screenCtx, const Viewport& vp,
+                                            const std::vector<std::shared_ptr<CanvasObject>>& visibleObjects)
+{
+    for (const auto& obj : visibleObjects) {
+        if (!obj || !obj->isVisible || !obj->HasLiveOverlay()) {
+            continue;
+        }
+
+        InteractiveObject* io = nullptr;
+        if (obj->type == ObjectType::Interactive) {
+            io = static_cast<InteractiveObject*>(obj.get());
+        } else {
+            io = dynamic_cast<InteractiveObject*>(obj.get());
         }
 
         if (!io) continue;

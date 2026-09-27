@@ -210,6 +210,16 @@ bool ImageObject::EnsureLoaded() {
 // =============================================================================
 
 void ImageObject::CalculateDimensionsFromDpi(double dpi) {
+    // Robust dimension resolution: if naturalWidth/naturalHeight are 0, recover from frames or cached surface
+    if ((naturalWidth == 0 || naturalHeight == 0) && !frames.empty() && !frames[0].image.is_empty()) {
+        naturalWidth = static_cast<uint32_t>(frames[0].image.width());
+        naturalHeight = static_cast<uint32_t>(frames[0].image.height());
+    }
+    if ((naturalWidth == 0 || naturalHeight == 0) && !cachedBlImage.is_empty()) {
+        naturalWidth = static_cast<uint32_t>(cachedBlImage.width());
+        naturalHeight = static_cast<uint32_t>(cachedBlImage.height());
+    }
+
     if (naturalWidth == 0 || naturalHeight == 0) {
         return;
     }
@@ -373,6 +383,7 @@ void ImageObject::CustomizeActions(std::vector<Folio::ContextMenuItem>& actions)
     resetSizeAct.iconKey = "zoom_reset";
     resetSizeAct.order = 50;
     resetSizeAct.onTrigger = [this]() {
+        transform = BLMatrix2D::make_identity();
         CalculateDimensionsFromDpi(96.0);
         UpdateBounds();
         if (onVisualStateChanged) {

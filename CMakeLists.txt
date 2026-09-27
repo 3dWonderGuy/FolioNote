@@ -257,6 +257,132 @@ endif()
 
 
 
+# =============================================================================
+# 10. libVLC Media Player Integration (Video Container Subsystem)
+# =============================================================================
+# Strategy: Look for the VLC SDK in three locations, in priority order:
+#   A. Vendored SDK: third_party/libvlc/sdk/ (preferred — version-locked, reproducible builds)
+#   B. System VLC on Windows: C:/Program Files/VideoLAN/VLC/ (user has VLC installed)
+#   C. Not found: Build without libVLC (FOLIO_HAS_LIBVLC not defined); video objects
+#      fall back to placeholder card rendering with no actual decode capability.
+#      A clear CMake STATUS message is emitted so developers know what's missing.
+#
+# libVLC linking model (Windows DLL):
+#   - Link against the .lib import library at build time.
+#   - Deploy libvlc.dll + libvlccore.dll + plugins/ to the output directory post-build.
+#   - At runtime, VLC locates its plugin folder by searching for libvlccore.dll relative
+#     to the executable via LIBVLC_PLUGIN_PATH or the plugins/ directory next to the DLL.
+# =============================================================================
+
+if(NOT ANDROID)
+    set(FOLIO_VLC_FOUND OFF)
+
+    # ── A. Check vendored SDK (third_party/libvlc/sdk/) ─────────────────────
+    set(FOLIO_VLC_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libvlc/sdk")
+    if(EXISTS "${FOLIO_VLC_SDK_DIR}/include/vlc/libvlc.h" AND
+       EXISTS "${FOLIO_VLC_SDK_DIR}/lib/libvlc.lib")
+
+        set(FOLIO_VLC_FOUND ON)
+        set(FOLIO_VLC_INCLUDE_DIR "${FOLIO_VLC_SDK_DIR}/include")
+        set(FOLIO_VLC_LIB_FILE    "${FOLIO_VLC_SDK_DIR}/lib/libvlc.lib")
+        set(FOLIO_VLC_BIN_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libvlc/bin")
+        message(STATUS "libVLC: Found vendored SDK at ${FOLIO_VLC_SDK_DIR}")
+
+    # ── B. Check system VLC installation on Windows ──────────────────────────
+    elseif(WIN32 AND EXISTS "C:/Program Files/VideoLAN/VLC/sdk/lib/libvlc.lib")
+
+        set(FOLIO_VLC_FOUND ON)
+        set(FOLIO_VLC_INCLUDE_DIR "C:/Program Files/VideoLAN/VLC/sdk/include")
+        set(FOLIO_VLC_LIB_FILE    "C:/Program Files/VideoLAN/VLC/sdk/lib/libvlc.lib")
+        set(FOLIO_VLC_BIN_DIR     "C:/Program Files/VideoLAN/VLC")
+        message(STATUS "libVLC: Found system installation at C:/Program Files/VideoLAN/VLC")
+
+    else()
+        message(STATUS "libVLC: SDK not found. VideoObject will use placeholder card only.")
+        message(STATUS "libVLC: To enable: place sdk/include/vlc/ and sdk/lib/libvlc.lib in third_party/libvlc/sdk/")
+    endif()
+
+    if(FOLIO_VLC_FOUND)
+        # Wire include path, compile definition, and import library
+        target_include_directories(${APP_TARGET} PRIVATE "${FOLIO_VLC_INCLUDE_DIR}")
+        target_compile_definitions(${APP_TARGET} PRIVATE FOLIO_HAS_LIBVLC=1)
+        target_link_libraries(${APP_TARGET} PRIVATE "${FOLIO_VLC_LIB_FILE}")
+
+        # Deploy libvlc.dll and libvlccore.dll alongside the executable
+        # If they are in the vendored bin/ directory, copy from there.
+        # Otherwise try the system VLC directory.
+        foreach(_vlcdll libvlc.dll libvlccore.dll)
+            set(_vlcdll_src "${FOLIO_VLC_BIN_DIR}/${_vlcdll}")
+            if(EXISTS "${_vlcdll_src}")
+                add_custom_command(
+                    TARGET ${APP_TARGET} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_vlcdll_src}"
+                    "$<TARGET_FILE_DIR:${APP_TARGET}>/${_vlcdll}"
+                    COMMENT "Deploying ${_vlcdll} to output directory..."
+                )
+            else()
+                # Fallback: try system VLC even if SDK was vendored
+                set(_vlcdll_sys "C:/Program Files/VideoLAN/VLC/${_vlcdll}")
+                if(EXISTS "${_vlcdll_sys}")
+                    add_custom_command(
+                        TARGET ${APP_TARGET} POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_vlcdll_sys}"
+                        "$<TARGET_FILE_DIR:${APP_TARGET}>/${_vlcdll}"
+                        COMMENT "Deploying system ${_vlcdll} to output directory..."
+                    )
+                else()
+                    message(WARNING "libVLC: Cannot find ${_vlcdll} to deploy — video playback may fail at runtime.")
+                endif()
+            endif()
+        endforeach()
+
+        # Deploy the VLC plugins directory (essential for hardware decoding, network streams, codecs)
+        # Without plugins/, libvlc_new() fails to load any codecs.
+        foreach(_vlcplugindir "${FOLIO_VLC_BIN_DIR}/plugins" "C:/Program Files/VideoLAN/VLC/plugins")
+            if(EXISTS "${_vlcplugindir}")
+                add_custom_command(
+                    TARGET ${APP_TARGET} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${_vlcplugindir}"
+                    "$<TARGET_FILE_DIR:${APP_TARGET}>/plugins"
+                    COMMENT "Deploying VLC plugins directory to output..."
+                )
+                break()
+            endif()
+        endforeach()
+
+        # Deploy the VLC lua directory (essential for playlist scrapers, meta readers, art extractors)
+        foreach(_vlcluadir "${FOLIO_VLC_BIN_DIR}/lua" "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libvlc/extract/vlc-3.0.20/lua" "C:/Program Files/VideoLAN/VLC/lua")
+            if(EXISTS "${_vlcluadir}")
+                add_custom_command(
+                    TARGET ${APP_TARGET} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${_vlcluadir}"
+                    "$<TARGET_FILE_DIR:${APP_TARGET}>/lua"
+                    COMMENT "Deploying VLC lua directory to output..."
+                )
+                break()
+            endif()
+        endforeach()
+
+        if(MSVC OR WIN32)
+            target_link_libraries(${APP_TARGET} PRIVATE urlmon)
+        endif()
+
+        message(STATUS "libVLC: Integration enabled — VideoObject will support full media playback")
+    endif()
+endif()
+
+# 11. Cross-Platform Embedded WebView Subsystem (for Web Embeds & Native YouTube)
+set(WEBVIEW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(WEBVIEW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WEBVIEW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/webview)
+target_link_libraries(${APP_TARGET} PRIVATE webview::core)
+
+
 # testing
 # 10. Standalone Local Test Executable
 if(NOT ANDROID)

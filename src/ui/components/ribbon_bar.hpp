@@ -2438,19 +2438,31 @@ public:
                         }
                     );
 
-                    // 6. Video
+                    // 6. Video & Web Embed
                     static char s_videoUrl[256] = "";
-                    sec.AddSplitButton("btn_insert_video", iconVideo, "Video", "Insert a video clip or web video stream", false,
-                        [&]() {},
+                    sec.AddSplitButton("btn_insert_video", iconVideo, "Video", "Insert a video clip or live web embed", false,
+                        [&]() {
+                            canvas.OpenVideoFileDialog(canvas.sdlWindow, currentSession);
+                        },
                         [&](FolioUI::FlyoutMenuBuilder& menu) {
-                            menu.AddItem("From Video File... (MP4, MKV, WebM)", iconVideo, nullptr, [&]() {});
+                            menu.AddItem("From Video File... (MP4, MKV, WebM)", iconVideo, nullptr, [&]() {
+                                canvas.OpenVideoFileDialog(canvas.sdlWindow, currentSession);
+                            });
                             menu.AddCustom([&]() {
                                 ImGui::Separator();
-                                ImGui::TextUnformatted("Online Video Stream:");
-                                ImGui::PushItemWidth(220.0f);
-                                ImGui::InputTextWithHint("##vid_url", "YouTube, Vimeo, or Web URL...", s_videoUrl, sizeof(s_videoUrl));
+                                ImGui::TextUnformatted("Online Video / Web Page:");
+                                ImGui::PushItemWidth(230.0f);
+                                bool enterPressed = ImGui::InputTextWithHint("##vid_url", "YouTube, Vimeo, or Web URL...", s_videoUrl, sizeof(s_videoUrl), ImGuiInputTextFlags_EnterReturnsTrue);
                                 ImGui::PopItemWidth();
-                                if (ImGui::Button("Insert Web Video", ImVec2(-1, 24.0f))) {
+                                if (enterPressed || ImGui::Button("Insert Live Web Embed", ImVec2(-1, 24.0f))) {
+                                    std::string urlStr = s_videoUrl;
+                                    // Trim leading/trailing whitespace
+                                    urlStr.erase(0, urlStr.find_first_not_of(" \t\r\n"));
+                                    if (!urlStr.empty()) {
+                                        urlStr.erase(urlStr.find_last_not_of(" \t\r\n") + 1);
+                                        canvas.InsertWebEmbed(urlStr, "", currentSession);
+                                        s_videoUrl[0] = '\0';
+                                    }
                                     ImGui::CloseCurrentPopup();
                                 }
                             });

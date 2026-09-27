@@ -1,11 +1,29 @@
 {
   "appearance": {
+    "defaultNotebookColor": [
+      0.949999988079071,
+      0.44999998807907104,
+      0.15000000596046448,
+      1.0
+    ],
     "isCanvasInverted": false,
     "isDarkMode": true
+  },
+  "backups": {
+    "autoBackupDailyEnabled": true,
+    "autoBackupMonthlyEnabled": true,
+    "autoBackupWeeklyEnabled": true,
+    "dailyBackupsRetention": 7,
+    "maxPageVersionsToKeep": 15,
+    "monthlyBackupsRetention": 12,
+    "weeklyBackupsRetention": 4
   },
   "inking": {
     "activePresetId": "pen_black",
     "autoShapesEnabled": false,
+    "defaultMouseTool": "Selecting",
+    "defaultStylusTool": "Inking",
+    "defaultTouchTool": "Panning",
     "drawWithTouch": false,
     "eraserSizeMm": 6.0,
     "isStrokeEraser": true,
@@ -148,8 +166,31 @@
     ],
     "rulerEnabled": false
   },
+  "libraries": {
+    "defaultLibraryFolder": "",
+    "registeredLibraries": []
+  },
+  "memory": {
+    "lruInactivityTimeoutMs": 60000,
+    "maxLoadedPages": 10
+  },
+  "objects": {
+    "attachmentChipHeightMm": 18.0,
+    "attachmentChipWidthMm": 50.0,
+    "defaultImageDpi": 96.0,
+    "maxAttachmentFileSizeBytes": 104857600,
+    "maxDecodedPixelDimension": 4096,
+    "maxImageCanvasDimensionMm": 200.0,
+    "maxImageFileSizeBytes": 104857600,
+    "minImageCanvasDimensionMm": 5.0
+  },
+  "pdf": {
+    "autoIngestPrintedPdfs": true,
+    "defaultImportMode": 0,
+    "spoolFolderPath": ""
+  },
   "ribbon": {
-    "activeTab": "Draw",
+    "activeTab": "Insert",
     "displayMode": "FullRibbon",
     "sections": [
       {
@@ -230,6 +271,11 @@
         "title": "Mode"
       }
     ]
+  },
+  "session": {
+    "lastNotebookGuid": "7282560b-573d-4396-a031-08f7a41c4c61",
+    "lastPageGuid": "325dae62-22da-4c6d-ab0f-5008988c8c09",
+    "lastSectionGuid": "e2344bf2-f48a-403d-a596-62d01d4e68c0"
   },
   "version": 1
 }

@@ -15,6 +15,7 @@
 #include "input/stateMachine/input_state_machine.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
+#include "core/objects/media/videos/video_container.hpp"
 #include "utils/logger.hpp"
 
 void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& session, bool imguiWantsInput) {
@@ -213,6 +214,25 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     hasPendingEmptyTextBox = false;
                     pendingTextBoxUid = 0;
 
+                    // Check for click on VideoObject (play/pause toggle, transport scrubber, mute)
+                    if (clickedObj->type == ObjectType::Video) {
+                        auto vidObj = std::dynamic_pointer_cast<Folio::VideoObject>(clickedObj);
+                        if (vidObj) {
+                            vidObj->HandleCanvasClick(worldMm.x, worldMm.y, isLastClickDouble, [&canvas]() {
+                                canvas.needsFullRebake = true;
+                                canvas.isDirty = true;
+                            });
+                        }
+                    }
+
+                    // Check for click on InteractiveObject (WebOverlay, YouTube player, live widgets)
+                    if (clickedObj->type == ObjectType::Interactive) {
+                        auto io = std::dynamic_pointer_cast<Folio::InteractiveObject>(clickedObj);
+                        if (io) {
+                            canvas.interactiveOverlayHost.SetFocusedObject(io.get());
+                        }
+                    }
+
                     canvas.ClearSelection(&session);
                     clickedObj->isSelected = 1;
                     canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
@@ -224,6 +244,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 } else {
                     // Clicked on empty canvas:
                     // Commits pending edits, detaches the editor, deselects any active text box or objects
+                    canvas.interactiveOverlayHost.ClearFocusedObject();
                     if (canvas.textEditor.IsActive()) {
                         auto prevTarget = canvas.textEditor.GetTarget();
                         canvas.textEditor.Detach(&session);

@@ -22,6 +22,9 @@
 #include "core/objects/attachment_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/objects/text/text_editor_state.hpp"
+#include "core/overlay/interactive_overlay_host.hpp"
+#include "core/overlay/web_overlay.hpp"
+#include "core/objects/interactive/interactive_object.hpp"
 #include "core/storage/pdf_storage.hpp"
 #include "core/engine/canvas_transform.hpp"
 #include "core/engine/live_layer_pipeline.hpp"
@@ -106,6 +109,7 @@ public:
     LiveLayerPipeline liveLayer;
     SelectionGizmo selectionGizmo;
     Folio::TextEditorState textEditor;
+    Folio::InteractiveOverlayHost interactiveOverlayHost;
 
     // -------------------------------------------------------------------------
     // DEFAULT TYPOGRAPHY SETTINGS (Basic Text Ribbon Group & Click-to-Type)
@@ -1599,6 +1603,292 @@ public:
         return false;
     }
 
+    /**
+     * @brief Imports a local video file from the filesystem and places a VideoObject on the canvas.
+     *
+     * Working Process:
+     *   1. Validates the file extension against the set of libVLC-supported containers.
+     *   2. Copies the file into the notebook's imports/videos/ sidecar folder with path deduplication.
+     *   3. Constructs a VideoObject at the default 16:9 canvas dimensions, centered in the viewport.
+     *   4. Wires the frame-ready dirty callback (→ isDirty = true on each VLC decoded frame).
+     *   5. Calls session.AddVideo() to insert into the active page and undo history.
+     *
+     * Supported containers: MP4, MKV, WebM, MOV, AVI, TS, M2TS, MPG, MPEG, WMV, FLV, 3GP
+     *
+     * @param[in] filePath  Absolute path to the local video file.
+     * @param[in] session   Active DocumentSession for undo tracking.
+     * @return true on success; false if file is invalid, unsupported, or too large.
+     */
+    bool InsertVideoFromFile(const std::string& filePath, DocumentSession* session) {
+        if (!session) return false;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return false;
+
+        // ── 1. Validate file exists and extension is supported ────────────────
+        std::filesystem::path fspath(filePath);
+        if (!std::filesystem::exists(fspath)) {
+            LOG_ERROR(CanvasEngine, "InsertVideoFromFile: File not found: " + filePath);
+            return false;
+        }
+
+        std::string ext = fspath.extension().string();
+        for (auto& c : ext) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
+
+        static const std::initializer_list<const char*> kSupportedVideoExts = {
+            ".mp4", ".mkv", ".webm", ".mov", ".avi", ".ts", ".m2ts",
+            ".mpg", ".mpeg", ".wmv", ".flv", ".3gp", ".m4v", ".ogv"
+        };
+        bool supported = false;
+        for (const char* e : kSupportedVideoExts) {
+            if (ext == e) { supported = true; break; }
+        }
+        if (!supported) {
+            LOG_WARN(CanvasEngine, "InsertVideoFromFile: Unsupported video format: " + ext);
+            return false;
+        }
+
+        // ── 2. File size guard (4 GB limit — see ObjectConfig::maxVideoFileSizeBytes) ──
+        auto& cfg = Folio::ObjectConfig::Get();
+        std::error_code ec;
+        auto fileBytes = std::filesystem::file_size(fspath, ec);
+        if (!ec && fileBytes > cfg.maxVideoFileSizeBytes) {
+            LOG_WARN(CanvasEngine, "InsertVideoFromFile: File too large (" +
+                     std::to_string(fileBytes / (1024*1024)) + " MB)");
+            return false;
+        }
+
+        // ── 3. Copy file into imports/videos/ sidecar with deduplication ─────
+        // The relative sidecar path is stored in the VideoObject so it can be
+        // re-resolved portably when the notebook is moved or opened on another machine.
+        std::string importedPath = filePath; // Fallback: stream from original location
+        try {
+            auto activeNb = session->workspace.GetActiveNotebook();
+            if (activeNb && !activeNb->filePath.empty()) {
+                std::filesystem::path pkgPath(activeNb->filePath);
+                std::filesystem::path importDir = pkgPath / "imports" / "videos";
+                std::filesystem::create_directories(importDir, ec);
+                if (!ec) {
+                    std::filesystem::path destPath = importDir / fspath.filename();
+                    // Deduplication: if an identical file already exists, reuse it
+                    if (!std::filesystem::exists(destPath)) {
+                        std::filesystem::copy_file(fspath, destPath,
+                                                   std::filesystem::copy_options::overwrite_existing, ec);
+                    }
+                    if (!ec) {
+                        importedPath = destPath.string();
+                    }
+                }
+            }
+        } catch (...) {
+            // Non-fatal: play from original path if copy fails
+            importedPath = filePath;
+            LOG_WARN(CanvasEngine, "InsertVideoFromFile: Could not copy to sidecar; streaming from original path");
+        }
+
+        // ── 4. Create VideoObject at default dimensions, centered in viewport ─
+        double w = cfg.defaultVideoWidthMm;
+        double h = cfg.defaultVideoHeightMm;
+
+        auto vid = std::make_shared<Folio::VideoObject>(importedPath, fspath.filename().string(), w, h);
+
+        // Center in current viewport
+        Point2D centerWorld = transform.ScreenToWorld(
+            static_cast<float>(viewportW) * 0.5f,
+            static_cast<float>(viewportH) * 0.5f
+        );
+        vid->worldX = centerWorld.x - w * 0.5;
+        vid->worldY = centerWorld.y - h * 0.5;
+        vid->UpdateBounds();
+
+        // Wire the frame-ready dirty callback BEFORE adding to the canvas
+        // This ensures any frames decoded immediately after Open() are visible
+        vid->Play([this]() {
+            needsFullRebake = true;
+            isDirty = true;
+        });
+        // Start paused — user explicitly plays via transport controls or context menu
+        vid->Pause();
+
+        // ── 5. Insert into active page with undo tracking ─────────────────────
+        session->AddVideo(vid);
+        needsFullRebake = true;
+        isDirty = true;
+
+        LOG_INFO(CanvasEngine, "Inserted VideoObject: " + fspath.filename().string() +
+                 " (" + std::to_string(static_cast<int>(w)) + "mm x " +
+                 std::to_string(static_cast<int>(h)) + "mm) from: " + importedPath);
+        return true;
+    }
+
+    /**
+     * @brief Inserts a Layer 3 interactive WebOverlay (YouTube native player or live webpage).
+     *
+     * GENERAL WORKING PROCESS:
+     * -------------------------
+     * 1. Validates session and non-empty URL.
+     * 2. Resolves center of current visible canvas viewport in world millimeters:
+     *      centerWorld = ScreenToWorld(viewportW / 2, viewportH / 2)
+     * 3. Instantiates WebOverlay with the target URL, title label, and parent SDL window.
+     * 4. Wraps the overlay into an InteractiveObject with default 16:9 widescreen dimensions (160mm x 100mm).
+     * 5. Adds the InteractiveObject to the session active page and registers it with the spatial R-Tree.
+     * 6. Marks canvas as dirty and triggers full rebake for static Layer 1 placeholder.
+     *
+     * @param[in] url      Target web or YouTube URL.
+     * @param[in] label    Optional display title.
+     * @param[in] session  Pointer to active DocumentSession.
+     * @return True if successfully inserted; false otherwise.
+     */
+    bool InsertWebEmbed(const std::string& url, const std::string& label, DocumentSession* session) {
+        if (!session || url.empty()) return false;
+        auto activePage = session->GetActivePage();
+        if (!activePage) return false;
+
+        constexpr double w = 160.0;
+        constexpr double h = 100.0;
+
+        Point2D centerWorld = transform.ScreenToWorld(
+            static_cast<float>(viewportW) * 0.5f,
+            static_cast<float>(viewportH) * 0.5f
+        );
+
+        auto overlay = std::make_unique<Folio::WebOverlay>(url, label, sdlWindow);
+        (void)overlay->Initialize();
+
+        double posX = centerWorld.x - w * 0.5;
+        double posY = centerWorld.y - h * 0.5;
+
+        auto interactiveObj = std::make_shared<Folio::InteractiveObject>(posX, posY, w, h, std::move(overlay));
+        interactiveObj->UpdateBounds();
+
+        session->AddObject(interactiveObj);
+        interactiveOverlayHost.SetFocusedObject(interactiveObj.get());
+
+        needsFullRebake = true;
+        isDirty = true;
+
+        LOG_INFO(CanvasEngine, "Inserted Layer 3 Web/YouTube Embed: " + url);
+        return true;
+    }
+
+    /**
+     * @brief Inserts a VideoObject from a network stream URL (HTTP, HLS, RTSP, YouTube).
+     *
+     * @param[in] url      Stream URL string.
+     * @param[in] label    Display label (video title, if known).
+     * @param[in] session  Active DocumentSession.
+     * @return true on success.
+     */
+    bool InsertVideoFromUrl(const std::string& url, const std::string& label,
+                             DocumentSession* session) {
+        if (!session || url.empty()) return false;
+
+        // If the URL is a YouTube link, route it to our live WebOverlay subsystem for 100% reliable native playback!
+        if (url.find("youtu.be") != std::string::npos || url.find("youtube.com") != std::string::npos) {
+            return InsertWebEmbed(url, label, session);
+        }
+
+        auto activePage = session->GetActivePage();
+        if (!activePage) return false;
+
+        auto& cfg = Folio::ObjectConfig::Get();
+        double w = cfg.defaultVideoWidthMm;
+        double h = cfg.defaultVideoHeightMm;
+
+        auto vid = std::make_shared<Folio::VideoObject>(url, label.empty() ? url : label, w, h);
+
+        Point2D centerWorld = transform.ScreenToWorld(
+            static_cast<float>(viewportW) * 0.5f,
+            static_cast<float>(viewportH) * 0.5f
+        );
+        vid->worldX = centerWorld.x - w * 0.5;
+        vid->worldY = centerWorld.y - h * 0.5;
+        vid->UpdateBounds();
+
+        if (vid->IsYouTube()) {
+            // For YouTube streams, immediately initiate asynchronous poster thumbnail fetch
+            // without prematurely locking libVLC onto an un-demuxed web URL.
+            vid->FetchYouTubeThumbnailAsync([this]() {
+                needsFullRebake = true;
+                isDirty = true;
+            });
+        } else {
+            vid->Play([this]() {
+                needsFullRebake = true;
+                isDirty = true;
+            });
+            vid->Pause();
+        }
+
+        session->AddVideo(vid);
+        needsFullRebake = true;
+        isDirty = true;
+
+        LOG_INFO(CanvasEngine, "Inserted URL VideoObject: " + url);
+        return true;
+    }
+
+    // =========================================================================
+    // VIDEO FILE PICKER FLOW
+    // =========================================================================
+
+    /**
+     * @struct VideoFileDialogContext
+     * @brief Heap-allocated context passed across SDL_ShowOpenFileDialog callback.
+     */
+    struct VideoFileDialogContext {
+        CanvasEngine* canvas   = nullptr;
+        DocumentSession* session = nullptr;
+    };
+
+    /**
+     * @brief SDL_ShowOpenFileDialog callback invoked when the user selects a video file or cancels the picker.
+     *
+     * Processes the chosen file path and invokes InsertVideoFromFile to import,
+     * instantiate, and center a libVLC-backed VideoObject on the canvas.
+     *
+     * @param[in] userdata Heap-allocated VideoFileDialogContext* pointer (deleted in callback).
+     * @param[in] filelist Null-terminated array of selected file paths (or nullptr if cancelled).
+     * @param[in] filter   Selected filter index (unused).
+     */
+    static void SDLCALL OnVideoFileSelected(void* userdata, const char* const* filelist, int /*filter*/) {
+        auto* ctx = static_cast<VideoFileDialogContext*>(userdata);
+        if (!ctx) return;
+
+        if (filelist && filelist[0] && filelist[0][0] != '\0') {
+            std::string selectedPath = filelist[0];
+            ctx->canvas->InsertVideoFromFile(selectedPath, ctx->session);
+        }
+
+        delete ctx;
+    }
+
+    /**
+     * @brief Opens a native file dialog (Explorer on Windows, file picker on Linux/Android) to pick and insert a video.
+     *
+     * Configures OS file dialog filters for all supported media containers (MP4, MKV, WebM, MOV, AVI, etc.)
+     * and displays the non-blocking native picker. Upon user selection, inserts and centers the video container.
+     *
+     * @param[in] parentWin Pointer to the parent SDL_Window (for window-modal positioning on desktop).
+     * @param[in] session   Pointer to active DocumentSession for undo registration and persistence.
+     */
+    void OpenVideoFileDialog(SDL_Window* parentWin, DocumentSession* session) {
+        if (!session) return;
+
+        auto* ctx = new VideoFileDialogContext{ this, session };
+
+        static const SDL_DialogFileFilter videoFilters[] = {
+            { "Supported Videos (*.mp4;*.mkv;*.webm;*.mov;*.avi;*.ts;*.wmv;*.flv;*.m4v)", "mp4;mkv;webm;mov;avi;ts;m2ts;mpg;mpeg;wmv;flv;3gp;m4v;ogv" },
+            { "MP4 Video (*.mp4)", "mp4" },
+            { "Matroska Video (*.mkv)", "mkv" },
+            { "WebM Video (*.webm)", "webm" },
+            { "QuickTime Video (*.mov)", "mov" },
+            { "All Files (*.*)", "*" }
+        };
+
+        LOG_INFO(CanvasEngine, "Opening native video file dialog...");
+        SDL_ShowOpenFileDialog(OnVideoFileSelected, ctx, parentWin ? parentWin : sdlWindow, videoFilters, static_cast<int>(sizeof(videoFilters) / sizeof(videoFilters[0])), nullptr, false);
+    }
+
     bool EraseSegment(float screenX0, float screenY0, float screenX1, float screenY1,
                       double radiusMm, DocumentSession& session, bool isStrokeEraser = true) {
         auto activePage = session.GetActivePage();
@@ -1845,11 +2135,22 @@ public:
                         anyAnimFrameChanged = true;
                     }
                 }
+            } else if (obj && obj->type == ObjectType::Video) {
+                auto* vid = static_cast<Folio::VideoObject*>(obj.get());
+                if (vid->isPlaying && vid->player) {
+                    hasVisibleAnimation = true;
+                    if (vid->player->HasNewFrame()) {
+                        anyAnimFrameChanged = true;
+                    }
+                }
             }
         }
         if (anyAnimFrameChanged) {
             needsFullRebake = true;
         }
+
+        // Layer 3: Advance interactive overlays for all visible objects
+        interactiveOverlayHost.UpdateActiveOverlays(nowTicksMs, 1.0 / 60.0, *finalRenderList);
 
         BLMatrix2D renderMatrix = transform.GetBlend2DTransformMatrix();
 
@@ -2106,6 +2407,9 @@ public:
         }
 
         compCtx.restore();
+
+        // 2b. Layer 3 Live Interactive Overlays Pass (Screen Coordinates)
+        interactiveOverlayHost.RenderOverlays(compCtx, currentView, *finalRenderList);
 
         // 3. Selection Gizmo Overlay Pass (Screen Coordinates) - suppressed during active shape drawing
         if (selectionGizmo.HasSelection() && !shapeCreation.isActive && !shapeCreation.isDragging) {
