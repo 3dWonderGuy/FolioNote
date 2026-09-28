@@ -16,7 +16,6 @@
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/engine/stroke_smoother.hpp"
-#include "core/engine/live_layer_pipeline.hpp"
 #include "input/pen_palette.hpp"
 #include "core/history/canvas_command.hpp"
 #include "core/backup/page_version_manager.hpp"

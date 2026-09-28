@@ -40,7 +40,10 @@ struct PenTool {
     CapType       capType           = CapType::Round;
     StrokePattern strokePattern     = StrokePattern::Solid;
     BlendMode     blendMode         = BlendMode::Normal;
-    float         baseSize          = 0.5f; // Baseline in physical millimeters (0.5 mm)
+    union {
+        float     baseSize          = 0.5f; // Baseline in physical millimeters (0.5 mm)
+        float     widthMm;                  // Physical millimeter stroke width alias
+    };
     float         minSizeFactor     = 0.2f;
     float         maxSizeFactor     = 1.8f;
     

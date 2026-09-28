@@ -2,14 +2,16 @@
 /**
  * =========================================================================================
  * @file core/engine/stroke_smoother.hpp
- * @brief Core Vector Ink Geometry Primitives (Point2D and Segment1D)
+ * @brief Core Vector Ink Geometry Primitives (Point2D, Segment1D, FinishedStrokeData)
  * =========================================================================================
  *
- * Provides fundamental 2D point and line segment data structures used across vector ink
- * stroke modeling, outline tessellation, collision testing, and rendering.
+ * Provides fundamental 2D point, line segment, and finished stroke data structures used
+ * across vector ink stroke modeling, outline tessellation, collision testing, and rendering.
  */
 
+#include <vector>
 #include <blend2d/blend2d.h>
+#include "core/engine/stroke_outline_builder.hpp"
 
 /**
  * @struct Point2D
@@ -34,4 +36,15 @@ struct Segment1D {
     Point2D p0;               ///< Starting point of the segment
     Point2D p1;               ///< Ending point of the segment
     float width = 0.5f;       ///< Segment line thickness in world millimeters (mm)
+};
+
+/**
+ * @struct FinishedStrokeData
+ * @brief Completed inking stroke container encapsulating raw telemetry, 1D segments, and outline polygon.
+ */
+struct FinishedStrokeData {
+    std::vector<Point2D> rawPoints;
+    std::vector<Segment1D> liveSegments;
+    std::vector<StrokeOutlineBuilder::InputPoint> modeledPoints;
+    BLPath outlinePath;
 };

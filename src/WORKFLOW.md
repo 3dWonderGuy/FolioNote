@@ -165,7 +165,6 @@ src/
 │   │   ├── canvas_engine.hpp             # Viewport blitting, grid rendering, Blend2D software rasterizer to GL texture
 │   │   ├── canvas_transform.hpp          # Affine transformation pipeline: Screen <-> Viewport <-> World mm coordinates
 │   │   ├── gizmo_types.hpp               # Handle hit-test enumerations, pivot points, interaction modes
-│   │   ├── live_layer_pipeline.hpp       # Real-time active inking buffer with zero-allocation ring buffer
 │   │   ├── selection_gizmo.hpp           # Interactive bounding box: translation, non-uniform scale, rotation, flipping
 │   │   ├── stroke_collision.hpp          # High-speed geometric collision (Point-to-Stroke, Segment Slicing, Lasso Box)
 │   │   ├── stroke_outline_builder.hpp    # Polygonal stroke geometry generation from pressure-modeled centerline paths

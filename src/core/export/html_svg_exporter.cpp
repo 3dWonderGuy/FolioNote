@@ -26,7 +26,7 @@
 #include "core/document/section.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
-#include "core/objects/text_box.hpp"
+#include "core/objects/text/text_box.hpp"
 #include "core/objects/media/images/image_container.hpp"
 #include <sstream>
 #include <iomanip>

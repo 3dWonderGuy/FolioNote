@@ -125,11 +125,15 @@ public:
     [[nodiscard]] Viewport GetVisibleViewportMm(int viewportPixelW, int viewportPixelH) const noexcept {
         Point2D minWorld = ScreenToWorld(0.0, 0.0);
         Point2D maxWorld = ScreenToWorld(viewportPixelW, viewportPixelH);
-        return {
-            AABB{ minWorld.x, minWorld.y, maxWorld.x, maxWorld.y },
-            zoom,
-            pixelsPerMm
-        };
+        Viewport vp;
+        vp.bounds = AABB{ minWorld.x, minWorld.y, maxWorld.x, maxWorld.y };
+        vp.visibleWorldBounds = vp.bounds;
+        vp.zoom = zoom;
+        vp.pixelsPerMm = pixelsPerMm;
+        vp.cameraX = panXMm;
+        vp.cameraY = panYMm;
+        vp.worldToScreenMatrix = GetBlend2DTransformMatrix();
+        return vp;
     }
 
     // Generates the 2D affine transformation matrix for Blend2D rendering passes

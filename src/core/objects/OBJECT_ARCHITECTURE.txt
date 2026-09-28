@@ -1,0 +1,255 @@
+================================================================================
+          FOLIONOTE: OBJECT ARCHITECTURE & INTERACTION CONTRACT
+================================================================================
+Location: src/core/objects/
+Specification Version: 2.0 (Post-Decoupling Refactor)
+
+1. SYSTEM TOPOLOGY & RESPONSIBILITIES
+--------------------------------------------------------------------------------
+The canvas object architecture operates under a strict Inversion of Control
+pattern to prevent compilation cascades and eliminate downcasting.
+
+[DocumentSession]
+      | (Strong Ownership)
+      v
+ [CanvasPage]
+      | (Polymorphic Ownership)
+      +---> std::vector<std::shared_ptr<CanvasObject>>
+      |
+      +---> [R-Tree Spatial Index] (AABBs indexed in world mm)
+
+Entities:
+  - CanvasObject:  Entity Blueprint (Pure World Millimeters, no engine coupling).
+  - CanvasContext: Service Courier (Transient injection of subsystems).
+
+2. CORE ABSTRACTIONS
+--------------------------------------------------------------------------------
+A. CanvasObject (canvas_object.hpp)
+   The abstract base class for all drawable canvas elements.
+   - Primary Units: Physical world millimeters (mm).
+   - Invariants:
+     * Never stores screen-pixel values or zoom-dependent state.
+     * Contains cached AABB `bounds` updated via `UpdateBounds()`.
+     * Does not directly include engine, session, or file management headers.
+   - Key Virtual Hooks:
+     * Render(BLContext& ctx, const Viewport& viewport) const
+     * UpdateBounds()
+     * BakeTransform()
+     * CustomizeActions(std::vector<ContextMenuItem>& actions)
+     * OnPointerClick(const CanvasContext& ctx) -> bool
+
+B. CanvasContext (canvas_context.hpp)
+   The dependency injection packet passed downward into virtual interaction hooks.
+   - Subsystem References (Guaranteed non-null):
+     * stateMachine : IInputStateMachine&
+     * session      : DocumentSession&
+     * engine       : CanvasEngine&
+   - Subsystem Pointers (Optional / null-safe):
+     * fileManager  : IFileManager*
+     * clipboard    : IClipboard*
+     * contextMenu  : IContextMenuManager*
+   - Event Telemetry:
+     * worldX, worldY, isDoubleClick, modifiers
+
+3. INTERACTION PIPELINE (POLYMORPHIC DISPATCH)
+--------------------------------------------------------------------------------
+Downcasting via std::dynamic_pointer_cast in input handlers is strictly forbidden.
+
+Input Dispatch Flow:
+  1. InputStateMachine (Mouse/Touch/Stylus) detects pointer contact.
+  2. Canvas coordinates projected to world space: (worldX, worldY) mm.
+  3. activePage->HitTestSingleClick() locates target CanvasObject.
+  4. Dispatcher constructs transient CanvasContext:
+         Folio::CanvasContext ctx{
+             .stateMachine  = *this,
+             .session       = session,
+             .engine        = canvas,
+             .fileManager   = nullptr,
+             .clipboard     = &Folio::ClipboardManager::Instance(),
+             .contextMenu   = nullptr,
+             .worldX        = worldMm.x,
+             .worldY        = worldMm.y,
+             .isDoubleClick = isLastClickDouble,
+             .modifiers     = clickModifiers
+         };
+  5. Dispatcher invokes `clickedObj->OnPointerClick(ctx)`.
+  6. Return Values:
+     * true:  Event consumed by object (e.g. video transport, file launch).
+              Input machine halts selection and skips gizmo activation.
+     * false: Event unhandled. Falls through to standard SelectionGizmo binding.
+
+4. OBJECT ACTION REGISTRY & CONTEXT MENUS
+--------------------------------------------------------------------------------
+Right-click menus are built cooperatively via ObjectActionRegistry:
+  1. Registry builds universal default actions:
+     - Delete (order: 0, destructive)
+     - Set as Background / Unlock (order: 190)
+     - Bring to Front (order: 200)
+     - Bring Forward  (order: 210)
+     - Send Backward  (order: 220)
+     - Send to Back   (order: 230)
+     - Copy (order: 280)
+     - Cut (order: 290)
+     - Duplicate (order: 300)
+  2. Registry invokes virtual hook: `obj->CustomizeActions(actions)`.
+     - AttachmentObject: Injects "Open", "Locate/Relink", "Copy Path".
+     - VideoObject:      Injects "Play/Pause", "Mute", "Reset Native Size".
+     - ImageObject:      Injects "Reset 1:1 Size", "Save Image As...".
+  3. Actions are deterministically sorted via std::stable_sort on `order`.
+
+5. CONTAINER CATALOG & LIFECYCLE STATES
+--------------------------------------------------------------------------------
+[x] AttachmentObject (attachment_container.hpp/.cpp)
+    - Fixed badge (chipW x chipH mm). Locked MoveOnly gizmo.
+    - Double-click launches file via OpenFile().
+[x] VideoObject (media/videos/video_container.hpp/.cpp)
+    - libVLC decode frame blitting to BLImage. Aspect ratio strictly preserved.
+    - Transport bar and YouTube poster thumbnail support.
+[x] ShapeObject (primitives/shape_container.hpp/.cpp)
+    - Procedural vector paths (Rect, Ellipse, Triangle, Star, Waves).
+    - Custom hatching patterns and outline dash decomposition.
+[x] ImageObject (media/images/image_container.hpp/.cpp)
+    - Multi-format loader (PNG, JPEG, WebP, SVG, GIF animation).
+    - 4096px RAM protection clamp and DPI-based physical millimeter mapping.
+[-] InkContainer (ink_container/)
+    - Vector ink stroke collection and centerline spline pipeline.
+    - Active focus: ribbon polygon extrusion (StrokeOutlineBuilder).
+[ ] TableObject (table_container.hpp)
+    - Stubbed interface placeholder for Phase 2 structured grids.
+[PARKED] PdfContainer & TextBoxObject (DEACTIVATED_OBJECTS.txt)
+    - Isolated to prevent compilation bottlenecks during ink stabilization.
+
+================================================================================
+
+┌──────────────────────────────────────────────┐
+                     │               DocumentSession                │
+                     │  - Holds Active Page                         │
+                     │  - Manages Undo/Redo (CommandHistory)        │
+                     └──────────────────────┬───────────────────────┘
+                                            │ OWNS (Strong)
+                                            ▼
+                     ┌──────────────────────────────────────────────┐
+                     │                 CanvasPage                   │
+                     │  - R-Tree (Spatial Index of AABBs)           │
+                     │  - std::vector<shared_ptr<CanvasObject>>     │
+                     └──────────────────────┬───────────────────────┘
+                                            │ OWNS (Polymorphic)
+     ┌──────────────────┬───────────────────┼───────────────────┬──────────────────┐
+     ▼                  ▼                   ▼                   ▼                  ▼
+┌──────────────┐ ┌──────────────┐   ┌──────────────┐    ┌──────────────┐   ┌──────────────┐
+│ Attachment   │ │ VideoObject  │   │ ShapeObject  │    │ ImageObject  │   │ InkContainer │
+│ Object       │ │              │   │              │    │              │   │              │
+│ (MoveOnly)   │ │ (Locked AR)  │   │ (Procedural) │    │ (Raster/RAM) │   │ (Vector Ink) │
+└──────▲───────┘ └──────▲───────┘   └──────▲───────┘    └──────▲───────┘   └──────▲───────┘
+       │                │                  │                   │                  │
+       └────────────────┴──────────────────┼───────────────────┴──────────────────┘
+                                           │
+                        Inherits Interface │
+                                           │
+                     ┌─────────────────────┴────────────────────────┐
+                     │                 CanvasObject                 │
+                     │  (Abstract Entity Blueprint - World mm Only) │
+                     ├──────────────────────────────────────────────┤
+                     │ + bounds : AABB                              │
+                     │ + transform : BLMatrix2D                     │
+                     │ + worldX, worldY, worldWidth, worldHeight    │
+                     │ + isVisible, isLocked, isSelectable          │
+                     ├──────────────────────────────────────────────┤
+                     │ + UpdateBounds()                             │
+                     │ + HitTest(wx, wy) / HitTestCircle(...)       │
+                     │ + ApplyTransform() / BakeTransform()         │
+                     │ + Render(BLContext&, Viewport&)              │
+                     │ + CustomizeActions(vector<ContextMenuItem>&) │
+                     │ + OnPointerClick(const CanvasContext&)       │
+                     └─────────────────────▲────────────────────────┘
+                                           │
+                          BORROWS SERVICES │ (Transient Call-Down)
+                                           │
+                     ┌─────────────────────┴────────────────────────┐
+                     │                CanvasContext                 │
+                     │            (The Service Courier)             │
+                     ├──────────────────────────────────────────────┤
+                     │ + stateMachine  : IInputStateMachine&        │
+                     │ + session       : DocumentSession&           │
+                     │ + engine        : CanvasEngine&              │
+                     │ + fileManager   : IFileManager*              │
+                     │ + clipboard     : IClipboard*                │
+                     │ + contextMenu   : IContextMenuManager*       │
+                     │ + worldX, worldY, isDoubleClick, modifiers   │
+                     └──────────────────────────────────────────────┘
+
+
+                     [OS Mouse / Touch / Stylus Event]
+               │
+               ▼
+[InputManager::ProcessEvent]
+               │
+               ▼
+[InputStateMachine::ProcessInputState]
+               │
+               ├── ActiveDevice == DeviceType::Mouse
+               ▼
+[InputStateMachine::DispatchMouse] (Selecting Mode)
+               │
+               ├── 1. ScreenToWorld(localX, localY) -> (worldX, worldY)
+               ├── 2. activePage->HitTestSingleClick(worldX, worldY)
+               │
+               ▼
+       Object Hit Found?
+        ├── NO  ──► Start Box / Lasso Selection on Canvas Background
+        │
+        └── YES ──► Construct transient `Folio::CanvasContext ctx{...}`
+                         │
+                         ▼
+        Dispatch: `clickedObj->OnPointerClick(ctx)`
+                         │
+        ┌────────────────┼────────────────┬────────────────┐
+        │                │                │                │
+        ▼                ▼                ▼                ▼
+[AttachmentObject]  [VideoObject]   [TextBoxObject]   [ShapeObject / Ink]
+  - Is DoubleClick?   - TogglePlay()   - Is DoubleClick? - Returns false
+  - YES: Calls          - Rebake Layer   - YES: Attach     (Falls through)
+    ctx.OpenFile()      - Set overlay      textEditor
+  - Consumed (true)   - Consumed (true)  - Consumed (true)
+        │                │                │                │
+        └────────────────┴────────────────┴────────────────┘
+                         │
+                  Did it return true?
+                   ├── YES ──► Event Consumed (Return early, skip gizmo drag)
+                   └── NO  ──► Select object -> Attach SelectionGizmo handles
+
+
+
+
+
+                   [Frame Render Tick]
+                                           │
+         ┌─────────────────────────────────┴─────────────────────────────────┐
+         ▼                                                                   ▼
+[Layer 1: Static Layer]                                             [Layer 2: Live Inking Layer]
+ - Cached offscreen BLImage                                          - Instantaneous in-flight pen stroke
+ - Renders only when `needsFullRebake == true`                       - Re-rendered every frame during contact
+ - Renders committed objects via:                                    - Fast, low-latency drawing path
+   `CanvasObject::Render(ctx, viewport)`                             └─────────────────┬─────────────────┘
+         │                                                                             │
+         └─────────────────────────────────┬───────────────────────────────────────────┘
+                                           ▼
+                            [Blend2D Compositor Surface]
+                             - Blits Layer 1 (Static backbuffer)
+                             - Blits Layer 2 (Transient pen mesh)
+                                           │
+                                           ▼
+                            [Layer 3: Interactive Overlays]
+                             - Handled by `InteractiveOverlayHost`
+                             - Checks `obj->HasLiveOverlay()`
+                             - Projects world mm to screen pixels:
+                               `screenRect = ComputeScreenRect(vp)`
+                             - Renders live controls & decoders:
+                               * Video player frames (libVLC)
+                               * Web views (WebView2 child window)
+                               * Live widgets / custom plugins
+                                           │
+                                           ▼
+                             [OpenGL Texture Presentation]
+                             - Uploads composite surface to GPU
+                             - ImGui displays canvas viewport at 120 FPS

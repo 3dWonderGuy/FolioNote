@@ -618,7 +618,7 @@ public:
                                     sm.mouse.middleButton ||
                                     (windowSM.currentState != WindowState::Stable) ||
                                     canvas.isDirty ||
-                                    canvas.liveLayer.HasActiveData() ||
+                                    canvas.layerCompositor.GetLiveInteractionLayer().HasActiveInteraction() ||
                                     (modernNav.animatedTotalWidth != modernNav.GetTargetWidth()); // sidebar glide
 
             // 1. DRAIN HARDWARE INPUT: Process all pending input packets immediately at full digitizer speed (240Hz/360Hz/480Hz).
@@ -1028,7 +1028,7 @@ public:
 
                 if (canvasSize.x > 10.0f && canvasSize.y > 10.0f) {
                     bool isHovered = ImGui::IsWindowHovered();
-                    const bool isCanvasCapturingMouse = canvas.liveLayer.HasActiveData() || 
+                    const bool isCanvasCapturingMouse = canvas.layerCompositor.GetLiveInteractionLayer().HasActiveInteraction() || 
                                                         canvas.selectionGizmo.isDragging || 
                                                         canvas.marqueeBox.isActive || 
                                                         (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso && sm.mouse.leftButton) ||
@@ -1048,7 +1048,7 @@ public:
                             canvas.Resize(static_cast<int>(canvasSize.x), static_cast<int>(canvasSize.y));
                         }
                         std::vector<std::shared_ptr<CanvasObject>> visibleObjects = session.QueryVisible(canvas.GetViewport());
-                        canvas.Render(visibleObjects);
+                        canvas.Render(visibleObjects, &session);
                     }
 
                     if (canvas.glTexture != 0) {

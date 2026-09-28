@@ -135,6 +135,10 @@ struct AABB {
  */
 struct Viewport {
     AABB bounds{ 0.0, 0.0, 1920.0, 1080.0 };
+    AABB visibleWorldBounds{ 0.0, 0.0, 1920.0, 1080.0 };
     double zoom = 1.0;
     double pixelsPerMm = 3.779527559; // Standard 96 DPI screen density (96.0 / 25.4)
+    double cameraX = 0.0;
+    double cameraY = 0.0;
+    BLMatrix2D worldToScreenMatrix{ 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
 };

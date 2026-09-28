@@ -44,7 +44,7 @@
 #include "app/context_menu_item.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/attachment_container.hpp"
-#include "core/objects/text_box.hpp"
+#include "core/objects/text/text_box.hpp"
 #include "core/history/canvas_command.hpp"
 #include "core/document/document_session.hpp"
 #include "core/engine/canvas_engine.hpp"

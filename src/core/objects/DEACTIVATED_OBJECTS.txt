@@ -15,7 +15,7 @@ temporarily marked inactive in the canvas pipeline:
 
 RATIONALE:
 - Any modification to base container definitions (`CanvasObject`, `Point2D`,
-  `LiveLayerPipeline`) was causing cascading recompilation and type resolution
+  `LayerCompositorManager`) was causing cascading recompilation and type resolution
   errors across PDF raster caching and rich-text layout engines.
 - By isolating these two subsystems, we eliminate header coupling loops and
   ensure that 100% of focus is placed on perfecting:

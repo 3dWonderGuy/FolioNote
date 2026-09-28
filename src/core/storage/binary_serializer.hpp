@@ -7,7 +7,7 @@
 #include "core/document/canvas_page.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
-#include "core/objects/text_box.hpp"
+#include "core/objects/text/text_box.hpp"
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/media/audio/audio_container.hpp"

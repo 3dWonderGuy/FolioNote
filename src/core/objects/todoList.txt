@@ -1,0 +1,121 @@
+================================================================================
+                       FOLIONOTE: OBJECTS HARDENING CHECKLIST
+================================================================================
+STATUS TAGS:
+[x] Done / Solid
+[-] In Progress / Needs Work
+[ ] Broken / Needs Full Rebuild
+[?] Unverified / Needs Testing
+================================================================================
+
+1. CORE BASE & INFRASTRUCTURE (src/core/objects/)
+--------------------------------------------------------------------------------
+[ x] canvas_object.hpp
+    - 3rd layer interaction through functions 
+    - bound manipulation, gizmo setup
+    - Virtual CustomizeActions(actions) context menu hook
+[-] object_config.hpp
+    - Global defaults, minimum/maximum size limits, and styling constants
+[-] object_action_registry.hpp
+    - Action IDs and dispatch registration for context menus
+[x] attachment_container.hpp
+    - File icon and metadata badge rendering
+    - World AABB calculation and hit-testing
+    - Separation of raw payload from disk path
+[PARKED] pdf_container.hpp (TEMPORARILY DEACTIVATED - see DEACTIVATED_OBJECTS.txt)
+    - PDF page raster surface caching
+    - World mm dimension mapping from PDF point units
+    - AABB bounds computation
+[ ] table_container.hpp
+    - Cell grid layout and text clipping
+    - Dynamic column/row resizing and AABB update
+    - Blend2D cell stroke and fill rendering
+
+
+2. INK & STROKES (src/core/objects/)
+--------------------------------------------------------------------------------
+[ ] ink_container.hpp / .cpp
+    - Point collection primitive: (x, y, pressure, timestamp)
+    - Centerline spline interpolation & RDP decimation
+    - Offset polygon outline builder integration
+    - Immediate AABB update with stroke half-width margin
+    - Blend2D SIMD path rasterization
+    - Live feed Layer 2 preview vs. Layer 1 bake commitment
+
+
+3. MEDIA OBJECTS (src/core/objects/media/)
+--------------------------------------------------------------------------------
+[ ] images/image_format.hpp
+    - Enum definition and extension parsers
+    - Fix: add WebP to IsFormatAnimated()
+[ ] images/image_decoder.hpp / .cpp
+    - LunaSVG vector rasterization
+    - Blend2D SIMD decode pipeline
+    - Multi-frame GIF & WebP animation unpacking via SDL3_image
+    - WIC fallback (Windows)
+    - RAM boundary cap enforcement (s_maxDecodedDimension)
+[ ] images/image_container.hpp / .cpp
+    - Unified LoadFromMemory / SetSurface pipeline
+    - Aspect ratio calculation and DPI-based mm scaling
+    - Fix: remove duplicate memory buffers in embeddedData
+    - Fix: string quotes in CustomizeActions()
+    - Animation playback advance and frame stepping
+[ ] audio/audio_container.hpp / .cpp
+    - Waveform display rendering
+    - Audio track duration & state tracking
+    - Timestamp playback synchronization
+[ ] videos/video_container.hpp / .cpp
+    - Video frame raster surface presentation
+    - Play/pause toggle and timeline scrub controls
+    - Audio-video sync timing
+
+
+4. PRIMITIVES & SHAPES (src/core/objects/primitives/)
+--------------------------------------------------------------------------------
+[ ] shape_types.hpp
+    - Geometry enum definitions (Rectangle, Ellipse, Triangle, Star, Polygon)
+[ ] path_dasher.hpp
+    - Dash pattern and stroke gap calculation
+[ ] shape_container.hpp / .cpp
+    - World geometry generation and coordinate updates
+    - Fill styles (Solid, Gradient, None)
+    - Stroke thickness, cap, and join parameters
+    - Immediate AABB recalculation
+[ ] wave_shapes.hpp / .cpp
+    - Sinusoidal and pulse curve generation
+    - Wave parameter controls (Amplitude, Frequency, Phase)
+
+
+5. CONNECTORS (src/core/objects/connectors/)
+--------------------------------------------------------------------------------
+[ ] connector_types.hpp
+    - Port bindings, anchor types, and routing modes
+[ ] smart_arrow_container.hpp / .cpp
+    - Orthogonal vs. Bézier path routing
+    - Dynamic start/end anchor snapping to object bounding boxes
+    - Arrowhead geometry rendering (Single, Double, Open, Closed)
+    - Bounding box calculation covering curves and arrowheads
+
+
+6. TEXT & TYPOGRAPHY (src/core/objects/text/) [PARKED / TEMPORARILY DEACTIVATED - see DEACTIVATED_OBJECTS.txt]
+--------------------------------------------------------------------------------
+[PARKED] text_run.hpp
+    - Text styling tokens (Font, Size, Weight, Color, Sub/Superscript)
+[PARKED] text_editor_state.hpp / .cpp
+    - Caret coordinate tracking and text selection range
+    - IME composition state and UTF-8 buffer modifications
+[PARKED] text_box.hpp / .cpp
+    - Multi-line text measurement via Blend2D font engine
+    - Line wrapping, alignment, and auto-growing AABB bounds
+    - Selection highlight and cursor blink rendering
+
+
+7. INTERACTIVE & LINKS (src/core/objects/interactive/ & links/)
+--------------------------------------------------------------------------------
+[ ] interactive_object.hpp / .cpp
+    - Click and hover state machine dispatch
+    - Layer 3 autonomous overlay routing
+[ ] link_object.hpp
+    - Hyperlink target parsing (External URL, Internal Page/Notebook UUID)
+    - Underline and link tooltip hover rendering
+================================================================================

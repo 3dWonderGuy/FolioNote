@@ -22,7 +22,6 @@
 #include <algorithm>
 #include <blend2d/blend2d.h>
 
-#include "core/engine/stroke_smoother.hpp"
 #include "input/pen_palette.hpp"
 
 #ifndef M_PI

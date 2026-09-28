@@ -13,7 +13,6 @@
 #include <SDL3/SDL.h>
 #include "core/document/document_session.hpp"
 #include "core/document/canvas_page.hpp"
-#include "core/engine/live_layer_pipeline.hpp"
 #include "core/render/pdf_renderer.hpp"
 #include "core/render/pdf_text_layer.hpp"
 #include "input/input_state_machine.hpp"

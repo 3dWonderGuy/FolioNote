@@ -28,7 +28,7 @@
 #include "core/objects/interactive/interactive_object.hpp"
 #include "core/storage/pdf_storage.hpp"
 #include "core/engine/canvas_transform.hpp"
-#include "core/engine/live_layer_pipeline.hpp"
+#include "core/layers/layer_compositor_manager.hpp"
 #include "core/engine/selection_gizmo.hpp"
 #include "core/document/document_session.hpp"
 #include "core/history/canvas_command.hpp"
@@ -107,7 +107,7 @@ struct EphemeralStroke {
 class CanvasEngine {
 public:
     CanvasTransform transform;
-    LiveLayerPipeline liveLayer;
+    Folio::LayerCompositorManager layerCompositor;
     SelectionGizmo selectionGizmo;
     Folio::TextEditorState textEditor;
     Folio::InteractiveOverlayHost interactiveOverlayHost;
@@ -332,6 +332,8 @@ public:
         viewportW = width;
         viewportH = height;
 
+        layerCompositor.SetSurfaceSize(viewportW, viewportH);
+
 #if defined(__ANDROID__)
         // ANDROID: The desktop 4K minimum buffer strategy (3840x2160 x 3 buffers x 4 bytes = ~96MB)
         // is catastrophic on mobile. It wastes RAM, causes slow texture uploads because
@@ -404,14 +406,14 @@ public:
     // -------------------------------------------------------------
 
     void OnPointerDown(float screenX, float screenY, float pressure, double timeSec, const PenTool& tool, float tiltX = 0.0f, float tiltY = 0.0f) {
-        BLContext liveClear(liveInkingLayer);
-        liveClear.clear_all();
-        liveClear.end();
-
         Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
         lastInkingWorldMm = worldMm;
         isCurrentlyInking = true;
-        liveLayer.BeginStroke(worldMm.x, worldMm.y, pressure, timeSec, tool, static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
+
+        auto& liveInteraction = layerCompositor.GetLiveInteractionLayer();
+        liveInteraction.SetPenStyle(tool.color.value, tool.widthMm > 0.0f ? tool.widthMm : tool.baseSize);
+        liveInteraction.BeginStroke(Folio::LivePoint{worldMm.x, worldMm.y, pressure, static_cast<uint64_t>(timeSec * 1000.0)});
+
         isDirty = true;
     }
 
@@ -424,55 +426,99 @@ public:
             ::Folio::UsageTracker::Instance().RecordInkingDistance(distMm);
             lastInkingWorldMm = worldMm;
         }
-        liveLayer.AddStrokePoint(worldMm.x, worldMm.y, pressure, timeSec, static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
+
+        layerCompositor.GetLiveInteractionLayer().AppendPoint(Folio::LivePoint{worldMm.x, worldMm.y, pressure, static_cast<uint64_t>(timeSec * 1000.0)});
+
         isDirty = true;
     }
 
-    // Finalizes the live stroke and hands the data to the DocumentSession
+    /**
+     * @brief Finalizes active in-flight live stroke and commits persistent geometry into DocumentSession.
+     *
+     * STROKE DATA PIPELINE & COMMITTING:
+     * 1. Retrieves finalized LivePoint records from `layerCompositor.GetLiveInteractionLayer().FinalizeStroke()`.
+     * 2. Synthesizes pressure-modulated `Segment1D` records matching the active PenTool settings.
+     * 3. Constructs closed vector outline polygon via `StrokeOutlineBuilder::BuildOutline`.
+     * 4. Dispatches the finished stroke data to `session.CommitStroke(std::move(data), tool)`.
+     * 5. Invalidates the Layer 1 baked surface cache for immediate re-baking.
+     */
     void OnPointerUp(DocumentSession& session, const PenTool& tool) {
         isCurrentlyInking = false;
-        FinishedStrokeData data = liveLayer.FinishStroke();
-
-        BLContext liveClear(liveInkingLayer);
-        liveClear.clear_all();
-        liveClear.end();
+        std::vector<Folio::LivePoint> livePoints = layerCompositor.GetLiveInteractionLayer().FinalizeStroke();
 
         isDirty = true;
         needsObjectRebake = true;  // Only the newly added container needs re-stroking, background is unchanged
 
-        // Direct handoff: Canvas -> DocumentSession (passes outlinePath + modeledPoints + segments)
-        if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
-            if (tool.penType == PenType::LaserPointer) {
-                // Laser Pointer / Ephemeral Presentation Ink:
-                // Transient visual feedback that decays quadratically over 2.5s and is never committed
-                // to persistent SQLite storage or CommandHistory.
-                if (session.HasEphemeralStrokeSink()) {
-                    session.CommitEphemeralStroke(std::move(data), tool, 2500);
-                } else {
-                    AddEphemeralStroke(std::move(data.outlinePath), tool.color, 2500);
-                }
+        if (!livePoints.empty()) {
+            float strokeWidth = static_cast<float>(tool.widthMm > 0.0f ? tool.widthMm : tool.baseSize);
+            if (strokeWidth <= 0.0f) strokeWidth = 0.5f;
+
+            FinishedStrokeData data;
+            data.rawPoints.reserve(livePoints.size());
+            for (const auto& pt : livePoints) {
+                data.rawPoints.push_back(Point2D{ pt.worldX, pt.worldY });
+            }
+
+            if (livePoints.size() == 1) {
+                Segment1D seg;
+                seg.p0 = Point2D{ livePoints[0].worldX, livePoints[0].worldY };
+                seg.p1 = Point2D{ livePoints[0].worldX + 0.01, livePoints[0].worldY };
+                seg.width = strokeWidth * std::max(0.1f, livePoints[0].pressure);
+                data.liveSegments.push_back(seg);
             } else {
-                session.CommitStroke(std::move(data), tool);
-                ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
-                ::Folio::UsageTracker::Instance().RecordObjectCreated();
+                data.liveSegments.reserve(livePoints.size() - 1);
+                for (size_t i = 0; i + 1 < livePoints.size(); ++i) {
+                    Segment1D seg;
+                    seg.p0 = Point2D{ livePoints[i].worldX, livePoints[i].worldY };
+                    seg.p1 = Point2D{ livePoints[i + 1].worldX, livePoints[i + 1].worldY };
+                    seg.width = strokeWidth * std::max(0.1f, livePoints[i + 1].pressure);
+                    data.liveSegments.push_back(seg);
+                }
+            }
+
+            // Build outline polygon for closed rendering and geometry
+            std::vector<StrokeOutlineBuilder::InputPoint> pts;
+            pts.reserve(data.liveSegments.size() + 1);
+            pts.push_back({ data.liveSegments[0].p0.x, data.liveSegments[0].p0.y, data.liveSegments[0].width });
+            for (const auto& s : data.liveSegments) {
+                pts.push_back({ s.p1.x, s.p1.y, s.width });
+            }
+            data.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, tool.capType, tool.strokePattern);
+
+            // Direct handoff: Canvas -> DocumentSession (passes outlinePath + segments)
+            if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
+                if (tool.penType == PenType::LaserPointer) {
+                    if (session.HasEphemeralStrokeSink()) {
+                        session.CommitEphemeralStroke(std::move(data), tool, 2500);
+                    } else {
+                        AddEphemeralStroke(std::move(data.outlinePath), tool.color, 2500);
+                    }
+                } else {
+                    session.CommitStroke(std::move(data), tool);
+                    ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
+                    ::Folio::UsageTracker::Instance().RecordObjectCreated();
+                }
             }
         }
+
+        // Invalidate Layer 1 cache to bake newly committed stroke entity
+        layerCompositor.InvalidateBakedCanvas();
     }
 
     void OnLassoDown(float screenX, float screenY) {
         Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
-        liveLayer.BeginLasso(worldMm.x, worldMm.y);
+        layerCompositor.GetLiveInteractionLayer().BeginLasso(worldMm.x, worldMm.y);
         isDirty = true;
     }
 
     void OnLassoMove(float screenX, float screenY) {
         Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
-        liveLayer.AddLassoPoint(worldMm.x, worldMm.y);
+        layerCompositor.GetLiveInteractionLayer().AddLassoPoint(worldMm.x, worldMm.y);
         isDirty = true;
     }
 
     std::vector<Point2D> OnLassoUp(DocumentSession* session = nullptr) {
-        std::vector<Point2D> lasso = liveLayer.FinishLasso();
+        std::vector<Point2D> lasso = layerCompositor.GetLiveInteractionLayer().FinishLasso();
         isDirty = true;
         if (session && lasso.size() >= 3) {
             auto activePage = session->GetActivePage();
@@ -605,6 +651,19 @@ public:
     }
 
     /**
+     * @brief Page lifecycle notification invoked when switching active canvas pages or tabs.
+     * Clears gizmo selection, dismounts running Layer 3 actors, clears transient Layer 2 tools,
+     * and invalidates the Layer 1 cache for an immediate rebake.
+     */
+    void OnActivePageChanged() {
+        selectionGizmo.ClearSelection();
+        layerCompositor.GetEmbeddedAppLayer().DismountAll();
+        layerCompositor.GetLiveInteractionLayer().Clear();
+        layerCompositor.InvalidateBakedCanvas();
+        isDirty = true;
+    }
+
+    /**
      * @brief Deletes all currently selected objects on the active page via DocumentSession.
      * Safe operation: If nothing is selected, returns false without modifying any objects.
      *
@@ -618,6 +677,7 @@ public:
             selectionGizmo.ClearSelection();
             needsFullRebake = true;
             isDirty = true;
+            layerCompositor.InvalidateBakedCanvas();
             return true;
         }
         return false;
@@ -821,6 +881,7 @@ public:
             }
             needsFullRebake = true;
             isDirty = true;
+            layerCompositor.InvalidateBakedCanvas();
             return shp;
         }
 
@@ -889,6 +950,7 @@ public:
             }
             needsFullRebake = true;
             isDirty = true;
+            layerCompositor.InvalidateBakedCanvas();
 
             LOG_INFO(CanvasEngine, "Created SmartArrowObject connector (uid=" + std::to_string(arrow->uid) +
                      ", style=" + std::to_string(static_cast<int>(arrow->connectorStyle)) +
@@ -974,6 +1036,7 @@ public:
 
         needsFullRebake = true;
         isDirty = true;
+        layerCompositor.InvalidateBakedCanvas();
 
         LOG_INFO(CanvasEngine, "Created vector shape by drag (type=" + std::to_string(static_cast<int>(shapeCreation.shapeType)) +
                  ", uid=" + std::to_string(shp->uid) + ", bounds=[" + std::to_string(minX) + "," + std::to_string(minY) + " " + std::to_string(w) + "x" + std::to_string(h) + "])");
@@ -1045,6 +1108,7 @@ public:
         textEditor.Attach(box.get());
         needsFullRebake = true;
         isDirty = true;
+        layerCompositor.InvalidateBakedCanvas();
         return box;
     }
 
@@ -1082,6 +1146,7 @@ public:
 
         needsFullRebake = true;
         isDirty = true;
+        layerCompositor.InvalidateBakedCanvas();
 
         LOG_INFO(CanvasEngine, "Inserted vector shape (type=" + std::to_string(static_cast<int>(type)) + ", uid=" + std::to_string(shp->uid) + ")");
         return shp;
@@ -1194,6 +1259,7 @@ public:
                 ctx->session->AddImage(img);
                 ctx->canvas->needsFullRebake = true;
                 ctx->canvas->isDirty = true;
+                ctx->canvas->layerCompositor.InvalidateBakedCanvas();
                 LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "' (" + Folio::ImageFormatToString(img->imageFormat).data() + ")");
             }
         }
@@ -1482,6 +1548,7 @@ public:
 
         needsFullRebake = true;
         isDirty         = true;
+        layerCompositor.InvalidateBakedCanvas();
 
         LOG_INFO(CanvasEngine, "Committed attachment '" + m_pendingAttachName +
                                "' mode=" + std::string(embed && embeddedOk ? "embedded" : "link") +
@@ -1593,6 +1660,7 @@ public:
                         session->AddImage(img);
                         needsFullRebake = true;
                         isDirty = true;
+                        layerCompositor.InvalidateBakedCanvas();
                         SDL_free(clipData);
                         LOG_INFO(CanvasEngine, "Pasted image from clipboard (" + std::to_string(img->naturalWidth) + "x" + std::to_string(img->naturalHeight) + " px, " + Folio::ImageFormatToString(img->imageFormat).data() + ")");
                         return true;
@@ -1714,6 +1782,7 @@ public:
         session->AddVideo(vid);
         needsFullRebake = true;
         isDirty = true;
+        layerCompositor.InvalidateBakedCanvas();
 
         LOG_INFO(CanvasEngine, "Inserted VideoObject: " + fspath.filename().string() +
                  " (" + std::to_string(static_cast<int>(w)) + "mm x " +
@@ -1766,6 +1835,7 @@ public:
 
         needsFullRebake = true;
         isDirty = true;
+        layerCompositor.InvalidateBakedCanvas();
 
         LOG_INFO(CanvasEngine, "Inserted Layer 3 Web/YouTube Embed: " + url);
         return true;
@@ -1823,6 +1893,7 @@ public:
         session->AddVideo(vid);
         needsFullRebake = true;
         isDirty = true;
+        layerCompositor.InvalidateBakedCanvas();
 
         LOG_INFO(CanvasEngine, "Inserted URL VideoObject: " + url);
         return true;
@@ -1972,6 +2043,7 @@ public:
         session->AddObject(audioObj);
         needsFullRebake = true;
         isDirty = true;
+        layerCompositor.InvalidateBakedCanvas();
 
         LOG_INFO(CanvasEngine, "Inserted AudioObject: " + importedPath);
         return true;
@@ -2143,6 +2215,7 @@ public:
             isDirty = true;
             if (modified) {
                 needsFullRebake = true;
+                layerCompositor.InvalidateBakedCanvas();
                 ::Folio::UsageTracker::Instance().RecordEraserAction();
                 LOG_INFO(CanvasEngine, "Erased content on page (strokeEraser=" + std::string(isStrokeEraser ? "true" : "false") + ")");
             }
@@ -2158,390 +2231,47 @@ public:
     // RENDER PASSES (Static Layer Caching + Live Layer Composite)
     // -------------------------------------------------------------
 
-    void Render(const std::vector<std::shared_ptr<CanvasObject>>& visibleBakedObjects) {
+    /**
+     * @brief Executes multi-layer composite frame presentation: delegates Layer 1 (baked document cache),
+     * Layer 2 (live inking/interactions), and Layer 3 (embedded apps) to LayerCompositorManager,
+     * then composites engine-level HUDs (gizmo, marquee, debug collision boxes, eraser reticle)
+     * and uploads to OpenGL texture.
+     *
+     * @param visibleBakedObjects Vector of visible objects in the camera frustum.
+     * @param session             Active DocumentSession for resolving the active CanvasPage.
+     * @param deltaTime           Frame delta time in seconds for running embedded apps.
+     */
+    void Render(const std::vector<std::shared_ptr<CanvasObject>>& visibleBakedObjects, DocumentSession* session = nullptr, double deltaTime = 1.0 / 60.0) {
         if (viewportW <= 0 || viewportH <= 0) return;
         if (!isDirty && !needsFullRebake) return;
 
         Viewport currentView = GetViewport();
+        CanvasPage* activePage = session ? session->GetActivePage().get() : nullptr;
 
-        // ---------------------------------------------------------------------
-        // Dynamic Selection Frustum Inclusion:
-        // When an object is created or moved outside the camera frustum, the R-tree
-        // spatial index retains its original off-screen bounding box until mouse release
-        // (when BakeTransform commits the geometry and updates the spatial index).
-        // If the user selects the object and drags it into the viewport, standard
-        // spatialIndex.Query(viewport.bounds) would cull it out because the R-tree has
-        // not yet been updated.
-        //
-        // Process & Working Details:
-        // 1. Fast-path check: Verify if all active selectedObjects already exist in visibleBakedObjects.
-        // 2. Slow-path fallback: If any selected object is missing, construct mergedObjects
-        //    combining visibleBakedObjects with the missing selected items and stable-sort by zOrder.
-        // 3. Avoids per-frame heap allocations when all selected items are already visible.
-        // ---------------------------------------------------------------------
-        const std::vector<std::shared_ptr<CanvasObject>>* finalRenderList = &visibleBakedObjects;
-        std::vector<std::shared_ptr<CanvasObject>> mergedObjects;
-
-        if (selectionGizmo.HasSelection()) {
-            bool hasMissingSelected = false;
-            for (const auto& selObj : selectionGizmo.selectedObjects) {
-                if (!selObj || !selObj->isVisible) continue;
-                bool found = false;
-                for (const auto& bakedObj : visibleBakedObjects) {
-                    if (bakedObj && bakedObj->uid == selObj->uid) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    hasMissingSelected = true;
-                    break;
-                }
-            }
-
-            if (hasMissingSelected) {
-                mergedObjects = visibleBakedObjects;
-                for (const auto& selObj : selectionGizmo.selectedObjects) {
-                    if (!selObj || !selObj->isVisible) continue;
-                    bool found = false;
-                    for (const auto& bakedObj : visibleBakedObjects) {
-                        if (bakedObj && bakedObj->uid == selObj->uid) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        mergedObjects.push_back(selObj);
-                    }
-                }
-                std::stable_sort(mergedObjects.begin(), mergedObjects.end(), [](const auto& a, const auto& b) {
-                    return a->zOrder < b->zOrder;
-                });
-                finalRenderList = &mergedObjects;
-            }
-        }
-
-        // Track content bounds for automatic page border
-        double maxX = 0.0, maxY = 0.0;
-        for (const auto& obj : *finalRenderList) {
-            if (!obj) continue;
-            const AABB& b = obj->bounds;
-            if (b.minX <= b.maxX && b.minY <= b.maxY) {
-                maxX = std::max(maxX, b.maxX);
-                maxY = std::max(maxY, b.maxY);
-            }
-        }
-        contentMaxXMm = maxX;
-        contentMaxYMm = maxY;
-
-        // ---------------------------------------------------------------------
-        // Animation Sequencer: Advance frames for visible animated images
-        // ---------------------------------------------------------------------
-        // Process & Timing Math:
-        //   1. Query current SDL ticks in milliseconds.
-        //   2. For each visible image object where IsAnimated() is true:
-        //      - Evaluates if (nowTicksMs - lastFrameTickMs >= frameDelay).
-        //      - If true, advances currentFrameIndex and blits next frame.
-        //      - Sets anyAnimFrameChanged = true, forcing a static layer rebake.
-        //   3. Retains hasVisibleAnimation flag to keep the main frame loop awake
-        //      without draining CPU when animated images are scrolled offscreen.
-        // ---------------------------------------------------------------------
-        const uint64_t nowTicksMs = SDL_GetTicks();
-        bool anyAnimFrameChanged = false;
-        bool hasVisibleAnimation = false;
-        for (const auto& obj : *finalRenderList) {
-            if (obj && obj->type == ObjectType::Image) {
-                auto* img = static_cast<Folio::ImageObject*>(obj.get());
-                if (img->IsAnimated()) {
-                    hasVisibleAnimation = true;
-                    if (img->UpdateAnimation(nowTicksMs)) {
-                        anyAnimFrameChanged = true;
-                    }
-                }
-            } else if (obj && obj->type == ObjectType::Video) {
-                auto* vid = static_cast<Folio::VideoObject*>(obj.get());
-                if (vid->isPlaying && vid->player) {
-                    hasVisibleAnimation = true;
-                    if (vid->player->HasNewFrame()) {
-                        anyAnimFrameChanged = true;
-                    }
+        // Collect active Layer 3 overlay targets from the active page
+        std::unordered_map<uint32_t, const CanvasObject*> activeAppObjects;
+        if (activePage) {
+            for (const auto& obj : activePage->objects) {
+                if (obj && obj->isVisible && obj->SupportsOverlay()) {
+                    activeAppObjects[obj->uid] = obj.get();
                 }
             }
         }
-        if (anyAnimFrameChanged) {
-            needsFullRebake = true;
-        }
 
-        // Layer 3: Advance interactive overlays for all visible objects
-        interactiveOverlayHost.UpdateActiveOverlays(nowTicksMs, 1.0 / 60.0, *finalRenderList);
-
-        BLMatrix2D renderMatrix = transform.GetBlend2DTransformMatrix();
-
-        // 1. Static Baked Layer (Background grid + all visible objects)
-        if (needsFullRebake) {
-            BLContext staticCtx(staticCanvasLayer);
-            staticCtx.clear_all();
-
-            DrawTiledBackground(staticCtx, currentView);
-
-            staticCtx.save();
-            staticCtx.set_transform(renderMatrix);
-            for (const auto& obj : *finalRenderList) {
-                if (textEditor.IsActive() && obj.get() == textEditor.GetTarget()) {
-                    continue; // Rendered live in real-time composite pass with caret and selection
-                }
-                obj->Render(staticCtx, currentView);
-            }
-            staticCtx.restore();
-            staticCtx.end();
-
-            BLContext liveClear(liveInkingLayer);
-            liveClear.clear_all();
-            liveClear.end();
-
-            needsFullRebake = false;
-            needsObjectRebake = false;
-        }
-        // 2. Incremental object rebake: only re-stroke containers whose strokes changed.
-        //    Background grid is already correct — we just composite dirty objects on top.
-        else if (needsObjectRebake) {
-            BLContext staticCtx(staticCanvasLayer);
-
-            staticCtx.save();
-            staticCtx.set_transform(renderMatrix);
-            for (const auto& obj : *finalRenderList) {
-                if (obj->type != ObjectType::InkContainer) continue;
-                auto* ink = static_cast<const InkContainer*>(obj.get());
-                if (!ink->renderDirty) continue;  // Skip clean containers
-                obj->Render(staticCtx, currentView);
-            }
-            staticCtx.restore();
-            staticCtx.end();
-
-            needsObjectRebake = false;
-        }
-
-        // 2. Fast Composite Pass
         BLContext compCtx(compositeSurface);
-        compCtx.blit_image(BLPoint(0, 0), staticCanvasLayer);
+        compCtx.clear_all();
 
-        compCtx.save();
-        compCtx.set_transform(renderMatrix);
+        // 1. Delegate static, live, and overlay passes to LayerCompositorManager
+        layerCompositor.RenderFrame(compCtx, activePage, currentView, activeAppObjects, deltaTime);
 
-        // Draw active in-flight ink strokes as a continuous smooth closed polygon outline
-        if (liveLayer.isStrokeActive) {
-            compCtx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
-            compCtx.set_fill_style(liveLayer.activePenTool.color);
-
-            if (!liveLayer.liveStrokeOutline.is_empty()) {
-                compCtx.fill_path(liveLayer.liveStrokeOutline);
-            }
-            if (!liveLayer.predictedStrokeOutline.is_empty()) {
-                compCtx.fill_path(liveLayer.predictedStrokeOutline);
-            }
-        }
-
-        // Draw active lasso polygon trace
-        if (liveLayer.isLassoActive && liveLayer.activeLassoPoints.size() >= 2) {
-            BLPath lassoPath;
-            lassoPath.move_to(liveLayer.activeLassoPoints[0].x, liveLayer.activeLassoPoints[0].y);
-            for (size_t i = 1; i < liveLayer.activeLassoPoints.size(); ++i) {
-                lassoPath.line_to(liveLayer.activeLassoPoints[i].x, liveLayer.activeLassoPoints[i].y);
-            }
-            lassoPath.line_to(liveLayer.activeLassoPoints[0].x, liveLayer.activeLassoPoints[0].y);
-
-            compCtx.set_stroke_style(BLRgba32(0x99, 0xC2, 0xFF, 0x80));
-            // 0.5mm cosmetic line thickness
-            compCtx.set_stroke_width(0.5);
-            compCtx.stroke_path(lassoPath);
-        }
-
-        // Draw active vector shape drag preview (World Coordinates)
-        if (shapeCreation.isDragging || (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
-            double minX = 0.0, minY = 0.0, w = 0.5, h = 0.5;
-
-            if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
-                double rx = shapeCreation.ellipseMajorRadius;
-                double ry = shapeCreation.ellipseMinorRadius;
-                double cx = shapeCreation.ellipseCenter.x;
-                double cy = shapeCreation.ellipseCenter.y;
-                minX = cx - rx;
-                minY = cy - ry;
-                w = std::max(0.5, rx * 2.0);
-                h = std::max(0.5, ry * 2.0);
-
-                // Guide markers for center and major axis
-                compCtx.fill_circle(cx, cy, 0.8, shapeCreation.defaultOutlineColor);
-                compCtx.fill_circle(shapeCreation.ellipseMajorPoint.x, shapeCreation.ellipseMajorPoint.y, 0.8, shapeCreation.defaultOutlineColor);
-            }
-            else if (shapeCreation.shapeType == Folio::ShapeType::Circle) {
-                double r = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
-                                      shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
-                w = std::max(0.5, r * 2.0);
-                h = std::max(0.5, r * 2.0);
-                minX = shapeCreation.startWorld.x - r;
-                minY = shapeCreation.startWorld.y - r;
-
-                // Center dot indicator
-                compCtx.fill_circle(shapeCreation.startWorld.x, shapeCreation.startWorld.y, 0.8, shapeCreation.defaultOutlineColor);
-            }
-            else if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
-                     shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
-                double r = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
-                                      shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
-                w = std::max(0.5, r * 2.0);
-                h = std::max(0.5, r * 2.0);
-                minX = shapeCreation.startWorld.x - r;
-                minY = shapeCreation.startWorld.y - r;
-
-                compCtx.fill_circle(shapeCreation.startWorld.x, shapeCreation.startWorld.y, 0.8, shapeCreation.defaultOutlineColor);
-            }
-            else if (shapeCreation.shapeType == Folio::ShapeType::Line ||
-                     shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
-                // Handled in dedicated SmartArrowObject preview branch below
-            }
-            else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
-                     shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
-                     shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
-                     shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
-                minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
-                w = std::max(0.5, std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x));
-                double rawH = std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
-                if (rawH < 4.0) {
-                    h = 20.0;
-                    minY = shapeCreation.startWorld.y - 10.0;
-                } else {
-                    minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
-                    h = std::max(0.5, rawH);
-                }
-            }
-            else {
-                minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
-                minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
-                w = std::max(0.5, std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x));
-                h = std::max(0.5, std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y));
-            }
-
-            if (shapeCreation.shapeType == Folio::ShapeType::Line ||
-                shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
-                double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
-                                             shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
-                if (dragDist >= 1.0) {
-                    Folio::SmartArrowObject preview(
-                        shapeCreation.startWorld.x, shapeCreation.startWorld.y,
-                        shapeCreation.currentWorld.x, shapeCreation.currentWorld.y
-                    );
-                    preview.strokeColor = shapeCreation.defaultOutlineColor;
-                    preview.strokeWidth = shapeCreation.defaultStrokeWidth;
-                    preview.outlineType = shapeCreation.defaultOutlineType;
-                    preview.connectorStyle = shapeCreation.defaultConnectorStyle;
-                    preview.startArrow = Folio::ArrowHeadType::None;
-                    preview.endArrow = (shapeCreation.shapeType == Folio::ShapeType::LineArrow)
-                                      ? shapeCreation.defaultEndArrow
-                                      : Folio::ArrowHeadType::None;
-                    preview.arrowHeadSize = 4.0;
-                    Viewport vp;
-                    vp.zoom = transform.zoom;
-                    preview.Render(compCtx, vp);
-                }
-            } else {
-                double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
-                                             shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
-                if (dragDist >= 1.0 || (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
-                    Folio::ShapeObject preview(shapeCreation.shapeType, minX, minY, w, h);
-                    preview.fillType = shapeCreation.defaultFillType;
-                    preview.fillColor = shapeCreation.defaultFillColor;
-                    preview.outlineType = shapeCreation.defaultOutlineType;
-                    preview.strokeColor = shapeCreation.defaultOutlineColor;
-                    preview.strokeWidth = shapeCreation.defaultStrokeWidth;
-                    if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
-                        shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
-                        preview.param1 = static_cast<double>(shapeCreation.polygonSides);
-                    } else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
-                               shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
-                               shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
-                               shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
-                        preview.param1 = 3.0;
-                        preview.param2 = 0.0;
-                    }
-
-                    Viewport vp;
-                    vp.zoom = transform.zoom;
-                    preview.Render(compCtx, vp);
-                }
-            }
-
-            // Magnetic snap glow target indicator
-            if (shapeCreation.isSnapped) {
-                compCtx.save();
-                compCtx.set_stroke_style(BLRgba32(0x00, 0xBD, 0xB0, 0xE0));
-                compCtx.set_stroke_width(0.8);
-                compCtx.stroke_circle(shapeCreation.snapAnchorPoint.x, shapeCreation.snapAnchorPoint.y, 2.8);
-                compCtx.set_fill_style(BLRgba32(0x00, 0xE5, 0xFF, 0xFF));
-                compCtx.fill_circle(shapeCreation.snapAnchorPoint.x, shapeCreation.snapAnchorPoint.y, 1.2);
-                compCtx.restore();
-            }
-        }
-
-        // Render ephemeral presentation ink strokes (e.g. Laser Pointer) in World Coordinates
-        // Mathematical model: Quadratic decay α(t) = α_0 * (1 - t/T)^2
-        if (!ephemeralStrokes.empty()) {
-            auto nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
-
-            // Remove expired strokes and render surviving strokes with continuous alpha attenuation
-            ephemeralStrokes.erase(
-                std::remove_if(ephemeralStrokes.begin(), ephemeralStrokes.end(),
-                    [&](const EphemeralStroke& stroke) {
-                        if (nowMs < stroke.startTimeMs) return false;
-                        uint64_t elapsed = nowMs - stroke.startTimeMs;
-                        if (elapsed >= stroke.durationMs) return true; // Lifetime expired
-
-                        // Normalized progress: progress ∈ [0.0, 1.0]
-                        double progress = static_cast<double>(elapsed) / static_cast<double>(stroke.durationMs);
-                        // Quadratic decay factor: (1 - t)^2
-                        double decayFactor = (1.0 - progress) * (1.0 - progress);
-
-                        uint32_t baseAlpha = stroke.color.a();
-                        uint32_t fadedAlpha = static_cast<uint32_t>(baseAlpha * decayFactor);
-                        if (fadedAlpha > 0) {
-                            BLRgba32 fadedColor(stroke.color.r(), stroke.color.g(), stroke.color.b(), fadedAlpha);
-                            compCtx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
-                            compCtx.set_fill_style(fadedColor);
-                            compCtx.fill_path(stroke.outlinePath);
-                        }
-                        return false;
-                    }),
-                ephemeralStrokes.end()
-            );
-
-            // As long as ephemeral strokes are alive and decaying, request continuous frame redraws
-            if (!ephemeralStrokes.empty()) {
-                isDirty = true;
-            }
-        }
-
-        // Active Headless Text Editor Pass (World Coordinates)
-        if (textEditor.IsActive() && textEditor.GetTarget()) {
-            auto nowSec = static_cast<double>(SDL_GetTicks()) / 1000.0;
-            textEditor.UpdateBlink(nowSec);
-            textEditor.GetTarget()->RenderWithEditor(compCtx, currentView, textEditor);
-            isDirty = true; // Continuous refresh for caret blink
-        }
-
-        compCtx.restore();
-
-        // 2b. Layer 3 Live Interactive Overlays Pass (Screen Coordinates)
-        interactiveOverlayHost.RenderOverlays(compCtx, currentView, *finalRenderList);
-
-        // 3. Selection Gizmo Overlay Pass (Screen Coordinates) - suppressed during active shape drawing
+        // 2. Selection Gizmo Overlay Pass (Screen Coordinates)
         if (selectionGizmo.HasSelection() && !shapeCreation.isActive && !shapeCreation.isDragging) {
             selectionGizmo.lockToGrid = shapeCreation.lockToGrid;
             selectionGizmo.gridSpacingMm = gridSpacingMm;
             selectionGizmo.Render(compCtx, transform);
         }
 
-        // 3b. Marquee Box Selection Overlay (Screen Coordinates)
+        // 3. Marquee Box Selection Overlay (Screen Coordinates)
         if (marqueeBox.isActive) {
             float bx = std::min(marqueeBox.startScreenX, marqueeBox.currentScreenX);
             float by = std::min(marqueeBox.startScreenY, marqueeBox.currentScreenY);
@@ -2568,7 +2298,6 @@ public:
             float cy = eraserVisual.screenY;
 
             if (eraserVisual.isStrokeEraser) {
-                // Stroke Eraser: ring with centered crosshair
                 compCtx.set_stroke_style(BLRgba32(0xFF, 0x40, 0x81, 0xDD));
                 compCtx.set_stroke_width(1.5);
                 compCtx.stroke_circle(cx, cy, std::max(4.0, radiusPx));
@@ -2578,21 +2307,19 @@ public:
                 compCtx.stroke_line(cx - 3.5, cy, cx + 3.5, cy);
                 compCtx.stroke_line(cx, cy - 3.5, cx, cy + 3.5);
             } else {
-                // Point Eraser: accurate physical circle showing the exact deletion footprint!
                 compCtx.set_stroke_style(BLRgba32(0x29, 0xB6, 0xF6, 0xEE));
                 compCtx.set_stroke_width(1.5);
                 compCtx.stroke_circle(cx, cy, radiusPx);
                 compCtx.set_fill_style(eraserVisual.isDown ? BLRgba32(0x29, 0xB6, 0xF6, 0x3A) : BLRgba32(0x29, 0xB6, 0xF6, 0x14));
                 compCtx.fill_circle(cx, cy, radiusPx);
 
-                // Precise center dot
                 compCtx.fill_circle(cx, cy, 1.2, BLRgba32(0x29, 0xB6, 0xF6, 0xFF));
             }
         }
 
         compCtx.end();
 
-        // 3a. Optional ink color invert pass (canvas-level, export-safe)
+        // Ink color invert pass
         if (inkColorInverted) {
             BLImageData invertData;
             compositeSurface.get_data(&invertData);
@@ -2626,9 +2353,6 @@ public:
 #endif
 
         isDirty = false;
-        if (hasVisibleAnimation) {
-            isDirty = true; // Request continuous frame presentation while an animated GIF is in view
-        }
     }
 
 private:

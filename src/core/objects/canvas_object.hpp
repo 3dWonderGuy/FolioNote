@@ -86,6 +86,7 @@ public:
 
     // Queries if this object hosts an interactive overlay widget.
     [[nodiscard]] virtual bool HasLiveOverlay() const noexcept { return false; }
+    [[nodiscard]] virtual bool SupportsOverlay() const noexcept { return HasLiveOverlay(); }
 
     // Returns mutable pointer to the hosted Layer 3 overlay interface.
     [[nodiscard]] virtual Folio::IInteractiveOverlay* GetOverlay() noexcept { return nullptr; }

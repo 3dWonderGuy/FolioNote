@@ -294,7 +294,7 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     //   imguiHasFocus = WantCaptureMouse AND NOT (wasCanvasImageHovered OR isPdfCanvasHovered OR isCanvasDragging)
     const bool isCanvasDragging = canvas.selectionGizmo.isDragging || 
                                   canvas.marqueeBox.isActive || 
-                                  canvas.liveLayer.HasActiveData() ||
+                                  canvas.layerCompositor.GetLiveInteractionLayer().HasActiveInteraction() ||
                                   (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso && stateMachine.mouse.leftButton) ||
                                   (stateMachine.currentAction == InteractionState::Panning && stateMachine.mouse.leftButton);
 

@@ -1,5 +1,5 @@
 #include "core/search/notebook_search_index.hpp"
-#include "core/objects/text_box.hpp"
+#include "core/objects/text/text_box.hpp"
 #include "utils/logger.hpp"
 #include <sstream>
 #include <regex>

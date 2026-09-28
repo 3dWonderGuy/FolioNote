@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "imgui.h"
 #include "core/engine/canvas_engine.hpp"
 #include "input/input_state_machine.hpp"
@@ -286,7 +286,7 @@ public:
                 ImGui::Separator();
                 ImGui::TextColored(theme.colorPrimary, "OBJECT GRAPH & RASTER STATE");
                 ImGui::Text("Total Objects (History) : N/A");
-                ImGui::Text("Active In-Flight Points : %zu", canvas.liveLayer.activeStrokePoints.size());
+                ImGui::Text("Active In-Flight Points : %zu", canvas.layerCompositor.GetLiveInteractionLayer().GetPoints().size());
                 ImGui::Separator();
                 ImGui::TextColored(theme.colorPrimary, "DEV MODE (RNOTE-STYLE AABB & COLLISION INSPECTOR)");
                 if (ImGui::Checkbox("Enable Dev Mode Overlay [F4]", &canvas.devMode)) {
