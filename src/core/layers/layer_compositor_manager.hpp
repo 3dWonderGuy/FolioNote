@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <blend2d/blend2d.h>
 
-#include "core/engine/viewport.hpp"
+#include "core/engine/canvas_transform.hpp"
 #include "core/layers/baked_canvas_layer.hpp"
 #include "core/layers/live_interaction_layer.hpp"
 #include "core/layers/embedded_app_layer.hpp"
@@ -28,6 +28,12 @@ public:
 
     void SetSurfaceSize(int32_t widthPx, int32_t heightPx);
     void InvalidateBakedCanvas() noexcept { m_bakedLayer.Invalidate(); }
+
+    /**
+     * @brief Marks a specific world-space bounding box dirty for partial baking.
+     * @param dirtyBounds The AABB in world millimeters requiring re-rasterization.
+     */
+    void InvalidateBakedCanvasRect(const AABB& dirtyBounds) noexcept { m_bakedLayer.InvalidateRect(dirtyBounds); }
 
     /**
      * @brief Assembles BakedCanvas (L1), LiveInteraction (L2), and EmbeddedApps (L3).

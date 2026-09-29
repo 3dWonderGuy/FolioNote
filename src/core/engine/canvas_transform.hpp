@@ -18,6 +18,64 @@ enum class CanvasInfinityMode {
     HorizontalScroll   // Bounded page height, infinite horizontal scroll
 };
 
+/**
+ * @brief Represents the visible camera viewport on canvas.
+ * Defaults to a standard 1080p canvas window surface rather than an empty box.
+ */
+struct Viewport {
+    AABB bounds{ 0.0, 0.0, 1920.0, 1080.0 };
+    AABB visibleWorldBounds{ 0.0, 0.0, 1920.0, 1080.0 };
+    double zoom = 1.0;
+    double pixelsPerMm = 3.779527559; // Standard 96 DPI screen density (96.0 / 25.4)
+    double cameraX = 0.0;
+    double cameraY = 0.0;
+    BLMatrix2D worldToScreenMatrix{ 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
+
+    /**
+     * @brief Transforms an axis-aligned bounding box from world space (mm) to screen coordinates (px).
+     *
+     * MATHEMATICAL TRANSFORMATION:
+     * - Uses the 2D affine transformation matrix `worldToScreenMatrix`:
+     *     [ x_s ]   [ m00 m10 m20 ] [ x_w ]
+     *     [ y_s ] = [ m01 m11 m21 ] [ y_w ]
+     *     [  1  ]   [  0   0   1  ] [  1  ]
+     * - Projects all 4 corner vertices of `worldBox` to accurately enclose rotated/scaled geometry.
+     * - Evaluates extrema:
+     *     x_min = min(x_0, x_1, x_2, x_3),  x_max = max(x_0, x_1, x_2, x_3)
+     *     y_min = min(y_0, y_1, y_2, y_3),  y_max = max(y_0, y_1, y_2, y_3)
+     * - Returns screen rectangle: BLRect(x_min, y_min, x_max - x_min, y_max - y_min).
+     *
+     * @param worldBox Axis-aligned bounding box in world millimeters.
+     * @return BLRect Projected axis-aligned rectangle in screen pixels.
+     */
+    [[nodiscard]] BLRect WorldToScreenRect(const AABB& worldBox) const noexcept {
+        if (worldBox.IsEmpty() || !worldBox.IsFinite()) {
+            return BLRect(0.0, 0.0, 0.0, 0.0);
+        }
+
+        // Project all 4 corners through the affine matrix
+        const double px[4] = {
+            worldBox.minX * worldToScreenMatrix.m00 + worldBox.minY * worldToScreenMatrix.m10 + worldToScreenMatrix.m20,
+            worldBox.maxX * worldToScreenMatrix.m00 + worldBox.minY * worldToScreenMatrix.m10 + worldToScreenMatrix.m20,
+            worldBox.maxX * worldToScreenMatrix.m00 + worldBox.maxY * worldToScreenMatrix.m10 + worldToScreenMatrix.m20,
+            worldBox.minX * worldToScreenMatrix.m00 + worldBox.maxY * worldToScreenMatrix.m10 + worldToScreenMatrix.m20
+        };
+        const double py[4] = {
+            worldBox.minX * worldToScreenMatrix.m01 + worldBox.minY * worldToScreenMatrix.m11 + worldToScreenMatrix.m21,
+            worldBox.maxX * worldToScreenMatrix.m01 + worldBox.minY * worldToScreenMatrix.m11 + worldToScreenMatrix.m21,
+            worldBox.maxX * worldToScreenMatrix.m01 + worldBox.maxY * worldToScreenMatrix.m11 + worldToScreenMatrix.m21,
+            worldBox.minX * worldToScreenMatrix.m01 + worldBox.maxY * worldToScreenMatrix.m11 + worldToScreenMatrix.m21
+        };
+
+        const double minX = (std::min)({ px[0], px[1], px[2], px[3] });
+        const double maxX = (std::max)({ px[0], px[1], px[2], px[3] });
+        const double minY = (std::min)({ py[0], py[1], py[2], py[3] });
+        const double maxY = (std::max)({ py[0], py[1], py[2], py[3] });
+
+        return BLRect(minX, minY, (std::max)(0.0, maxX - minX), (std::max)(0.0, maxY - minY));
+    }
+};
+
 class CanvasTransform {
 public:
     // Physical state in millimeters (mm)
@@ -60,6 +118,19 @@ public:
             1.0f,
             0.0
         };
+    }
+
+    [[nodiscard]] BLRect WorldToScreenRect(const AABB& worldBox) const noexcept {
+        if (worldBox.IsEmpty() || !worldBox.IsFinite()) {
+            return BLRect(0.0, 0.0, 0.0, 0.0);
+        }
+        Point2D s0 = WorldToScreen(worldBox.minX, worldBox.minY);
+        Point2D s1 = WorldToScreen(worldBox.maxX, worldBox.maxY);
+        double minX = (std::min)(s0.x, s1.x);
+        double minY = (std::min)(s0.y, s1.y);
+        double maxX = (std::max)(s0.x, s1.x);
+        double maxY = (std::max)(s0.y, s1.y);
+        return BLRect(minX, minY, (std::max)(0.0, maxX - minX), (std::max)(0.0, maxY - minY));
     }
 
     // Convert pixel vectors (e.g., mouse delta) into world millimeter vectors

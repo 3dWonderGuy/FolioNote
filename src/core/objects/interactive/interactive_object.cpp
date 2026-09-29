@@ -6,6 +6,7 @@
  */
 
 #include "core/objects/interactive/interactive_object.hpp"
+#include "core/engine/canvas_transform.hpp"
 #include <cmath>
 #include <algorithm>
 

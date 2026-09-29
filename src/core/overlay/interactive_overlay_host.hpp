@@ -27,6 +27,7 @@
 #include <SDL3/SDL.h>
 
 #include "core/spatial/aabb.hpp"
+#include "core/engine/canvas_transform.hpp"
 #include "core/overlay/interactive_overlay.hpp"
 
 class CanvasObject;

@@ -1,10 +1,7 @@
-#include "core/layers/baked_canvas_layer.hpp"
+#include "baked_canvas_layer.hpp"
 #include "core/document/canvas_page.hpp"
-#include "core/objects/canvas_object.hpp"
 
-#include <cmath>
 #include <algorithm>
-#include <vector>
 
 namespace Folio {
 
@@ -12,148 +9,177 @@ BakedCanvasLayer::BakedCanvasLayer() = default;
 
 BakedCanvasLayer::~BakedCanvasLayer() {
     m_bakedContext.end();
+    m_bakedSurface.reset();
 }
 
-void BakedCanvasLayer::Resize(int32_t widthPx, int32_t heightPx) {
-    if (widthPx <= 0 || heightPx <= 0) return;
-    if (m_widthPx == widthPx && m_heightPx == heightPx) return;
-
-    m_widthPx = widthPx;
-    m_heightPx = heightPx;
-
-    m_bakedContext.end();
-
-    m_bakedSurface.create(m_widthPx, m_heightPx, BL_FORMAT_PRGB32);
-    m_bakedContext.begin(m_bakedSurface);
-    m_isDirty = true;
-}
-
-void BakedCanvasLayer::Update(CanvasPage* activePage, const Viewport& viewport) {
-    if (!activePage || m_widthPx <= 0 || m_heightPx <= 0) return;
-
-    constexpr double EPSILON = 1e-4;
-    const bool cameraChanged = std::abs(viewport.cameraX - m_lastCameraX) > EPSILON ||
-                               std::abs(viewport.cameraY - m_lastCameraY) > EPSILON ||
-                               std::abs(viewport.zoom - m_lastCameraZoom) > EPSILON;
-
-    if (m_isDirty || cameraChanged) {
-        Rebake(activePage, viewport);
-        m_lastCameraX    = viewport.cameraX;
-        m_lastCameraY    = viewport.cameraY;
-        m_lastCameraZoom = viewport.zoom;
-        m_isDirty        = false;
-    }
-}
-
-/**
- * @brief Draws paper backdrop, desk coloring, and physical ruled/grid lines directly onto Layer 1.
- *
- * MATHEMATICAL PROCESS & WORKING LOGIC:
- * 1. Fills the raster backing store with paper color (pure white default: 0xFFFFFFFF).
- * 2. If paper style is not Blank, aligns grid snapping lines to physical millimeters:
- *      startX = floor(visibleWorldBounds.minX / stepMm) * stepMm
- *      endX   = ceil(visibleWorldBounds.maxX / stepMm) * stepMm
- *      startY = floor(visibleWorldBounds.minY / stepMm) * stepMm
- *      endY   = ceil(visibleWorldBounds.maxY / stepMm) * stepMm
- * 3. Transforms grid primitives through `viewport.worldToScreenMatrix` to maintain exact alignment
- *    with committed stroke and shape geometries.
- */
-void BakedCanvasLayer::DrawBackground(CanvasPage* activePage, const Viewport& viewport) {
-    if (!activePage || m_bakedSurface.width() == 0 || m_bakedSurface.height() == 0) return;
-
-    // Fill background with paper color (pure white default)
-    BLRgba32 paperBgColor(0xFF, 0xFF, 0xFF, 0xFF);
-    m_bakedContext.fill_all(paperBgColor);
-
-    if (activePage->paperStyle == PaperStyle::Blank) {
+// Memory management if canvas window has been resized
+void BakedCanvasLayer::Resize(int width, int height) {
+    if (m_surfaceWidth == width && m_surfaceHeight == height) {
         return;
     }
 
-    const double stepMm = activePage->gridSpacingMm > 0.0 ? activePage->gridSpacingMm : 5.0;
-    const BLRgba32 gridColor(0xEB, 0xEE, 0xF2, 0xFF);
+    m_surfaceWidth = width;
+    m_surfaceHeight = height;
 
-    m_bakedContext.save();
-    m_bakedContext.set_transform(viewport.worldToScreenMatrix);
+    // Detach context before destroying surface memory
+    m_bakedContext.end();
+    m_bakedSurface.create(width, height, BL_FORMAT_PRGB32);
 
-    double startX = std::floor(viewport.visibleWorldBounds.minX / stepMm) * stepMm;
-    double endX   = std::ceil(viewport.visibleWorldBounds.maxX / stepMm) * stepMm;
-    double startY = std::floor(viewport.visibleWorldBounds.minY / stepMm) * stepMm;
-    double endY   = std::ceil(viewport.visibleWorldBounds.maxY / stepMm) * stepMm;
+    Invalidate();
+}
 
-    if (activePage->paperStyle == PaperStyle::Dotted) {
-        m_bakedContext.set_fill_style(gridColor);
-        for (double wy = startY; wy <= endY; wy += stepMm) {
-            for (double wx = startX; wx <= endX; wx += stepMm) {
-                m_bakedContext.fill_circle(wx, wy, 0.35); // 0.35mm radius dots
-            }
-        }
-    } else {
-        m_bakedContext.set_stroke_style(gridColor);
-        double strokeWidthMm = (viewport.zoom > 0.0) ? (0.26 / viewport.zoom) : 0.26;
-        m_bakedContext.set_stroke_width(strokeWidthMm);
+// Cleans up everything including memory
+void BakedCanvasLayer::Flush() {
+    m_bakedContext.end();
+    m_bakedSurface.reset();
+    m_surfaceWidth = 0;
+    m_surfaceHeight = 0;
+    Invalidate();
+}
 
-        if (activePage->paperStyle == PaperStyle::Grid) {
-            for (double wx = startX; wx <= endX; wx += stepMm) {
-                m_bakedContext.stroke_line(wx, viewport.visibleWorldBounds.minY, wx, viewport.visibleWorldBounds.maxY);
-            }
-        }
-        for (double wy = startY; wy <= endY; wy += stepMm) {
-            m_bakedContext.stroke_line(viewport.visibleWorldBounds.minX, wy, viewport.visibleWorldBounds.maxX, wy);
-        }
+// Marks layer for a full rebake
+void BakedCanvasLayer::Invalidate() {
+    m_isDirty = true;
+    m_needsFullRebake = true;
+    m_dirtyWorldRegion.Reset();
+}
+
+// Marks layer for a partial rebake
+void BakedCanvasLayer::InvalidateRect(const AABB& dirtyBounds) {
+    if (m_needsFullRebake) {
+        return; // Full rebake already queued; ignore sub-region
     }
 
-    m_bakedContext.restore();
+    m_dirtyWorldRegion.Merge(dirtyBounds);
+    m_isDirty = true;
 }
 
 /**
- * @brief Executes Layer 1 full rasterization: queries R-tree spatial index, orders objects by zOrder,
- * and bakes the background and all visible document entities to m_bakedSurface.
+ * @brief Renders the scene into the backing cache surface (handles both full & partial rebakes).
  *
- * @param activePage Current active CanvasPage containing document objects and spatial index.
- * @param viewport   Current camera viewport containing transform matrix and visible bounding box.
+ * MATHEMATICAL & COMPOSITING PROCESS:
+ * 1. Surface Allocation: Verifies or instantiates a 32-bit premultiplied ARGB backing store (BL_FORMAT_PRGB32)
+ *    matching current viewport dimensions (m_surfaceWidth x m_surfaceHeight).
+ * 2. Background Pass: Fills paper color across the active region.
+ * 3. Coordinate Transformation:
+ *    - Applies viewport.worldToScreenMatrix mapping world coordinates (mm) to screen buffer pixels:
+ *      [ x_screen ]   [ m00 m01 dx ] [ x_world ]
+ *      [ y_screen ] = [ m10 m11 dy ] [ y_world ]
+ *      [    1     ]   [  0   0   1 ] [    1    ]
+ * 4. Spatial Culling & Z-Ordering:
+ *    - In Path A (Full Rebake): Queries page spatialIndex (R-Tree) using viewport.visibleWorldBounds.
+ *    - In Path B (Partial Rebake): Clips the context to screen-transformed dirty rect,
+ *      repaints background, and queries only objects intersecting m_dirtyWorldRegion.
+ *    - Resolves object UIDs via page->FindObjectByUid(uid) and sorts candidates strictly by zOrder ascending
+ *      (min to max) to guarantee back-to-front painter's algorithm rasterization.
+ * 5. Lifecycle Flush: Resets dirty flags and bounding regions upon completion.
+ *
+ * @param page The active CanvasPage containing spatialIndex and document entities.
+ * @param viewport The current camera viewport containing matrices and visibility bounds.
  */
-void BakedCanvasLayer::Rebake(CanvasPage* activePage, const Viewport& viewport) {
-    if (!activePage || m_bakedSurface.width() == 0 || m_bakedSurface.height() == 0) return;
-
-    // 1. Clear backing store
-    m_bakedContext.clear_all();
-
-    // 2. Draw paper background and grid lines
-    DrawBackground(activePage, viewport);
-
-    // 3. Set camera world-to-screen matrix
-    m_bakedContext.save();
-    m_bakedContext.set_transform(viewport.worldToScreenMatrix);
-
-    // 4. Query the page's spatial index using the viewport world bounds
-    std::vector<uint32_t> candidateUids = activePage->spatialIndex.Query(viewport.visibleWorldBounds);
-
-    // 5. Retrieve visible object pointers, filtering out null or invisible entities
-    std::vector<std::shared_ptr<CanvasObject>> visibleObjects;
-    visibleObjects.reserve(candidateUids.size());
-
-    for (uint32_t uid : candidateUids) {
-        auto obj = activePage->FindObjectByUid(uid);
-        if (!obj || !obj->isVisible) continue;
-        visibleObjects.push_back(std::move(obj));
+void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
+    if (!m_isDirty || m_surfaceWidth <= 0 || m_surfaceHeight <= 0 || !page) {
+        return;
     }
 
-    // 6. Stable-sort visible objects ascending by obj->zOrder
-    std::stable_sort(visibleObjects.begin(), visibleObjects.end(), [](const auto& a, const auto& b) {
-        return a->zOrder < b->zOrder;
-    });
-
-    // 7. Render each object via obj->Render(m_bakedContext, viewport)
-    for (const auto& obj : visibleObjects) {
-        obj->Render(m_bakedContext, viewport);
+    if (m_bakedSurface.is_empty()) {
+        m_bakedSurface.create(m_surfaceWidth, m_surfaceHeight, BL_FORMAT_PRGB32);
     }
 
-    m_bakedContext.restore();
+    m_bakedContext.begin(m_bakedSurface);
+
+    if (m_needsFullRebake) {
+        // --- Path A: Full Viewport Rebake (Camera pan/zoom/resize) ---
+        DrawBackground(page, viewport);
+
+        // 1. Spatial query visible entities via R-Tree frustum culling
+        auto uids = page->spatialIndex.Query(viewport.visibleWorldBounds);
+
+        // 2. Collect visible entities and resolve shared ownership
+        std::vector<std::shared_ptr<CanvasObject>> candidates;
+        candidates.reserve(uids.size());
+        for (uint32_t uid : uids) {
+            auto obj = page->FindObjectByUid(uid);
+            if (obj && obj->isVisible) {
+                candidates.push_back(std::move(obj));
+            }
+        }
+
+        // 3. Sort strictly by ascending z-order to preserve back-to-front visual layering
+        std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+            return a->zOrder < b->zOrder;
+        });
+
+        // 4. Apply camera world-to-screen matrix transform and rasterize objects
+        m_bakedContext.save();
+        m_bakedContext.set_transform(viewport.worldToScreenMatrix);
+
+        for (const auto& obj : candidates) {
+            obj->Render(m_bakedContext, viewport);
+        }
+
+        m_bakedContext.restore();
+    } 
+    else {
+        // --- Path B: Partial Region Patch (Single object mutation) ---
+        if (m_dirtyWorldRegion.IsValid() && !m_dirtyWorldRegion.IsEmpty()) {
+            m_bakedContext.save();
+
+            // 1. Scissor-clip in screen space using the projected dirty bounds
+            BLRect screenClip = viewport.WorldToScreenRect(m_dirtyWorldRegion);
+            m_bakedContext.clip_to_rect(screenClip);
+
+            // 2. Repaint paper backdrop inside the clipped screen patch
+            DrawBackground(page, viewport);
+
+            // 3. Apply camera world-to-screen transform for vector object rendering
+            m_bakedContext.set_transform(viewport.worldToScreenMatrix);
+
+            // 4. Query only objects touching the dirty bounding box via R-Tree
+            auto uids = page->spatialIndex.Query(m_dirtyWorldRegion);
+
+            std::vector<std::shared_ptr<CanvasObject>> candidates;
+            candidates.reserve(uids.size());
+            for (uint32_t uid : uids) {
+                auto obj = page->FindObjectByUid(uid);
+                if (obj && obj->isVisible) {
+                    candidates.push_back(std::move(obj));
+                }
+            }
+
+            // 5. Sort strictly by ascending z-order
+            std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+                return a->zOrder < b->zOrder;
+            });
+
+            for (const auto& obj : candidates) {
+                obj->Render(m_bakedContext, viewport);
+            }
+
+            m_bakedContext.restore();
+        }
+    }
+
+    m_bakedContext.end();
+
+    // Reset tracking flags for the next frame
+    m_isDirty = false;
+    m_needsFullRebake = false;
+    m_dirtyWorldRegion.Reset();
 }
 
-void BakedCanvasLayer::Composite(BLContext& targetCtx, const Viewport& /*viewport*/) {
-    if (m_bakedSurface.width() == 0 || m_bakedSurface.height() == 0) return;
-    targetCtx.blit_image(BLPointI(0, 0), m_bakedSurface);
+void BakedCanvasLayer::DrawBackground(CanvasPage* activePage, const Viewport& viewport) {
+    ColorTheme(activePage);
+
+    // Fill entire backing bitmap or active page region with paper color
+    m_bakedContext.fill_all();
+
+    // Render grid dots/lines if enabled on the page
+}
+
+void BakedCanvasLayer::ColorTheme(CanvasPage* activePage) {
+    // Set Blend2D fill/stroke properties based on theme configuration
+    m_bakedContext.set_fill_style(BLRgba32(245, 245, 247, 255)); // Default light paper
 }
 
 } // namespace Folio

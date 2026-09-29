@@ -22,6 +22,7 @@
 
 // Forward declaration
 class CanvasEngine;
+struct Viewport;
 
 /**
  * =========================================================================================

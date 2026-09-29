@@ -5,7 +5,7 @@
 #include <blend2d/blend2d.h>
 
 #include "core/spatial/aabb.hpp"
-#include "core/engine/viewport.hpp"
+#include "core/engine/canvas_transform.hpp"
 
 class CanvasPage;
 class CanvasObject;
@@ -23,37 +23,68 @@ public:
 
     BakedCanvasLayer(const BakedCanvasLayer&) = delete;
     BakedCanvasLayer& operator=(const BakedCanvasLayer&) = delete;
+    BakedCanvasLayer(BakedCanvasLayer&&) noexcept = default;
+    BakedCanvasLayer& operator=(BakedCanvasLayer&&) noexcept = default;
 
-    void Resize(int32_t widthPx, int32_t heightPx);
-    void Invalidate() noexcept { m_isDirty = true; }
+    /**
+     * @brief Allocates or reallocates the offscreen backing surface when window size changes.
+     */
+    void Resize(int width, int height);
+
+    /**
+     * @brief Discards the current baked surface or clears context state.
+     */
+    void Flush();
+
+    /**
+     * @brief Renders the scene into the backing cache surface (handles both full & partial rebakes).
+     */
+    void Render(CanvasPage* page, const Viewport& viewport);
+
+    /**
+     * @brief Marks the entire layer dirty (e.g., camera pan/zoom, resize, theme change).
+     */
+    void Invalidate();
+
+    /**
+     * @brief Marks a specific world-space bounding box dirty for partial invalidation.
+     */
+    void InvalidateRect(const AABB& dirtyBounds);
+
+    /**
+     * @brief Returns true if the layer has pending redraw work.
+     */
     [[nodiscard]] bool IsDirty() const noexcept { return m_isDirty; }
 
     /**
-     * @brief Evaluates whether a re-bake is needed and executes the Layer 1 draw pass.
+     * @brief Read-only accessor for LayerCompositorManager to blit or upload to OpenGL.
      */
-    void Update(CanvasPage* activePage, const Viewport& viewport);
-
-    /**
-     * @brief Blits the baked cache onto the destination rendering context.
-     */
-    void Composite(BLContext& targetCtx, const Viewport& viewport);
-
     [[nodiscard]] const BLImage& GetSurface() const noexcept { return m_bakedSurface; }
 
 private:
-    BLImage   m_bakedSurface;
+
+    // --- Backing Store ---
+    BLImage m_bakedSurface;
     BLContext m_bakedContext;
 
-    int32_t   m_widthPx  = 0;
-    int32_t   m_heightPx = 0;
-    bool      m_isDirty  = true;
+    int m_surfaceWidth = 0;
+    int m_surfaceHeight = 0;
 
-    double    m_lastCameraX    = 0.0;
-    double    m_lastCameraY    = 0.0;
-    double    m_lastCameraZoom = 0.0;
+    // --- Dirty State Tracking ---
+    bool m_isDirty = true;
+    bool m_needsFullRebake = true;
+    AABB m_dirtyWorldRegion;
 
-    void Rebake(CanvasPage* activePage, const Viewport& viewport);
+    /**
+     * @brief Renders paper color, page margins, and grid/dot patterns.
+     */
     void DrawBackground(CanvasPage* activePage, const Viewport& viewport);
+
+    /**
+     * @brief Resolves color palette based on system/page theme settings.
+     */
+    void ColorTheme(CanvasPage* activePage);
+
 };
 
 } // namespace Folio

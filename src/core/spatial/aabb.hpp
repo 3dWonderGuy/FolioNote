@@ -128,17 +128,4 @@ struct AABB {
         return Intersection(other).Area();
     }
 };
-
-/**
- * @brief Represents the visible viewport on canvas.
- * Defaults to a standard 1080p canvas window surface rather than an empty box.
- */
-struct Viewport {
-    AABB bounds{ 0.0, 0.0, 1920.0, 1080.0 };
-    AABB visibleWorldBounds{ 0.0, 0.0, 1920.0, 1080.0 };
-    double zoom = 1.0;
-    double pixelsPerMm = 3.779527559; // Standard 96 DPI screen density (96.0 / 25.4)
-    double cameraX = 0.0;
-    double cameraY = 0.0;
-    BLMatrix2D worldToScreenMatrix{ 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
-};
+

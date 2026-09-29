@@ -5,7 +5,7 @@
 #include <memory>
 #include <blend2d/blend2d.h>
 
-#include "core/engine/viewport.hpp"
+#include "core/engine/canvas_transform.hpp"
 
 class CanvasObject;
 

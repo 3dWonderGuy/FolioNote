@@ -8,9 +8,7 @@
 #include "core/spatial/aabb_utils.hpp"
 #include "core/engine/gizmo_types.hpp"
 #include "core/objects/canvas_context.hpp"
-
-class CanvasTransform;
-struct Viewport;
+#include "core/engine/canvas_transform.hpp"
 
 namespace Folio {
 struct ContextMenuItem;
