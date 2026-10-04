@@ -188,7 +188,7 @@ src/
 │   │
 │   ├── objects/                          # Canvas element domain hierarchy (Polymorphic CanvasObject)
 │   │   ├── canvas_object.hpp             # Abstract base class: UID, AABB bounds, serialization, hit-test, render
-│   │   ├── attachment_container.hpp      # File attachment tiles with embedded icon, name, and size
+│   │   ├── attachment_container/         # File attachment tiles with embedded icon, name, and size
 │   │   ├── ink_container.hpp / .cpp      # Continuous vector ink stroke containing pressure points and smoothed paths
 │   │   ├── pdf_container.hpp             # Embedded PDF page object with vector background caching
 │   │   ├── shape_container.hpp / .cpp    # Unified vector shapes container (Rect, Ellipse, Polygon, Waves)

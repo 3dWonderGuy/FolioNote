@@ -137,7 +137,7 @@ public:
      * @brief Routes raw SDL3 input events to the overlay when active user interaction is engaged.
      *
      * Input Isolation:
-     *   When an InteractiveObject is in `isInteracting == true` mode, incoming mouse, touch,
+     *   When a CanvasObject is in `isInteracting == true` mode, incoming mouse, touch,
      *   pen, and keyboard events are directed here first. If this method returns true,
      *   the event is marked as consumed and will NOT trigger canvas panning, zooming,
      *   selection changes, or gizmo manipulation.

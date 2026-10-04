@@ -17,6 +17,7 @@
 #include <cstring>
 #include <algorithm>
 #include <cctype>
+#include <cwctype>
 #include <string_view>
 
 #if defined(_WIN32)
@@ -49,6 +50,15 @@ std::filesystem::path Utf8ToNativePath(const std::string& utf8Str) {
     }
     std::wstring wstr(static_cast<size_t>(sizeNeeded), 0);
     MultiByteToWideChar(CP_UTF8, 0, utf8Str.data(), static_cast<int>(utf8Str.size()), &wstr[0], sizeNeeded);
+
+    // If path is long (>= 240 chars) and is an absolute drive path ("C:\..."), normalize to backslashes and prepend "\\?\"
+    // to bypass legacy Win32 MAX_PATH (260 character) limits for deeply nested notebooks and pages.
+    if (wstr.size() >= 240 && wstr.rfind(L"\\\\?\\", 0) == std::wstring::npos) {
+        if (wstr.size() >= 3 && std::iswalpha(wstr[0]) && wstr[1] == L':' && (wstr[2] == L'\\' || wstr[2] == L'/')) {
+            std::replace(wstr.begin(), wstr.end(), L'/', L'\\');
+            wstr.insert(0, L"\\\\?\\");
+        }
+    }
     return std::filesystem::path(std::move(wstr));
 #else
     return std::filesystem::path(utf8Str);
@@ -57,9 +67,13 @@ std::filesystem::path Utf8ToNativePath(const std::string& utf8Str) {
 
 std::string NativePathToUtf8(const std::filesystem::path& p) {
 #if defined(_WIN32)
-    const std::wstring& wstr = p.native();
+    std::wstring wstr = p.native();
     if (wstr.empty()) {
         return std::string();
+    }
+    // Strip Win32 extended-length prefix if present so user-facing strings remain canonical
+    if (wstr.rfind(L"\\\\?\\", 0) == 0) {
+        wstr.erase(0, 4);
     }
     int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), static_cast<int>(wstr.size()), nullptr, 0, nullptr, nullptr);
     if (sizeNeeded <= 0) {
@@ -96,6 +110,25 @@ std::string GenerateStagingPath(const std::string& targetPath) {
     auto now = std::chrono::steady_clock::now().time_since_epoch().count();
     return targetPath + ".tmp." + std::to_string(now) + "_" + std::to_string(randVal);
 }
+
+#if defined(_WIN32)
+/**
+ * @brief Strips FILE_ATTRIBUTE_READONLY on existing destination to ensure MoveFileExW succeeds.
+ *
+ * Windows NTFS Invariant & Working Process:
+ * MoveFileExW with MOVEFILE_REPLACE_EXISTING returns ERROR_ACCESS_DENIED (5) if the destination
+ * file possesses FILE_ATTRIBUTE_READONLY. Clearing this bit before rename is required for reliable
+ * atomic updates when files are synced by OneDrive, Google Drive, Dropbox, or checked out via Git.
+ *
+ * @param targetPathW UTF-16 wide path to the target destination file.
+ */
+static void EnsureTargetWritable(const std::wstring& targetPathW) noexcept {
+    DWORD attrs = GetFileAttributesW(targetPathW.c_str());
+    if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_READONLY)) {
+        SetFileAttributesW(targetPathW.c_str(), attrs & ~FILE_ATTRIBUTE_READONLY);
+    }
+}
+#endif
 
 std::mutex s_packageRootMutex;
 std::string s_activePackageRoot;
@@ -334,11 +367,12 @@ std::string FileManager::PathToFileUri(const std::string& path) {
 
 std::string FileManager::ShowOpenFileDialog(const std::string& title) {
 #if defined(_WIN32)
-    wchar_t fileBuf[MAX_PATH] = {};
+    // 32KB dynamic wide character buffer prevents MAX_PATH buffer overflows on deep hierarchies
+    std::vector<wchar_t> fileBuf(32768, L'\0');
     OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
-    ofn.lpstrFile = fileBuf;
-    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFile = fileBuf.data();
+    ofn.nMaxFile = static_cast<DWORD>(fileBuf.size());
     ofn.lpstrFilter = L"All Files (*.*)\0*.*\0\0";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
 
@@ -348,9 +382,47 @@ std::string FileManager::ShowOpenFileDialog(const std::string& title) {
     }
 
     if (GetOpenFileNameW(&ofn)) {
-        return NormalizeSeparators(NativePathToUtf8(fileBuf));
+        return NormalizeSeparators(NativePathToUtf8(fileBuf.data()));
     }
     return "";
+#elif defined(__APPLE__)
+    // Native macOS file picker via AppleScript NSOpenPanel modal dialog
+    std::string prompt = title.empty() ? "Select File" : title;
+    std::string cmd = "osascript -e 'POSIX path of (choose file with prompt \"" + prompt + "\")' 2>/dev/null";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "";
+    char buf[2048] = {};
+    std::string result;
+    if (fgets(buf, sizeof(buf), pipe)) {
+        result = buf;
+        while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
+            result.pop_back();
+        }
+    }
+    pclose(pipe);
+    return NormalizeSeparators(result);
+#elif defined(__linux__)
+    // Native Linux file picker via standard desktop portal (Zenity or KDialog)
+    std::string cmd;
+    if (std::system("which zenity >/dev/null 2>&1") == 0) {
+        cmd = "zenity --file-selection --title=\"" + (title.empty() ? "Select File" : title) + "\" 2>/dev/null";
+    } else if (std::system("which kdialog >/dev/null 2>&1") == 0) {
+        cmd = "kdialog --getopenfilename . --title \"" + (title.empty() ? "Select File" : title) + "\" 2>/dev/null";
+    }
+    if (cmd.empty()) return "";
+
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "";
+    char buf[2048] = {};
+    std::string result;
+    if (fgets(buf, sizeof(buf), pipe)) {
+        result = buf;
+        while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
+            result.pop_back();
+        }
+    }
+    pclose(pipe);
+    return NormalizeSeparators(result);
 #else
     (void)title;
     return "";
@@ -359,15 +431,15 @@ std::string FileManager::ShowOpenFileDialog(const std::string& title) {
 
 std::string FileManager::ShowSaveFileDialog(const std::string& title, const std::string& defaultFileName) {
 #if defined(_WIN32)
-    wchar_t fileBuf[MAX_PATH] = {};
+    std::vector<wchar_t> fileBuf(32768, L'\0');
     if (!defaultFileName.empty()) {
         std::filesystem::path defPath = Utf8ToNativePath(defaultFileName);
-        wcsncpy_s(fileBuf, defPath.c_str(), _TRUNCATE);
+        wcsncpy_s(fileBuf.data(), fileBuf.size(), defPath.c_str(), _TRUNCATE);
     }
     OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
-    ofn.lpstrFile = fileBuf;
-    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFile = fileBuf.data();
+    ofn.nMaxFile = static_cast<DWORD>(fileBuf.size());
     ofn.lpstrFilter = L"All Files (*.*)\0*.*\0PNG Image (*.png)\0*.png\0JPEG Image (*.jpg;*.jpeg)\0*.jpg;*.jpeg\0WebP Image (*.webp)\0*.webp\0GIF Image (*.gif)\0*.gif\0\0";
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_EXPLORER;
 
@@ -377,9 +449,52 @@ std::string FileManager::ShowSaveFileDialog(const std::string& title, const std:
     }
 
     if (GetSaveFileNameW(&ofn)) {
-        return NormalizeSeparators(NativePathToUtf8(fileBuf));
+        return NormalizeSeparators(NativePathToUtf8(fileBuf.data()));
     }
     return "";
+#elif defined(__APPLE__)
+    // Native macOS save file picker via AppleScript NSSavePanel modal dialog
+    std::string prompt = title.empty() ? "Save File" : title;
+    std::string defArg = defaultFileName.empty() ? "" : (" default name \"" + defaultFileName + "\"");
+    std::string cmd = "osascript -e 'POSIX path of (choose file name with prompt \"" + prompt + "\"" + defArg + ")' 2>/dev/null";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "";
+    char buf[2048] = {};
+    std::string result;
+    if (fgets(buf, sizeof(buf), pipe)) {
+        result = buf;
+        while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
+            result.pop_back();
+        }
+    }
+    pclose(pipe);
+    return NormalizeSeparators(result);
+#elif defined(__linux__)
+    // Native Linux save file picker via standard desktop portal (Zenity or KDialog)
+    std::string cmd;
+    if (std::system("which zenity >/dev/null 2>&1") == 0) {
+        cmd = "zenity --file-selection --save --confirm-overwrite --title=\"" + (title.empty() ? "Save File" : title) + "\"";
+        if (!defaultFileName.empty()) {
+            cmd += " --filename=\"" + defaultFileName + "\"";
+        }
+        cmd += " 2>/dev/null";
+    } else if (std::system("which kdialog >/dev/null 2>&1") == 0) {
+        cmd = "kdialog --getsavefilename \"" + defaultFileName + "\" --title \"" + (title.empty() ? "Save File" : title) + "\" 2>/dev/null";
+    }
+    if (cmd.empty()) return "";
+
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "";
+    char buf[2048] = {};
+    std::string result;
+    if (fgets(buf, sizeof(buf), pipe)) {
+        result = buf;
+        while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
+            result.pop_back();
+        }
+    }
+    pclose(pipe);
+    return NormalizeSeparators(result);
 #else
     (void)title;
     (void)defaultFileName;
@@ -498,10 +613,22 @@ bool FileManager::WriteTextAtomic(const std::string& targetPath, const std::stri
         return false;
     }
 
+    // Disk-full & truncation fail-safe: verify written size matches content length exactly
+    uint64_t actualSize = GetFileSize(stagePath);
+    if (actualSize != content.size()) {
+        LOG_ERROR(FileManager, FormatError(FolioErrorCode::SysDiskFull, 
+            "WriteTextAtomic aborted: Staging file size (" + std::to_string(actualSize) + 
+            " bytes) does not match content size (" + std::to_string(content.size()) + 
+            " bytes). Existing target file preserved."));
+        RemoveFile(stagePath);
+        return false;
+    }
+
     auto nativeStage = Utf8ToNativePath(stagePath);
     auto nativeTarget = Utf8ToNativePath(targetPath);
 
 #if defined(_WIN32)
+    EnsureTargetWritable(nativeTarget.wstring());
     if (!MoveFileExW(nativeStage.wstring().c_str(), nativeTarget.wstring().c_str(), 
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         DWORD err = GetLastError();
@@ -561,10 +688,22 @@ bool FileManager::WriteBinaryAtomic(const std::string& targetPath, const std::ve
         return false;
     }
 
+    // Disk-full & truncation fail-safe: verify written size matches buffer exactly
+    uint64_t actualSize = GetFileSize(stagePath);
+    if (actualSize != buffer.size()) {
+        LOG_ERROR(FileManager, FormatError(FolioErrorCode::SysDiskFull, 
+            "WriteBinaryAtomic aborted: Staging file size (" + std::to_string(actualSize) + 
+            " bytes) does not match payload size (" + std::to_string(buffer.size()) + 
+            " bytes). Existing target file preserved."));
+        RemoveFile(stagePath);
+        return false;
+    }
+
     auto nativeStage = Utf8ToNativePath(stagePath);
     auto nativeTarget = Utf8ToNativePath(targetPath);
 
 #if defined(_WIN32)
+    EnsureTargetWritable(nativeTarget.wstring());
     if (!MoveFileExW(nativeStage.wstring().c_str(), nativeTarget.wstring().c_str(), 
                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         DWORD err = GetLastError();
@@ -749,9 +888,30 @@ bool FileManager::CopySingleFile(const std::string& sourcePath, const std::strin
 }
 
 bool FileManager::CopyDirectoryRecursive(const std::string& sourceDir, const std::string& destinationDir) {
+    if (AreEquivalent(sourceDir, destinationDir)) {
+        return true;
+    }
+
     std::error_code ec;
     auto srcNative = Utf8ToNativePath(sourceDir);
     auto dstNative = Utf8ToNativePath(destinationDir);
+
+    // Prevent infinite recursive copy if destination is inside source
+    std::error_code canonEc;
+    auto srcCanon = std::filesystem::weakly_canonical(srcNative, canonEc);
+    auto dstCanon = std::filesystem::weakly_canonical(dstNative, canonEc);
+    if (!canonEc) {
+        std::string srcStr = NormalizeSeparators(srcCanon.string());
+        std::string dstStr = NormalizeSeparators(dstCanon.string());
+        
+        if (!srcStr.empty() && srcStr.back() != '/') srcStr += '/';
+        if (!dstStr.empty() && dstStr.back() != '/') dstStr += '/';
+
+        if (dstStr.find(srcStr) == 0) {
+            LOG_ERROR(FileManager, "CopyDirectoryRecursive failed: destination is inside source directory.");
+            return false;
+        }
+    }
 
     if (!CreateDirectories(destinationDir)) {
         return false;
@@ -773,6 +933,10 @@ bool FileManager::CopyDirectoryRecursive(const std::string& sourceDir, const std
 }
 
 bool FileManager::Move(const std::string& sourcePath, const std::string& destinationPath) {
+    if (AreEquivalent(sourcePath, destinationPath)) {
+        return true;
+    }
+
     std::error_code ec;
     auto srcNative = Utf8ToNativePath(sourcePath);
     auto dstNative = Utf8ToNativePath(destinationPath);

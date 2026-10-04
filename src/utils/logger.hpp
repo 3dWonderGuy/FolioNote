@@ -48,7 +48,9 @@ namespace Folio {
         Section,
         CanvasPage,
         DocumentSession,
-        Workspace
+        Workspace,
+        LayerCompositorManager,
+        ObjectRegistry
     };
 
     inline const char* LogSourceToString(LogSource source) noexcept {
@@ -75,9 +77,11 @@ namespace Folio {
             case LogSource::SectionGroup:      return "SectionGroup";
             case LogSource::Section:           return "Section";
             case LogSource::CanvasPage:        return "CanvasPage";
-            case LogSource::DocumentSession:   return "DocumentSession";
-            case LogSource::Workspace:         return "Workspace";
-            default:                           return "General";
+            case LogSource::DocumentSession:        return "DocumentSession";
+            case LogSource::Workspace:              return "Workspace";
+            case LogSource::LayerCompositorManager: return "LayerCompositorManager";
+            case LogSource::ObjectRegistry:         return "ObjectRegistry";
+            default:                                return "General";
         }
     }
 

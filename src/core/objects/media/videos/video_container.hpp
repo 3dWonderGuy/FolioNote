@@ -285,11 +285,6 @@ public:
     bool HandleCanvasClick(double worldXQuery, double worldYQuery, bool isDoubleClick,
                            std::function<void()> onDirty);
 
-    /**
-     * @brief Polymorphic pointer click hook delegating to video transport controls.
-     */
-    bool OnPointerClick(const Folio::CanvasContext& ctx) override;
-
     /** @brief Toggles audio mute. */
     void ToggleMute();
 
@@ -333,6 +328,16 @@ public:
      * @param[in]     viewport Current camera viewport.
      */
     void Render(BLContext& ctx, const Viewport& viewport) const override;
+
+    /**
+     * @brief Customizes context menu actions specific to video containers.
+     *
+     * Injects video transport controls: Play/Pause, Stop, Mute/Unmute, Loop toggle,
+     * Reset to Native Size, and Open in Native Player.
+     *
+     * @param[in,out] actions Menu action list to append video items to.
+     */
+    void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) override;
 
     // =========================================================================
     // CLONING

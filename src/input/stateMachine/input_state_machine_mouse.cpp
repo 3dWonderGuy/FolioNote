@@ -17,6 +17,9 @@
 #include "core/document/document_session.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
 #include "app/context_menu_manager.hpp"
+#include "core/objects/text/text_box.hpp"
+#include "core/objects/media/audio/audio_container.hpp"
+#include "core/objects/attachment_container/attachment_container.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 #include <imgui.h>
@@ -62,14 +65,17 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     // 2. DIRECT MIDDLE & SPACE PAN (Fires before UI capture)
     // -------------------------------------------------------------------------
     if (currentAction == InteractionState::Panning && middleIsMoving) {
+        pointerIcons.Lock(FolioInput::PointerCursorShape::Grabbing, FolioInput::CursorLockReason::Panning);
         canvas.Pan(mouse.dx, mouse.dy);
     }
 
     if (keyboard.space && (isMoving || middleIsMoving)) {
+        pointerIcons.Lock(FolioInput::PointerCursorShape::Grabbing, FolioInput::CursorLockReason::Panning);
         canvas.Pan(mouse.dx, mouse.dy);
     }
 
-    if (middleJustUp) {
+    if (middleJustUp || (keyboard.space && justUp)) {
+        pointerIcons.Unlock(FolioInput::CursorLockReason::Panning);
         mouse.dx = 0.0f;
         mouse.dy = 0.0f;
     }
@@ -108,16 +114,21 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     // 4. MOUSE ACTION DISPATCH
     // -------------------------------------------------------------------------
     if (currentAction == InteractionState::Inking) {
+        pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Crosshair);
         if (justDown) {
+            pointerIcons.Lock(FolioInput::PointerCursorShape::Crosshair, FolioInput::CursorLockReason::Inking);
             canvas.OnPointerDown(canvasLocalX, canvasLocalY, 1.0f, latestEventTimeSec, palette.GetActivePen(), 0.0f, 0.0f);
         } else if (isMoving) {
             canvas.OnPointerMove(canvasLocalX, canvasLocalY, 1.0f, latestEventTimeSec, 0.0f, 0.0f);
         } else if (justUp) {
+            pointerIcons.Unlock(FolioInput::CursorLockReason::Inking);
             canvas.OnPointerUp(session, palette.GetActivePen());
         }
     } 
     else if (currentAction == InteractionState::Eraser) {
+        pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Hidden);
         if (justDown) {
+            pointerIcons.Lock(FolioInput::PointerCursorShape::Hidden, FolioInput::CursorLockReason::Eraser);
             lastEraserX = canvasLocalX;
             lastEraserY = canvasLocalY;
             isEraserActive = true;
@@ -128,12 +139,12 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             lastEraserX = canvasLocalX;
             lastEraserY = canvasLocalY;
         } else if (justUp) {
+            pointerIcons.Unlock(FolioInput::CursorLockReason::Eraser);
             isEraserActive = false;
             session.EndEraseTransaction(&canvas);
         }
 
         canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
-        ImGui::SetMouseCursor(ImGuiMouseCursor_None);
     }
     else if (currentAction == InteractionState::Selecting) {
         if (justDown) {
@@ -143,6 +154,12 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             if (canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
                                                    canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
                 canvas.isDirty = true;
+                auto role = canvas.selectionGizmo.activeRole;
+                auto shape = pointerIcons.GetShapeForHandleRole(role);
+                auto lockReason = (role == HandleRole::Body)     ? FolioInput::CursorLockReason::GizmoMove :
+                                  (role == HandleRole::Rotation) ? FolioInput::CursorLockReason::GizmoRotate :
+                                                                   FolioInput::CursorLockReason::GizmoResize;
+                pointerIcons.Lock(shape, lockReason);
             } else {
                 Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
                 lastCanvasClickWorldMm = worldMm;
@@ -167,34 +184,43 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     pendingTextBoxUid = 0;
 
                     // ---------------------------------------------------------
-                    // UNIFIED CANVAS CONTEXT DISPATCH (C++20 DESIGNATED INIT)
+                    // DOMAIN CLICK DISPATCH BY OBJECT TYPE
                     // ---------------------------------------------------------
-                    uint32_t clickModifiers = (keyboard.shift ? 1u : 0u) |
-                                              (keyboard.ctrl  ? 2u : 0u) |
-                                              (keyboard.alt   ? 4u : 0u);
-
-                    Folio::CanvasContext ctx{
-                        .stateMachine  = *this,
-                        .session       = session,
-                        .engine        = canvas,
-                        .fileManager   = nullptr,
-                        .clipboard     = &Folio::ClipboardManager::Instance(),
-                        .contextMenu   = nullptr,
-                        .worldX        = worldMm.x,
-                        .worldY        = worldMm.y,
-                        .isDoubleClick = isLastClickDouble,
-                        .modifiers     = clickModifiers
-                    };
-
-                    if (clickedObj->OnPointerClick(ctx)) {
-                        return;
+                    // 1. Audio: handles play/pause toggle and scrubber clicks
+                    if (clickedObj->type == ObjectType::Audio) {
+                        auto* audio = static_cast<Folio::AudioObject*>(clickedObj.get());
+                        if (audio->HandleCanvasClick(worldMm.x, worldMm.y, [&canvas]() {
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                        })) {
+                            return;
+                        }
                     }
 
-                    // Polymorphic pointer click hook:
-                    // TextBoxObject activates editor on double-click; AttachmentObject launches file;
-                    // VideoObject/AudioObject handles transport controls.
-                    if (clickedObj->OnPointerClick(ctx)) {
-                        return;
+                    // 2. Double-click actions (Text editing, Attachment launching)
+                    if (isLastClickDouble) {
+                        if (clickedObj->type == ObjectType::Text) {
+                            auto* textBox = static_cast<Folio::TextBoxObject*>(clickedObj.get());
+                            if (canvas.textEditor.IsActive() && canvas.textEditor.GetTarget() &&
+                                canvas.textEditor.GetTarget() != textBox &&
+                                canvas.textEditor.GetTarget()->PlainText().empty()) {
+                                auto page = session.GetActivePage();
+                                if (page) page->RemoveObjectByUid(canvas.textEditor.GetTarget()->uid);
+                            }
+                            canvas.ClearSelection(&session);
+                            canvas.textEditor.Detach(&session);
+                            canvas.textEditor.Attach(textBox, &session);
+                            canvas.textEditor.OnMouseDown(worldMm.x, worldMm.y, keyboard.shift);
+                            canvas.needsFullRebake = true;
+                            canvas.isDirty = true;
+                            LOG_INFO(InputStateMachine, "Double-click activated text editor on text box uid=" + std::to_string(textBox->uid));
+                            return;
+                        } else if (clickedObj->type == ObjectType::AttachmentFile) {
+                            auto* attachment = static_cast<Folio::AttachmentObject*>(clickedObj.get());
+                            LOG_INFO(InputStateMachine, "Double-clicked attachment: opening file '" + attachment->filePath + "'");
+                            attachment->OpenFile();
+                            return;
+                        }
                     }
 
                     // Check for click on object with live overlay (WebOverlay, YouTube player, live widgets)
@@ -207,6 +233,12 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     canvas.selectionGizmo.SetSelectedObjects(activePage->objects);
                     canvas.selectionGizmo.OnPointerDown(canvasLocalX, canvasLocalY, canvas.transform,
                                                            canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm);
+                    auto role = canvas.selectionGizmo.activeRole;
+                    auto shape = pointerIcons.GetShapeForHandleRole(role);
+                    auto lockReason = (role == HandleRole::Body)     ? FolioInput::CursorLockReason::GizmoMove :
+                                      (role == HandleRole::Rotation) ? FolioInput::CursorLockReason::GizmoRotate :
+                                                                       FolioInput::CursorLockReason::GizmoResize;
+                    pointerIcons.Lock(shape, lockReason);
                     canvas.needsFullRebake = true;
                     canvas.isDirty = true;
                     LOG_INFO(InputStateMachine, "Mouse direct click selected object uid=" + std::to_string(clickedObj->uid));
@@ -228,8 +260,10 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                     canvas.ClearSelection(&session);
 
                     if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
+                        pointerIcons.Lock(FolioInput::PointerCursorShape::Crosshair, FolioInput::CursorLockReason::BoxSelecting);
                         canvas.OnLassoDown(canvasLocalX, canvasLocalY);
                     } else {
+                        pointerIcons.Lock(FolioInput::PointerCursorShape::Crosshair, FolioInput::CursorLockReason::BoxSelecting);
                         canvas.OnBoxSelectDown(canvasLocalX, canvasLocalY);
                     }
                 }
@@ -272,6 +306,11 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             hasPendingEmptyTextBox = false;
             pendingTextBoxUid = 0;
 
+            pointerIcons.Unlock(FolioInput::CursorLockReason::GizmoResize);
+            pointerIcons.Unlock(FolioInput::CursorLockReason::GizmoMove);
+            pointerIcons.Unlock(FolioInput::CursorLockReason::GizmoRotate);
+            pointerIcons.Unlock(FolioInput::CursorLockReason::BoxSelecting);
+
             if (canvas.selectionGizmo.isDragging) {
                 canvas.selectionGizmo.OnPointerUp(&session);
                 canvas.SyncSelectionToSpatialIndex(&session);
@@ -284,53 +323,29 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             }
         }
 
-        // Dynamically update mouse cursor based on hovered gizmo handle
+        // Dynamically update mouse cursor based on hovered gizmo handle when not dragging
         if (!canvas.selectionGizmo.isDragging && canvas.selectionGizmo.HasSelection()) {
             auto hit = canvas.selectionGizmo.HitTest(canvasLocalX, canvasLocalY, canvas.transform);
             if (hit.hit) {
-                switch (hit.role) {
-                    case HandleRole::TopLeft:
-                    case HandleRole::BottomRight:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
-                        break;
-                    case HandleRole::TopRight:
-                    case HandleRole::BottomLeft:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
-                        break;
-                    case HandleRole::TopCenter:
-                    case HandleRole::BottomCenter:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                        break;
-                    case HandleRole::LeftCenter:
-                    case HandleRole::RightCenter:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        break;
-                    case HandleRole::Rotation:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                        break;
-                    case HandleRole::Body:
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-                        break;
-                    default:
-                        break;
-                }
+                pointerIcons.SetHoverForHandleRole(hit.role);
+            } else {
+                pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Arrow);
             }
-        } else if (canvas.selectionGizmo.isDragging) {
-            if (canvas.selectionGizmo.activeRole == HandleRole::Rotation) {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-            } else if (canvas.selectionGizmo.activeRole == HandleRole::Body) {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-            }
+        } else if (!canvas.selectionGizmo.isDragging) {
+            pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Arrow);
         }
     }
     else if (currentAction == InteractionState::DrawingShape) {
+        pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Crosshair);
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            pointerIcons.Unlock(FolioInput::CursorLockReason::ShapeDrawing);
             canvas.CancelShapeCreation();
             canvas.ClearSelection(&session);
             currentAction = InteractionState::Selecting;
             SetToolForDevice(DeviceType::Mouse, InteractionState::Selecting);
             SetToolForDevice(DeviceType::Stylus, InteractionState::Selecting);
         } else if (justDown) {
+            pointerIcons.Lock(FolioInput::PointerCursorShape::Crosshair, FolioInput::CursorLockReason::ShapeDrawing);
             if (canvas.selectionGizmo.HasSelection()) {
                 canvas.ClearSelection(&session);
                 canvas.selectionGizmo.ClearSelection();
@@ -343,6 +358,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 canvas.isDirty = true;
             }
         } else if (justUp) {
+            pointerIcons.Unlock(FolioInput::CursorLockReason::ShapeDrawing);
             if (canvas.shapeCreation.isDragging || (canvas.shapeCreation.shapeType == Folio::ShapeType::Ellipse && canvas.shapeCreation.ellipseStep == 1)) {
                 canvas.OnShapeDrawUp(&session);
                 canvas.needsFullRebake = true;
@@ -356,10 +372,9 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
                 }
             }
         }
-        ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
     else if (currentAction == InteractionState::Text) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+        pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::TextInput);
         Point2D worldMm = canvas.transform.ScreenToWorld(canvasLocalX, canvasLocalY);
         if (justDown) {
             auto activePage = session.GetActivePage();
@@ -398,8 +413,15 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             canvas.isDirty = true;
         }
     }
-    else if (currentAction == InteractionState::Panning && isMoving) {
-        canvas.Pan(mouse.dx, mouse.dy);
+    else if (currentAction == InteractionState::Panning) {
+        pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Hand);
+        if (justDown) {
+            pointerIcons.Lock(FolioInput::PointerCursorShape::Grabbing, FolioInput::CursorLockReason::Panning);
+        } else if (isMoving) {
+            canvas.Pan(mouse.dx, mouse.dy);
+        } else if (justUp) {
+            pointerIcons.Unlock(FolioInput::CursorLockReason::Panning);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -413,4 +435,9 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
         mouse.wheelX = 0.0f;
         mouse.wheelY = 0.0f;
     }
+
+    // -------------------------------------------------------------------------
+    // 6. SYNCHRONIZE HARDWARE POINTER CURSOR
+    // -------------------------------------------------------------------------
+    pointerIcons.Apply(isCanvasHovered, imguiWantsInput);
 }

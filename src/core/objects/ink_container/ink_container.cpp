@@ -49,11 +49,27 @@
  */
 
 #include "core/objects/ink_container/ink_container.hpp"
+#include "core/objects/object_registry.hpp"
 #include "core/engine/stroke_collision.hpp"
 #include "core/engine/stroke_outline_builder.hpp"
 
 #include <algorithm>
 #include <cmath>
+
+namespace {
+
+// Static self-registration into ObjectRegistry
+const bool s_inkRegistered = []() {
+    Folio::ObjectRegistry::Register<InkContainer>(
+        ObjectType::InkContainer,
+        "InkContainer",
+        "✒",
+        true
+    );
+    return true;
+}();
+
+} // anonymous namespace
 
 // =============================================================================
 // CONSTRUCTORS & LIFECYCLE

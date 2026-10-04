@@ -23,6 +23,7 @@
 #include <blend2d/blend2d.h>
 
 #include "input/pen_palette.hpp"
+#include "core/objects/primitives/shape_types.hpp"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -41,15 +42,56 @@ public:
     };
 
     /**
-     * @brief Builds a 2D closed ribbon polygon or patterned outline (solid, dashed, dotted) from an ordered list of points.
+     * @brief Maps Folio::ShapeOutlineType into internal StrokePattern.
+     *
+     * Enables shapes and connectors to route directly through the unified
+     * pen engine pipeline without maintaining separate dasher utilities.
+     *
+     * @param outlineType The vector shape outline style (Solid, Dashed, Dotted, DashDot).
+     * @return Corresponding StrokePattern enumeration.
      */
-    static BLPath BuildOutline(const std::vector<InputPoint>& rawPoints, CapType capType = CapType::Round, StrokePattern pattern = StrokePattern::Solid) {
+    static StrokePattern MapShapeOutlineType(Folio::ShapeOutlineType outlineType) noexcept {
+        switch (outlineType) {
+            case Folio::ShapeOutlineType::Dashed:  return StrokePattern::Dashed;
+            case Folio::ShapeOutlineType::Dotted:  return StrokePattern::Dotted;
+            case Folio::ShapeOutlineType::DashDot: return StrokePattern::DashDot;
+            case Folio::ShapeOutlineType::Solid:
+            default:                              return StrokePattern::Solid;
+        }
+    }
+
+    /**
+     * @brief Builds a 2D closed ribbon polygon or patterned outline (solid, dashed, dotted) from an ordered list of points.
+     *
+     * @param rawPoints Input centerline vertices with thickness.
+     * @param capType Endcap style for terminal segments.
+     * @param pattern Stroke pattern (Solid, Dashed, Dotted, DashDot).
+     * @param isClosed When true, closes the loop from the last point to the first point seamlessly.
+     */
+    static BLPath BuildOutline(const std::vector<InputPoint>& rawPoints,
+                              CapType capType = CapType::Round,
+                              StrokePattern pattern = StrokePattern::Solid,
+                              bool isClosed = false) {
         BLPath path;
         if (rawPoints.empty()) return path;
 
-        if (rawPoints.size() == 1) {
-            double r = std::max(0.05, (double)rawPoints[0].width * 0.5);
-            path.add_circle(BLCircle{rawPoints[0].x, rawPoints[0].y, r});
+        // If closed, ensure vertices form a complete loop by appending the origin if needed
+        std::vector<InputPoint> pointsCopy;
+        const std::vector<InputPoint>* ptsPtr = &rawPoints;
+        if (isClosed && rawPoints.size() >= 3) {
+            double dx = rawPoints.back().x - rawPoints.front().x;
+            double dy = rawPoints.back().y - rawPoints.front().y;
+            if (std::hypot(dx, dy) > 1e-5) {
+                pointsCopy = rawPoints;
+                pointsCopy.push_back(rawPoints.front());
+                ptsPtr = &pointsCopy;
+            }
+        }
+        const auto& pts = *ptsPtr;
+
+        if (pts.size() == 1) {
+            double r = std::max(0.05, (double)pts[0].width * 0.5);
+            path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
             return path;
         }
 
@@ -57,9 +99,9 @@ public:
             double nextDotDist = 0.0;
             double distAccum = 0.0;
 
-            for (size_t i = 0; i < rawPoints.size() - 1; ++i) {
-                const auto& p0 = rawPoints[i];
-                const auto& p1 = rawPoints[i + 1];
+            for (size_t i = 0; i < pts.size() - 1; ++i) {
+                const auto& p0 = pts[i];
+                const auto& p1 = pts[i + 1];
                 double dx = p1.x - p0.x;
                 double dy = p1.y - p0.y;
                 double segLen = std::hypot(dx, dy);
@@ -79,28 +121,28 @@ public:
                 }
                 distAccum += segLen;
             }
-            if (path.is_empty() && !rawPoints.empty()) {
-                double r = std::max(0.05, (double)rawPoints[0].width * 0.5);
-                path.add_circle(BLCircle{rawPoints[0].x, rawPoints[0].y, r});
+            if (path.is_empty() && !pts.empty()) {
+                double r = std::max(0.05, (double)pts[0].width * 0.5);
+                path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
             }
             return path;
         }
 
         if (pattern == StrokePattern::Dashed) {
-            const size_t N = rawPoints.size();
+            const size_t N = pts.size();
             std::vector<double> cumDist(N, 0.0);
             for (size_t i = 1; i < N; ++i) {
-                cumDist[i] = cumDist[i - 1] + std::hypot(rawPoints[i].x - rawPoints[i - 1].x, rawPoints[i].y - rawPoints[i - 1].y);
+                cumDist[i] = cumDist[i - 1] + std::hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
             }
             double totalLen = cumDist.back();
             if (totalLen < 1e-5) {
-                double r = std::max(0.05, (double)rawPoints[0].width * 0.5);
-                path.add_circle(BLCircle{rawPoints[0].x, rawPoints[0].y, r});
+                double r = std::max(0.05, (double)pts[0].width * 0.5);
+                path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
                 return path;
             }
 
             float avgWidth = 0.0f;
-            for (const auto& pt : rawPoints) avgWidth += pt.width;
+            for (const auto& pt : pts) avgWidth += pt.width;
             avgWidth /= static_cast<float>(N);
 
             double dashLen = std::max(1.8, (double)avgWidth * 4.0);
@@ -110,16 +152,16 @@ public:
             auto samplePointAt = [&](double d) -> InputPoint {
                 d = std::clamp(d, 0.0, totalLen);
                 auto it = std::lower_bound(cumDist.begin(), cumDist.end(), d);
-                if (it == cumDist.begin()) return rawPoints.front();
-                if (it == cumDist.end()) return rawPoints.back();
+                if (it == cumDist.begin()) return pts.front();
+                if (it == cumDist.end()) return pts.back();
                 size_t idx = std::distance(cumDist.begin(), it);
                 double d0 = cumDist[idx - 1];
                 double d1 = cumDist[idx];
                 double segL = d1 - d0;
                 double t = (segL > 1e-7) ? (d - d0) / segL : 0.0;
                 t = std::clamp(t, 0.0, 1.0);
-                const auto& p0 = rawPoints[idx - 1];
-                const auto& p1 = rawPoints[idx];
+                const auto& p0 = pts[idx - 1];
+                const auto& p1 = pts[idx];
                 InputPoint res;
                 res.x = p0.x + t * (p1.x - p0.x);
                 res.y = p0.y + t * (p1.y - p0.y);
@@ -137,7 +179,7 @@ public:
 
                 for (size_t i = 0; i < N; ++i) {
                     if (cumDist[i] > s0 + 1e-5 && cumDist[i] < s1 - 1e-5) {
-                        dashPts.push_back(rawPoints[i]);
+                        dashPts.push_back(pts[i]);
                     }
                 }
                 dashPts.push_back(samplePointAt(s1));
@@ -154,20 +196,20 @@ public:
         }
 
         if (pattern == StrokePattern::DashDot) {
-            const size_t N = rawPoints.size();
+            const size_t N = pts.size();
             std::vector<double> cumDist(N, 0.0);
             for (size_t i = 1; i < N; ++i) {
-                cumDist[i] = cumDist[i - 1] + std::hypot(rawPoints[i].x - rawPoints[i - 1].x, rawPoints[i].y - rawPoints[i - 1].y);
+                cumDist[i] = cumDist[i - 1] + std::hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
             }
             double totalLen = cumDist.back();
             if (totalLen < 1e-5) {
-                double r = std::max(0.05, (double)rawPoints[0].width * 0.5);
-                path.add_circle(BLCircle{rawPoints[0].x, rawPoints[0].y, r});
+                double r = std::max(0.05, (double)pts[0].width * 0.5);
+                path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
                 return path;
             }
 
             float avgWidth = 0.0f;
-            for (const auto& pt : rawPoints) avgWidth += pt.width;
+            for (const auto& pt : pts) avgWidth += pt.width;
             avgWidth /= static_cast<float>(N);
 
             double dashLen = std::max(2.0, (double)avgWidth * 4.2);
@@ -179,16 +221,16 @@ public:
             auto samplePointAt = [&](double d) -> InputPoint {
                 d = std::clamp(d, 0.0, totalLen);
                 auto it = std::lower_bound(cumDist.begin(), cumDist.end(), d);
-                if (it == cumDist.begin()) return rawPoints.front();
-                if (it == cumDist.end()) return rawPoints.back();
+                if (it == cumDist.begin()) return pts.front();
+                if (it == cumDist.end()) return pts.back();
                 size_t idx = std::distance(cumDist.begin(), it);
                 double d0 = cumDist[idx - 1];
                 double d1 = cumDist[idx];
                 double segL = d1 - d0;
                 double t = (segL > 1e-7) ? (d - d0) / segL : 0.0;
                 t = std::clamp(t, 0.0, 1.0);
-                const auto& p0 = rawPoints[idx - 1];
-                const auto& p1 = rawPoints[idx];
+                const auto& p0 = pts[idx - 1];
+                const auto& p1 = pts[idx];
                 InputPoint res;
                 res.x = p0.x + t * (p1.x - p0.x);
                 res.y = p0.y + t * (p1.y - p0.y);
@@ -205,7 +247,7 @@ public:
                     dashPts.push_back(samplePointAt(s0));
                     for (size_t i = 0; i < N; ++i) {
                         if (cumDist[i] > s0 + 1e-5 && cumDist[i] < s1 - 1e-5) {
-                            dashPts.push_back(rawPoints[i]);
+                            dashPts.push_back(pts[i]);
                         }
                     }
                     dashPts.push_back(samplePointAt(s1));
@@ -229,7 +271,7 @@ public:
             return path;
         }
 
-        return BuildSolidRibbon(rawPoints, capType);
+        return BuildSolidRibbon(pts, capType);
     }
 
     /**

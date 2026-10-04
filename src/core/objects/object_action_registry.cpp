@@ -27,16 +27,13 @@
 #include <algorithm>
 
 #include "core/objects/canvas_object.hpp"
-#include "core/objects/attachment_container.hpp"
+#include "core/objects/attachment_container/attachment_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
-#include "core/objects/media/videos/video_container.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/document/document_session.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/history/canvas_command.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
-
-#include <SDL3/SDL.h>  // SDL_OpenURL for external playback
 
 namespace Folio {
 
@@ -179,11 +176,11 @@ std::vector<ContextMenuItem> ObjectActionRegistry::BuildActionsForObject(
     // Action: Set as Background / Unlock from Background (order: 190)
     // Background elements are marked non-selectable (isSelectable = 0) and sent to back,
     // so pen/lasso operations draw over them smoothly without selecting or moving them.
-    if (obj->type == ObjectType::Image) {
+    {
         ContextMenuItem bgAct;
         if (obj->isSelectable) {
             bgAct.label = "Set as Background";
-            bgAct.icon = "🖼";
+            bgAct.icon = "📌";
             bgAct.iconKey = "pin_background";
             bgAct.order = 190;
             bgAct.isSeparatorBefore = true;
@@ -302,154 +299,7 @@ std::vector<ContextMenuItem> ObjectActionRegistry::BuildActionsForObject(
     }
 
     // =========================================================================
-    // VIDEO OBJECT CONTEXT MENU ACTIONS
-    // =========================================================================
-    if (obj->type == ObjectType::Video) {
-        auto vid = std::static_pointer_cast<Folio::VideoObject>(obj);
-
-        // ── Action: Play / Pause toggle ───────────────────────────────────────
-        {
-            ContextMenuItem act;
-            act.label = vid->isPlaying ? "Pause" : "Play";
-            act.icon  = vid->isPlaying ? "⏸" : "▶";
-            act.iconKey = vid->isPlaying ? "pause" : "play";
-            act.order = 100;
-            act.isSeparatorBefore = true;
-            act.onTrigger = [vid, &engine]() {
-                if (vid->isPlaying) {
-                    vid->Pause();
-                } else {
-                    vid->Play([&engine]() {
-                        engine.needsFullRebake = true;
-                        engine.isDirty = true;
-                    });
-                }
-                engine.needsFullRebake = true;
-                engine.isDirty = true;
-            };
-            actions.push_back(std::move(act));
-        }
-
-        // ── Action: Stop ─────────────────────────────────────────────────────
-        {
-            ContextMenuItem act;
-            act.label   = "Stop";
-            act.icon    = "⏹";
-            act.iconKey = "stop";
-            act.order   = 110;
-            act.onTrigger = [vid, &engine]() {
-                vid->Stop();
-                engine.isDirty = true;
-            };
-            actions.push_back(std::move(act));
-        }
-
-        // ── Action: Mute / Unmute ────────────────────────────────────────────
-        {
-            ContextMenuItem act;
-            act.label   = vid->isMuted ? "Unmute" : "Mute";
-            act.icon    = vid->isMuted ? "🔊" : "🔇";
-            act.iconKey = vid->isMuted ? "unmute" : "mute";
-            act.order   = 120;
-            act.onTrigger = [vid, &engine]() {
-                vid->ToggleMute();
-                engine.isDirty = true;
-            };
-            actions.push_back(std::move(act));
-        }
-
-        // ── Action: Loop toggle ──────────────────────────────────────────────
-        {
-            ContextMenuItem act;
-            act.label   = vid->isLooping ? "Disable Loop" : "Enable Loop";
-            act.icon    = "🔁";
-            act.iconKey = "loop";
-            act.order   = 130;
-            act.onTrigger = [vid, &engine]() {
-                vid->isLooping = !vid->isLooping;
-                engine.isDirty = true;
-            };
-            actions.push_back(std::move(act));
-        }
-
-        // ── Action: Reset to Native Size ─────────────────────────────────────
-        // Restores video to its natural decoded pixel dimensions at current DPI.
-        // Math: worldW = nativeVideoW / pixelsPerMm
-        {
-            ContextMenuItem act;
-            act.label   = "Reset to Native Size";
-            act.icon    = "⤢";
-            act.iconKey = "reset_size";
-            act.order   = 140;
-            act.isSeparatorBefore = true;
-            act.onTrigger = [vid, page, &engine, &session]() {
-                vid->ResetToNativeSize(engine.transform.pixelsPerMm);
-                page->UpdateObject(vid);
-                if (vid->isSelected) engine.selectionGizmo.RecalculateBounds();
-                engine.isDirty = true;
-                engine.needsFullRebake = true;
-                session.NotifyPageModified(page);
-            };
-            actions.push_back(std::move(act));
-        }
-
-        // ── Action: Open in Native Player (system default video player) ──────
-        {
-            ContextMenuItem act;
-            act.label   = "Open in Native Player";
-            act.icon    = "🎬";
-            act.iconKey = "open_external";
-            act.order   = 150;
-            act.onTrigger = [vid]() {
-                if (!vid->sourceUrl.empty()) {
-                    // SDL_OpenURL handles both file:// paths and http:// URLs
-                    SDL_OpenURL(vid->sourceUrl.c_str());
-                }
-            };
-            actions.push_back(std::move(act));
-        }
-
-        // ── Action: Set as Background / Unlock from Background ───────────────
-        {
-            ContextMenuItem bgAct;
-            if (vid->isSelectable) {
-                bgAct.label   = "Set as Background";
-                bgAct.icon    = "📌";
-                bgAct.iconKey = "pin_background";
-                bgAct.order   = 190;
-                bgAct.isSeparatorBefore = true;
-                bgAct.onTrigger = [vid, page, &engine, &session]() {
-                    vid->isSelectable = 0;
-                    vid->isSelected   = 0;
-                    page->SendToBack(vid->uid);
-                    engine.selectionGizmo.ClearSelection();
-                    engine.isDirty = true;
-                    engine.needsFullRebake = true;
-                    page->isModified = true;
-                    session.NotifyPageModified(page);
-                };
-            } else {
-                bgAct.label   = "Unlock from Background";
-                bgAct.icon    = "🔓";
-                bgAct.iconKey = "unpin_background";
-                bgAct.order   = 190;
-                bgAct.isSeparatorBefore = true;
-                bgAct.onTrigger = [vid, page, &engine, &session]() {
-                    vid->isSelectable = 1;
-                    vid->isSelected   = 1;
-                    engine.selectionGizmo.SetSelectedObjects({vid});
-                    engine.isDirty = true;
-                    engine.needsFullRebake = true;
-                    page->isModified = true;
-                    session.NotifyPageModified(page);
-                };
-            }
-            actions.push_back(std::move(bgAct));
-        }
-    }
-
-    // =========================================================================
-    // 2. VIRTUAL HOOK: Allow object subclass to customize actions
+    // 2. VIRTUAL HOOK: Allow object subclass to customize domain-specific actions
     // =========================================================================
     obj->CustomizeActions(actions);
 

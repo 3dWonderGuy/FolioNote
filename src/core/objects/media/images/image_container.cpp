@@ -7,6 +7,7 @@
 
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/images/image_decoder.hpp"
+#include "core/objects/object_registry.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 
@@ -15,6 +16,21 @@
 #include <SDL3/SDL.h>
 
 namespace Folio {
+
+namespace {
+
+// Static self-registration into ObjectRegistry
+const bool s_imageRegistered = []() {
+    ObjectRegistry::Register<ImageObject>(
+        ObjectType::Image,
+        "ImageObject",
+        "🖼",
+        true
+    );
+    return true;
+}();
+
+} // anonymous namespace
 
 // =============================================================================
 // CONSTRUCTORS

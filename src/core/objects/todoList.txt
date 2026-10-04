@@ -74,8 +74,8 @@ STATUS TAGS:
 --------------------------------------------------------------------------------
 [ ] shape_types.hpp
     - Geometry enum definitions (Rectangle, Ellipse, Triangle, Star, Polygon)
-[ ] path_dasher.hpp
-    - Dash pattern and stroke gap calculation
+[X] path_dasher.hpp (RETIRED: Replaced by unified StrokeOutlineBuilder)
+    - Dash pattern and stroke gap calculation routed through pen engine
 [ ] shape_container.hpp / .cpp
     - World geometry generation and coordinate updates
     - Fill styles (Solid, Gradient, None)
@@ -110,11 +110,8 @@ STATUS TAGS:
     - Selection highlight and cursor blink rendering
 
 
-7. INTERACTIVE & LINKS (src/core/objects/interactive/ & links/)
+7. LINKS (src/core/objects/links/)
 --------------------------------------------------------------------------------
-[ ] interactive_object.hpp / .cpp
-    - Click and hover state machine dispatch
-    - Layer 3 autonomous overlay routing
 [ ] link_object.hpp
     - Hyperlink target parsing (External URL, Internal Page/Notebook UUID)
     - Underline and link tooltip hover rendering

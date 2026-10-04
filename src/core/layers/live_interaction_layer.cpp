@@ -20,6 +20,8 @@
  */
 
 #include "core/layers/live_interaction_layer.hpp"
+#include "core/engine/selection_gizmo.hpp"
+#include "core/engine/canvas_transform.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -32,11 +34,14 @@ LiveInteractionLayer::LiveInteractionLayer() {
 }
 
 bool LiveInteractionLayer::HasActiveInteraction() const noexcept {
-    return m_hasBorrowedStroke ||
+    return m_livePipeline.HasActiveData() ||
+           m_hasBorrowedStroke ||
            m_hasActiveGizmo    ||
+           (m_boundGizmo && m_boundGizmo->HasSelection()) ||
            m_hasActiveLaser    ||
            m_hasActiveText     ||
            m_hasActiveMarquee  ||
+           m_hasActiveEraser   ||
            m_isInking          ||
            m_isLassoing        ||
            (m_customRenderer != nullptr);
@@ -62,7 +67,10 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
     // Pass 5: Marquee Selection Box / Lasso Polygon
     RenderMarquee(ctx, viewport);
 
-    // Pass 6: Custom Tool Callbacks (Alignment snapping lines, custom preview gizmos)
+    // Pass 6: Live Eraser Circular Cursor Reticle (Screen Coordinates)
+    RenderEraser(ctx);
+
+    // Pass 7: Custom Tool Callbacks (Alignment snapping lines, custom preview gizmos)
     if (m_customRenderer) {
         ctx.save();
         m_customRenderer(ctx, viewport);
@@ -74,12 +82,29 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
  * @brief Renders the active in-flight pen stroke in world space.
  *
  * MATHEMATICAL PROCESS:
- * - Maps world coordinates (mm) to screen pixels via `viewport.worldToScreenMatrix`.
- * - Employs round caps (`BL_STROKE_CAP_ROUND`) and round joins (`BL_STROKE_JOIN_ROUND`)
- *   to guarantee continuous, smooth visual curvature before committed stroke tessellation.
+ * - Priority 1: High-Performance Modeled Ribbon Polygon (Google Ink spring-damper physics).
+ *   Fills the 2D extruded polygon contour using non-zero winding rules.
+ * - Priority 2: Fallback for borrowed spans / raw points with round caps & round joins.
  */
 void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& viewport) {
-    // Determine source: borrowed span takes precedence over internal buffer
+    // 1. Primary Vector Inking Engine: Continuous Modeled Ribbon Polygon (Google Ink & Spring Physics)
+    if (m_livePipeline.isStrokeActive) {
+        ctx.save();
+        ctx.set_transform(viewport.worldToScreenMatrix);
+        ctx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
+        ctx.set_fill_style(m_livePipeline.activePenTool.color);
+
+        if (!m_livePipeline.liveStrokeOutline.is_empty()) {
+            ctx.fill_path(m_livePipeline.liveStrokeOutline);
+        }
+        if (!m_livePipeline.predictedStrokeOutline.is_empty()) {
+            ctx.fill_path(m_livePipeline.predictedStrokeOutline);
+        }
+        ctx.restore();
+        return;
+    }
+
+    // 2. Fallback for Borrowed Tool Spans / Direct LivePoint Ingestion
     std::span<const LivePoint> pts;
     BLRgba32 strokeColor;
     double strokeWidthMm = 0.5;
@@ -178,6 +203,13 @@ void LiveInteractionLayer::RenderLaserPointer(BLContext& ctx, const Viewport& vi
  * - Rotation handle: Positioned above Top-Mid by `rotationHandleOffsetPx` with connecting stem.
  */
 void LiveInteractionLayer::RenderGizmo(BLContext& ctx, const Viewport& viewport) {
+    // 1. Direct Bound Application Gizmo Pass (takes precedence)
+    if (m_boundGizmo && m_boundTransform && m_boundGizmo->HasSelection()) {
+        m_boundGizmo->Render(ctx, *m_boundTransform);
+        return;
+    }
+
+    // 2. Fallback Lightweight Gizmo Pass
     if (!m_hasActiveGizmo || m_activeGizmo.targetBounds.IsEmpty()) {
         return;
     }
@@ -285,6 +317,23 @@ void LiveInteractionLayer::RenderTextEditor(BLContext& ctx, const Viewport& view
 void LiveInteractionLayer::RenderMarquee(BLContext& ctx, const Viewport& viewport) {
     // Check borrowed marquee first
     if (m_hasActiveMarquee) {
+        // Direct screen-space rectangular marquee (pixel coordinates)
+        if (m_activeMarquee.isScreenRect) {
+            float bx = (std::min)(m_activeMarquee.screenMinX, m_activeMarquee.screenMaxX);
+            float by = (std::min)(m_activeMarquee.screenMinY, m_activeMarquee.screenMaxY);
+            float bw = std::abs(m_activeMarquee.screenMaxX - m_activeMarquee.screenMinX);
+            float bh = std::abs(m_activeMarquee.screenMaxY - m_activeMarquee.screenMinY);
+
+            ctx.save();
+            ctx.set_fill_style(m_activeMarquee.fillColor);
+            ctx.fill_rect(bx, by, bw, bh);
+            ctx.set_stroke_style(m_activeMarquee.strokeColor);
+            ctx.set_stroke_width(m_activeMarquee.strokeWidthPx);
+            ctx.stroke_rect(bx, by, bw, bh);
+            ctx.restore();
+            return;
+        }
+
         if (m_activeMarquee.isLasso && m_activeMarquee.polygonPoints.size() >= 2) {
             ctx.save();
             ctx.set_transform(viewport.worldToScreenMatrix);
@@ -335,8 +384,76 @@ void LiveInteractionLayer::RenderMarquee(BLContext& ctx, const Viewport& viewpor
     }
 }
 
+/**
+ * @brief Renders the live interactive eraser reticle in screen coordinates.
+ *
+ * Provides visual cues for both:
+ * 1. Stroke Eraser: Crosshair reticle with pink/red accent indicator and center cross line.
+ * 2. Area/Object Eraser: Soft blue circular wash with glowing rim and central precision dot.
+ */
+void LiveInteractionLayer::RenderEraser(BLContext& ctx) {
+    if (!m_hasActiveEraser || !m_activeEraser.isVisible) {
+        return;
+    }
+
+    ctx.save();
+    const float cx = m_activeEraser.screenX;
+    const float cy = m_activeEraser.screenY;
+    const double radiusPx = m_activeEraser.radiusPx;
+
+    if (m_activeEraser.isStrokeEraser) {
+        const double r = (std::max)(4.0, radiusPx);
+        ctx.set_stroke_style(BLRgba32(0xFF, 0x40, 0x81, 0xDD));
+        ctx.set_stroke_width(1.5);
+        ctx.stroke_circle(cx, cy, r);
+
+        ctx.set_fill_style(m_activeEraser.isDown ? BLRgba32(0xFF, 0x40, 0x81, 0x2E) : BLRgba32(0xFF, 0x40, 0x81, 0x12));
+        ctx.fill_circle(cx, cy, r);
+
+        ctx.stroke_line(cx - 3.5, cy, cx + 3.5, cy);
+        ctx.stroke_line(cx, cy - 3.5, cx, cy + 3.5);
+    } else {
+        ctx.set_stroke_style(BLRgba32(0x29, 0xB6, 0xF6, 0xEE));
+        ctx.set_stroke_width(1.5);
+        ctx.stroke_circle(cx, cy, radiusPx);
+
+        ctx.set_fill_style(m_activeEraser.isDown ? BLRgba32(0x29, 0xB6, 0xF6, 0x3A) : BLRgba32(0x29, 0xB6, 0xF6, 0x14));
+        ctx.fill_circle(cx, cy, radiusPx);
+
+        ctx.fill_circle(cx, cy, 1.2, BLRgba32(0x29, 0xB6, 0xF6, 0xFF));
+    }
+    ctx.restore();
+}
+
 // -----------------------------------------------------------------------------
 // Direct Ingestion API (Zero Allocation Runtime Buffer)
+// -----------------------------------------------------------------------------
+// High-Performance Physics Inking API (Google Ink Stroke Modeler)
+// -----------------------------------------------------------------------------
+
+void LiveInteractionLayer::BeginStroke(double worldXMm, double worldYMm, float pressure, double timeSec,
+                                       const PenTool& tool, float zoomScale, float tiltX, float tiltY) {
+    m_livePipeline.BeginStroke(worldXMm, worldYMm, pressure, timeSec, tool, zoomScale, tiltX, tiltY);
+    m_isInking = true;
+}
+
+void LiveInteractionLayer::AddStrokePoint(double worldXMm, double worldYMm, float pressure, double timeSec,
+                                          float zoomScale, float tiltX, float tiltY) {
+    m_livePipeline.AddStrokePoint(worldXMm, worldYMm, pressure, timeSec, zoomScale, tiltX, tiltY);
+}
+
+FinishedStrokeData LiveInteractionLayer::FinishStroke() {
+    m_isInking = false;
+    return m_livePipeline.FinishStroke();
+}
+
+void LiveInteractionLayer::CancelStroke() {
+    m_isInking = false;
+    m_livePipeline.CancelStroke();
+}
+
+// -----------------------------------------------------------------------------
+// Direct Ingestion API (Zero Allocation Fallback / Telemetry Buffer)
 // -----------------------------------------------------------------------------
 
 void LiveInteractionLayer::BeginStroke(const LivePoint& startPoint) {
@@ -423,9 +540,13 @@ std::vector<Point2D> LiveInteractionLayer::FinishLasso() {
 void LiveInteractionLayer::Clear() noexcept {
     m_hasBorrowedStroke = false;
     m_hasActiveGizmo    = false;
+    m_boundGizmo        = nullptr;
+    m_boundTransform    = nullptr;
     m_hasActiveLaser    = false;
     m_hasActiveText     = false;
     m_hasActiveMarquee  = false;
+    m_hasActiveEraser   = false;
+    m_activeEraser.isVisible = false;
     m_isInking          = false;
     m_isLassoing        = false;
     m_internalPoints.clear();

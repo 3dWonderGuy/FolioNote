@@ -435,7 +435,9 @@ public:
                 }
             }
 
-            // Synchronize in-memory global ObjectConfig singleton
+            // Synchronize in-memory global ObjectConfig singleton with loaded constraints and theme
+            objectConfig.isDarkMode = isDarkMode;
+            objectConfig.isCanvasInverted = isCanvasInverted;
             Folio::ObjectConfig::Get() = objectConfig;
 
             isLoaded = true;

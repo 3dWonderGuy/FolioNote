@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file core/objects/attachment_container.hpp
+ * @file core/objects/attachment_container/attachment_container.hpp
  * @brief Canvas object representing a file attachment chip pinned to the canvas.
  * =========================================================================================
  *
@@ -37,7 +37,6 @@
 namespace Folio {
 
 struct ContextMenuItem;
-struct CanvasContext;
 
 /**
  * @brief Fixed-size canvas chip linking to an external or embedded file.
@@ -82,7 +81,19 @@ public:
     // CONSTRUCTORS
     // =========================================================================
 
+    /**
+     * @brief Constructs an uninitialized AttachmentObject chip with MoveOnly gizmo styling.
+     * Dimensions are seeded from ObjectConfig::Get().
+     */
     AttachmentObject();
+
+    /**
+     * @brief Constructs an AttachmentObject configured with path, display label, and embedding mode.
+     * @param[in] path     Filesystem path (absolute for linked files, sidecar-relative for embedded).
+     * @param[in] name     Human-readable display title for the chip.
+     * @param[in] mime     MIME type string (e.g. "application/pdf").
+     * @param[in] embedded True if file is copied into the notebook sidecar bundle.
+     */
     AttachmentObject(const std::string &path, const std::string &name,
                      const std::string &mime = "", bool embedded = false);
 
@@ -90,41 +101,73 @@ public:
     // FILE OPEN & PATH MANAGEMENT
     // =========================================================================
 
+    /// @brief Checks whether the target file currently exists on the local filesystem.
     [[nodiscard]] bool IsFileValid() const noexcept { return isFileValid; }
+
+    /// @brief Updates cached filesystem presence flag.
     void SetFileValid(bool valid) noexcept { isFileValid = valid; }
+
+    /**
+     * @brief Updates target file path and optionally synchronizes displayName with new basename.
+     * @param[in] newPath New filesystem path.
+     * @param[in] updateDisplayName If true, resets displayName to the filename portion of newPath.
+     */
     void SetFilePath(const std::string &newPath, bool updateDisplayName = true);
 
+    /**
+     * @brief Launches the attached file using the OS default application handler.
+     * @return true if launched successfully; false on OS error.
+     */
     bool OpenFile() const;
-    bool LocateAndRelinkFile();
 
-    // Polymorphic interaction hook
-    bool OnPointerClick(const Folio::CanvasContext& ctx) override;
+    /**
+     * @brief Displays an OS file picker dialog to locate and repair a broken file link.
+     * @return true if file was located and re-linked; false if canceled.
+     */
+    bool LocateAndRelinkFile();
 
     // =========================================================================
     // TRANSFORM — Translation Only (Locked Scale & Rotation)
     // =========================================================================
 
+    /**
+     * @brief Applies translation deltas while discarding rotation and scale to enforce fixed chip size.
+     * @param[in] matrix Incoming 2D affine transform.
+     */
     void ApplyTransform(const BLMatrix2D &matrix) override;
-    void BakeTransform() override;
 
-    [[nodiscard]] GizmoStyle GetGizmoStyle() const noexcept override {
-        return GizmoStyle::MoveOnly;
-    }
+    /// @brief Commits active translation deltas into worldX/worldY and resets matrix to identity.
+    void BakeTransform() override;
 
     // =========================================================================
     // RENDERING & LIFECYCLE
     // =========================================================================
 
+    /**
+     * @brief Draws the theme-aware attachment chip into the Blend2D context.
+     * @param[in,out] ctx Target 2D raster context.
+     * @param[in]     viewport Active camera viewport.
+     */
     void Render(BLContext &ctx, const Viewport &viewport) const override;
+
+    /// @brief Creates an exact deep polymorphic copy of this AttachmentObject.
     [[nodiscard]] std::unique_ptr<CanvasObject> Clone() const override;
 
     // =========================================================================
     // CONTEXT MENU & OBJECT ACTIONS
     // =========================================================================
 
+    /**
+     * @brief Appends contextual actions (Open, Re-link, Copy Path, Open Folder) into the right-click menu.
+     * @param[in,out] actions Menu action vector to append context items to.
+     */
     void CustomizeActions(std::vector<Folio::ContextMenuItem> &actions) override;
 
 private:
+    /**
+     * @brief Resolves color-coding for the file extension badge based on extension.
+     * @return BLRgba32 Accent color for the badge strip.
+     */
     BLRgba32 GetTypeColor() const;
 };
 

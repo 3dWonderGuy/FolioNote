@@ -34,8 +34,6 @@ class CanvasObject;
 
 namespace Folio {
 
-class InteractiveObject;
-
 class InteractiveOverlayHost {
 public:
     InteractiveOverlayHost() = default;
@@ -99,7 +97,7 @@ public:
      * @brief Routes SDL3 input events to the currently active interactive overlay.
      *
      * Input Isolation Contract:
-     *   If activeObject is non-null, is an InteractiveObject, and has isInteracting == true:
+     *   If activeObject is non-null, has live overlay, and has IsInteracting() == true:
      *   - Projects its world geometry to current screen pixel bounds.
      *   - Forwards the SDL_Event to overlayInstance->OnInputEvent().
      *   - Returns true if the event was consumed, preventing canvas gizmos, panning,
@@ -118,8 +116,8 @@ public:
     // =========================================================================
 
     /**
-     * @brief Explicitly engages interactive mode on an InteractiveObject.
-     * @param obj The interactive object to focus.
+     * @brief Explicitly engages interactive mode on a CanvasObject.
+     * @param obj The canvas object to focus.
      */
     void SetFocusedObject(CanvasObject* obj);
 
@@ -131,9 +129,21 @@ public:
     /**
      * @brief Gets currently focused interactive object, or nullptr if none.
      */
-    [[nodiscard]] CanvasObject* GetFocusedObject() const noexcept {
-        return focusedObject;
-    }
+    /**
+     * @brief Computes projected integer pixel screen rectangle of a canvas object under the active viewport.
+     *
+     * Mathematical Projection:
+     *   scale = (vp.pixelsPerMm > 0.0) ? (vp.pixelsPerMm * vp.zoom) : vp.zoom;
+     *   screenX = round((obj.worldX - vp.bounds.minX) * scale);
+     *   screenY = round((obj.worldY - vp.bounds.minY) * scale);
+     *   screenW = round(obj.worldWidth * scale);
+     *   screenH = round(obj.worldHeight * scale);
+     *
+     * @param obj CanvasObject providing world-space coordinates and dimensions in millimeters.
+     * @param vp Viewport providing world-to-screen camera origin and scale factors.
+     * @return OverlayRect with integer screen pixel bounds.
+     */
+    [[nodiscard]] static OverlayRect ComputeScreenRect(const CanvasObject& obj, const Viewport& vp) noexcept;
 
 private:
     CanvasObject* focusedObject = nullptr;

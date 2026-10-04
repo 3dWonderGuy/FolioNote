@@ -18,7 +18,9 @@
 #include "core/objects/media/audio/audio_container.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/text/font_manager.hpp"
+#include "core/objects/object_registry.hpp"
 #include "utils/logger.hpp"
+#include <SDL3/SDL.h>
 
 #if defined(FOLIO_HAS_LIBVLC)
 #  if defined(_MSC_VER)
@@ -39,11 +41,34 @@
 namespace Folio {
 
 // =============================================================================
+// OBJECT REGISTRY SELF-REGISTRATION
+// =============================================================================
+
+namespace {
+    /**
+     * @brief Self-registers AudioObject with the global ObjectRegistry.
+     *
+     * General Working Process:
+     * When the translation unit is initialized at runtime, this static constant
+     * invokes ObjectRegistry::Register<AudioObject>() with factory constructor,
+     * human-readable type name, and emoji icon.
+     */
+    [[maybe_unused]] static const bool s_registeredAudio = 
+        ObjectRegistry::Register<AudioObject>(
+            ObjectType::Audio,
+            "AudioObject",
+            "🎵",
+            true
+        );
+}
+
+// =============================================================================
 // CONSTRUCTORS & DESTRUCTOR
 // =============================================================================
 
 AudioObject::AudioObject() {
     type = ObjectType::Audio;
+    gizmoStyle = GizmoStyle::MoveOnly;
     worldWidth = chipW;
     worldHeight = chipH;
     UpdateBounds();
@@ -53,6 +78,7 @@ AudioObject::AudioObject(const std::string& path, const std::string& name, doubl
     : filePath(path), displayName(name), durationSeconds(duration)
 {
     type = ObjectType::Audio;
+    gizmoStyle = GizmoStyle::MoveOnly;
     worldWidth = chipW;
     worldHeight = chipH;
     UpdateBounds();
@@ -71,6 +97,7 @@ AudioObject::AudioObject(const AudioObject& other)
       volume(other.volume)
 {
     type = ObjectType::Audio;
+    gizmoStyle = GizmoStyle::MoveOnly;
     worldWidth = chipW;
     worldHeight = chipH;
     UpdateBounds();
@@ -254,6 +281,74 @@ void AudioObject::UpdateProgress() {
 #endif
 }
 
+void AudioObject::SetVolume(int vol) {
+    volume = std::clamp(vol, 0, 100);
+#if defined(FOLIO_HAS_LIBVLC)
+    if (vlcPlayer) {
+        libvlc_audio_set_volume(static_cast<libvlc_media_player_t*>(vlcPlayer), volume);
+    }
+#endif
+}
+
+void AudioObject::CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) {
+    // ── Action: Play / Pause toggle ───────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label   = isPlaying ? "Pause Audio" : "Play Audio";
+        act.icon    = isPlaying ? "⏸" : "▶";
+        act.iconKey = isPlaying ? "pause" : "play";
+        act.order   = 100;
+        act.isSeparatorBefore = true;
+        act.onTrigger = [this]() {
+            TogglePlay();
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Stop & Rewind ─────────────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label   = "Stop & Rewind";
+        act.icon    = "⏹";
+        act.iconKey = "stop";
+        act.order   = 110;
+        act.onTrigger = [this]() {
+            Stop();
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Mute / Unmute ────────────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label   = (volume == 0) ? "Unmute Audio" : "Mute Audio";
+        act.icon    = (volume == 0) ? "🔇" : "🔊";
+        act.iconKey = (volume == 0) ? "unmute" : "mute";
+        act.order   = 120;
+        act.onTrigger = [this]() {
+            if (volume == 0) {
+                SetVolume(100);
+            } else {
+                SetVolume(0);
+            }
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Open in Native Player ────────────────────────────────────
+    if (!filePath.empty()) {
+        ContextMenuItem act;
+        act.label   = "Open in Default Player";
+        act.icon    = "🎵";
+        act.iconKey = "open_player";
+        act.order   = 130;
+        act.onTrigger = [this]() {
+            SDL_OpenURL(filePath.c_str());
+        };
+        actions.push_back(std::move(act));
+    }
+}
+
 // =============================================================================
 // HIT TESTING & INTERACTION
 // =============================================================================
@@ -290,13 +385,6 @@ bool AudioObject::HandleCanvasClick(double wx, double wy, std::function<void()> 
     return false; // Landed on badge body (allows dragging with selection gizmo)
 }
 
-bool AudioObject::OnPointerClick(const Folio::CanvasContext& ctx) {
-    return HandleCanvasClick(ctx.worldX, ctx.worldY, [&ctx]() {
-        ctx.engine.needsFullRebake = true;
-        ctx.engine.isDirty = true;
-    });
-}
-
 // =============================================================================
 // TRANSFORM & GIZMO INVARIANTS
 // =============================================================================
@@ -318,10 +406,6 @@ void AudioObject::BakeTransform() {
     worldY += transform.m21;
     transform = BLMatrix2D::make_identity();
     UpdateBounds();
-}
-
-GizmoStyle AudioObject::GetGizmoStyle() const noexcept {
-    return GizmoStyle::MoveOnly;
 }
 
 // =============================================================================

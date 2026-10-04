@@ -179,14 +179,6 @@ public:
      */
     void BakeTransform() override;
 
-    /**
-     * @brief Specifies standard 8-point bounding box gizmo interaction for vector ink containers.
-     * @return GizmoStyle::BoundingBox.
-     */
-    [[nodiscard]] GizmoStyle GetGizmoStyle() const noexcept override {
-        return GizmoStyle::BoundingBox;
-    }
-
     // =========================================================================
     // RENDERING & LIFECYCLE
     // =========================================================================

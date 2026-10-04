@@ -9,7 +9,7 @@
 #include "core/document/canvas_page.hpp"
 #include "core/engine/canvas_engine.hpp"
 #include "core/objects/text/text_box.hpp"
-#include "core/objects/attachment_container.hpp"
+#include "core/objects/attachment_container/attachment_container.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 

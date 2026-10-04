@@ -165,13 +165,6 @@ public:
      */
     void BakeTransform() override;
 
-    /**
-     * @brief SmartArrow connectors use a locked TwoPoint gizmo (endpoint handles 0 and 1).
-     */
-    GizmoStyle GetGizmoStyle() const noexcept override {
-        return GizmoStyle::TwoPoint;
-    }
-
     // =========================================================================
     // RENDERING
     // =========================================================================
@@ -181,7 +174,7 @@ public:
      *
      * Supports:
      * - Straight, Curved (Bézier), and Elbow routing styles
-     * - Solid, Dashed, Dotted, and DashDot outline patterns via PathDasher
+     * - Solid, Dashed, Dotted, and DashDot outline patterns via unified StrokeOutlineBuilder
      * - Triangle, Stealth, Open, and Circle arrowheads
      * - Apex tangent offset push to prevent stroke round cap poke-through
      *

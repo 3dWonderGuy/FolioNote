@@ -74,8 +74,8 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
+#include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text/text_box.hpp"
-#include "core/objects/interactive/interactive_object.hpp"
 #include "core/overlay/web_overlay.hpp"
 #include "core/engine/stroke_outline_builder.hpp"
 #include "utils/logger.hpp"
@@ -736,7 +736,7 @@ inline bool HasWindowsClipboardContent() {
  *   Priority 1: "Ink Serialized Format" (ISF) -> native editable InkContainer with vector strokes.
  *   Priority 2: "PNG" -> native ImageObject with full alpha transparency.
  *   Priority 3: CF_DIBV5 / CF_DIB -> synthesized BMP decoded to native ImageObject.
- *   Priority 4: CF_UNICODETEXT -> InteractiveObject (URL) or TextBoxObject.
+ *   Priority 4: CF_UNICODETEXT -> VideoObject (YouTube URL) or TextBoxObject.
  *
  * @param session Active DocumentSession.
  * @param engine Active CanvasEngine.
@@ -915,27 +915,26 @@ inline bool IngestFromWindowsClipboard(DocumentSession& session,
                     const bool isHttp = (clipText.rfind("http://", 0) == 0 || clipText.rfind("https://", 0) == 0);
                     const bool isYouTube = (clipText.find("youtube.com") != std::string::npos || clipText.find("youtu.be") != std::string::npos);
 
-                    if (isYouTube || isHttp) {
-                        auto overlay = std::make_unique<WebOverlay>(clipText, isYouTube ? "YouTube Video" : "Web Embed", engine.sdlWindow);
+                    if (isYouTube) {
                         const double cardW = 160.0;
-                        const double cardH = isYouTube ? 95.0 : 110.0;
-                        auto interactiveObj = std::make_shared<InteractiveObject>(
-                            targetWorldX - cardW * 0.5,
-                            targetWorldY - cardH * 0.5,
-                            cardW, cardH,
-                            std::move(overlay)
+                        const double cardH = 95.0;
+                        auto vid = std::make_shared<VideoObject>(
+                            clipText, "YouTube Video", cardW, cardH
                         );
-                        interactiveObj->uid = UIDGenerator::Next();
-                        interactiveObj->guuid = GUIDGenerator::GenerateV4();
-                        interactiveObj->isSelected = 1;
+                        vid->uid = UIDGenerator::Next();
+                        vid->guuid = GUIDGenerator::GenerateV4();
+                        vid->worldX = targetWorldX - cardW * 0.5;
+                        vid->worldY = targetWorldY - cardH * 0.5;
+                        vid->UpdateBounds();
+                        vid->isSelected = 1;
 
-                        session.AddObject(interactiveObj);
-                        outCreated.push_back(interactiveObj);
-                        engine.selectionGizmo.SetSelectedObjects({interactiveObj});
+                        session.AddObject(vid);
+                        outCreated.push_back(vid);
+                        engine.selectionGizmo.SetSelectedObjects({vid});
                         engine.needsFullRebake = true;
                         engine.isDirty = true;
                         ::CloseClipboard();
-                        LOG_INFO(General, "Ingested URL from Windows clipboard as InteractiveObject: " + clipText);
+                        LOG_INFO(General, "Ingested YouTube URL from Windows clipboard as VideoObject: " + clipText);
                         return true;
                     }
 

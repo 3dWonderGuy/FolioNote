@@ -62,6 +62,7 @@ public:
 
     LinkObject() {
         type = ObjectType::Link;
+        gizmoStyle = GizmoStyle::MoveOnly;
         worldWidth = chipMinW;
         worldHeight = chipH;
         UpdateBounds();
@@ -71,6 +72,7 @@ public:
         : url(linkUrl), displayText(label)
     {
         type = ObjectType::Link;
+        gizmoStyle = GizmoStyle::MoveOnly;
         UpdateBounds();
     }
 
@@ -174,13 +176,6 @@ public:
         worldY += transform.m21;
         transform = BLMatrix2D::make_identity();
         UpdateBounds();
-    }
-
-    /**
-     * @brief Web bookmark cards are fixed size and use a locked MoveOnly gizmo.
-     */
-    GizmoStyle GetGizmoStyle() const noexcept override {
-        return GizmoStyle::MoveOnly;
     }
 
     // =========================================================================

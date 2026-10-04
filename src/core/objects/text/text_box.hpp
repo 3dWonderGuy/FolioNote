@@ -139,8 +139,6 @@ public:
      */
     void RenderWithEditor(BLContext& ctx, const Viewport& viewport, const TextEditorState& editor) const;
 
-    bool OnPointerClick(const Folio::CanvasContext& ctx) override;
-
     std::unique_ptr<CanvasObject> Clone() const override;
 };
 

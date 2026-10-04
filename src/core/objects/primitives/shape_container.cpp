@@ -28,8 +28,9 @@
 #include <algorithm>
 
 #include "core/objects/primitives/shape_container.hpp"
-#include "core/objects/primitives/path_dasher.hpp"
+#include "core/engine/stroke_outline_builder.hpp"
 #include "core/engine/canvas_transform.hpp"  // for Viewport
+#include "core/objects/object_registry.hpp"
 
 // Prevent MSVC min/max macro conflicts with <algorithm>
 #ifndef NOMINMAX
@@ -46,6 +47,28 @@
 #include <imgui.h>
 
 namespace Folio {
+
+// =============================================================================
+// OBJECT REGISTRY SELF-REGISTRATION
+// =============================================================================
+
+namespace {
+    /**
+     * @brief Self-registers ShapeObject with the global ObjectRegistry.
+     *
+     * General Working Process:
+     * When the translation unit is initialized at runtime, this static constant
+     * invokes ObjectRegistry::Register<ShapeObject>() with factory constructor,
+     * human-readable type name, and emoji icon.
+     */
+    [[maybe_unused]] static const bool s_registeredShape = 
+        ObjectRegistry::Register<ShapeObject>(
+            ObjectType::Shape,
+            "ShapeObject",
+            "📐",
+            true
+        );
+}
 
 // =============================================================================
 // 1. CONSTRUCTORS
@@ -236,11 +259,235 @@ void ShapeObject::BuildPath(BLPath& path) const {
             WaveShapeGenerator::BuildRightTriangleWavePath(path, x, y, w, h, cycles, rightAngleOnRight);
             break;
         }
-        // -----------------------------------------------------------------------
-        default:
-            // Unknown type: fall back to rectangle bounding box
+        default: {
             path.add_rect(BLRect(x, y, w, h));
             break;
+        }
+    }
+}
+
+// =============================================================================
+// 2b. PERIMETER VERTEX EXTRACTION (Unified Stroke Pipeline)
+// =============================================================================
+
+/**
+ * @brief Extracts minimal canonical perimeter vertices to route through the unified pen/stroke generator.
+ *
+ * Mathematical Algorithm & Working Process:
+ * Closed vector geometry is converted into a sequence of ordered StrokeOutlineBuilder::InputPoint
+ * chords with uniform effective stroke width:
+ * - Triangles: Exactly 4 vertices (3 corners + wrap-around start).
+ * - Rectangles: Exactly 5 vertices (4 corners + wrap-around start).
+ * - Regular Polygons / Stars: N corners with radial trigonometric offsets.
+ * - Rounded Rectangles / Ellipses: Smoothly sampled angular chords.
+ *
+ * Routing these through StrokeOutlineBuilder guarantees identical dash cadence,
+ * dot spacing, and antialiased round caps between shapes and freehand pen strokes
+ * without redundant dasher utilities.
+ *
+ * @param outPoints Output vector receiving ordered perimeter vertices.
+ * @param effWidth Scaled stroke thickness in world millimeters.
+ */
+void ShapeObject::GetPerimeterPoints(std::vector<StrokeOutlineBuilder::InputPoint>& outPoints, double effWidth) const {
+    outPoints.clear();
+    const double x = worldX;
+    const double y = worldY;
+    const double w = (std::max)(worldWidth,  0.01);
+    const double h = (std::max)(worldHeight, 0.01);
+    const float wF = static_cast<float>(effWidth);
+
+    auto addPt = [&](double px, double py) {
+        outPoints.push_back({ px, py, wF });
+    };
+
+    switch (shapeType) {
+        case ShapeType::Rectangle: {
+            addPt(x, y);
+            addPt(x + w, y);
+            addPt(x + w, y + h);
+            addPt(x, y + h);
+            addPt(x, y);
+            break;
+        }
+        case ShapeType::RoundedRectangle: {
+            double r = (std::min)({ cornerRadius, w * 0.5, h * 0.5 });
+            const int arcSteps = 6;
+            // Top edge
+            addPt(x + r, y);
+            addPt(x + w - r, y);
+            // Top-right corner
+            for (int i = 1; i <= arcSteps; ++i) {
+                double a = -M_PI * 0.5 + (M_PI * 0.5) * (static_cast<double>(i) / arcSteps);
+                addPt(x + w - r + r * std::cos(a), y + r + r * std::sin(a));
+            }
+            // Right edge
+            addPt(x + w, y + h - r);
+            // Bottom-right corner
+            for (int i = 1; i <= arcSteps; ++i) {
+                double a = 0.0 + (M_PI * 0.5) * (static_cast<double>(i) / arcSteps);
+                addPt(x + w - r + r * std::cos(a), y + h - r + r * std::sin(a));
+            }
+            // Bottom edge
+            addPt(x + r, y + h);
+            // Bottom-left corner
+            for (int i = 1; i <= arcSteps; ++i) {
+                double a = M_PI * 0.5 + (M_PI * 0.5) * (static_cast<double>(i) / arcSteps);
+                addPt(x + r + r * std::cos(a), y + h - r + r * std::sin(a));
+            }
+            // Left edge
+            addPt(x, y + r);
+            // Top-left corner
+            for (int i = 1; i <= arcSteps; ++i) {
+                double a = M_PI + (M_PI * 0.5) * (static_cast<double>(i) / arcSteps);
+                addPt(x + r + r * std::cos(a), y + r + r * std::sin(a));
+            }
+            break;
+        }
+        case ShapeType::Circle:
+        case ShapeType::Ellipse: {
+            double cx = x + w * 0.5;
+            double cy = y + h * 0.5;
+            double rx = (shapeType == ShapeType::Circle) ? (std::min)(w, h) * 0.5 : w * 0.5;
+            double ry = (shapeType == ShapeType::Circle) ? (std::min)(w, h) * 0.5 : h * 0.5;
+            const int steps = 40;
+            for (int i = 0; i <= steps; ++i) {
+                double a = (2.0 * M_PI * i) / steps;
+                addPt(cx + rx * std::cos(a), cy + ry * std::sin(a));
+            }
+            break;
+        }
+        case ShapeType::Triangle: {
+            addPt(x + w * 0.5, y);
+            addPt(x + w, y + h);
+            addPt(x, y + h);
+            addPt(x + w * 0.5, y);
+            break;
+        }
+        case ShapeType::RightTriangle: {
+            addPt(x, y + h);
+            addPt(x, y);
+            addPt(x + w, y + h);
+            addPt(x, y + h);
+            break;
+        }
+        case ShapeType::Diamond: {
+            addPt(x + w * 0.5, y);
+            addPt(x + w, y + h * 0.5);
+            addPt(x + w * 0.5, y + h);
+            addPt(x, y + h * 0.5);
+            addPt(x + w * 0.5, y);
+            break;
+        }
+        case ShapeType::RegularPolygon: {
+            int sides = std::clamp(static_cast<int>(std::round(param1)), 3, 32);
+            double cx = x + w * 0.5;
+            double cy = y + h * 0.5;
+            double rx = w * 0.5;
+            double ry = h * 0.5;
+            double step = (2.0 * M_PI) / sides;
+            double start = -M_PI * 0.5;
+            for (int i = 0; i <= sides; ++i) {
+                double a = start + (i % sides) * step;
+                addPt(cx + std::cos(a) * rx, cy + std::sin(a) * ry);
+            }
+            break;
+        }
+        case ShapeType::Star: {
+            int points = 5;
+            double cx = x + w * 0.5;
+            double cy = y + h * 0.5;
+            double rOuter = (std::min)(w, h) * 0.5;
+            double rInner = rOuter * param2;
+            double step = M_PI / points;
+            double start = -M_PI * 0.5;
+            for (int i = 0; i <= points * 2; ++i) {
+                double r = (i % 2 == 0) ? rOuter : rInner;
+                double a = start + (i % (points * 2)) * step;
+                addPt(cx + std::cos(a) * r, cy + std::sin(a) * r);
+            }
+            break;
+        }
+        case ShapeType::Arrow: {
+            double shaftTop = y + h * 0.25;
+            double shaftBot = y + h * 0.75;
+            double headBase = x + w * 0.6;
+            addPt(x, shaftTop);
+            addPt(headBase, shaftTop);
+            addPt(headBase, y);
+            addPt(x + w, y + h * 0.5);
+            addPt(headBase, y + h);
+            addPt(headBase, shaftBot);
+            addPt(x, shaftBot);
+            addPt(x, shaftTop);
+            break;
+        }
+        case ShapeType::DoubleArrow: {
+            double shaftTop = y + h * 0.25;
+            double shaftBot = y + h * 0.75;
+            double head1 = x + w * 0.35;
+            double head2 = x + w * 0.65;
+            addPt(x, y + h * 0.5);
+            addPt(head1, y);
+            addPt(head1, shaftTop);
+            addPt(head2, shaftTop);
+            addPt(head2, y);
+            addPt(x + w, y + h * 0.5);
+            addPt(head2, y + h);
+            addPt(head2, shaftBot);
+            addPt(head1, shaftBot);
+            addPt(head1, y + h);
+            addPt(x, y + h * 0.5);
+            break;
+        }
+        case ShapeType::Heart: {
+            double cx = x + w * 0.5;
+            double topY = y + h * 0.3;
+            const int steps = 24;
+            for (int i = 0; i <= steps; ++i) {
+                double t = static_cast<double>(i) / steps;
+                double u = 1.0 - t;
+                double p0x = cx, p0y = y + h;
+                double p1x = x - w * 0.1, p1y = y + h * 0.5;
+                double p2x = x, p2y = y;
+                double p3x = cx, p3y = topY;
+                double px = u*u*u*p0x + 3*u*u*t*p1x + 3*u*t*t*p2x + t*t*t*p3x;
+                double py = u*u*u*p0y + 3*u*u*t*p1y + 3*u*t*t*p2y + t*t*t*p3y;
+                addPt(px, py);
+            }
+            for (int i = 1; i <= steps; ++i) {
+                double t = static_cast<double>(i) / steps;
+                double u = 1.0 - t;
+                double p0x = cx, p0y = topY;
+                double p1x = x + w, p1y = y;
+                double p2x = x + w * 1.1, p2y = y + h * 0.5;
+                double p3x = cx, p3y = y + h;
+                double px = u*u*u*p0x + 3*u*u*t*p1x + 3*u*t*t*p2x + t*t*t*p3x;
+                double py = u*u*u*p0y + 3*u*u*t*p1y + 3*u*t*t*p2y + t*t*t*p3y;
+                addPt(px, py);
+            }
+            break;
+        }
+        case ShapeType::SineWave:
+        case ShapeType::SquareWave:
+        case ShapeType::TriangleWave:
+        case ShapeType::RightTriangleWave: {
+            BLPath wavePath;
+            BuildPath(wavePath);
+            BLPathView view = wavePath.view();
+            for (size_t i = 0; i < view.size; ++i) {
+                addPt(view.vertex_data[i].x, view.vertex_data[i].y);
+            }
+            break;
+        }
+        default: {
+            BLPath fallbackPath;
+            BuildPath(fallbackPath);
+            BLPathView view = fallbackPath.view();
+            for (size_t i = 0; i < view.size; ++i) {
+                addPt(view.vertex_data[i].x, view.vertex_data[i].y);
+            }
+            break;
+        }
     }
 }
 
@@ -581,9 +828,18 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
         if (outlineType == ShapeOutlineType::Solid) {
             ctx.stroke_path(path);
         } else {
-            BLPath dashedPath;
-            PathDasher::BuildDashedPath(path, dashedPath, outlineType, effWidth);
-            ctx.stroke_path(dashedPath);
+            std::vector<StrokeOutlineBuilder::InputPoint> perimPts;
+            GetPerimeterPoints(perimPts, effWidth);
+            if (!perimPts.empty()) {
+                BLPath patternOutline = StrokeOutlineBuilder::BuildOutline(
+                    perimPts,
+                    CapType::Round,
+                    StrokeOutlineBuilder::MapShapeOutlineType(outlineType),
+                    true // isClosed
+                );
+                ctx.set_fill_style(solidStroke);
+                ctx.fill_path(patternOutline);
+            }
         }
 
         ctx.restore();

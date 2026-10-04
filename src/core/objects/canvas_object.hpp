@@ -7,8 +7,8 @@
 #include "core/spatial/aabb.hpp"
 #include "core/spatial/aabb_utils.hpp"
 #include "core/engine/gizmo_types.hpp"
-#include "core/objects/canvas_context.hpp"
 #include "core/engine/canvas_transform.hpp"
+#include "core/objects/object_config.hpp"
 
 namespace Folio {
 struct ContextMenuItem;
@@ -58,6 +58,7 @@ public:
 
     int32_t zOrder = 1;                                 // Stacking order (higher = foreground)
     float opacity = 1.0f;                               // Global alpha multiplier [0.0, 1.0]
+    GizmoStyle gizmoStyle = GizmoStyle::BoundingBox;    // Manipulation handle configuration (BoundingBox, TwoPoint, MoveOnly, None)
 
     // Packed state bitfields (1 byte total)
     uint8_t isVisible    : 1 = 1;  // False skips rendering passes
@@ -92,39 +93,94 @@ public:
     // Returns const pointer to the hosted Layer 3 overlay interface.
     [[nodiscard]] virtual const Folio::IInteractiveOverlay* GetOverlay() const noexcept { return nullptr; }
 
+    /**
+     * @brief Queries whether this canvas object is actively receiving interactive input.
+     * @return true if currently focused for interactive input; false otherwise.
+     */
+    [[nodiscard]] virtual bool IsInteracting() const noexcept { return false; }
+
+    /**
+     * @brief Sets whether this canvas object is actively receiving interactive input.
+     * @param interacting true to activate interactive input routing; false to deactivate.
+     */
+    virtual void SetInteracting(bool interacting) noexcept {}
+
     // =========================================================================
-    // BOUNDS & SPATIAL
+    // BOUNDS & SPATIAL QUERIES
     // =========================================================================
 
-    // Recalculates the world-space AABB incorporating the active transform.
+    /**
+     * @brief Recalculates the world-space AABB incorporating the active affine transform.
+     *
+     * MATHEMATICAL PROCESS:
+     * Transforms the four untransformed rectangle corners [ (worldX, worldY),
+     * (worldX + worldWidth, worldY), (worldX + worldWidth, worldY + worldHeight),
+     * (worldX, worldY + worldHeight) ] by `transform` (2x3 affine matrix), then computes
+     * the axis-aligned envelope [minX, minY, maxX, maxY].
+     */
     virtual void UpdateBounds() {
         bounds = Folio::AABBUtils::ComputeTransformedBounds(worldX, worldY, worldWidth, worldHeight, transform);
     }
 
-    // Tests if a world-space point intersects the object's boundary.
+    /**
+     * @brief Tests if a world-space point (x, y) intersects the object's boundary.
+     *
+     * Default implementation performs an AABB bounding check. Derived classes with
+     * non-rectangular geometry (e.g. SmartArrow, Shape, Ink) override this for tight geometry testing.
+     *
+     * @param x World X coordinate in millimeters.
+     * @param y World Y coordinate in millimeters.
+     * @return true if point is inside object boundary; false otherwise.
+     */
     [[nodiscard]] virtual bool HitTest(double x, double y) const {
         return bounds.Contains(x, y);
     }
 
-    // Tests if a world-space circle (stylus tip, touch, or eraser) intersects the object.
+    /**
+     * @brief Tests if a world-space circle (stylus tip, touch contact, or eraser reticle) intersects this object.
+     *
+     * MATHEMATICAL PROCESS:
+     * Clamps circle center (cx, cy) to closest point on bounds [minX..maxX, minY..maxY],
+     * then verifies if squared Euclidean distance <= radiusMm * radiusMm.
+     *
+     * @param cx Circle center X in millimeters.
+     * @param cy Circle center Y in millimeters.
+     * @param radiusMm Radius of intersection circle in millimeters.
+     * @return true if circle overlaps or encloses any part of this object.
+     */
     [[nodiscard]] virtual bool HitTestCircle(double cx, double cy, double radiusMm) const {
         return Folio::AABBUtils::IntersectsCircle(bounds, cx, cy, radiusMm);
     }
 
-    // Retrieves the cached world-space axis-aligned bounding box.
+    /// @brief Retrieves the cached world-space axis-aligned bounding box.
     [[nodiscard]] const AABB& GetAABB() const noexcept { return bounds; }
 
     // =========================================================================
     // GEOMETRY & TRANSFORMS
     // =========================================================================
 
-    // Post-multiplies a transformation matrix and refreshes bounds.
+    /**
+     * @brief Post-multiplies a transformation matrix and refreshes cached spatial bounds.
+     *
+     * MATHEMATICAL PROCESS:
+     * Performs affine matrix multiplication: `transform = transform * matrix`.
+     * Used during interactive gizmo manipulation (translation, scaling, rotation).
+     *
+     * @param matrix 2D affine transformation matrix to apply.
+     */
     virtual void ApplyTransform(const BLMatrix2D& matrix) {
         transform.post_transform(matrix);
         UpdateBounds();
     }
 
-    // Commits accumulated matrix into intrinsic dimensions and resets transform to identity.
+    /**
+     * @brief Commits accumulated affine transform into intrinsic dimensions and resets transform to identity.
+     *
+     * MATHEMATICAL PROCESS:
+     * For pure translations and non-rotated scalings, updates (worldX, worldY, worldWidth, worldHeight)
+     * directly and resets `transform` to BLMatrix2D::make_identity(). For rotated objects,
+     * retains rotation in matrix to prevent skew distortion.
+     */
     virtual void BakeTransform() {
         if (Folio::AABBUtils::BakeTransformedRect(worldX, worldY, worldWidth, worldHeight, transform)) {
             UpdateBounds();
@@ -135,38 +191,51 @@ public:
     // RENDERING & LIFECYCLE
     // =========================================================================
 
-    // Draws the object to the target Blend2D context relative to viewport settings.
+    /**
+     * @brief Draws the object into the target Blend2D context relative to viewport settings.
+     *
+     * @param ctx Target Blend2D drawing context (e.g. Layer 1 baked layer buffer).
+     * @param viewport Active canvas viewport supplying camera world-to-screen transforms and scale factors.
+     */
     virtual void Render(BLContext& ctx, const Viewport& viewport) const = 0;
 
-    // Produces a deep polymorphic duplicate of this object.
+    /// @brief Produces a deep polymorphic duplicate of this object.
     [[nodiscard]] virtual std::unique_ptr<CanvasObject> Clone() const = 0;
 
-    // Returns the manipulation gizmo configuration (e.g. 8-point box, two-point).
-    [[nodiscard]] virtual GizmoStyle GetGizmoStyle() const noexcept {
-        return GizmoStyle::BoundingBox;
+    /// @brief Returns the manipulation gizmo configuration (e.g. 8-point box, two-point, move-only, none).
+    [[nodiscard]] GizmoStyle GetGizmoStyle() const noexcept {
+        return gizmoStyle;
     }
 
-    // Appends domain-specific actions into the right-click context menu.
+    /**
+     * @brief Appends domain-specific action items into the right-click context menu.
+     *
+     * Derived objects override this to inject contextual operations (e.g., Relink File,
+     * Open With Default App, Toggle Playback, Change Shape Type).
+     *
+     * @param[in,out] actions Menu action vector to append context items to.
+     */
     virtual void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) {}
 
     // =========================================================================
-    // POLYMORPHIC INTERACTION HOOKS
+    // CONFIGURATION & GLOBAL SETTINGS ACCESS
     // =========================================================================
 
     /**
-     * @brief Polymorphic pointer click interaction hook.
-     *
-     * GENERAL WORKING PROCESS:
-     * Dispatched by input arbiters (such as InputStateMachine) when a pointer click
-     * or double-click lands within this object's hit boundary. Derived objects override
-     * this method to execute actions (toggling media playback, launching external attachments,
-     * activating text editing) using the injected subsystems rather than requiring downward casts.
-     *
-     * @param ctx Unified dependency injection context containing injected managers and click telemetry.
-     * @return true if the event was consumed and handled; false to fall through to default canvas selection.
+     * @brief Direct zero-overhead access to centralized global settings, theme, and geometry constraints.
+     * Synchronized bidirectionally with SettingsManager.
+     * @return Const reference to active ObjectConfig singleton.
      */
-    virtual bool OnPointerClick(const Folio::CanvasContext& ctx) {
-        return false;
+    [[nodiscard]] static const Folio::ObjectConfig& GetConfig() noexcept {
+        return Folio::ObjectConfig::Get();
+    }
+
+    /**
+     * @brief Mutable accessor for configuration synchronization.
+     * @return Mutable reference to active ObjectConfig singleton.
+     */
+    [[nodiscard]] static Folio::ObjectConfig& GetMutableConfig() noexcept {
+        return Folio::ObjectConfig::Get();
     }
 };
 

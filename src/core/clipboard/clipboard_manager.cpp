@@ -20,7 +20,7 @@
  *    - If internal package is available, pastes clones centered at target world coordinates.
  *    - Else if OS clipboard has an image (PNG/JPEG/BMP/WEBP), creates an ImageObject.
  *    - Else if OS clipboard has text:
- *        * Checks for YouTube / Web URLs -> creates VideoObject or InteractiveObject.
+ *        * Checks for YouTube URLs -> creates VideoObject.
  *        * Checks for audio/video file paths -> creates AudioObject or VideoObject.
  *        * Falls back to TextBoxObject with the plain text.
  */
@@ -42,7 +42,6 @@
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/media/audio/audio_container.hpp"
-#include "core/objects/interactive/interactive_object.hpp"
 #include "core/overlay/web_overlay.hpp"
 #include "utils/logger.hpp"
 #include "utils/guid_generator.hpp"
@@ -307,27 +306,26 @@ std::vector<std::shared_ptr<CanvasObject>> ClipboardManager::Paste(DocumentSessi
                 bool isHttp = (clipText.rfind("http://", 0) == 0 || clipText.rfind("https://", 0) == 0);
                 bool isYouTube = (clipText.find("youtube.com") != std::string::npos || clipText.find("youtu.be") != std::string::npos);
 
-                if (isYouTube || isHttp) {
-                    // Create an InteractiveObject with WebOverlay
-                    auto overlay = std::make_unique<Folio::WebOverlay>(clipText, isYouTube ? "YouTube Video" : "Web Embed", engine.sdlWindow);
+                if (isYouTube) {
+                    // Create a VideoObject for YouTube URLs
                     double cardW = 160.0;
-                    double cardH = isYouTube ? 95.0 : 110.0;
-                    auto interactiveObj = std::make_shared<Folio::InteractiveObject>(
-                        targetWorldX - cardW * 0.5,
-                        targetWorldY - cardH * 0.5,
-                        cardW, cardH,
-                        std::move(overlay)
+                    double cardH = 95.0;
+                    auto vid = std::make_shared<Folio::VideoObject>(
+                        clipText, "YouTube Video", cardW, cardH
                     );
-                    interactiveObj->uid = UIDGenerator::Next();
-                    interactiveObj->guuid = GUIDGenerator::GenerateV4();
-                    interactiveObj->isSelected = 1;
+                    vid->uid = UIDGenerator::Next();
+                    vid->guuid = GUIDGenerator::GenerateV4();
+                    vid->worldX = targetWorldX - cardW * 0.5;
+                    vid->worldY = targetWorldY - cardH * 0.5;
+                    vid->UpdateBounds();
+                    vid->isSelected = 1;
 
-                    session.AddObject(interactiveObj);
-                    createdObjects.push_back(interactiveObj);
-                    engine.selectionGizmo.SetSelectedObjects({interactiveObj});
+                    session.AddObject(vid);
+                    createdObjects.push_back(vid);
+                    engine.selectionGizmo.SetSelectedObjects({vid});
                     engine.needsFullRebake = true;
                     engine.isDirty = true;
-                    LOG_INFO(General, "Pasted web URL as InteractiveObject: " + clipText);
+                    LOG_INFO(General, "Pasted YouTube URL as VideoObject: " + clipText);
                     return createdObjects;
                 }
 
@@ -524,11 +522,6 @@ std::string ClipboardManager::ExtractPlainText(const std::vector<std::shared_ptr
         } else if (auto aud = std::dynamic_pointer_cast<AudioObject>(obj)) {
             if (!text.empty()) text += "\n";
             text += aud->filePath;
-        } else if (auto io = std::dynamic_pointer_cast<InteractiveObject>(obj)) {
-            if (auto web = dynamic_cast<WebOverlay*>(io->GetOverlay())) {
-                if (!text.empty()) text += "\n";
-                text += web->GetUrl();
-            }
         }
     }
     return text;

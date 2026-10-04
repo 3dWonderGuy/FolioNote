@@ -23,6 +23,7 @@ enum class FolioErrorCode : uint32_t {
     SysDirectoryCreateFailed   = 1010, ///< Failed to create directory hierarchy
     SysDirectoryIterateFailed  = 1011, ///< Directory iterator failed or path inaccessible
     SysFileDeleteFailed        = 1012, ///< Failed to delete file or directory tree
+    SysDiskFull                = 1013, ///< Disk is full or out of space
 
     // 1050 - 1099: Concurrency & ThreadPool
     ThreadPoolShuttingDown     = 1050, ///< Enqueue rejected because pool is shutting down
@@ -100,6 +101,7 @@ inline constexpr const char* FolioErrorCodeToString(FolioErrorCode code) noexcep
         case FolioErrorCode::SysDirectoryCreateFailed: return "SysDirectoryCreateFailed";
         case FolioErrorCode::SysDirectoryIterateFailed:return "SysDirectoryIterateFailed";
         case FolioErrorCode::SysFileDeleteFailed:      return "SysFileDeleteFailed";
+        case FolioErrorCode::SysDiskFull:              return "SysDiskFull";
         case FolioErrorCode::ThreadPoolShuttingDown:   return "ThreadPoolShuttingDown";
         case FolioErrorCode::ThreadPoolWorkerException:return "ThreadPoolWorkerException";
         case FolioErrorCode::ThreadPoolInitFailed:     return "ThreadPoolInitFailed";

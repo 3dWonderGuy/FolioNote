@@ -20,12 +20,11 @@
 #include "core/objects/primitives/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
-#include "core/objects/attachment_container.hpp"
+#include "core/objects/attachment_container/attachment_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/objects/text/text_editor_state.hpp"
 #include "core/overlay/interactive_overlay_host.hpp"
 #include "core/overlay/web_overlay.hpp"
-#include "core/objects/interactive/interactive_object.hpp"
 #include "core/storage/pdf_storage.hpp"
 #include "core/engine/canvas_transform.hpp"
 #include "core/layers/layer_compositor_manager.hpp"
@@ -412,7 +411,8 @@ public:
 
         auto& liveInteraction = layerCompositor.GetLiveInteractionLayer();
         liveInteraction.SetPenStyle(tool.color.value, tool.widthMm > 0.0f ? tool.widthMm : tool.baseSize);
-        liveInteraction.BeginStroke(Folio::LivePoint{worldMm.x, worldMm.y, pressure, static_cast<uint64_t>(timeSec * 1000.0)});
+        liveInteraction.BeginStroke(worldMm.x, worldMm.y, pressure, timeSec, tool,
+                                   static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
 
         isDirty = true;
     }
@@ -427,7 +427,9 @@ public:
             lastInkingWorldMm = worldMm;
         }
 
-        layerCompositor.GetLiveInteractionLayer().AppendPoint(Folio::LivePoint{worldMm.x, worldMm.y, pressure, static_cast<uint64_t>(timeSec * 1000.0)});
+        layerCompositor.GetLiveInteractionLayer().AddStrokePoint(
+            worldMm.x, worldMm.y, pressure, timeSec,
+            static_cast<float>(transform.GetEffectiveScale()), tiltX, tiltY);
 
         isDirty = true;
     }
@@ -436,68 +438,29 @@ public:
      * @brief Finalizes active in-flight live stroke and commits persistent geometry into DocumentSession.
      *
      * STROKE DATA PIPELINE & COMMITTING:
-     * 1. Retrieves finalized LivePoint records from `layerCompositor.GetLiveInteractionLayer().FinalizeStroke()`.
-     * 2. Synthesizes pressure-modulated `Segment1D` records matching the active PenTool settings.
-     * 3. Constructs closed vector outline polygon via `StrokeOutlineBuilder::BuildOutline`.
-     * 4. Dispatches the finished stroke data to `session.CommitStroke(std::move(data), tool)`.
-     * 5. Invalidates the Layer 1 baked surface cache for immediate re-baking.
+     * 1. Retrieves finalized FinishedStrokeData directly from `layerCompositor.GetLiveInteractionLayer().FinishStroke()`.
+     *    Contains the exact smoothed, pressure-modulated 2D ribbon polygon and continuous segments solved by Google Ink.
+     * 2. Dispatches the finished stroke data to `session.CommitStroke(std::move(data), tool)`.
+     * 3. Invalidates the Layer 1 baked surface cache for immediate seamless re-baking with zero visual snapping.
      */
     void OnPointerUp(DocumentSession& session, const PenTool& tool) {
         isCurrentlyInking = false;
-        std::vector<Folio::LivePoint> livePoints = layerCompositor.GetLiveInteractionLayer().FinalizeStroke();
+        FinishedStrokeData data = layerCompositor.GetLiveInteractionLayer().FinishStroke();
 
         isDirty = true;
         needsObjectRebake = true;  // Only the newly added container needs re-stroking, background is unchanged
 
-        if (!livePoints.empty()) {
-            float strokeWidth = static_cast<float>(tool.widthMm > 0.0f ? tool.widthMm : tool.baseSize);
-            if (strokeWidth <= 0.0f) strokeWidth = 0.5f;
-
-            FinishedStrokeData data;
-            data.rawPoints.reserve(livePoints.size());
-            for (const auto& pt : livePoints) {
-                data.rawPoints.push_back(Point2D{ pt.worldX, pt.worldY });
-            }
-
-            if (livePoints.size() == 1) {
-                Segment1D seg;
-                seg.p0 = Point2D{ livePoints[0].worldX, livePoints[0].worldY };
-                seg.p1 = Point2D{ livePoints[0].worldX + 0.01, livePoints[0].worldY };
-                seg.width = strokeWidth * std::max(0.1f, livePoints[0].pressure);
-                data.liveSegments.push_back(seg);
-            } else {
-                data.liveSegments.reserve(livePoints.size() - 1);
-                for (size_t i = 0; i + 1 < livePoints.size(); ++i) {
-                    Segment1D seg;
-                    seg.p0 = Point2D{ livePoints[i].worldX, livePoints[i].worldY };
-                    seg.p1 = Point2D{ livePoints[i + 1].worldX, livePoints[i + 1].worldY };
-                    seg.width = strokeWidth * std::max(0.1f, livePoints[i + 1].pressure);
-                    data.liveSegments.push_back(seg);
-                }
-            }
-
-            // Build outline polygon for closed rendering and geometry
-            std::vector<StrokeOutlineBuilder::InputPoint> pts;
-            pts.reserve(data.liveSegments.size() + 1);
-            pts.push_back({ data.liveSegments[0].p0.x, data.liveSegments[0].p0.y, data.liveSegments[0].width });
-            for (const auto& s : data.liveSegments) {
-                pts.push_back({ s.p1.x, s.p1.y, s.width });
-            }
-            data.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, tool.capType, tool.strokePattern);
-
-            // Direct handoff: Canvas -> DocumentSession (passes outlinePath + segments)
-            if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
-                if (tool.penType == PenType::LaserPointer) {
-                    if (session.HasEphemeralStrokeSink()) {
-                        session.CommitEphemeralStroke(std::move(data), tool, 2500);
-                    } else {
-                        AddEphemeralStroke(std::move(data.outlinePath), tool.color, 2500);
-                    }
+        if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
+            if (tool.penType == PenType::LaserPointer) {
+                if (session.HasEphemeralStrokeSink()) {
+                    session.CommitEphemeralStroke(std::move(data), tool, 2500);
                 } else {
-                    session.CommitStroke(std::move(data), tool);
-                    ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
-                    ::Folio::UsageTracker::Instance().RecordObjectCreated();
+                    AddEphemeralStroke(std::move(data.outlinePath), tool.color, 2500);
                 }
+            } else {
+                session.CommitStroke(std::move(data), tool);
+                ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
+                ::Folio::UsageTracker::Instance().RecordObjectCreated();
             }
         }
 
@@ -1791,17 +1754,7 @@ public:
     }
 
     /**
-     * @brief Inserts a Layer 3 interactive WebOverlay (YouTube native player or live webpage).
-     *
-     * GENERAL WORKING PROCESS:
-     * -------------------------
-     * 1. Validates session and non-empty URL.
-     * 2. Resolves center of current visible canvas viewport in world millimeters:
-     *      centerWorld = ScreenToWorld(viewportW / 2, viewportH / 2)
-     * 3. Instantiates WebOverlay with the target URL, title label, and parent SDL window.
-     * 4. Wraps the overlay into an InteractiveObject with default 16:9 widescreen dimensions (160mm x 100mm).
-     * 5. Adds the InteractiveObject to the session active page and registers it with the spatial R-Tree.
-     * 6. Marks canvas as dirty and triggers full rebake for static Layer 1 placeholder.
+     * @brief Inserts a web or video embed via VideoObject.
      *
      * @param[in] url      Target web or YouTube URL.
      * @param[in] label    Optional display title.
@@ -1809,36 +1762,7 @@ public:
      * @return True if successfully inserted; false otherwise.
      */
     bool InsertWebEmbed(const std::string& url, const std::string& label, DocumentSession* session) {
-        if (!session || url.empty()) return false;
-        auto activePage = session->GetActivePage();
-        if (!activePage) return false;
-
-        constexpr double w = 160.0;
-        constexpr double h = 100.0;
-
-        Point2D centerWorld = transform.ScreenToWorld(
-            static_cast<float>(viewportW) * 0.5f,
-            static_cast<float>(viewportH) * 0.5f
-        );
-
-        auto overlay = std::make_unique<Folio::WebOverlay>(url, label, sdlWindow);
-        (void)overlay->Initialize();
-
-        double posX = centerWorld.x - w * 0.5;
-        double posY = centerWorld.y - h * 0.5;
-
-        auto interactiveObj = std::make_shared<Folio::InteractiveObject>(posX, posY, w, h, std::move(overlay));
-        interactiveObj->UpdateBounds();
-
-        session->AddObject(interactiveObj);
-        interactiveOverlayHost.SetFocusedObject(interactiveObj.get());
-
-        needsFullRebake = true;
-        isDirty = true;
-        layerCompositor.InvalidateBakedCanvas();
-
-        LOG_INFO(CanvasEngine, "Inserted Layer 3 Web/YouTube Embed: " + url);
-        return true;
+        return InsertVideoFromUrl(url, label, session);
     }
 
     /**
@@ -1852,11 +1776,6 @@ public:
     bool InsertVideoFromUrl(const std::string& url, const std::string& label,
                              DocumentSession* session) {
         if (!session || url.empty()) return false;
-
-        // If the URL is a YouTube link, route it to our live WebOverlay subsystem for 100% reliable native playback!
-        if (url.find("youtu.be") != std::string::npos || url.find("youtube.com") != std::string::npos) {
-            return InsertWebEmbed(url, label, session);
-        }
 
         auto activePage = session->GetActivePage();
         if (!activePage) return false;
@@ -2261,61 +2180,49 @@ public:
         BLContext compCtx(compositeSurface);
         compCtx.clear_all();
 
-        // 1. Delegate static, live, and overlay passes to LayerCompositorManager
-        layerCompositor.RenderFrame(compCtx, activePage, currentView, activeAppObjects, deltaTime);
+        // 1. Prepare transient visual overlays on Layer 2 (LiveInteractionLayer)
+        auto& liveLayer = layerCompositor.GetLiveInteractionLayer();
 
-        // 2. Selection Gizmo Overlay Pass (Screen Coordinates)
+        // Selection Gizmo binding (Screen Coordinates)
         if (selectionGizmo.HasSelection() && !shapeCreation.isActive && !shapeCreation.isDragging) {
             selectionGizmo.lockToGrid = shapeCreation.lockToGrid;
             selectionGizmo.gridSpacingMm = gridSpacingMm;
-            selectionGizmo.Render(compCtx, transform);
+            liveLayer.BindSelectionGizmo(&selectionGizmo, &transform);
+        } else {
+            liveLayer.ClearSelectionGizmo();
         }
 
-        // 3. Marquee Box Selection Overlay (Screen Coordinates)
+        // Marquee selection box overlay (Screen Coordinates)
         if (marqueeBox.isActive) {
-            float bx = std::min(marqueeBox.startScreenX, marqueeBox.currentScreenX);
-            float by = std::min(marqueeBox.startScreenY, marqueeBox.currentScreenY);
-            float bw = std::abs(marqueeBox.currentScreenX - marqueeBox.startScreenX);
-            float bh = std::abs(marqueeBox.currentScreenY - marqueeBox.startScreenY);
-
-            compCtx.set_fill_style(BLRgba32(0x00, 0x78, 0xD4, 0x24));
-            compCtx.fill_rect(bx, by, bw, bh);
-
-            compCtx.set_stroke_style(BLRgba32(0x00, 0x78, 0xD4, 0xDD));
-            compCtx.set_stroke_width(1.5);
-            compCtx.stroke_rect(bx, by, bw, bh);
+            float bx0 = (std::min)(marqueeBox.startScreenX, marqueeBox.currentScreenX);
+            float by0 = (std::min)(marqueeBox.startScreenY, marqueeBox.currentScreenY);
+            float bx1 = (std::max)(marqueeBox.startScreenX, marqueeBox.currentScreenX);
+            float by1 = (std::max)(marqueeBox.startScreenY, marqueeBox.currentScreenY);
+            liveLayer.SetScreenMarquee(bx0, by0, bx1, by1);
+        } else {
+            liveLayer.ClearScreenMarquee();
         }
 
-        // 4. Dev Mode: Rnote-Style AABB & Collision Debugger (Screen Coordinates)
-        if (devMode) {
-            RenderDevModeAABBs(compCtx, visibleBakedObjects, transform);
-        }
-
-        // 5. Live Eraser Circular Cursor Reticle (Screen Coordinates)
+        // Live eraser circular reticle (Screen Coordinates)
         if (eraserVisual.isVisible) {
             double radiusPx = eraserVisual.radiusMm * transform.GetEffectiveScale();
-            float cx = eraserVisual.screenX;
-            float cy = eraserVisual.screenY;
-
-            if (eraserVisual.isStrokeEraser) {
-                compCtx.set_stroke_style(BLRgba32(0xFF, 0x40, 0x81, 0xDD));
-                compCtx.set_stroke_width(1.5);
-                compCtx.stroke_circle(cx, cy, std::max(4.0, radiusPx));
-                compCtx.set_fill_style(eraserVisual.isDown ? BLRgba32(0xFF, 0x40, 0x81, 0x2E) : BLRgba32(0xFF, 0x40, 0x81, 0x12));
-                compCtx.fill_circle(cx, cy, std::max(4.0, radiusPx));
-
-                compCtx.stroke_line(cx - 3.5, cy, cx + 3.5, cy);
-                compCtx.stroke_line(cx, cy - 3.5, cx, cy + 3.5);
-            } else {
-                compCtx.set_stroke_style(BLRgba32(0x29, 0xB6, 0xF6, 0xEE));
-                compCtx.set_stroke_width(1.5);
-                compCtx.stroke_circle(cx, cy, radiusPx);
-                compCtx.set_fill_style(eraserVisual.isDown ? BLRgba32(0x29, 0xB6, 0xF6, 0x3A) : BLRgba32(0x29, 0xB6, 0xF6, 0x14));
-                compCtx.fill_circle(cx, cy, radiusPx);
-
-                compCtx.fill_circle(cx, cy, 1.2, BLRgba32(0x29, 0xB6, 0xF6, 0xFF));
-            }
+            liveLayer.SetEraserReticle(eraserVisual.screenX, eraserVisual.screenY, radiusPx,
+                                       eraserVisual.isDown, eraserVisual.isStrokeEraser);
+        } else {
+            liveLayer.ClearEraserReticle();
         }
+
+        // Dev mode debug AABBs hook
+        if (devMode) {
+            liveLayer.SetCustomFeedbackRenderer([this, &visibleBakedObjects](BLContext& ctx, const Viewport& /*vp*/) {
+                RenderDevModeAABBs(ctx, visibleBakedObjects, transform);
+            });
+        } else {
+            liveLayer.SetCustomFeedbackRenderer(nullptr);
+        }
+
+        // 2. Delegate composited multi-layer rendering to LayerCompositorManager
+        layerCompositor.RenderFrame(compCtx, activePage, currentView, activeAppObjects, deltaTime);
 
         compCtx.end();
 

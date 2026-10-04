@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =========================================================================================
  * @file test_file_manager.cpp
  * @brief Standalone Local Diagnostic & Invariant Test Suite for Folio::FileManager
@@ -311,6 +311,86 @@ bool Test_RecursiveDirectoryLifecycle() {
 }
 
 // =========================================================================================
+// TEST CASE 7: Identity Move (Source == Destination)
+// =========================================================================================
+bool Test_IdentityMove() {
+    CleanupSandbox();
+    std::string sandbox = GetTestSandboxDir();
+    FileManager::CreateDirectories(sandbox);
+
+    std::string targetFile = FileManager::JoinPath(sandbox, "identity.txt");
+    FileManager::WriteTextAtomic(targetFile, "identity test");
+
+    TEST_ASSERT(FileManager::Exists(targetFile), "File not created");
+
+    // Attempt identity move
+    TEST_ASSERT(FileManager::Move(targetFile, targetFile), "Identity move failed");
+    
+    // File must still exist and be intact
+    TEST_ASSERT(FileManager::Exists(targetFile), "File disappeared after identity move");
+    std::string content;
+    FileManager::ReadText(targetFile, content);
+    TEST_ASSERT(content == "identity test", "Content corrupted after identity move");
+
+    CleanupSandbox();
+    return true;
+}
+
+// =========================================================================================
+// TEST CASE 8: Recursive Copy Loop Prevention
+// =========================================================================================
+bool Test_RecursiveCopyLoopPrevention() {
+    CleanupSandbox();
+    std::string sandbox = GetTestSandboxDir();
+    
+    std::string sourceDir = FileManager::JoinPath(sandbox, "source_dir");
+    FileManager::CreateDirectories(sourceDir);
+    FileManager::WriteTextAtomic(FileManager::JoinPath(sourceDir, "file.txt"), "data");
+
+    // Destination is inside source
+    std::string destDir = FileManager::JoinPath(sourceDir, "dest_dir");
+
+    // Attempt to copy source into its own subdirectory
+    bool result = FileManager::CopyDirectoryRecursive(sourceDir, destDir);
+    TEST_ASSERT(!result, "Recursive copy loop did not fail as expected");
+
+    CleanupSandbox();
+    return true;
+}
+
+// =========================================================================================
+// TEST CASE 9: Read-Only Target Overwrite
+// =========================================================================================
+bool Test_ReadOnlyTargetOverwrite() {
+    CleanupSandbox();
+    std::string sandbox = GetTestSandboxDir();
+    FileManager::CreateDirectories(sandbox);
+
+    std::string targetFile = FileManager::JoinPath(sandbox, "readonly_test.txt");
+    FileManager::WriteTextAtomic(targetFile, "initial");
+
+    // Set read-only attribute
+    std::error_code ec;
+#if defined(_WIN32)
+    // On Windows, removing write permissions sets FILE_ATTRIBUTE_READONLY
+    std::filesystem::permissions(std::filesystem::path(targetFile), 
+        std::filesystem::perms::owner_read, 
+        std::filesystem::perm_options::replace, ec);
+#endif
+
+    // Attempt atomic overwrite
+    bool result = FileManager::WriteTextAtomic(targetFile, "overwritten");
+    TEST_ASSERT(result, "Atomic overwrite failed on a read-only file");
+
+    std::string content;
+    FileManager::ReadText(targetFile, content);
+    TEST_ASSERT(content == "overwritten", "Content was not overwritten correctly on read-only file");
+
+    CleanupSandbox();
+    return true;
+}
+
+// =========================================================================================
 // Main Entry Point
 // =========================================================================================
 int main() {
@@ -326,6 +406,9 @@ int main() {
     RUN_TEST_CASE(Test_ContentHashingAndIntegrity);
     RUN_TEST_CASE(Test_DirectoryTraversalAndFiltering);
     RUN_TEST_CASE(Test_RecursiveDirectoryLifecycle);
+    RUN_TEST_CASE(Test_IdentityMove);
+    RUN_TEST_CASE(Test_RecursiveCopyLoopPrevention);
+    RUN_TEST_CASE(Test_ReadOnlyTargetOverwrite);
 
     auto tEnd = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(tEnd - tStart).count();

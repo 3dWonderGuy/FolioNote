@@ -41,6 +41,8 @@
 #include "input_state_machine.hpp"
 #include "app/window_state_manager.hpp"
 #include "input_manager.hpp"
+#include <imgui.h>
+#include <imgui_internal.h>
 
 // =============================================================================
 // EVENT DISPATCH & MAIN PIPELINE
@@ -298,7 +300,26 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
                                   (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso && stateMachine.mouse.leftButton) ||
                                   (stateMachine.currentAction == InteractionState::Panning && stateMachine.mouse.leftButton);
 
-    bool imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !(wasCanvasImageHovered || stateMachine.isPdfCanvasHovered) && !isCanvasDragging);
+    // Determine if cursor is hovering an overlay window (floating HUD, toolbar, menu, modal) or active widget
+    bool isOverOverlayOrWidget = false;
+    ImGuiContext* g = ImGui::GetCurrentContext();
+    if (g) {
+        if (g->ActiveId != 0) {
+            isOverOverlayOrWidget = true;
+        } else if (g->HoveredWindow) {
+            std::string_view hoveredName = g->HoveredWindow->Name;
+            if (hoveredName != "##CanvasPanel") {
+                isOverOverlayOrWidget = true;
+            }
+        }
+    }
+
+    bool imguiHasFocus = false;
+    if (isOverOverlayOrWidget) {
+        imguiHasFocus = !isCanvasDragging;
+    } else {
+        imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !(wasCanvasImageHovered || stateMachine.isPdfCanvasHovered) && !isCanvasDragging);
+    }
     
     // Diagnostic log for genuine physical mouse clicks (excluding synthetic SDL touch/pen mouse events)
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {

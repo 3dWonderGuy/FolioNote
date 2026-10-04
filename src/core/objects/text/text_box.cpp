@@ -26,12 +26,35 @@
 #include "core/engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
 #include "core/text/font_manager.hpp"
+#include "core/objects/object_registry.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 
 namespace Folio {
+
+// =============================================================================
+// OBJECT REGISTRY SELF-REGISTRATION
+// =============================================================================
+
+namespace {
+    /**
+     * @brief Self-registers TextBoxObject with the global ObjectRegistry.
+     *
+     * General Working Process:
+     * When the translation unit is initialized at runtime, this static constant
+     * invokes ObjectRegistry::Register<TextBoxObject>() with factory constructor,
+     * human-readable type name, and emoji icon.
+     */
+    [[maybe_unused]] static const bool s_registeredTextBox = 
+        ObjectRegistry::Register<TextBoxObject>(
+            ObjectType::Text,
+            "TextBoxObject",
+            "📝",
+            true
+        );
+}
 
 TextBoxObject::TextBoxObject() {
     type = ObjectType::Text;
@@ -562,26 +585,6 @@ void TextBoxObject::RenderWithEditor(BLContext& ctx, const Viewport& viewport, c
     }
 
     ctx.restore();
-}
-
-bool TextBoxObject::OnPointerClick(const Folio::CanvasContext& ctx) {
-    if (ctx.isDoubleClick) {
-        if (ctx.engine.textEditor.IsActive() && ctx.engine.textEditor.GetTarget() &&
-            ctx.engine.textEditor.GetTarget() != this &&
-            ctx.engine.textEditor.GetTarget()->PlainText().empty()) {
-            auto activePage = ctx.session.GetActivePage();
-            if (activePage) activePage->RemoveObjectByUid(ctx.engine.textEditor.GetTarget()->uid);
-        }
-        ctx.engine.ClearSelection(&ctx.session);
-        ctx.engine.textEditor.Detach(&ctx.session);
-        ctx.engine.textEditor.Attach(this, &ctx.session);
-        ctx.engine.textEditor.OnMouseDown(ctx.worldX, ctx.worldY, (ctx.modifiers & 1u) != 0);
-        ctx.engine.needsFullRebake = true;
-        ctx.engine.isDirty = true;
-        LOG_INFO(CanvasObject, "Double-click activated text editor on text box uid=" + std::to_string(uid));
-        return true;
-    }
-    return false;
 }
 
 std::unique_ptr<CanvasObject> TextBoxObject::Clone() const {

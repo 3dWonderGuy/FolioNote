@@ -6,9 +6,52 @@
  */
 
 #include "core/overlay/interactive_overlay_host.hpp"
-#include "core/objects/interactive/interactive_object.hpp"
+#include "core/objects/canvas_object.hpp"
 
 namespace Folio {
+
+// =============================================================================
+// COORDINATE PROJECTION
+// =============================================================================
+
+/**
+ * Mathematical Projection from World Millimeters to Screen Pixels:
+ *
+ * In FolioNote, the camera viewport defined by vp.bounds stores the visible
+ * window's top-left coordinates in world space (minX, minY):
+ *   cameraOriginX = vp.bounds.minX
+ *   cameraOriginY = vp.bounds.minY
+ *
+ * Screen resolution density:
+ *   scale = (vp.pixelsPerMm > 0.0) ? (vp.pixelsPerMm * vp.zoom) : vp.zoom;
+ *
+ * Screen projection formulas:
+ *   screenX      = round((obj.worldX - cameraOriginX) * scale)
+ *   screenY      = round((obj.worldY - cameraOriginY) * scale)
+ *   screenWidth  = round(obj.worldWidth * scale)
+ *   screenHeight = round(obj.worldHeight * scale)
+ *
+ * @param obj CanvasObject providing world physical position and dimensions.
+ * @param vp Viewport providing camera bounds and zoom factor.
+ * @return Screen-space integer pixel rectangle for overlay alignment.
+ */
+OverlayRect InteractiveOverlayHost::ComputeScreenRect(const CanvasObject& obj, const Viewport& vp) noexcept {
+    const double scale = (vp.pixelsPerMm > 0.0) ? (vp.pixelsPerMm * vp.zoom) : vp.zoom;
+    const double cameraOriginX = vp.bounds.minX;
+    const double cameraOriginY = vp.bounds.minY;
+
+    const double screenX = (obj.worldX - cameraOriginX) * scale;
+    const double screenY = (obj.worldY - cameraOriginY) * scale;
+    const double screenW = obj.worldWidth * scale;
+    const double screenH = obj.worldHeight * scale;
+
+    return OverlayRect{
+        static_cast<int>(std::round(screenX)),
+        static_cast<int>(std::round(screenY)),
+        static_cast<int>(std::round(std::max(0.0, screenW))),
+        static_cast<int>(std::round(std::max(0.0, screenH)))
+    };
+}
 
 // =============================================================================
 // ENGINE TICK (UPDATE)
@@ -67,16 +110,12 @@ void InteractiveOverlayHost::RenderOverlays(BLContext& screenCtx, const Viewport
             continue;
         }
 
-        // Bridge to InteractiveObject for coordinate projection
-        InteractiveObject* io = dynamic_cast<InteractiveObject*>(obj);
-        if (!io) continue;
-
-        const OverlayRect screenRect = io->ComputeScreenRect(vp);
+        const OverlayRect screenRect = ComputeScreenRect(*obj, vp);
         if (screenRect.IsEmpty()) {
             continue;
         }
 
-        IInteractiveOverlay* overlay = io->GetOverlay();
+        IInteractiveOverlay* overlay = obj->GetOverlay();
         if (overlay) {
             overlay->OnRenderOverlay(screenCtx, screenRect);
         }
@@ -91,15 +130,12 @@ void InteractiveOverlayHost::RenderOverlays(BLContext& screenCtx, const Viewport
             continue;
         }
 
-        InteractiveObject* io = dynamic_cast<InteractiveObject*>(obj.get());
-        if (!io) continue;
-
-        const OverlayRect screenRect = io->ComputeScreenRect(vp);
+        const OverlayRect screenRect = ComputeScreenRect(*obj, vp);
         if (screenRect.IsEmpty()) {
             continue;
         }
 
-        IInteractiveOverlay* overlay = io->GetOverlay();
+        IInteractiveOverlay* overlay = obj->GetOverlay();
         if (overlay) {
             overlay->OnRenderOverlay(screenCtx, screenRect);
         }
@@ -117,17 +153,16 @@ bool InteractiveOverlayHost::HandleInput(const SDL_Event& event, const Viewport&
         return false;
     }
 
-    InteractiveObject* io = dynamic_cast<InteractiveObject*>(activeObject);
-    if (!io || !io->isInteracting) {
+    if (!activeObject->IsInteracting()) {
         return false;
     }
 
-    IInteractiveOverlay* overlay = io->GetOverlay();
+    IInteractiveOverlay* overlay = activeObject->GetOverlay();
     if (!overlay) {
         return false;
     }
 
-    const OverlayRect screenRect = io->ComputeScreenRect(vp);
+    const OverlayRect screenRect = ComputeScreenRect(*activeObject, vp);
     return overlay->OnInputEvent(event, screenRect);
 }
 
@@ -141,11 +176,8 @@ void InteractiveOverlayHost::SetFocusedObject(CanvasObject* obj) {
     ClearFocusedObject();
 
     if (obj && obj->HasLiveOverlay()) {
-        InteractiveObject* io = dynamic_cast<InteractiveObject*>(obj);
-        if (io) {
-            focusedObject = obj;
-            io->SetInteracting(true);
-        }
+        focusedObject = obj;
+        focusedObject->SetInteracting(true);
     }
 }
 
@@ -153,10 +185,7 @@ void InteractiveOverlayHost::ClearFocusedObject() {
     if (!focusedObject) return;
 
     if (focusedObject->HasLiveOverlay()) {
-        InteractiveObject* io = dynamic_cast<InteractiveObject*>(focusedObject);
-        if (io) {
-            io->SetInteracting(false);
-        }
+        focusedObject->SetInteracting(false);
     }
 
     focusedObject = nullptr;

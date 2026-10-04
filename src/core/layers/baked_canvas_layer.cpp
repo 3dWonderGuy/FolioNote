@@ -1,5 +1,37 @@
+/**
+ * =========================================================================================
+ * @file core/layers/baked_canvas_layer.cpp
+ * @brief Implementation of Layer 1 High-Performance Cached Rasterizer for Committed Objects
+ * =========================================================================================
+ *
+ * GENERAL ARCHITECTURAL PROCESS:
+ * ------------------------------
+ * This translation unit manages the caching lifecycle of all committed vector canvas entities.
+ *
+ * 1. Surface Allocation:
+ *    - Uses Blend2D's 32-bit premultiplied ARGB format (BL_FORMAT_PRGB32) for fast SIMD
+ *      rasterization and hardware blits.
+ *    - The backing context (`m_bakedContext`) is detached (`end()`) before any re-allocation
+ *      to ensure memory safety.
+ *
+ * 2. Invalidation Discipline:
+ *    - Path A (Full Frustum Rebake):
+ *      When the camera pans, zooms, or window resizes, the entire visible frustum is cleared
+ *      and repainted. The page R-Tree spatial index queries all objects touching `viewport.visibleWorldBounds`.
+ *    - Path B (Partial Dirty Region Patch):
+ *      When an existing object moves, is erased, or is inserted, the damage bounds `m_dirtyWorldRegion`
+ *      are merged. The raster context sets a screen scissor-clip (`clip_to_rect`), repaints the paper
+ *      background only within the clipped rect, queries only objects touching the damage box,
+ *      and redraws them in ascending z-order.
+ *
+ * 3. Deterministic Painter's Layering:
+ *    - All candidates retrieved from spatial queries are sorted by ascending `zOrder` (`a->zOrder < b->zOrder`),
+ *      guaranteeing identical visual stacking regardless of R-Tree node insertion order.
+ */
+
 #include "baked_canvas_layer.hpp"
 #include "core/document/canvas_page.hpp"
+#include "core/objects/canvas_object.hpp"
 
 #include <algorithm>
 
@@ -12,7 +44,12 @@ BakedCanvasLayer::~BakedCanvasLayer() {
     m_bakedSurface.reset();
 }
 
-// Memory management if canvas window has been resized
+/**
+ * @brief Reallocates the offscreen backing surface when window dimensions change.
+ *
+ * @param[in] width  New viewport width in screen pixels.
+ * @param[in] height New viewport height in screen pixels.
+ */
 void BakedCanvasLayer::Resize(int width, int height) {
     if (m_surfaceWidth == width && m_surfaceHeight == height) {
         return;
@@ -21,14 +58,16 @@ void BakedCanvasLayer::Resize(int width, int height) {
     m_surfaceWidth = width;
     m_surfaceHeight = height;
 
-    // Detach context before destroying surface memory
+    // Detach context before destroying surface memory to avoid dangling handles
     m_bakedContext.end();
     m_bakedSurface.create(width, height, BL_FORMAT_PRGB32);
 
     Invalidate();
 }
 
-// Cleans up everything including memory
+/**
+ * @brief Cleans up backing store and releases raster surface memory.
+ */
 void BakedCanvasLayer::Flush() {
     m_bakedContext.end();
     m_bakedSurface.reset();
@@ -37,14 +76,27 @@ void BakedCanvasLayer::Flush() {
     Invalidate();
 }
 
-// Marks layer for a full rebake
+/**
+ * @brief Marks layer for a full frustum re-bake on the next presentation tick.
+ */
 void BakedCanvasLayer::Invalidate() {
     m_isDirty = true;
     m_needsFullRebake = true;
     m_dirtyWorldRegion.Reset();
 }
 
-// Marks layer for a partial rebake
+/**
+ * @brief Marks a specific world-space bounding box dirty for localized partial re-baking.
+ *
+ * MATHEMATICAL PROCESS:
+ * - If a full rebake is already pending (`m_needsFullRebake == true`), any partial damage
+ *   is inherently covered by the full pass; early-exit to avoid redundant AABB expansion.
+ * - Otherwise, merges `dirtyBounds` into `m_dirtyWorldRegion`:
+ *     minX = min(minX, dirtyBounds.minX), maxX = max(maxX, dirtyBounds.maxX)
+ *     minY = min(minY, dirtyBounds.minY), maxY = max(maxY, dirtyBounds.maxY)
+ *
+ * @param[in] dirtyBounds The AABB in world millimeters requiring re-rasterization.
+ */
 void BakedCanvasLayer::InvalidateRect(const AABB& dirtyBounds) {
     if (m_needsFullRebake) {
         return; // Full rebake already queued; ignore sub-region
@@ -74,8 +126,8 @@ void BakedCanvasLayer::InvalidateRect(const AABB& dirtyBounds) {
  *      (min to max) to guarantee back-to-front painter's algorithm rasterization.
  * 5. Lifecycle Flush: Resets dirty flags and bounding regions upon completion.
  *
- * @param page The active CanvasPage containing spatialIndex and document entities.
- * @param viewport The current camera viewport containing matrices and visibility bounds.
+ * @param[in] page     The active CanvasPage containing spatialIndex and document entities.
+ * @param[in] viewport The current camera viewport containing matrices and visibility bounds.
  */
 void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
     if (!m_isDirty || m_surfaceWidth <= 0 || m_surfaceHeight <= 0 || !page) {
@@ -168,16 +220,25 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
     m_dirtyWorldRegion.Reset();
 }
 
-void BakedCanvasLayer::DrawBackground(CanvasPage* activePage, const Viewport& viewport) {
+/**
+ * @brief Renders the paper color backdrop and surface clearing.
+ *
+ * @param[in] activePage The active canvas page with theme settings.
+ * @param[in] viewport   Active viewport for coordinate reference.
+ */
+void BakedCanvasLayer::DrawBackground(CanvasPage* activePage, const Viewport& /*viewport*/) {
     ColorTheme(activePage);
 
     // Fill entire backing bitmap or active page region with paper color
     m_bakedContext.fill_all();
-
-    // Render grid dots/lines if enabled on the page
 }
 
-void BakedCanvasLayer::ColorTheme(CanvasPage* activePage) {
+/**
+ * @brief Resolves color styling and paper background fills.
+ *
+ * @param[in] activePage Current active page.
+ */
+void BakedCanvasLayer::ColorTheme(CanvasPage* /*activePage*/) {
     // Set Blend2D fill/stroke properties based on theme configuration
     m_bakedContext.set_fill_style(BLRgba32(245, 245, 247, 255)); // Default light paper
 }

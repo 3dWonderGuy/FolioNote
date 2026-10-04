@@ -14,7 +14,7 @@
 #include "core/objects/primitives/shape_container.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
-#include "core/objects/attachment_container.hpp"
+#include "core/objects/attachment_container/attachment_container.hpp"
 
 namespace Folio {
 

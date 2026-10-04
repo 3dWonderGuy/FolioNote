@@ -27,14 +27,95 @@
 #include <cstdint>
 #include <cstddef>
 #include <algorithm>
+#include <blend2d/blend2d.h>
 
 namespace Folio {
 
 /**
  * @struct ObjectConfig
- * @brief Centralized constraints, physical size limits, and ingestion safety thresholds.
+ * @brief Centralized constraints, physical size limits, theme defaults, and ingestion safety thresholds.
  */
 struct ObjectConfig {
+    // =========================================================================
+    // THEME & APPEARANCE DEFAULTS
+    // =========================================================================
+
+    bool isDarkMode = true;         ///< Master dark mode toggle (synced from SettingsManager)
+    bool isCanvasInverted = false;   ///< Ink and paper inversion state
+
+    // Card Body Fills (32-bit ARGB packed hex)
+    uint32_t cardBgColorDark      = 0xEB1E2028; ///< Dark mode card body (opacity ~235/255)
+    uint32_t cardBgColorLight     = 0xEBFAFAFC; ///< Light mode card body (soft paper white)
+
+    // Card Borders (32-bit ARGB packed hex)
+    uint32_t cardBorderColorDark  = 0xC83E4455; ///< Dark slate border (alpha ~200/255)
+    uint32_t cardBorderColorLight = 0xC8D0D4DC; ///< Clean grey border in light mode
+
+    // Card Text Labels (32-bit ARGB packed hex)
+    uint32_t cardTextColorDark    = 0xFFF0F2F5; ///< Off-white high-contrast text
+    uint32_t cardTextColorLight   = 0xFF1A1A1A; ///< Charcoal dark text for light mode
+
+    // Status Badges & Warnings (32-bit ARGB packed hex)
+    uint32_t cardWarningColor     = 0xE6E81123; ///< Fluent Red for missing / unlinked files
+    uint32_t cardEmbeddedColor    = 0xD200B39A; ///< Mint Teal for self-contained sidecar attachments
+    uint32_t cardLinkColor        = 0xBE0078D4; ///< Acrylic Blue for external disk links
+
+    // Card Geometry & Typography Tokens
+    double cardCornerRadiusMm     = 2.0;        ///< Corner fillet radius in physical world mm
+    double cardTypeBandWidthMm    = 8.0;        ///< Left filetype color-band strip width (mm)
+    float  badgeFontSizePt        = 3.2f;       ///< Extension badge font size in points
+    float  labelFontSizePt        = 3.4f;       ///< Filename display font size in points
+
+    // =========================================================================
+    // THEME COLOR RESOLUTION HELPERS
+    // =========================================================================
+
+    /**
+     * @brief Resolves the card background color based on active theme mode and opacity.
+     * @param alphaMultiplier Global opacity multiplier [0.0, 1.0].
+     * @return BLRgba32 evaluated color.
+     */
+    [[nodiscard]] BLRgba32 GetCardBackgroundColor(float alphaMultiplier = 1.0f) const noexcept {
+        uint32_t c = isDarkMode ? cardBgColorDark : cardBgColorLight;
+        uint8_t baseAlpha = static_cast<uint8_t>((c >> 24) & 0xFF);
+        uint8_t a = static_cast<uint8_t>(baseAlpha * std::clamp(alphaMultiplier, 0.0f, 1.0f));
+        return BLRgba32((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, a);
+    }
+
+    /**
+     * @brief Resolves the card stroke border color with error state handling.
+     * @param isBroken True if file cannot be found on disk (renders warning red).
+     * @param alphaMultiplier Global opacity multiplier [0.0, 1.0].
+     * @return BLRgba32 evaluated stroke color.
+     */
+    [[nodiscard]] BLRgba32 GetCardBorderColor(bool isBroken, float alphaMultiplier = 1.0f) const noexcept {
+        if (isBroken) {
+            uint8_t a = static_cast<uint8_t>(230.0f * std::clamp(alphaMultiplier, 0.0f, 1.0f));
+            return BLRgba32(0xE8, 0x11, 0x23, a);
+        }
+        uint32_t c = isDarkMode ? cardBorderColorDark : cardBorderColorLight;
+        uint8_t baseAlpha = static_cast<uint8_t>((c >> 24) & 0xFF);
+        uint8_t a = static_cast<uint8_t>(baseAlpha * std::clamp(alphaMultiplier, 0.0f, 1.0f));
+        return BLRgba32((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, a);
+    }
+
+    /**
+     * @brief Resolves typography label color considering theme and validity.
+     * @param isBroken True if file path is missing or invalid.
+     * @param alphaMultiplier Global opacity multiplier [0.0, 1.0].
+     * @return BLRgba32 evaluated text color.
+     */
+    [[nodiscard]] BLRgba32 GetCardTextColor(bool isBroken, float alphaMultiplier = 1.0f) const noexcept {
+        if (isBroken) {
+            uint8_t a = static_cast<uint8_t>(255.0f * std::clamp(alphaMultiplier, 0.0f, 1.0f));
+            return BLRgba32(0xFF, 0x88, 0x88, a);
+        }
+        uint32_t c = isDarkMode ? cardTextColorDark : cardTextColorLight;
+        uint8_t baseAlpha = static_cast<uint8_t>((c >> 24) & 0xFF);
+        uint8_t a = static_cast<uint8_t>(baseAlpha * std::clamp(alphaMultiplier, 0.0f, 1.0f));
+        return BLRgba32((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, a);
+    }
+
     // =========================================================================
     // IMAGE CONSTRAINTS & LIMITS
     // =========================================================================

@@ -20,7 +20,9 @@
 #include "core/engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
-#include "core/objects/attachment_container.hpp"
+#include "core/objects/attachment_container/attachment_container.hpp"
+#include "core/objects/media/audio/audio_container.hpp"
+#include "core/objects/media/audio/audio_overlay_ui.hpp"
 #include "core/history/canvas_command.hpp"
 #include "app/context_menu_manager.hpp"
 #include "ui/imgui_theme.hpp"
@@ -1060,9 +1062,12 @@ public:
                         ImGui::Image((ImTextureID)(intptr_t)canvas.glTexture, canvasSize, ImVec2(0, 0), uv1);
                         inputManager.wasCanvasImageHovered = ImGui::IsItemHovered();
                         inputManager.stateMachine.isCanvasHovered = inputManager.wasCanvasImageHovered;
+                        inputManager.stateMachine.pointerIcons.Apply(inputManager.wasCanvasImageHovered, 
+                            ImGui::GetIO().WantCaptureMouse && !inputManager.wasCanvasImageHovered);
                     } else {
                         inputManager.wasCanvasImageHovered = false;
                         inputManager.stateMachine.isCanvasHovered = false;
+                        inputManager.stateMachine.pointerIcons.Apply(false, ImGui::GetIO().WantCaptureMouse);
                     }
 
                     // =========================================================================
@@ -1162,6 +1167,24 @@ public:
                 ImGui::End();
                 ImGui::PopStyleVar();
                 } // End of if (activePg && activePg->isDedicatedPdf) else
+
+                // =========================================================================
+                // FLOATING AUDIO CONTROLLER CAPSULE OVERLAY
+                // =========================================================================
+                // When an AudioObject is selected on the canvas, render a floating modern
+                // glassmorphic capsule HUD directly below the badge tracking canvas transform.
+                {
+                    ImVec2 canvasOrigin(inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY);
+                    for (const auto& obj : session.GetSelectedObjects()) {
+                        if (obj && obj->type == ObjectType::Audio) {
+                            if (auto audioObj = std::dynamic_pointer_cast<Folio::AudioObject>(obj)) {
+                                Folio::AudioOverlayUI::Render(*audioObj, canvas.transform, canvasOrigin, [&]() {
+                                    canvas.isDirty = true;
+                                });
+                            }
+                        }
+                    }
+                }
 
                 // 4. ADVANCED DOCUMENT OPTIONS SLIDING PANEL
                 // Floats over canvas from right side when View tab -> Adv. Options is toggled.

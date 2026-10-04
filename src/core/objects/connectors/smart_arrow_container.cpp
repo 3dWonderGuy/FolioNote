@@ -35,8 +35,9 @@
 #include <vector>
 
 #include "core/objects/connectors/smart_arrow_container.hpp"
-#include "core/objects/primitives/path_dasher.hpp"
+#include "core/engine/stroke_outline_builder.hpp"
 #include "core/engine/canvas_transform.hpp"
+#include "core/objects/object_registry.hpp"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -45,17 +46,41 @@
 namespace Folio {
 
 // =============================================================================
+// OBJECT REGISTRY SELF-REGISTRATION
+// =============================================================================
+
+namespace {
+    /**
+     * @brief Self-registers SmartArrowObject with the global ObjectRegistry.
+     *
+     * General Working Process:
+     * When the translation unit is initialized at runtime, this static constant
+     * invokes ObjectRegistry::Register<SmartArrowObject>() with factory constructor,
+     * human-readable type name, and emoji icon.
+     */
+    [[maybe_unused]] static const bool s_registeredSmartArrow = 
+        ObjectRegistry::Register<SmartArrowObject>(
+            ObjectType::Connector,
+            "SmartArrowObject",
+            "🏹",
+            true
+        );
+}
+
+// =============================================================================
 // CONSTRUCTORS
 // =============================================================================
 
 SmartArrowObject::SmartArrowObject() {
     type = ObjectType::Connector;
+    gizmoStyle = GizmoStyle::TwoPoint;
     UpdateBounds();
 }
 
 SmartArrowObject::SmartArrowObject(double sx, double sy, double ex, double ey)
     : x1(sx), y1(sy), x2(ex), y2(ey) {
     type = ObjectType::Connector;
+    gizmoStyle = GizmoStyle::TwoPoint;
     UpdateBounds();
 }
 
@@ -255,13 +280,41 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
         startAngle = std::atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
     }
 
-    // Render line stroke (solid or dashed)
+    // Render line stroke (solid or dashed via unified StrokeOutlineBuilder)
     if (outlineType == ShapeOutlineType::Solid) {
         ctx.stroke_path(rawPath);
     } else {
-        BLPath dashedPath;
-        PathDasher::BuildDashedPath(rawPath, dashedPath, outlineType, effWidth);
-        ctx.stroke_path(dashedPath);
+        std::vector<StrokeOutlineBuilder::InputPoint> arrowPts;
+        const float wF = static_cast<float>(effWidth);
+        if (connectorStyle == ConnectorStyle::Straight) {
+            arrowPts.push_back({ x1, y1, wF });
+            arrowPts.push_back({ x2, y2, wF });
+        } else if (connectorStyle == ConnectorStyle::Elbow) {
+            Point2D epts[4];
+            GetElbowWaypoints(epts);
+            for (int i = 0; i < 4; ++i) arrowPts.push_back({ epts[i].x, epts[i].y, wF });
+        } else if (connectorStyle == ConnectorStyle::Curved) {
+            Point2D c1, c2;
+            GetCurvedControlPoints(c1, c2);
+            const int steps = 24;
+            for (int i = 0; i <= steps; ++i) {
+                double t = static_cast<double>(i) / steps;
+                double u = 1.0 - t;
+                double px = u*u*u*x1 + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*x2;
+                double py = u*u*u*y1 + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*y2;
+                arrowPts.push_back({ px, py, wF });
+            }
+        }
+        if (!arrowPts.empty()) {
+            BLPath dashedOutline = StrokeOutlineBuilder::BuildOutline(
+                arrowPts,
+                CapType::Round,
+                StrokeOutlineBuilder::MapShapeOutlineType(outlineType),
+                false // open stroke
+            );
+            ctx.set_fill_style(col);
+            ctx.fill_path(dashedOutline);
+        }
     }
 
     // Arrowheads (rendered in local line direction angles)

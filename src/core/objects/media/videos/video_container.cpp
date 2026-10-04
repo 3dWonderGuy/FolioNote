@@ -22,6 +22,7 @@
 #include "core/objects/media/images/image_decoder.hpp"
 #include "core/spatial/aabb_utils.hpp"
 #include "core/engine/canvas_engine.hpp"
+#include "core/objects/object_registry.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"
 
@@ -49,6 +50,28 @@
 #include <SDL3/SDL.h>  // for SDL_GetTicks() in transport fade timer
 
 namespace Folio {
+
+// =============================================================================
+// OBJECT REGISTRY SELF-REGISTRATION
+// =============================================================================
+
+namespace {
+    /**
+     * @brief Self-registers VideoObject with the global ObjectRegistry.
+     *
+     * General Working Process:
+     * When the translation unit is initialized at runtime, this static constant
+     * invokes ObjectRegistry::Register<VideoObject>() with factory constructor,
+     * human-readable type name, and emoji icon.
+     */
+    [[maybe_unused]] static const bool s_registeredVideo = 
+        ObjectRegistry::Register<VideoObject>(
+            ObjectType::Video,
+            "VideoObject",
+            "🎬",
+            true
+        );
+}
 
 /**
  * @brief Executes a system command silently in a hidden background process and captures its stdout.
@@ -534,13 +557,6 @@ bool VideoObject::HandleCanvasClick(double wx, double wy, bool isDoubleClick,
     return false;
 }
 
-bool VideoObject::OnPointerClick(const Folio::CanvasContext& ctx) {
-    return HandleCanvasClick(ctx.worldX, ctx.worldY, ctx.isDoubleClick, [&ctx]() {
-        ctx.engine.needsFullRebake = true;
-        ctx.engine.isDirty = true;
-    });
-}
-
 void VideoObject::Stop() {
     if (player) {
         player->Stop();
@@ -910,6 +926,101 @@ std::string VideoObject::FormatTimecode(float seconds) {
         std::snprintf(buf, sizeof(buf), "%02d:%02d", m, s);
     }
     return buf;
+}
+
+// =============================================================================
+// CONTEXT MENU & OBJECT ACTIONS
+// =============================================================================
+
+void VideoObject::CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) {
+    // ── Action: Play / Pause toggle ───────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label = isPlaying ? "Pause" : "Play";
+        act.icon  = isPlaying ? "⏸" : "▶";
+        act.iconKey = isPlaying ? "pause" : "play";
+        act.order = 100;
+        act.isSeparatorBefore = true;
+        act.onTrigger = [this]() {
+            if (isPlaying) {
+                Pause();
+            } else {
+                Play();
+            }
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Stop ─────────────────────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label   = "Stop";
+        act.icon    = "⏹";
+        act.iconKey = "stop";
+        act.order   = 110;
+        act.onTrigger = [this]() {
+            Stop();
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Mute / Unmute ────────────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label   = isMuted ? "Unmute" : "Mute";
+        act.icon    = isMuted ? "🔊" : "🔇";
+        act.iconKey = isMuted ? "unmute" : "mute";
+        act.order   = 120;
+        act.onTrigger = [this]() {
+            ToggleMute();
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Loop toggle ──────────────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label   = isLooping ? "Disable Loop" : "Enable Loop";
+        act.icon    = "🔁";
+        act.iconKey = "loop";
+        act.order   = 130;
+        act.onTrigger = [this]() {
+            isLooping = !isLooping;
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Reset to Native Size ─────────────────────────────────────
+    {
+        ContextMenuItem act;
+        act.label   = "Reset to Native Size";
+        act.icon    = "⤢";
+        act.iconKey = "reset_size";
+        act.order   = 140;
+        act.isSeparatorBefore = true;
+        act.onTrigger = [this]() {
+            // 96 DPI default canvas baseline: 96 / 25.4 ≈ 3.7795 px/mm
+            ResetToNativeSize(96.0 / 25.4);
+            UpdateBounds();
+        };
+        actions.push_back(std::move(act));
+    }
+
+    // ── Action: Open in Native Player (system default video player) ──────
+    {
+        ContextMenuItem act;
+        act.label   = "Open in Native Player";
+        act.icon    = "🎬";
+        act.iconKey = "open_external";
+        act.order   = 150;
+        act.onTrigger = [this]() {
+            if (!sourceUrl.empty()) {
+                // SDL_OpenURL handles both file:// paths and http:// URLs
+                SDL_OpenURL(sourceUrl.c_str());
+            }
+        };
+        actions.push_back(std::move(act));
+    }
 }
 
 // =============================================================================

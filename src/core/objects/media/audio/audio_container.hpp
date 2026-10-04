@@ -107,6 +107,18 @@ public:
      */
     void UpdateProgress();
 
+    /**
+     * @brief Adjusts audio playback volume [0 to 100].
+     * @param vol Target volume level.
+     */
+    void SetVolume(int vol);
+
+    /**
+     * @brief Injects audio-specific actions into the unified context menu.
+     * @param actions Reference to context menu item list.
+     */
+    void CustomizeActions(std::vector<Folio::ContextMenuItem>& actions) override;
+
     // =========================================================================
     // HIT TESTING & INTERACTION
     // =========================================================================
@@ -126,18 +138,12 @@ public:
      */
     bool HandleCanvasClick(double wx, double wy, std::function<void()> onDirty = nullptr);
 
-    /**
-     * @brief Polymorphic pointer click hook delegating to audio playback and scrubbing.
-     */
-    bool OnPointerClick(const Folio::CanvasContext& ctx) override;
-
     // =========================================================================
     // TRANSFORM & GIZMO INVARIANTS
     // =========================================================================
 
     void ApplyTransform(const BLMatrix2D& matrix) override;
     void BakeTransform() override;
-    [[nodiscard]] GizmoStyle GetGizmoStyle() const noexcept override;
 
     // =========================================================================
     // RENDERING

@@ -45,9 +45,10 @@ B. CanvasContext (canvas_context.hpp)
      * session      : DocumentSession&
      * engine       : CanvasEngine&
    - Subsystem Pointers (Optional / null-safe):
-     * fileManager  : IFileManager*
-     * clipboard    : IClipboard*
-     * contextMenu  : IContextMenuManager*
+     * fileManager     : IFileManager*
+     * clipboard       : IClipboard*
+     * contextMenu     : IContextMenuManager*
+     * settingsManager : ISettingsManager*
    - Event Telemetry:
      * worldX, worldY, isDoubleClick, modifiers
 
@@ -99,7 +100,7 @@ Right-click menus are built cooperatively via ObjectActionRegistry:
 
 5. CONTAINER CATALOG & LIFECYCLE STATES
 --------------------------------------------------------------------------------
-[x] AttachmentObject (attachment_container.hpp/.cpp)
+[x] AttachmentObject (attachment_container/attachment_container.hpp/.cpp)
     - Fixed badge (chipW x chipH mm). Locked MoveOnly gizmo.
     - Double-click launches file via OpenFile().
 [x] VideoObject (media/videos/video_container.hpp/.cpp)
@@ -116,8 +117,18 @@ Right-click menus are built cooperatively via ObjectActionRegistry:
     - Active focus: ribbon polygon extrusion (StrokeOutlineBuilder).
 [ ] TableObject (table_container.hpp)
     - Stubbed interface placeholder for Phase 2 structured grids.
-[PARKED] PdfContainer & TextBoxObject (DEACTIVATED_OBJECTS.txt)
-    - Isolated to prevent compilation bottlenecks during ink stabilization.
+6. DYNAMIC OBJECT REGISTRY & FACTORY (object_registry.hpp/.cpp)
+--------------------------------------------------------------------------------
+Provides dynamic object instantiation and type reflection without hardcoding
+monolithic switch-case statements across serialization, copy-paste, and export:
+  - Self-Registration: Concrete objects register at startup in their .cpp via:
+      ObjectRegistry::Register<T>(type, "Name", "Icon", isConstructible);
+  - Dynamic Instantiation:
+      auto obj = ObjectRegistry::Create(type);
+  - Introspection & Reflection:
+      - HasType(type)
+      - GetMetadata(type) -> ObjectTypeMetadata (name, icon, isConstructible)
+      - GetAllRegisteredTypes()
 
 ================================================================================
 

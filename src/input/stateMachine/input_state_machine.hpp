@@ -11,6 +11,7 @@
 #include "input/touch_gesture_recognizer.hpp"
 #include "input/stateMachine/input_configuration.hpp"
 #include "input/stateMachine/special_action_manager.hpp"
+#include "input/stateMachine/pointer_icon_manager.hpp"
 #include "core/engine/stroke_smoother.hpp"
 #include "utils/logger.hpp"
 #include <array>
@@ -158,6 +159,11 @@ public:
     float    clickDownScreenY = 0.0f;
     bool     hasPendingEmptyTextBox = false;
     uint32_t pendingTextBoxUid = 0;
+
+    // -------------------------------------------------------------------------
+    // HARDWARE CURSOR & POINTER ICON MANAGER (Anti-Flicker)
+    // -------------------------------------------------------------------------
+    FolioInput::PointerIconManager pointerIcons;
 
     // =========================================================================
     // PUBLIC API
