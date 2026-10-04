@@ -981,16 +981,14 @@ private:
         fontAttempted = true;
 
         const char* candidatePaths[] = {
-            "assets/fonts/segoeui.ttf",
-            "../assets/fonts/segoeui.ttf",
-            "../../assets/fonts/segoeui.ttf",
-            "bin/assets/fonts/segoeui.ttf",
             "assets/fonts/Roboto-Medium.ttf",
             "../assets/fonts/Roboto-Medium.ttf",
             "../../assets/fonts/Roboto-Medium.ttf",
+            "bin/assets/fonts/Roboto-Medium.ttf",
             "C:/Windows/Fonts/segoeui.ttf",
             "C:/Windows/Fonts/arial.ttf",
             "/usr/share/fonts/inter/Inter-Regular.ttf",
+            "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf",
             "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
             "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
             "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",

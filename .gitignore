@@ -43,3 +43,8 @@ imgui.ini
 .vscode/
 .clangd/
 .vs/
+
+# Proprietary / OS Fonts (Never commit Microsoft/Apple fonts to repository)
+assets/fonts/segoe*
+assets/fonts/segui*
+

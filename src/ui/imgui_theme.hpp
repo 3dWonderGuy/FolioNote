@@ -49,18 +49,15 @@ namespace FolioTheme {
         FontRibbonBoldLarge   = FontRegular;
 #else
         const std::vector<std::string> regularCandidates = {
-            // Windows
+            // Bundled open-source fallback (Apache 2.0 / OFL)
+            "assets/fonts/Roboto-Medium.ttf",
+            "../assets/fonts/Roboto-Medium.ttf",
+            "../../assets/fonts/Roboto-Medium.ttf",
+            "bin/assets/fonts/Roboto-Medium.ttf",
+            "third_party/imgui/misc/fonts/Roboto-Medium.ttf",
+            // Windows OS Installed Fonts (legal to load on Windows)
             "C:\\Windows\\Fonts\\segoeui.ttf",
             "C:/Windows/Fonts/segoeui.ttf",
-            // Bundled and relative repo assets (Segoe UI or Inter or Roboto)
-            "assets/fonts/segoeui.ttf",
-            "../assets/fonts/segoeui.ttf",
-            "../../assets/fonts/segoeui.ttf",
-            "bin/assets/fonts/segoeui.ttf",
-            // User local fonts (~/.local/share/fonts/)
-            "~/.local/share/fonts/segoeui.ttf",
-            "~/.fonts/segoeui.ttf",
-            "/usr/share/fonts/segoeui.ttf",
             // Linux Modern Clean System Fonts (Inter, Adwaita, Open Sans, Liberation Sans, Cantarell)
             "/usr/share/fonts/inter/Inter-Regular.ttf",
             "/usr/share/fonts/inter/Inter-Regular.otf",
@@ -73,28 +70,20 @@ namespace FolioTheme {
             "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            // Fallback bundled assets
-            "assets/fonts/Roboto-Medium.ttf",
-            "../assets/fonts/Roboto-Medium.ttf",
-            "../../assets/fonts/Roboto-Medium.ttf",
-            "third_party/imgui/misc/fonts/Roboto-Medium.ttf",
-            "../third_party/imgui/misc/fonts/Roboto-Medium.ttf",
-            "../../third_party/imgui/misc/fonts/Roboto-Medium.ttf"
+            // Android System Font
+            "/system/fonts/Roboto-Regular.ttf"
         };
 
         const std::vector<std::string> boldCandidates = {
-            // Windows
+            // Bundled open-source fallback
+            "assets/fonts/Roboto-Bold.ttf",
+            "assets/fonts/Roboto-Medium.ttf",
+            "../assets/fonts/Roboto-Medium.ttf",
+            "bin/assets/fonts/Roboto-Medium.ttf",
+            "third_party/imgui/misc/fonts/Roboto-Medium.ttf",
+            // Windows OS Installed Fonts (legal to load on Windows)
             "C:\\Windows\\Fonts\\segoeuib.ttf",
             "C:/Windows/Fonts/segoeuib.ttf",
-            // Bundled and relative repo assets
-            "assets/fonts/segoeuib.ttf",
-            "../assets/fonts/segoeuib.ttf",
-            "../../assets/fonts/segoeuib.ttf",
-            "bin/assets/fonts/segoeuib.ttf",
-            // User local fonts (~/.local/share/fonts/)
-            "~/.local/share/fonts/segoeuib.ttf",
-            "~/.fonts/segoeuib.ttf",
-            "/usr/share/fonts/segoeuib.ttf",
             // Linux Modern Clean System Fonts
             "/usr/share/fonts/inter/Inter-Bold.ttf",
             "/usr/share/fonts/inter/Inter-Bold.otf",
@@ -107,11 +96,8 @@ namespace FolioTheme {
             "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            // Fallback bundled assets
-            "assets/fonts/Roboto-Bold.ttf",
-            "assets/fonts/Roboto-Medium.ttf",
-            "../assets/fonts/Roboto-Medium.ttf",
-            "third_party/imgui/misc/fonts/Roboto-Medium.ttf"
+            // Android System Font
+            "/system/fonts/Roboto-Bold.ttf"
         };
 
         std::string regularPath = FindFontPath(regularCandidates);

@@ -57,24 +57,21 @@ namespace {
 }
 
 FontManager::FontManager() {
-    // Attempt to preload standard default fallback font
     const std::vector<std::string> defaultCandidates = {
-        "assets/fonts/segoeui.ttf",
-        "../assets/fonts/segoeui.ttf",
-        "../../assets/fonts/segoeui.ttf",
-        "bin/assets/fonts/segoeui.ttf",
-        "~/.local/share/fonts/segoeui.ttf",
-        "~/.fonts/segoeui.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
         "assets/fonts/Roboto-Medium.ttf",
         "../assets/fonts/Roboto-Medium.ttf",
+        "../../assets/fonts/Roboto-Medium.ttf",
+        "bin/assets/fonts/Roboto-Medium.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
         "/usr/share/fonts/inter/Inter-Regular.ttf",
         "/usr/share/fonts/inter/Inter-Regular.otf",
+        "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf",
         "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf"
+        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+        "/system/fonts/Roboto-Regular.ttf"
     };
 
     std::string best = FindFirstExisting(defaultCandidates);
