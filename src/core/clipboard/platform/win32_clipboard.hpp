@@ -70,14 +70,14 @@
 #include <blend2d/blend2d.h>
 
 #include "core/document/document_session.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/overlay/web_overlay.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
+#include "core/canvas_engine/stroke_outline_builder.hpp"
 #include "utils/logger.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/uid_generator.hpp"

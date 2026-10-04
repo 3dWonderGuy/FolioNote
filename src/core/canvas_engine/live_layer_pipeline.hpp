@@ -6,8 +6,8 @@
 #include <algorithm>
 #include <blend2d/blend2d.h>
 #include "input/pen_palette.hpp"
-#include "core/engine/stroke_smoother.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
+#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/canvas_engine/stroke_outline_builder.hpp"
 #include "ui/components/tuning_overlay.hpp"
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <ink_stroke_modeler/params.h>

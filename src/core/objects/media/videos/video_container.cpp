@@ -21,7 +21,7 @@
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/media/images/image_decoder.hpp"
 #include "core/spatial/aabb_utils.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/objects/object_registry.hpp"
 #include "io/file_manager.hpp"
 #include "utils/logger.hpp"

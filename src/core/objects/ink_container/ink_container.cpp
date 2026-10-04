@@ -50,8 +50,8 @@
 
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/object_registry.hpp"
-#include "core/engine/stroke_collision.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
+#include "core/canvas_engine/stroke_collision.hpp"
+#include "core/canvas_engine/stroke_outline_builder.hpp"
 
 #include <algorithm>
 #include <cmath>

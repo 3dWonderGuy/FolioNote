@@ -39,23 +39,48 @@ FontManager& FontManager::Instance() {
     return s_instance;
 }
 
+namespace {
+    std::string FindFirstExisting(const std::vector<std::string>& candidates) {
+        std::error_code ec;
+        const char* home = std::getenv("HOME");
+        for (const auto& path : candidates) {
+            std::string resolved = path;
+            if (!resolved.empty() && resolved[0] == '~' && home) {
+                resolved = std::string(home) + resolved.substr(1);
+            }
+            if (fs::exists(resolved, ec) && !ec) {
+                return resolved;
+            }
+        }
+        return "";
+    }
+}
+
 FontManager::FontManager() {
     // Attempt to preload standard default fallback font
-    const char* defaultCandidates[] = {
+    const std::vector<std::string> defaultCandidates = {
+        "assets/fonts/segoeui.ttf",
+        "../assets/fonts/segoeui.ttf",
+        "../../assets/fonts/segoeui.ttf",
+        "bin/assets/fonts/segoeui.ttf",
+        "~/.local/share/fonts/segoeui.ttf",
+        "~/.fonts/segoeui.ttf",
         "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/arial.ttf",
         "assets/fonts/Roboto-Medium.ttf",
         "../assets/fonts/Roboto-Medium.ttf",
+        "/usr/share/fonts/inter/Inter-Regular.ttf",
+        "/usr/share/fonts/inter/Inter-Regular.otf",
+        "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/google-noto/NotoSans-Regular.ttf"
     };
 
-    for (const char* path : defaultCandidates) {
-        if (fs::exists(path)) {
-            if (m_fallbackFace.create_from_file(path) == BL_SUCCESS) {
-                m_fallbackLoaded = true;
-                break;
-            }
+    std::string best = FindFirstExisting(defaultCandidates);
+    if (!best.empty()) {
+        if (m_fallbackFace.create_from_file(best.c_str()) == BL_SUCCESS) {
+            m_fallbackLoaded = true;
         }
     }
 }
@@ -72,61 +97,198 @@ std::string FontManager::ResolveFontPath(const std::string& family, bool bold, b
     std::string lowerFamily = family;
     std::transform(lowerFamily.begin(), lowerFamily.end(), lowerFamily.begin(), ::tolower);
 
-#if defined(_WIN32)
-    const std::string winFontDir = "C:/Windows/Fonts/";
-    if (lowerFamily.find("segoe") != std::string::npos) {
-        if (bold && italic) return winFontDir + "segoeuez.ttf"; // Bold Italic
-        if (bold)           return winFontDir + "segoeuib.ttf"; // Bold
-        if (italic)         return winFontDir + "segoeuii.ttf"; // Italic
-        return winFontDir + "segoeui.ttf";                     // Regular
+    // 1. Segoe UI (Windows standard, or bundled in assets/user fonts on Linux)
+    if (lowerFamily.find("segoe") != std::string::npos || lowerFamily.empty() || lowerFamily == "default") {
+        if (bold && italic) {
+            std::string p = FindFirstExisting({
+                "assets/fonts/segoeuiz.ttf", "../assets/fonts/segoeuiz.ttf", "../../assets/fonts/segoeuiz.ttf",
+                "bin/assets/fonts/segoeuiz.ttf", "~/.local/share/fonts/segoeuiz.ttf", "~/.fonts/segoeuiz.ttf",
+                "assets/fonts/seguisbi.ttf", "~/.local/share/fonts/seguisbi.ttf",
+                "C:/Windows/Fonts/segoeuez.ttf", "C:/Windows/Fonts/segoeuiz.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (bold) {
+            std::string p = FindFirstExisting({
+                "assets/fonts/segoeuib.ttf", "../assets/fonts/segoeuib.ttf", "../../assets/fonts/segoeuib.ttf",
+                "bin/assets/fonts/segoeuib.ttf", "~/.local/share/fonts/segoeuib.ttf", "~/.fonts/segoeuib.ttf",
+                "assets/fonts/seguisb.ttf", "~/.local/share/fonts/seguisb.ttf",
+                "C:/Windows/Fonts/segoeuib.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (italic) {
+            std::string p = FindFirstExisting({
+                "assets/fonts/segoeuii.ttf", "../assets/fonts/segoeuii.ttf", "../../assets/fonts/segoeuii.ttf",
+                "bin/assets/fonts/segoeuii.ttf", "~/.local/share/fonts/segoeuii.ttf", "~/.fonts/segoeuii.ttf",
+                "C:/Windows/Fonts/segoeuii.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        std::string p = FindFirstExisting({
+            "assets/fonts/segoeui.ttf", "../assets/fonts/segoeui.ttf", "../../assets/fonts/segoeui.ttf",
+            "bin/assets/fonts/segoeui.ttf", "~/.local/share/fonts/segoeui.ttf", "~/.fonts/segoeui.ttf",
+            "C:/Windows/Fonts/segoeui.ttf"
+        });
+        if (!p.empty()) return p;
     }
-    if (lowerFamily.find("arial") != std::string::npos) {
-        if (bold && italic) return winFontDir + "arialbi.ttf";
-        if (bold)           return winFontDir + "arialbd.ttf";
-        if (italic)         return winFontDir + "ariali.ttf";
-        return winFontDir + "arial.ttf";
+
+    // 2. Arial / Sans-Serif / Helvetica
+    if (lowerFamily.find("arial") != std::string::npos || lowerFamily.find("sans") != std::string::npos || lowerFamily.find("helvetica") != std::string::npos) {
+        if (bold && italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/arialbi.ttf",
+                "/usr/share/fonts/liberation-sans-fonts/LiberationSans-BoldItalic.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf",
+                "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-BoldOblique.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (bold) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/arialbd.ttf",
+                "/usr/share/fonts/inter/Inter-Bold.ttf",
+                "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/ariali.ttf",
+                "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Italic.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf",
+                "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Oblique.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        std::string p = FindFirstExisting({
+            "C:/Windows/Fonts/arial.ttf",
+            "/usr/share/fonts/inter/Inter-Regular.ttf",
+            "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"
+        });
+        if (!p.empty()) return p;
     }
-    if (lowerFamily.find("consolas") != std::string::npos) {
-        if (bold && italic) return winFontDir + "consolaz.ttf";
-        if (bold)           return winFontDir + "consolab.ttf";
-        if (italic)         return winFontDir + "consolai.ttf";
-        return winFontDir + "consola.ttf";
+
+    // 3. Consolas / Monospace / Courier
+    if (lowerFamily.find("consola") != std::string::npos || lowerFamily.find("mono") != std::string::npos || lowerFamily.find("courier") != std::string::npos) {
+        if (bold && italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/consolaz.ttf",
+                "/usr/share/fonts/liberation-mono-fonts/LiberationMono-BoldItalic.ttf",
+                "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono-BoldOblique.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (bold) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/consolab.ttf",
+                "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Bold.ttf",
+                "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono-Bold.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/consolai.ttf",
+                "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Italic.ttf",
+                "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono-Oblique.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        std::string p = FindFirstExisting({
+            "C:/Windows/Fonts/consola.ttf",
+            "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Regular.ttf",
+            "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf"
+        });
+        if (!p.empty()) return p;
     }
-    if (lowerFamily.find("times") != std::string::npos) {
-        if (bold && italic) return winFontDir + "timesbi.ttf";
-        if (bold)           return winFontDir + "timesbd.ttf";
-        if (italic)         return winFontDir + "timesi.ttf";
-        return winFontDir + "times.ttf";
+
+    // 4. Times / Serif
+    if (lowerFamily.find("times") != std::string::npos || lowerFamily.find("serif") != std::string::npos) {
+        if (bold && italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/timesbi.ttf",
+                "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-BoldItalic.ttf",
+                "/usr/share/fonts/dejavu-serif-fonts/DejaVuSerif-BoldItalic.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (bold) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/timesbd.ttf",
+                "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-Bold.ttf",
+                "/usr/share/fonts/dejavu-serif-fonts/DejaVuSerif-Bold.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/timesi.ttf",
+                "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-Italic.ttf",
+                "/usr/share/fonts/dejavu-serif-fonts/DejaVuSerif-Italic.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        std::string p = FindFirstExisting({
+            "C:/Windows/Fonts/times.ttf",
+            "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-Regular.ttf",
+            "/usr/share/fonts/dejavu-serif-fonts/DejaVuSerif.ttf"
+        });
+        if (!p.empty()) return p;
     }
+
+    // 5. Calibri
     if (lowerFamily.find("calibri") != std::string::npos) {
-        if (bold && italic) return winFontDir + "calibriz.ttf";
-        if (bold)           return winFontDir + "calibrib.ttf";
-        if (italic)         return winFontDir + "calibrii.ttf";
-        return winFontDir + "calibri.ttf";
+        if (bold && italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/calibriz.ttf",
+                "/usr/share/fonts/google-carlito-fonts/Carlito-BoldItalic.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (bold) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/calibrib.ttf",
+                "/usr/share/fonts/google-carlito-fonts/Carlito-Bold.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        if (italic) {
+            std::string p = FindFirstExisting({
+                "C:/Windows/Fonts/calibrii.ttf",
+                "/usr/share/fonts/google-carlito-fonts/Carlito-Italic.ttf"
+            });
+            if (!p.empty()) return p;
+        }
+        std::string p = FindFirstExisting({
+            "C:/Windows/Fonts/calibri.ttf",
+            "/usr/share/fonts/google-carlito-fonts/Carlito-Regular.ttf"
+        });
+        if (!p.empty()) return p;
     }
-#else
-    // Linux / POSIX candidate resolution
-    const char* linuxCandidates[] = {
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf"
-    };
-    for (const char* p : linuxCandidates) {
-        if (fs::exists(p)) return p;
-    }
-#endif
 
-    // Fallback to assets directory if available
-    const char* assetCandidates[] = {
-        "assets/fonts/Roboto-Regular.ttf",
+    // 6. Generic system fallback
+    std::string fallback = FindFirstExisting({
+        "assets/fonts/segoeui.ttf",
+        "../assets/fonts/segoeui.ttf",
+        "bin/assets/fonts/segoeui.ttf",
+        "~/.local/share/fonts/segoeui.ttf",
         "assets/fonts/Roboto-Medium.ttf",
-        "../assets/fonts/Roboto-Medium.ttf"
-    };
-    for (const char* p : assetCandidates) {
-        if (fs::exists(p)) return p;
-    }
+        "assets/fonts/Roboto-Regular.ttf",
+        "../assets/fonts/Roboto-Medium.ttf",
+        "/usr/share/fonts/inter/Inter-Regular.ttf",
+        "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/google-noto/NotoSans-Regular.ttf"
+    });
 
-    return "";
+    return fallback;
 }
 
 BLFontFace FontManager::LoadFontFace(const std::string& filePath) {

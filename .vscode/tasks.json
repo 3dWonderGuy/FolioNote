@@ -9,7 +9,7 @@
                 "kind": "build",
                 "isDefault": true
             },
-            "problemMatcher": "$msCompile",
+            "problemMatcher": ["$gcc", "$msCompile"],
             "presentation": {
                 "reveal": "silent",
                 "panel": "shared"
@@ -20,7 +20,7 @@
             "type": "shell",
             "command": "cmake --build build --config RelWithDebInfo -j",
             "group": "build",
-            "problemMatcher": "$msCompile",
+            "problemMatcher": ["$gcc", "$msCompile"],
             "presentation": {
                 "reveal": "silent",
                 "panel": "shared"
@@ -31,9 +31,23 @@
             "type": "shell",
             "command": "cmake --build build --config Release -j",
             "group": "build",
-            "problemMatcher": "$msCompile",
+            "problemMatcher": ["$gcc", "$msCompile"],
             "presentation": {
                 "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Run FolioNote",
+            "type": "shell",
+            "command": "./build/bin/FolioNote",
+            "windows": {
+                "command": ".\\build\\bin\\Debug\\FolioNote.exe"
+            },
+            "dependsOn": "Build FolioNote (Debug)",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
                 "panel": "shared"
             }
         }

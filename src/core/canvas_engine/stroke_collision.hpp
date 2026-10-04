@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file core/engine/stroke_collision.hpp
+ * @file core/canvas_engine/stroke_collision.hpp
  * @brief High-Performance Computational Geometry & Slicing for Vector Ink Strokes
  * =========================================================================================
  *
@@ -23,8 +23,8 @@
 #include <algorithm>
 
 #include "core/spatial/aabb.hpp"
-#include "core/engine/stroke_smoother.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
+#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/canvas_engine/stroke_outline_builder.hpp"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

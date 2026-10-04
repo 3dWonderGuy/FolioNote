@@ -185,9 +185,7 @@ namespace Folio {
 #else
             std::ostream& out = (level == LogLevel::Error) ? std::cerr : std::cout;
             out << '[' << timestamp << "] [" << levelStr << "] [" << sourceStr << "] " << msg << '\n';
-            if (level == LogLevel::Error) {
-                out.flush();
-            }
+            out.flush();
 #endif
         }
 

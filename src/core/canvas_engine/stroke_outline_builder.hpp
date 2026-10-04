@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file core/engine/stroke_outline_builder.hpp
+ * @file core/canvas_engine/stroke_outline_builder.hpp
  * @brief Polygonal 2D Ribbon and Patterned Stroke Outline Generator for Vector Ink
  * =========================================================================================
  *

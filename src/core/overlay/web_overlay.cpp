@@ -22,7 +22,9 @@
 #include "core/objects/media/images/image_decoder.hpp"
 #include "utils/logger.hpp"
 
+#if defined(_WIN32)
 #include <webview.h>
+#endif
 #include <SDL3/SDL.h>
 
 #include <thread>

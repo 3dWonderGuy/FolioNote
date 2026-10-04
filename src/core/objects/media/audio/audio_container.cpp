@@ -16,7 +16,7 @@
 #endif
 
 #include "core/objects/media/audio/audio_container.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/text/font_manager.hpp"
 #include "core/objects/object_registry.hpp"
 #include "utils/logger.hpp"

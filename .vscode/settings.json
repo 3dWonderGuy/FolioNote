@@ -7,5 +7,11 @@
         "--fallback-style=none"
     ],
     "clangd.checkUpdates": false,
-    "C_Cpp.intelliSenseEngine": "disabled"
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "cmake.cmakePath": "/usr/bin/cmake",
+    "cmake.generator": "Ninja",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureSettings": {
+        "CMAKE_MAKE_PROGRAM": "/usr/bin/ninja"
+    }
 }

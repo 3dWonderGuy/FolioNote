@@ -107,6 +107,7 @@ struct DBPageRecord {
     std::string dedicatedPdfPath;///< Persistent relative package path or absolute disk path to backing PDF
     std::string dedicatedPdfBookmarks;///< Serialized user bookmarks for this dedicated PDF page
     std::string dedicatedPdfHighlights;///< Serialized text highlight spans for this dedicated PDF page
+    bool isDedicatedMd = false; ///< True if this page is a dedicated standalone Markdown document
     int64_t deletedAt = 0;      ///< Deletion timestamp in Unix epoch seconds (0 = active, >0 = in recycle bin)
 };
 
@@ -234,7 +235,8 @@ public:
                           int32_t nestingLevel = 0, bool isCollapsed = false,
                           bool isDedicatedPdf = false, const std::string& dedicatedPdfPath = "",
                           const std::string& dedicatedPdfBookmarks = "",
-                          const std::string& dedicatedPdfHighlights = "");
+                          const std::string& dedicatedPdfHighlights = "",
+                          bool isDedicatedMd = false);
 
     /**
      * @brief Deletes a page's metadata record from SQLite.

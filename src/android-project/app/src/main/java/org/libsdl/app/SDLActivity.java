@@ -319,6 +319,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             // "SDL3_mixer",
             // "SDL3_net",
             // "SDL3_ttf",
+            "pdfium",
             "main"
         };
     }

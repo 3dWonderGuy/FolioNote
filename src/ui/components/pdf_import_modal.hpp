@@ -10,7 +10,7 @@
 #include "core/storage/pdf_storage.hpp"
 #include "core/objects/pdf_container.hpp"
 #include "core/document/document_session.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "ui/imgui_theme.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"

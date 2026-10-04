@@ -34,7 +34,7 @@
 #include <SDL3/SDL.h>
 
 #include "core/document/document_session.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/history/canvas_command.hpp"
 #include "core/objects/ink_container/ink_container.hpp"

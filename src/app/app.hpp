@@ -17,7 +17,7 @@
 #include "app/settings_manager.hpp"
 #include "app/theme_manager.hpp"
 #include "app/window_state_manager.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
 #include "core/objects/attachment_container/attachment_container.hpp"
@@ -32,6 +32,7 @@
 #include "ui/components/custom_titlebar.hpp"
 #include "ui/views/notebook_hub.hpp"
 #include "ui/views/pdf_viewer_page.hpp"
+#include "ui/views/md_editor_view.hpp"
 #include "input/input_manager.hpp"
 #include "io/file_reader.hpp"
 #include "utils/usage_tracker.hpp"
@@ -65,6 +66,7 @@ public:
     ToolbarDemoOverlay toolbarDemo;
     Folio::PdfImportModal pdfImportModal;
     Folio::PdfViewerPage pdfViewer;
+    Folio::MdEditorView mdEditor;
 
     AppViewMode currentView = AppViewMode::CanvasWorkspace;
 
@@ -352,7 +354,10 @@ public:
         ImGui_ImplOpenGL3_Init("#version 330");
 #endif
 
-        canvas.Init(initialW, initialH);
+        float displayScale = SDL_GetWindowDisplayScale(window);
+        if (displayScale <= 0.0f) displayScale = 1.0f;
+        float displayDpi = 96.0f * displayScale;
+        canvas.Init(initialW, initialH, displayDpi);
         session.SetEphemeralStrokeSink([this](BLPath path, BLRgba32 color, uint32_t durationMs) {
             canvas.AddEphemeralStroke(std::move(path), color, durationMs);
         });
@@ -916,7 +921,7 @@ public:
                 // viewport starts default (hasCustomViewport = false), resetting
                 // to homed (0, 0, 1.0) viewports as desired.
                 auto activePg = session.GetActivePage();
-                if (activePg && !activePg->isDedicatedPdf) {
+                if (activePg && !activePg->isDedicatedPdf && !activePg->isDedicatedMd) {
                     std::string newGuid = activePg->guid;
                     if (newGuid != lastActivePageGuid) {
                         uint64_t nowMs = SDL_GetTicks();
@@ -967,11 +972,12 @@ public:
                             canvas.transform.panYMm = vp.panYMm;
                             canvas.transform.zoom   = vp.zoom;
                         } else {
-                            // Clean startup: home to top-left / center (0, 0, 1.0x)
-                            canvas.transform.panXMm = 0.0;
-                            canvas.transform.panYMm = 0.0;
-                            canvas.transform.zoom   = 1.0;
-                            vp.Home();
+                            // Clean startup: home to nicely centered page with comfortable zoom
+                            canvas.HomeOrCenterPage();
+                            vp.panXMm = canvas.transform.panXMm;
+                            vp.panYMm = canvas.transform.panYMm;
+                            vp.zoom   = canvas.transform.zoom;
+                            vp.hasCustomViewport = true;
                         }
                         vp.lastViewportAccessMs = nowMs;
 
@@ -1007,6 +1013,13 @@ public:
                     inputManager.wasCanvasImageHovered = pdfViewer.isPdfContentHovered;
                     inputManager.stateMachine.isCanvasHovered = false; // Prevent background canvas marquee selection
                     inputManager.stateMachine.isPdfCanvasHovered = pdfViewer.isPdfContentHovered;
+                    inputManager.stateMachine.canvasOriginX = canvasX;
+                    inputManager.stateMachine.canvasOriginY = contentY;
+                } else if (activePg && activePg->isDedicatedMd) {
+                    mdEditor.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager, canvas.inkColorInverted);
+                    inputManager.wasCanvasImageHovered = false;
+                    inputManager.stateMachine.isCanvasHovered = false;
+                    inputManager.stateMachine.isPdfCanvasHovered = false;
                     inputManager.stateMachine.canvasOriginX = canvasX;
                     inputManager.stateMachine.canvasOriginY = contentY;
                 } else {

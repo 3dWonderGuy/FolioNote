@@ -5,21 +5,26 @@
 #include <string>
 
 namespace FolioTheme {
-    inline ImFont* FontRegular          = nullptr; // Standard UI size (20px)
-    inline ImFont* FontBold             = nullptr; // Standard UI Bold size (20px)
-    inline ImFont* FontRibbonSection    = nullptr; // Ribbon section & toolbar button size (15px = 0.75x)
-    inline ImFont* FontRibbonSectionBold= nullptr; // Ribbon section Bold size (15px = 0.75x)
-    inline ImFont* FontNavLarge         = nullptr; // Large Nav UI size (26px)
-    inline ImFont* FontNavBoldLarge     = nullptr; // Large Nav Bold size (26px)
-    inline ImFont* FontRibbonLarge      = nullptr; // 3x Large Regular for all ribbon tabs (32px)
-    inline ImFont* FontRibbonBoldLarge  = nullptr; // 3x Large Bold for the active selected tab (32px)
+    inline ImFont* FontRegular          = nullptr; // Standard UI size (15px)
+    inline ImFont* FontBold             = nullptr; // Standard UI Bold size (15px)
+    inline ImFont* FontRibbonSection    = nullptr; // Ribbon section & toolbar button size (12px)
+    inline ImFont* FontRibbonSectionBold= nullptr; // Ribbon section Bold size (12px)
+    inline ImFont* FontNavLarge         = nullptr; // Large Nav UI size (16px)
+    inline ImFont* FontNavBoldLarge     = nullptr; // Large Nav Bold size (16px)
+    inline ImFont* FontRibbonLarge      = nullptr; // Modern Regular for ribbon tabs (17px)
+    inline ImFont* FontRibbonBoldLarge  = nullptr; // Modern Bold for the active selected tab (17px)
     inline ImFont* FontBoldLarge        = nullptr; // Backward compatibility alias
 
     inline std::string FindFontPath(const std::vector<std::string>& candidates) {
         std::error_code ec;
+        const char* home = std::getenv("HOME");
         for (const auto& path : candidates) {
-            if (std::filesystem::exists(path, ec) && !ec) {
-                return path;
+            std::string resolved = path;
+            if (!resolved.empty() && resolved[0] == '~' && home) {
+                resolved = std::string(home) + resolved.substr(1);
+            }
+            if (std::filesystem::exists(resolved, ec) && !ec) {
+                return resolved;
             }
         }
         return "";
@@ -47,21 +52,28 @@ namespace FolioTheme {
             // Windows
             "C:\\Windows\\Fonts\\segoeui.ttf",
             "C:/Windows/Fonts/segoeui.ttf",
-            // Linux / Fedora (Cantarell, Noto Sans, Liberation Sans, DejaVu Sans, Inter)
-            "/usr/share/fonts/cantarell/Cantarell-Regular.otf",
-            "/usr/share/fonts/cantarell/Cantarell-VF.otf",
-            "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf",
-            "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+            // Bundled and relative repo assets (Segoe UI or Inter or Roboto)
+            "assets/fonts/segoeui.ttf",
+            "../assets/fonts/segoeui.ttf",
+            "../../assets/fonts/segoeui.ttf",
+            "bin/assets/fonts/segoeui.ttf",
+            // User local fonts (~/.local/share/fonts/)
+            "~/.local/share/fonts/segoeui.ttf",
+            "~/.fonts/segoeui.ttf",
+            "/usr/share/fonts/segoeui.ttf",
+            // Linux Modern Clean System Fonts (Inter, Adwaita, Open Sans, Liberation Sans, Cantarell)
             "/usr/share/fonts/inter/Inter-Regular.ttf",
             "/usr/share/fonts/inter/Inter-Regular.otf",
+            "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf",
+            "/usr/share/fonts/open-sans/OpenSans-Regular.ttf",
+            "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/abattis-cantarell-fonts/Cantarell-Regular.otf",
+            "/usr/share/fonts/google-carlito-fonts/Carlito-Regular.ttf",
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+            "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-            // Bundled and relative repo assets
+            // Fallback bundled assets
             "assets/fonts/Roboto-Medium.ttf",
             "../assets/fonts/Roboto-Medium.ttf",
             "../../assets/fonts/Roboto-Medium.ttf",
@@ -74,27 +86,32 @@ namespace FolioTheme {
             // Windows
             "C:\\Windows\\Fonts\\segoeuib.ttf",
             "C:/Windows/Fonts/segoeuib.ttf",
-            // Linux / Fedora
-            "/usr/share/fonts/cantarell/Cantarell-Bold.otf",
-            "/usr/share/fonts/cantarell/Cantarell-VF.otf",
-            "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
-            "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf",
-            "/usr/share/fonts/liberation-sans/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+            // Bundled and relative repo assets
+            "assets/fonts/segoeuib.ttf",
+            "../assets/fonts/segoeuib.ttf",
+            "../../assets/fonts/segoeuib.ttf",
+            "bin/assets/fonts/segoeuib.ttf",
+            // User local fonts (~/.local/share/fonts/)
+            "~/.local/share/fonts/segoeuib.ttf",
+            "~/.fonts/segoeuib.ttf",
+            "/usr/share/fonts/segoeuib.ttf",
+            // Linux Modern Clean System Fonts
             "/usr/share/fonts/inter/Inter-Bold.ttf",
             "/usr/share/fonts/inter/Inter-Bold.otf",
+            "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf",
+            "/usr/share/fonts/open-sans/OpenSans-Bold.ttf",
+            "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/abattis-cantarell-fonts/Cantarell-Bold.otf",
+            "/usr/share/fonts/google-carlito-fonts/Carlito-Bold.ttf",
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
-            // Bundled and relative repo assets
+            // Fallback bundled assets
             "assets/fonts/Roboto-Bold.ttf",
             "assets/fonts/Roboto-Medium.ttf",
             "../assets/fonts/Roboto-Medium.ttf",
-            "third_party/imgui/misc/fonts/Roboto-Medium.ttf",
-            "../third_party/imgui/misc/fonts/Roboto-Medium.ttf",
-            "../../third_party/imgui/misc/fonts/Roboto-Medium.ttf"
+            "third_party/imgui/misc/fonts/Roboto-Medium.ttf"
         };
 
         std::string regularPath = FindFontPath(regularCandidates);
@@ -102,10 +119,10 @@ namespace FolioTheme {
 
         // 1. Standard regular UI font
         if (!regularPath.empty()) {
-            FontRegular       = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 20.0f, &cfg);
-            FontRibbonSection = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 15.0f, &cfg); // 0.75x of 20px
-            FontNavLarge      = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 23.0f, &cfg);
-            FontRibbonLarge   = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 32.0f, &cfg);
+            FontRegular       = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 15.0f, &cfg);
+            FontRibbonSection = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 12.0f, &cfg);
+            FontNavLarge      = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 16.0f, &cfg);
+            FontRibbonLarge   = io.Fonts->AddFontFromFileTTF(regularPath.c_str(), 17.0f, &cfg);
         } else {
             FontRegular       = io.Fonts->AddFontDefault(&cfg);
             FontRibbonSection = FontRegular;
@@ -115,10 +132,10 @@ namespace FolioTheme {
 
         // 2. Bold fonts
         if (!boldPath.empty()) {
-            FontBold              = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 20.0f, &cfg);
-            FontRibbonSectionBold = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 15.0f, &cfg); // 0.75x of 20px
-            FontNavBoldLarge      = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 23.0f, &cfg);
-            FontRibbonBoldLarge   = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 32.0f, &cfg);
+            FontBold              = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 15.0f, &cfg);
+            FontRibbonSectionBold = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 12.0f, &cfg);
+            FontNavBoldLarge      = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 16.0f, &cfg);
+            FontRibbonBoldLarge   = io.Fonts->AddFontFromFileTTF(boldPath.c_str(), 17.0f, &cfg);
         } else {
             FontBold              = FontRegular;
             FontRibbonSectionBold = FontRibbonSection;

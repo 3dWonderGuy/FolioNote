@@ -27,7 +27,7 @@
 #include <SDL3/SDL.h>
 
 #include "core/spatial/aabb.hpp"
-#include "core/engine/canvas_transform.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
 #include "core/overlay/interactive_overlay.hpp"
 
 class CanvasObject;
@@ -129,6 +129,7 @@ public:
     /**
      * @brief Gets currently focused interactive object, or nullptr if none.
      */
+    [[nodiscard]] CanvasObject* GetFocusedObject() const noexcept { return focusedObject; }
     /**
      * @brief Computes projected integer pixel screen rectangle of a canvas object under the active viewport.
      *

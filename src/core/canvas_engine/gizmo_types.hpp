@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "core/engine/stroke_smoother.hpp"
+#include "core/canvas_engine/stroke_smoother.hpp"
 
 /**
  * @brief Categorizes the locked interaction gizmo style for canvas objects.

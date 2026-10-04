@@ -13,7 +13,7 @@
  */
 
 #include "input/stateMachine/input_state_machine.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
 #include "app/context_menu_manager.hpp"

@@ -35,8 +35,8 @@
 #include <vector>
 
 #include "core/objects/connectors/smart_arrow_container.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
-#include "core/engine/canvas_transform.hpp"
+#include "core/canvas_engine/stroke_outline_builder.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
 #include "core/objects/object_registry.hpp"
 
 #ifndef M_PI

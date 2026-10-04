@@ -21,7 +21,7 @@
  */
 
 #include "input/stateMachine/input_state_machine.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
 #include "utils/logger.hpp"
 
@@ -150,10 +150,11 @@ void InputStateMachine::ProcessInputState(CanvasEngine& canvas, DocumentSession&
 
     auto activePg = session.GetActivePage();
     isPdfModeActive = (activePg && activePg->isDedicatedPdf);
+    bool isDedicatedDocActive = isPdfModeActive || (activePg && activePg->isDedicatedMd);
 
-    // If active page is a dedicated standalone PDF, stroke projection and interaction
-    // are handled directly by PdfViewerPage to prevent writing to the background canvas.
-    if (!isPdfModeActive) {
+    // If active page is a dedicated standalone PDF or Markdown note, stroke projection and interaction
+    // are handled directly by their respective views to prevent writing to the background canvas.
+    if (!isDedicatedDocActive) {
         switch (ActiveDevice) {
             case DeviceType::Stylus: DispatchStylus(canvas, session, imguiWantsInput); break;
             case DeviceType::Touch:  DispatchTouch(canvas, session, imguiWantsInput);  break;

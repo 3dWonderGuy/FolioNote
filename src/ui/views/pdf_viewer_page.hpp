@@ -13,8 +13,7 @@
 #include <SDL3/SDL.h>
 #include "core/document/document_session.hpp"
 #include "core/document/canvas_page.hpp"
-#include "core/render/pdf_renderer.hpp"
-#include "core/render/pdf_text_layer.hpp"
+#include "core/pdf_engine/pdf_engine.hpp"
 #include "input/input_state_machine.hpp"
 #include "app/theme_manager.hpp"
 #include "ui/imgui_theme.hpp"
@@ -24,121 +23,41 @@
 
 namespace Folio {
 
-/**
- * @brief Highlighting color preset definitions with light, dark-tuned, and swatch colors.
- */
-struct PdfHighlightColorPreset {
-    const char* name;
-    ImU32 lightColor;
-    ImU32 darkColor;
-    ImVec4 swatch;
-};
-
-/**
- * @brief Provides the standard curated palette of digital notebook highlighter colors.
- * Includes Yellow, Green, Sky Blue, Rose Pink, Warm Orange, and Lavender Purple.
- */
-inline const std::vector<PdfHighlightColorPreset>& GetHighlightColorPresets() {
-    static const std::vector<PdfHighlightColorPreset> s_presets = {
-        { "Sunshine Yellow", IM_COL32(255, 235, 59, 115),  IM_COL32(255, 235, 59, 130),  ImVec4(1.00f, 0.92f, 0.23f, 1.0f) },
-        { "Neon Green",      IM_COL32(76, 217, 100, 115),  IM_COL32(76, 217, 100, 130),  ImVec4(0.30f, 0.85f, 0.39f, 1.0f) },
-        { "Sky Blue",        IM_COL32(33, 150, 243, 115),  IM_COL32(0, 210, 255, 130),   ImVec4(0.13f, 0.59f, 0.95f, 1.0f) },
-        { "Rose Pink",       IM_COL32(255, 64, 129, 115),  IM_COL32(255, 64, 129, 130),  ImVec4(1.00f, 0.25f, 0.51f, 1.0f) },
-        { "Warm Orange",     IM_COL32(255, 152, 0, 115),   IM_COL32(255, 152, 0, 130),   ImVec4(1.00f, 0.60f, 0.00f, 1.0f) },
-        { "Lavender Purple", IM_COL32(171, 71, 188, 115),  IM_COL32(186, 104, 200, 130), ImVec4(0.67f, 0.28f, 0.74f, 1.0f) }
-    };
-    return s_presets;
-}
-
-/**
- * @brief Represents a persistent text highlight span overlaid on a PDF page.
- * Stores bounding box in millimeters, display color, character offsets, and extracted text snippet.
- */
-struct TextHighlightSpan {
-    AABB boundsMm;
-    ImU32 color = IM_COL32(255, 235, 59, 115);
-    int startChar = -1;
-    int endChar = -1;
-    std::string text;
-    int pageIndex = 0;
-};
-
-struct CachedPdfViewerPage {
-    int pageIndex = 0;
-    BLImage image;
-    GLuint glTexture = 0;
-    int pixelW = 0;
-    int pixelH = 0;
-    double widthMm = 210.0;
-    double heightMm = 297.0;
-    PdfTextLayer textLayer;
-    std::vector<PdfPageLink> links;
-    std::vector<TextHighlightSpan> textHighlights;
-    bool isLoaded = false;
-    bool isInverted = false;
-
-    void DestroyTexture() {
-        if (glTexture != 0) {
-            glDeleteTextures(1, &glTexture);
-            glTexture = 0;
-        }
-    }
-};
-
-struct CachedThumbnail {
-    int pageIndex = 0;
-    GLuint glTexture = 0;
-    int pixelW = 0;
-    int pixelH = 0;
-    double widthMm = 210.0;
-    double heightMm = 297.0;
-    bool isLoaded = false;
-    bool isInverted = false;
-
-    void DestroyTexture() {
-        if (glTexture != 0) {
-            glDeleteTextures(1, &glTexture);
-            glTexture = 0;
-        }
-    }
-};
-
-struct PdfUserBookmark {
-    int pageIndex = 0;
-    std::string title;
-};
-
-struct PdfPageDimension {
-    double widthMm = 210.0;
-    double heightMm = 297.0;
-};
-
-enum class PdfSidebarTab : uint8_t {
-    Thumbnails = 0,
-    Outline,
-    Bookmarks
-};
-
-enum class PdfToolMode : uint8_t {
-    Highlight = 0,    // Text-snapping highlighter
-    Select,           // Text selection (copy, quote to notes, export)
-    Eraser,           // Stroke and text highlight eraser
-    Pen,              // Freehand ink drawing with active pen preset
-    FreeHighlight     // Freehand highlighter ink drawing
-};
-
 class PdfViewerPage {
 public:
     static inline PdfViewerPage* s_activeInstance = nullptr;
 
-    std::string currentPdfPath;
-    int totalPages = 0;
-    float scrollX = 0.0f;
-    float maxScrollX = 0.0f;
-    float scrollY = 0.0f;
-    float maxScrollY = 0.0f;
-    float zoomScale = 1.25f; // 1.25 = 125% zoom
-    int activePageIndex = 0;
+    PdfEngine engine;
+
+    // Direct telemetry references for zero-overhead backwards compatibility
+    std::string& currentPdfPath = engine.document.filePath;
+    int& totalPages = engine.document.totalPages;
+    float& scrollX = engine.virtualizer.scrollX;
+    float& maxScrollX = engine.virtualizer.maxScrollX;
+    float& scrollY = engine.virtualizer.scrollY;
+    float& maxScrollY = engine.virtualizer.maxScrollY;
+    float& zoomScale = engine.virtualizer.zoomScale;
+    int& activePageIndex = engine.virtualizer.activePageIndex;
+    PdfToolMode& activeTool = engine.activeTool;
+    int& activeHighlightColorIdx = engine.activeHighlightColorIdx;
+    int& selectedPageIndex = engine.selectedPageIndex;
+    PdfTextSelection& currentSelection = engine.currentSelection;
+    bool& isSelectingText = engine.isSelectingText;
+    std::vector<PdfPageDimension>& pageDimensions = engine.document.pageDimensions;
+    std::vector<PdfOutlineItem>& docOutline = engine.document.docOutline;
+    bool& isOutlineLoaded = engine.document.isOutlineLoaded;
+    std::vector<PdfUserBookmark>& userBookmarks = engine.document.userBookmarks;
+    std::unordered_map<int, std::vector<TextHighlightSpan>>& docHighlights = engine.document.docHighlights;
+    std::unordered_map<int, CachedPdfViewerPage>& pageCache = engine.tileCache.pageCache;
+    std::unordered_map<int, CachedThumbnail>& thumbnailCache = engine.tileCache.thumbnailCache;
+    std::unordered_map<std::string, PdfDocSessionState>& documentWorkingSet = engine.documentWorkingSet;
+    bool& isLoading = engine.isLoading;
+    std::string& loadingDocName = engine.loadingDocName;
+    std::atomic<int>& loadingCurrentPage = engine.loadingCurrentPage;
+    std::atomic<int>& loadingTotalPages = engine.loadingTotalPages;
+    std::atomic<bool>& loadingFinished = engine.loadingFinished;
+    std::atomic<bool>& loadingFailed = engine.loadingFailed;
+
     bool currentInvertState = false;
 
     // Horizontal scrollbar and middle-click pan telemetry
@@ -147,104 +66,27 @@ public:
     bool isMiddlePanning = false;
     ImVec2 middlePanLastPos{0.0f, 0.0f};
 
-    // Active tool mode (Highlight is text-snapping highlighter, Eraser removes highlights and ink)
-    PdfToolMode activeTool = PdfToolMode::Highlight;
-
     // Dedicated PDF content area hover telemetry
     bool isPdfContentHovered = false;
 
-
-
-    /**
-     * @brief Computes the cumulative vertical offset in millimeters of page @p pageIndex.
-     * 
-     * Mathematical derivation:
-     *   PageTopMm(0) = 0.0
-     *   PageTopMm(k) = sum_{i=0}^{k-1} (pageDimensions[i].heightMm + GAP_MM)
-     * where GAP_MM = 24.0px / (96.0px/25.4mm) = 6.35mm.
-     * 
-     * @param pageIndex 0-based PDF page index.
-     * @return Cumulative top position in millimeters from the top of the PDF document.
-     */
     [[nodiscard]] double GetPageTopMm(int pageIndex) const noexcept {
-        double top = 0.0;
-        constexpr double GAP_MM = 24.0 / (96.0 / 25.4); // 6.35mm
-        for (int i = 0; i < pageIndex && i < static_cast<int>(pageDimensions.size()); ++i) {
-            top += (pageDimensions[i].heightMm + GAP_MM);
-        }
-        return top;
+        return engine.virtualizer.GetPageTopMm(pageIndex, engine.document.pageDimensions);
     }
 
-    /**
-     * @brief Converts screen pixel coordinates on page @p pageIndex into world millimeters.
-     * 
-     * Mathematical projection:
-     *   scale = 1.0 / pxPerMm
-     *   worldX = (screenX - pMin.x) * scale
-     *   worldY = GetPageTopMm(pageIndex) + (screenY - pMin.y) * scale
-     * 
-     * @param pageIndex 0-based PDF page index.
-     * @param screenX Screen X in pixels.
-     * @param screenY Screen Y in pixels.
-     * @param pMin Top-left pixel coordinate of page rectangle on screen.
-     * @param pxPerMm Pixels per millimeter conversion factor including zoom.
-     * @return Point2D in world millimeters.
-     */
     [[nodiscard]] Point2D ScreenToPageMm(int pageIndex, float screenX, float screenY, ImVec2 pMin, float pxPerMm) const noexcept {
-        double scale = 1.0 / static_cast<double>(pxPerMm);
-        double localX = static_cast<double>(screenX - pMin.x) * scale;
-        double localY = static_cast<double>(screenY - pMin.y) * scale;
-        return Point2D{ localX, GetPageTopMm(pageIndex) + localY };
+        return engine.virtualizer.ScreenToPageMm(pageIndex, screenX, screenY, pMin, pxPerMm, engine.document.pageDimensions);
     }
 
-    /**
-     * @brief Converts world millimeter coordinates to screen pixel coordinates on page @p pageIndex.
-     * 
-     * Mathematical projection:
-     *   localX = worldX
-     *   localY = worldY - GetPageTopMm(pageIndex)
-     *   screenX = pMin.x + localX * pxPerMm
-     *   screenY = pMin.y + localY * pxPerMm
-     * 
-     * @param pageIndex 0-based PDF page index.
-     * @param worldX World X in millimeters.
-     * @param worldY World Y in millimeters.
-     * @param pMin Top-left pixel coordinate of page rectangle on screen.
-     * @param pxPerMm Pixels per millimeter conversion factor including zoom.
-     * @return ImVec2 on-screen pixel position.
-     */
     [[nodiscard]] ImVec2 PageMmToScreen(int pageIndex, double worldX, double worldY, ImVec2 pMin, float pxPerMm) const noexcept {
-        double localX = worldX;
-        double localY = worldY - GetPageTopMm(pageIndex);
-        return ImVec2(
-            pMin.x + static_cast<float>(localX * static_cast<double>(pxPerMm)),
-            pMin.y + static_cast<float>(localY * static_cast<double>(pxPerMm))
-        );
+        return engine.virtualizer.PageMmToScreen(pageIndex, worldX, worldY, pMin, pxPerMm, engine.document.pageDimensions);
     }
 
-    // Active highlighter color index into GetHighlightColorPresets()
-    int activeHighlightColorIdx = 0; // Default: Sunshine Yellow
-
-    /**
-     * @brief Resolves the current highlight color, adapting brightness for inverted dark canvas.
-     */
     [[nodiscard]] ImU32 GetActiveHighlightColor(bool inverted = false) const noexcept {
-        const auto& presets = GetHighlightColorPresets();
-        if (activeHighlightColorIdx >= 0 && activeHighlightColorIdx < static_cast<int>(presets.size())) {
-            return inverted ? presets[activeHighlightColorIdx].darkColor : presets[activeHighlightColorIdx].lightColor;
-        }
-        return inverted ? IM_COL32(0, 230, 255, 130) : IM_COL32(255, 235, 59, 115);
+        return engine.GetActiveHighlightColor(inverted);
     }
 
-    /**
-     * @brief Returns the RGBA swatch color for the active highlighter preset.
-     */
     [[nodiscard]] ImVec4 GetActiveHighlightSwatch() const noexcept {
-        const auto& presets = GetHighlightColorPresets();
-        if (activeHighlightColorIdx >= 0 && activeHighlightColorIdx < static_cast<int>(presets.size())) {
-            return presets[activeHighlightColorIdx].swatch;
-        }
-        return ImVec4(1.00f, 0.92f, 0.23f, 1.0f);
+        return engine.GetActiveHighlightSwatch();
     }
 
     // Sidebar on the RIGHT side
@@ -253,25 +95,15 @@ public:
     constexpr static float COLLAPSE_STRIP_WIDTH = 26.0f;
     PdfSidebarTab activeSidebarTab = PdfSidebarTab::Thumbnails;
 
-    // Auto-vanishing bottom HUD (0.0f on start so it does not pop up automatically)
+    // Auto-vanishing bottom HUD
     float hudInactivityTimer = 0.0f;
 
     // Interactive Scrollbar dragging
     bool isDraggingScrollbar = false;
     float scrollbarGrabOffsetY = 0.0f;
 
-    // Page text selection state
-    int selectedPageIndex = -1;
-    PdfTextSelection currentSelection;
-    bool isSelectingText = false;
-
-    // Outline & Bookmarks
-    std::vector<PdfOutlineItem> docOutline;
-    bool isOutlineLoaded = false;
-    std::vector<PdfUserBookmark> userBookmarks;
-
     // Bookmark Sync & Rename Modal State
-    std::string lastSyncedBookmarks;
+    std::string& lastSyncedBookmarks = engine.document.lastSyncedBookmarks;
     bool openBookmarkRenameModal = false;
     int bookmarkRenameIndex = -1;
     char bookmarkRenameBuffer[128] = "";
@@ -285,79 +117,12 @@ public:
         ImVec2 clickPos;
     } contextMenuState;
 
-    // Persistent Text Highlights (Mapped by PDF page index)
-    std::unordered_map<int, std::vector<TextHighlightSpan>> docHighlights;
-    std::string lastSyncedHighlights;
-
-    // -------------------------------------------------------------------------
-    // MULTI-DOCUMENT IN-MEMORY WORKING SET TELEMETRY
-    // -------------------------------------------------------------------------
-    /**
-     * @struct PdfDocSessionState
-     * @brief Retains the active in-memory viewport and decoded rendering cache for a PDF document.
-     * 
-     * Mathematical projection:
-     *   PageX_screen = (contentW > pageW ? (contentW - pageW) * 0.5 : 15.0) - scrollX
-     *   PageY_screen = PageTop_px - scrollY
-     * 
-     * When switching between multiple PDF documents, this working set preserves each document's
-     * independent zoom scale, horizontal scroll, vertical scroll, and active page index.
-     * If a document has not been viewed for longer than the absence timeout (60,000ms),
-     * its heavy textures are evicted from GPU/CPU RAM and its viewport is homed to default.
-     */
-    struct PdfDocSessionState {
-        std::string filePath;
-        float scrollX = 0.0f;
-        float scrollY = 0.0f;
-        float maxScrollX = 0.0f;
-        float maxScrollY = 0.0f;
-        float zoomScale = 1.25f;
-        int activePageIndex = 0;
-        uint64_t lastAccessTimeMs = 0;
-        bool isLoaded = false;
-        std::vector<PdfPageDimension> pageDimensions;
-        std::vector<PdfOutlineItem> docOutline;
-        bool isOutlineLoaded = false;
-        std::vector<PdfUserBookmark> userBookmarks;
-        std::unordered_map<int, std::vector<TextHighlightSpan>> docHighlights;
-        std::unordered_map<int, CachedPdfViewerPage> pageCache;
-        std::unordered_map<int, CachedThumbnail> thumbnailCache;
-
-        void EvictTextures() {
-            for (auto& [idx, p] : pageCache) p.DestroyTexture();
-            pageCache.clear();
-            for (auto& [idx, t] : thumbnailCache) t.DestroyTexture();
-            thumbnailCache.clear();
-        }
-
-        void HomeViewport() noexcept {
-            scrollX = 0.0f;
-            scrollY = 0.0f;
-            zoomScale = 1.25f;
-            activePageIndex = 0;
-        }
-    };
-    std::unordered_map<std::string, PdfDocSessionState> documentWorkingSet;
-
-    // Caches & Dimensions
-    std::vector<PdfPageDimension> pageDimensions;
-    std::unordered_map<int, CachedPdfViewerPage> pageCache;
-    std::unordered_map<int, CachedThumbnail> thumbnailCache;
+    std::string& lastSyncedHighlights = engine.document.lastSyncedHighlights;
 
     // Toast notification for copy actions
     float toastTimer = 0.0f;
     std::string toastMessage;
 
-    // Background Loading State & Telemetry for Loader Overlay
-    bool isLoading = false;
-    std::string loadingDocPath;
-    std::string loadingDocName;
-    std::atomic<int> loadingCurrentPage{0};
-    std::atomic<int> loadingTotalPages{0};
-    std::atomic<bool> loadingFinished{false};
-    std::atomic<bool> loadingFailed{false};
-    std::mutex pendingSummaryMutex;
-    PdfRenderer::PdfDocSummary pendingSummary;
     float loaderSpinnerAngle = 0.0f;
 
     PdfViewerPage() {
@@ -368,157 +133,34 @@ public:
         if (s_activeInstance == this) {
             s_activeInstance = nullptr;
         }
-        ClearCache();
-        for (auto& [path, state] : documentWorkingSet) {
-            state.EvictTextures();
-        }
-        documentWorkingSet.clear();
     }
 
     static PdfViewerPage* GetActiveInstance() {
         return s_activeInstance;
     }
 
-    /**
-     * @brief Deserializes tab-separated bookmarks string into the in-memory userBookmarks list.
-     * Format: <pageIndex>\t<title>\n per record.
-     * @param data Serialized string retrieved from SQLite database record.
-     */
     void LoadBookmarksFromString(const std::string& data) {
-        userBookmarks.clear();
-        if (data.empty()) return;
-        std::istringstream stream(data);
-        std::string line;
-        while (std::getline(stream, line)) {
-            if (line.empty()) continue;
-            size_t tabPos = line.find('\t');
-            if (tabPos != std::string::npos) {
-                try {
-                    int p = std::stoi(line.substr(0, tabPos));
-                    std::string t = line.substr(tabPos + 1);
-                    userBookmarks.push_back({p, t});
-                } catch (...) {}
-            }
-        }
+        engine.document.LoadBookmarksFromString(data);
     }
 
-    /**
-     * @brief Serializes the in-memory userBookmarks list into a compact tab/newline string.
-     * @return Formatted string for SQLite persistence in 'pages.dedicated_pdf_bookmarks'.
-     */
-    std::string SaveBookmarksToString() const {
-        std::string out;
-        for (const auto& bm : userBookmarks) {
-            out += std::to_string(bm.pageIndex) + "\t" + bm.title + "\n";
-        }
-        return out;
+    [[nodiscard]] std::string SaveBookmarksToString() const {
+        return engine.document.SaveBookmarksToString();
     }
 
-    /**
-     * @brief Flushes user bookmarks to the active CanvasPage metadata and commits async to SQLite.
-     * Ensures bookmarks are never lost when closing or reopening documents.
-     */
     void SyncBookmarksToPage(DocumentSession& session) {
-        auto activePage = session.GetActivePage();
-        if (activePage) {
-            activePage->dedicatedPdfBookmarks = SaveBookmarksToString();
-            lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
-            activePage->isModified = true;
-            session.workspace.FlushActiveNotebookAsync();
-            LOG_INFO(PdfStorage, "Synced " + std::to_string(userBookmarks.size()) + " bookmarks to page metadata.");
-        }
+        engine.document.SyncBookmarksToPage(session);
     }
 
-    /**
-     * @brief Deserializes tab-separated text highlight spans into the in-memory docHighlights list.
-     * Format: <pageIndex>\t<color>\t<startChar>\t<endChar>\t<minX>\t<minY>\t<maxX>\t<maxY>\t<text>\n
-     * @param data Serialized string retrieved from SQLite database record.
-     */
     void LoadHighlightsFromString(const std::string& data) {
-        docHighlights.clear();
-        if (data.empty()) {
-            for (auto& [idx, p] : pageCache) {
-                p.textHighlights.clear();
-            }
-            return;
-        }
-        std::istringstream stream(data);
-        std::string line;
-        while (std::getline(stream, line)) {
-            if (line.empty()) continue;
-            std::istringstream ls(line);
-            std::string token;
-            std::vector<std::string> tokens;
-            while (std::getline(ls, token, '\t')) {
-                tokens.push_back(token);
-            }
-            if (tokens.size() >= 8) {
-                try {
-                    TextHighlightSpan span;
-                    span.pageIndex = std::stoi(tokens[0]);
-                    span.color = static_cast<ImU32>(std::stoul(tokens[1]));
-                    span.startChar = std::stoi(tokens[2]);
-                    span.endChar = std::stoi(tokens[3]);
-                    span.boundsMm.minX = std::stod(tokens[4]);
-                    span.boundsMm.minY = std::stod(tokens[5]);
-                    span.boundsMm.maxX = std::stod(tokens[6]);
-                    span.boundsMm.maxY = std::stod(tokens[7]);
-                    if (tokens.size() >= 9) {
-                        span.text = tokens[8];
-                    }
-                    docHighlights[span.pageIndex].push_back(span);
-                } catch (...) {}
-            }
-        }
-        for (auto& [idx, p] : pageCache) {
-            auto it = docHighlights.find(idx);
-            if (it != docHighlights.end()) {
-                p.textHighlights = it->second;
-            } else {
-                p.textHighlights.clear();
-            }
-        }
+        engine.document.LoadHighlightsFromString(data);
     }
 
-    /**
-     * @brief Serializes the in-memory docHighlights list into a compact tab/newline string.
-     * @return Formatted string for SQLite persistence in 'pages.dedicated_pdf_highlights'.
-     */
-    std::string SaveHighlightsToString() const {
-        std::ostringstream ss;
-        for (const auto& [pIdx, hlList] : docHighlights) {
-            for (const auto& hl : hlList) {
-                ss << hl.pageIndex << '\t'
-                   << hl.color << '\t'
-                   << hl.startChar << '\t'
-                   << hl.endChar << '\t'
-                   << hl.boundsMm.minX << '\t'
-                   << hl.boundsMm.minY << '\t'
-                   << hl.boundsMm.maxX << '\t'
-                   << hl.boundsMm.maxY << '\t';
-                std::string cleanText = hl.text;
-                std::replace(cleanText.begin(), cleanText.end(), '\n', ' ');
-                std::replace(cleanText.begin(), cleanText.end(), '\r', ' ');
-                std::replace(cleanText.begin(), cleanText.end(), '\t', ' ');
-                ss << cleanText << '\n';
-            }
-        }
-        return ss.str();
+    [[nodiscard]] std::string SaveHighlightsToString() const {
+        return engine.document.SaveHighlightsToString();
     }
 
-    /**
-     * @brief Flushes text highlights to the active CanvasPage metadata and commits async to SQLite.
-     * Ensures highlights are persistently stored across page reorders and session reloads.
-     */
     void SyncHighlightsToPage(DocumentSession& session) {
-        auto activePage = session.GetActivePage();
-        if (activePage) {
-            activePage->dedicatedPdfHighlights = SaveHighlightsToString();
-            lastSyncedHighlights = activePage->dedicatedPdfHighlights;
-            activePage->isModified = true;
-            session.workspace.FlushActiveNotebookAsync();
-            LOG_INFO(PdfStorage, "Synced text highlights to page metadata.");
-        }
+        engine.document.SyncHighlightsToPage(session);
     }
 
     void ToggleSidebar() {
@@ -526,337 +168,44 @@ public:
     }
 
     void PrevPage() {
-        ScrollToPage(activePageIndex - 1);
+        engine.virtualizer.ScrollToPage(engine.virtualizer.activePageIndex - 1, engine.document.totalPages, engine.document.pageDimensions);
     }
 
     void NextPage() {
-        ScrollToPage(activePageIndex + 1);
+        engine.virtualizer.ScrollToPage(engine.virtualizer.activePageIndex + 1, engine.document.totalPages, engine.document.pageDimensions);
     }
 
-    /**
-     * @brief Performs smooth, drift-free zoom anchored at an arbitrary screen coordinate.
-     * 
-     * MATHEMATICAL FOUNDATION & WORKING PROCESS:
-     * 1. Vertical Layout & Cursor Pinning:
-     *    In continuous multi-page PDF rendering, the document Y coordinate of a point on page i is:
-     *      Y_doc(z) = TopMargin(20px) + i * PageGap(24px) + CumHeight(i, z) + localMmY * pxPerMm(z)
-     *    Notice that TopMargin (20px) and inter-page gaps (24px) are constant screen-pixel offsets
-     *    that DO NOT scale with zoom. Only millimeter dimensions scale: pxPerMm(z) = (96.0 / 25.4) * z.
-     *    By resolving the exact page index i and local millimeter Y coordinate under the anchor
-     *    (anchorScreenX, anchorScreenY) before zooming, we can project the exact new document coordinate
-     *    after zooming to targetZoom, setting scrollY such that the point under the cursor remains pinned
-     *    to the exact same screen pixel with zero drift.
-     * 
-     * 2. Horizontal Layout & Scoped Centering / Panning:
-     *    - When the document fits within viewport width (maxDocW_px + 30px <= contentW):
-     *      The document is centered horizontally: pageX = (contentW - pageW_px) * 0.5f.
-     *      Side-to-side scrolling is disabled (maxScrollX = 0, scrollX = 0), and horizontal scrollbar is hidden.
-     *      Zooming while fitted expands symmetrically from the center without any horizontal wobble.
-     *    - When zoomed in so the document is wider than viewport width (maxDocW_px + 30px > contentW):
-     *      Horizontal scrolling is enabled (maxScrollX > 0, horizontal scrollbar appears).
-     *      Zooming anchors directly to anchorScreenX in document millimeter space, ensuring that when zooming
-     *      in on a detail on the far right (or left) of the document, that feature stays pinned under the cursor.
-     *    - Boundary Transition: At maxDocW_px + 30px == contentW, the wider-layout position exactly matches
-     *      the centered position: 15px + (maxDocW - pageW)*0.5 - 0 == (contentW - pageW)*0.5.
-     *      Thus, transitions between centered and wider layouts have ZERO pixel jump.
-     * 
-     * @param targetZoom    Desired new zoom scale (clamped to [0.4, 4.0]).
-     * @param anchorScreenX Screen X coordinate of the zoom anchor (typically mouse cursor or viewport center).
-     * @param anchorScreenY Screen Y coordinate of the zoom anchor.
-     * @param contentX      Screen X coordinate of the content viewport left edge.
-     * @param contentW      Available content viewport width (excluding sidebar).
-     * @param originY       Screen Y coordinate of the content viewport top edge.
-     * @param viewH         Available content viewport height.
-     */
     void ZoomAtPoint(float targetZoom, float anchorScreenX, float anchorScreenY,
                      float contentX, float contentW, float originY, float viewH) {
-        float oldZoom = zoomScale;
-        float newZoom = std::clamp(targetZoom, 0.4f, 4.0f);
-        if (std::abs(newZoom - oldZoom) < 0.0001f) return;
-
-        constexpr float TOP_MARGIN_PX = 20.0f;
-        constexpr float PAGE_GAP_PX   = 24.0f;
-        constexpr float SCALE_DPI     = 96.0f / 25.4f;
-
-        float oldPxPerMm = SCALE_DPI * oldZoom;
-        float newPxPerMm = SCALE_DPI * newZoom;
-
-        // Compute document millimeter width
-        float maxDocW_mm = 0.0f;
-        for (int i = 0; i < totalPages; ++i) {
-            double mmW = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].widthMm : 210.0;
-            if (static_cast<float>(mmW) > maxDocW_mm) maxDocW_mm = static_cast<float>(mmW);
-        }
-        if (maxDocW_mm < 10.0f) maxDocW_mm = 210.0f;
-
-        float oldMaxDocW_px = maxDocW_mm * oldPxPerMm;
-        float newMaxDocW_px = maxDocW_mm * newPxPerMm;
-
-        // ---------------------------------------------------------------------
-        // 1. VERTICAL ANCHORING (Exact millimeter projection preserving fixed gaps)
-        // ---------------------------------------------------------------------
-        float anchorRelY = anchorScreenY - originY;
-        float oldDocY = scrollY + anchorRelY;
-
-        // Find which page index i and local millimeter Y the anchor falls into
-        int anchorPageIdx = 0;
-        double anchorLocalMmY = 0.0;
-        double cumMmH = 0.0;
-        float curPageTopDocY = TOP_MARGIN_PX;
-
-        for (int i = 0; i < totalPages; ++i) {
-            double mmH = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].heightMm : 297.0;
-            float pageH_px = static_cast<float>(mmH * oldPxPerMm);
-            if (oldDocY <= curPageTopDocY + pageH_px + (PAGE_GAP_PX * 0.5f) || i == totalPages - 1) {
-                anchorPageIdx = i;
-                anchorLocalMmY = std::clamp(static_cast<double>(oldDocY - curPageTopDocY) / oldPxPerMm, 0.0, mmH);
-                break;
-            }
-            cumMmH += mmH;
-            curPageTopDocY += pageH_px + PAGE_GAP_PX;
-        }
-
-        // Reconstruct cumulative millimeter height up to anchorPageIdx for the new zoom
-        double cumMmH_anchor = 0.0;
-        for (int i = 0; i < anchorPageIdx && i < static_cast<int>(pageDimensions.size()); ++i) {
-            cumMmH_anchor += pageDimensions[i].heightMm;
-        }
-
-        float newPageTopDocY = TOP_MARGIN_PX + (anchorPageIdx * PAGE_GAP_PX) + static_cast<float>(cumMmH_anchor * newPxPerMm);
-        float newDocY = newPageTopDocY + static_cast<float>(anchorLocalMmY * newPxPerMm);
-        float newScrollY = newDocY - anchorRelY;
-
-        // Calculate new maximum vertical scroll limit
-        float newTotalDocH_px = 40.0f;
-        for (int i = 0; i < totalPages; ++i) {
-            double mmH = (i < static_cast<int>(pageDimensions.size())) ? pageDimensions[i].heightMm : 297.0;
-            newTotalDocH_px += static_cast<float>(mmH * newPxPerMm) + PAGE_GAP_PX;
-        }
-        float newMaxScrollY = std::max(0.0f, newTotalDocH_px - viewH);
-        scrollY = std::clamp(newScrollY, 0.0f, newMaxScrollY);
-
-        // ---------------------------------------------------------------------
-        // 2. HORIZONTAL ANCHORING (Smooth transition between centered and wider layout)
-        // ---------------------------------------------------------------------
-        float newMaxScrollX = std::max(0.0f, newMaxDocW_px + 30.0f - contentW);
-        float oldMaxScrollX = std::max(0.0f, oldMaxDocW_px + 30.0f - contentW);
-
-        if (newMaxScrollX <= 0.0f) {
-            // Document fits within content width: lock horizontal scroll at 0 and center page
-            scrollX = 0.0f;
-        } else {
-            // Document is wider than viewport: anchor around anchorScreenX
-            float anchorRelX = anchorScreenX - contentX;
-            float newScrollX = 0.0f;
-
-            if (oldMaxScrollX > 0.0f) {
-                // Was already wider: anchor in document space from 15px left margin
-                float oldDocX = scrollX + anchorRelX;
-                float scalingX = oldDocX - 15.0f;
-                float newDocX = 15.0f + scalingX * (newZoom / oldZoom);
-                newScrollX = newDocX - anchorRelX;
-            } else {
-                // Transitioning from centered to wider: calculate cursor offset from page left edge
-                float oldPageScreenLeft = contentX + (contentW - oldMaxDocW_px) * 0.5f;
-                float offsetFromPageLeft = anchorScreenX - oldPageScreenLeft;
-                float newOffsetFromPageLeft = offsetFromPageLeft * (newZoom / oldZoom);
-                // Under wider layout, page left is at contentX + 15.0f - scrollX
-                newScrollX = 15.0f + newOffsetFromPageLeft - anchorRelX;
-            }
-
-            scrollX = std::clamp(newScrollX, 0.0f, newMaxScrollX);
-        }
-
-        // Apply updated states
-        zoomScale = newZoom;
-        maxScrollX = newMaxScrollX;
-        maxScrollY = newMaxScrollY;
+        engine.virtualizer.ZoomAtPoint(targetZoom, anchorScreenX, anchorScreenY, contentX, contentW, originY, viewH,
+                                       engine.document.totalPages, engine.document.pageDimensions);
         hudInactivityTimer = 2.5f;
     }
 
     void SetZoomScale(float z) {
-        zoomScale = std::clamp(z, 0.4f, 4.0f);
+        engine.virtualizer.SetZoomScale(z);
         hudInactivityTimer = 2.5f;
     }
 
     void ClearCache() {
-        for (auto& [idx, p] : pageCache) {
-            p.DestroyTexture();
-        }
-        pageCache.clear();
-
-        for (auto& [idx, t] : thumbnailCache) {
-            t.DestroyTexture();
-        }
-        thumbnailCache.clear();
-        docOutline.clear();
-        isOutlineLoaded = false;
-        pageDimensions.clear();
-        docHighlights.clear();
-        totalPages = 0;
+        engine.Clear();
     }
 
-    /**
-     * @brief Initiates non-blocking background loading of a PDF document's structure and metadata.
-     * Offloads PDFium parsing to a background worker thread so the UI thread runs at full 120 FPS
-     * without stuttering, while the Loader Overlay displays live real-time progress.
-     */
     void LoadDocument(const std::string& filePath) {
-        if (filePath.empty()) return;
-        if (currentPdfPath == filePath && (totalPages > 0 || isLoading)) return;
-
-        ClearCache();
-        currentPdfPath = filePath;
-        scrollX = 0.0f;
-        maxScrollX = 0.0f;
-        scrollY = 0.0f;
-        zoomScale = 1.25f;
-        activePageIndex = 0;
-        selectedPageIndex = -1;
-        currentSelection.Clear();
+        engine.LoadDocument(filePath);
         hudInactivityTimer = 2.5f;
-
-        loadingDocPath = filePath;
-        loadingDocName = FileManager::GetFileName(filePath);
-        isLoading = true;
-        loadingFinished.store(false);
-        loadingFailed.store(false);
-        loadingCurrentPage.store(0);
-        loadingTotalPages.store(0);
-
-        LOG_INFO(PdfStorage, "PdfViewerPage starting background structure load: " + filePath);
-
-        GetGlobalThreadPool().Enqueue([this, filePath]() {
-            PdfRenderer::PdfDocSummary summary;
-            bool ok = PdfRenderer::InspectAndLoadDocStructure(filePath, summary, [this](int cur, int tot) {
-                loadingCurrentPage.store(cur);
-                loadingTotalPages.store(tot);
-            });
-
-            if (ok && summary.pageCount > 0) {
-                std::lock_guard<std::mutex> lock(pendingSummaryMutex);
-                pendingSummary = std::move(summary);
-                loadingFinished.store(true);
-            } else {
-                loadingFailed.store(true);
-            }
-        });
     }
 
     void ScrollToPage(int pageIdx) {
-        if (pageIdx < 0) pageIdx = 0;
-        if (pageIdx >= totalPages) pageIdx = totalPages - 1;
-        activePageIndex = pageIdx;
-
-        constexpr float PAGE_GAP_PX = 24.0f;
-        float targetY = 0.0f;
-        float pxPerMm = (96.0f / 25.4f) * zoomScale;
-
-        for (int p = 0; p < pageIdx; ++p) {
-            double hMm = (p < static_cast<int>(pageDimensions.size())) ? pageDimensions[p].heightMm : 297.0;
-            targetY += static_cast<float>(hMm * pxPerMm) + PAGE_GAP_PX;
-        }
-
-        scrollY = std::clamp(targetY, 0.0f, maxScrollY);
+        engine.virtualizer.ScrollToPage(pageIdx, engine.document.totalPages, engine.document.pageDimensions);
     }
 
     CachedPdfViewerPage* GetOrLoadPage(int pageIdx, double targetDpi = 150.0, bool invert = false) {
-        auto it = pageCache.find(pageIdx);
-        if (it != pageCache.end() && it->second.isLoaded && it->second.isInverted == invert) {
-            return &it->second;
-        }
-
-        if (it != pageCache.end()) {
-            it->second.DestroyTexture();
-            pageCache.erase(it);
-        }
-
-        auto res = PdfRenderer::RenderPage(currentPdfPath, pageIdx, targetDpi, invert);
-        if (!res.success || res.image.is_empty()) {
-            return nullptr;
-        }
-
-        CachedPdfViewerPage entry;
-        entry.pageIndex = pageIdx;
-        entry.image = res.image;
-        entry.pixelW = res.pixelWidth;
-        entry.pixelH = res.pixelHeight;
-        entry.widthMm = res.widthMm;
-        entry.heightMm = res.heightMm;
-        entry.links = std::move(res.links);
-        entry.isInverted = invert;
-
-        // Populate persistent text highlights for this page index
-        auto hlIt = docHighlights.find(pageIdx);
-        if (hlIt != docHighlights.end()) {
-            entry.textHighlights = hlIt->second;
-        }
-
-        // Generate OpenGL texture for blitting
-        glGenTextures(1, &entry.glTexture);
-        glBindTexture(GL_TEXTURE_2D, entry.glTexture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-        BLImageData imgData;
-        if (entry.image.get_data(&imgData) == BL_SUCCESS) {
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, entry.pixelW, entry.pixelH, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, imgData.pixel_data);
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        }
-
-        // Load text layer for interaction and selection
-        PdfRenderer::LoadTextLayer(currentPdfPath, pageIdx, entry.textLayer);
-        entry.isLoaded = true;
-
-        pageCache[pageIdx] = std::move(entry);
-        return &pageCache[pageIdx];
+        return engine.tileCache.GetOrLoadPage(engine.document.filePath, pageIdx, engine.document.docHighlights, targetDpi, invert);
     }
 
     CachedThumbnail* GetOrLoadThumbnail(int pageIdx, bool invert = false) {
-        auto it = thumbnailCache.find(pageIdx);
-        if (it != thumbnailCache.end() && it->second.isLoaded && it->second.isInverted == invert) {
-            return &it->second;
-        }
-
-        if (it != thumbnailCache.end()) {
-            it->second.DestroyTexture();
-            thumbnailCache.erase(it);
-        }
-
-        // Render at 32 DPI for fast, lightweight previews
-        auto res = PdfRenderer::RenderPage(currentPdfPath, pageIdx, 32.0, invert);
-        if (!res.success || res.image.is_empty()) {
-            return nullptr;
-        }
-
-        CachedThumbnail entry;
-        entry.pageIndex = pageIdx;
-        entry.pixelW = res.pixelWidth;
-        entry.pixelH = res.pixelHeight;
-        entry.widthMm = res.widthMm;
-        entry.heightMm = res.heightMm;
-        entry.isInverted = invert;
-
-        glGenTextures(1, &entry.glTexture);
-        glBindTexture(GL_TEXTURE_2D, entry.glTexture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-        BLImageData imgData;
-        if (res.image.get_data(&imgData) == BL_SUCCESS) {
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, entry.pixelW, entry.pixelH, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, imgData.pixel_data);
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        }
-        entry.isLoaded = true;
-
-        thumbnailCache[pageIdx] = std::move(entry);
-        return &thumbnailCache[pageIdx];
+        return engine.tileCache.GetOrLoadThumbnail(engine.document.filePath, pageIdx, invert);
     }
 
     /**
@@ -944,7 +293,11 @@ public:
             // 5. Status / Page counter text
             char statusBuf[128];
             if (loadingFailed.load()) {
+#if !defined(FOLIO_HAS_PDFIUM)
+                std::snprintf(statusBuf, sizeof(statusBuf), "PDFium library missing for this OS (stub mode active).");
+#else
                 std::snprintf(statusBuf, sizeof(statusBuf), "Could not open or parse PDF file.");
+#endif
             } else if (tot > 0) {
                 int pct = static_cast<int>(progress * 100.0f);
                 std::snprintf(statusBuf, sizeof(statusBuf), "Processing page %d of %d (%d%%)", cur, tot, pct);
@@ -972,99 +325,19 @@ public:
         uint64_t nowMs = SDL_GetTicks();
 
         if (currentPdfPath != diskPath && !diskPath.empty()) {
-            // Save outgoing document session state
-            if (!currentPdfPath.empty()) {
-                auto& outState = documentWorkingSet[currentPdfPath];
-                outState.filePath = currentPdfPath;
-                outState.scrollX = scrollX;
-                outState.scrollY = scrollY;
-                outState.maxScrollX = maxScrollX;
-                outState.maxScrollY = maxScrollY;
-                outState.zoomScale = zoomScale;
-                outState.activePageIndex = activePageIndex;
-                outState.lastAccessTimeMs = nowMs;
-                outState.isLoaded = (!isLoading && totalPages > 0);
-                outState.pageDimensions = std::move(pageDimensions);
-                outState.docOutline = std::move(docOutline);
-                outState.isOutlineLoaded = isOutlineLoaded;
-                outState.userBookmarks = std::move(userBookmarks);
-                outState.docHighlights = std::move(docHighlights);
-                outState.pageCache = std::move(pageCache);
-                outState.thumbnailCache = std::move(thumbnailCache);
-            }
-
-            // Working-set maintenance: evict textures and home viewports of documents absent for >60,000ms
-            constexpr uint64_t WORKING_SET_TIMEOUT_MS = 60000;
-            for (auto& [path, docState] : documentWorkingSet) {
-                if (path != diskPath && (nowMs - docState.lastAccessTimeMs > WORKING_SET_TIMEOUT_MS)) {
-                    docState.EvictTextures();
-                    docState.HomeViewport();
-                    docState.isLoaded = false;
-                }
-            }
-
-            // Check if incoming document has an active, valid session in working set
-            auto itWs = documentWorkingSet.find(diskPath);
-            if (itWs != documentWorkingSet.end() && itWs->second.isLoaded && (nowMs - itWs->second.lastAccessTimeMs <= WORKING_SET_TIMEOUT_MS)) {
-                // Restore existing session immediately with preserved viewport
-                currentPdfPath = diskPath;
-                scrollX = itWs->second.scrollX;
-                scrollY = itWs->second.scrollY;
-                maxScrollX = itWs->second.maxScrollX;
-                maxScrollY = itWs->second.maxScrollY;
-                zoomScale = itWs->second.zoomScale;
-                activePageIndex = itWs->second.activePageIndex;
-                pageDimensions = std::move(itWs->second.pageDimensions);
-                totalPages = static_cast<int>(pageDimensions.size());
-                docOutline = std::move(itWs->second.docOutline);
-                isOutlineLoaded = itWs->second.isOutlineLoaded;
-                userBookmarks = std::move(itWs->second.userBookmarks);
-                docHighlights = std::move(itWs->second.docHighlights);
-                pageCache = std::move(itWs->second.pageCache);
-                thumbnailCache = std::move(itWs->second.thumbnailCache);
-                isLoading = false;
-                itWs->second.lastAccessTimeMs = nowMs;
-
-                // Sync bookmarks & highlights if modified
-                LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
-                lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
-                LoadHighlightsFromString(activePage->dedicatedPdfHighlights);
-                lastSyncedHighlights = activePage->dedicatedPdfHighlights;
-                LOG_INFO(PdfStorage, "Restored in-memory document session with preserved viewport: " + diskPath);
-            } else {
-                // Not in working set or expired: load afresh with homed viewport
-                LoadDocument(diskPath);
-                LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
-                lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
-                LoadHighlightsFromString(activePage->dedicatedPdfHighlights);
-                lastSyncedHighlights = activePage->dedicatedPdfHighlights;
-            }
+            engine.SwitchDocument(diskPath, &session);
         } else {
-            if (lastSyncedBookmarks != activePage->dedicatedPdfBookmarks) {
-                LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
-                lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
+            if (engine.document.lastSyncedBookmarks != activePage->dedicatedPdfBookmarks) {
+                engine.document.LoadBookmarksFromString(activePage->dedicatedPdfBookmarks);
+                engine.document.lastSyncedBookmarks = activePage->dedicatedPdfBookmarks;
             }
-            if (lastSyncedHighlights != activePage->dedicatedPdfHighlights) {
-                LoadHighlightsFromString(activePage->dedicatedPdfHighlights);
-                lastSyncedHighlights = activePage->dedicatedPdfHighlights;
+            if (engine.document.lastSyncedHighlights != activePage->dedicatedPdfHighlights) {
+                engine.document.LoadHighlightsFromString(activePage->dedicatedPdfHighlights);
+                engine.document.lastSyncedHighlights = activePage->dedicatedPdfHighlights;
             }
         }
 
-        // Check if background worker finished loading PDF structure
-        if (isLoading && loadingFinished.load()) {
-            std::lock_guard<std::mutex> lock(pendingSummaryMutex);
-            totalPages = pendingSummary.pageCount;
-            pageDimensions.resize(totalPages);
-            for (int i = 0; i < totalPages; ++i) {
-                pageDimensions[i].widthMm = pendingSummary.dimensions[i].first;
-                pageDimensions[i].heightMm = pendingSummary.dimensions[i].second;
-            }
-            docOutline = std::move(pendingSummary.outline);
-            isOutlineLoaded = true;
-            isLoading = false;
-            loadingFinished.store(false);
-            LOG_INFO(PdfStorage, "PdfViewerPage background loading complete: " + currentPdfPath + " (" + std::to_string(totalPages) + " pages)");
-        }
+        engine.Update(&session);
 
         float viewTop = titleBarH + ribbonH;
         float viewH = screenH - viewTop;

@@ -39,7 +39,7 @@
 #include <unordered_map>
 #include <blend2d/blend2d.h>
 
-#include "core/engine/canvas_transform.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
 #include "core/layers/baked_canvas_layer.hpp"
 #include "core/layers/live_interaction_layer.hpp"
 #include "core/layers/embedded_app_layer.hpp"

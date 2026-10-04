@@ -11,7 +11,7 @@
 #include "core/spatial/aabb.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/history/command_history.hpp"
-#include "core/engine/canvas_transform.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/logger.hpp"
 
@@ -154,6 +154,22 @@ public:
     std::string dedicatedPdfBookmarks;  ///< Serialized user bookmarks (JSON or pipe-delimited) persisted to SQLite
     std::string dedicatedPdfHighlights; ///< Serialized text highlight spans (tab-delimited) persisted to SQLite
 
+    // Dedicated Standalone Markdown Document Page
+    bool isDedicatedMd = false;         ///< True if this page is viewed in the dedicated Markdown editor
+    std::string dedicatedMdContent;     ///< Markdown source text buffer
+
+    enum class PageContentMode {
+        Canvas,
+        Pdf,
+        Markdown
+    };
+
+    [[nodiscard]] PageContentMode GetContentMode() const noexcept {
+        if (isDedicatedPdf) return PageContentMode::Pdf;
+        if (isDedicatedMd)  return PageContentMode::Markdown;
+        return PageContentMode::Canvas;
+    }
+
     /**
      * @struct CanvasViewportState
      * @brief In-memory runtime camera viewport cache for this individual canvas page.
@@ -252,11 +268,12 @@ public:
         clone->showPageBorder = showPageBorder;
         clone->pageBorderType = pageBorderType;
         clone->pageBorderStyle = pageBorderStyle;
-        clone->pageBorderWidth = pageBorderWidth;
         clone->isDedicatedPdf = isDedicatedPdf;
         clone->dedicatedPdfPath = dedicatedPdfPath;
         clone->dedicatedPdfBookmarks = dedicatedPdfBookmarks;
         clone->dedicatedPdfHighlights = dedicatedPdfHighlights;
+        clone->isDedicatedMd = isDedicatedMd;
+        clone->dedicatedMdContent = dedicatedMdContent;
 
         // Deep-clone canvas objects with fresh unique GUIDs and clean spatial index UIDs
         for (const auto& obj : this->objects) {

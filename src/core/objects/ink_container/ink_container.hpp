@@ -36,7 +36,7 @@
 
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/engine/stroke_smoother.hpp"
+#include "core/canvas_engine/stroke_smoother.hpp"
 #include "input/pen_palette.hpp"
 
 /**

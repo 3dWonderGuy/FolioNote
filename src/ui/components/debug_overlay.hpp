@@ -1,6 +1,6 @@
 #pragma once
 #include "imgui.h"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "input/input_state_machine.hpp"
 #include "app/window_state_manager.hpp"
 #include "app/theme_manager.hpp"

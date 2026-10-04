@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 /**
  * =========================================================================================
@@ -171,6 +171,7 @@ public:
         std::string dedicatedPdfPath = page->dedicatedPdfPath;
         std::string dedicatedPdfBookmarks = page->dedicatedPdfBookmarks;
         std::string dedicatedPdfHighlights = page->dedicatedPdfHighlights;
+        bool isDedicatedMd = page->isDedicatedMd;
 
         // ---------------------------------------------------------------------------------
         // Stage 2: Synchronous In-Memory Binary Serialization
@@ -196,7 +197,7 @@ public:
         // Stage 3 & 4: Background ThreadPool Dispatch (Disk I/O & SQLite Write)
         // Offload disk writing and database upserting to a worker thread.
         // ---------------------------------------------------------------------------------
-        return GetGlobalThreadPool().Enqueue([db, pkgPath, pageGuid, sectionGuid, title, createdDate, createdTime, order, blobData, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks, dedicatedPdfHighlights]() -> bool {
+        return GetGlobalThreadPool().Enqueue([db, pkgPath, pageGuid, sectionGuid, title, createdDate, createdTime, order, blobData, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks, dedicatedPdfHighlights, isDedicatedMd]() -> bool {
             // Write compressed binary payload atomically to disk: pages/{pageGuid}.ink
             // Staged in .ink.tmp.<timestamp> and atomically renamed to prevent corruption.
             std::string inkPath = (std::filesystem::path(pkgPath) / "pages" / (pageGuid + ".ink")).string();
@@ -206,7 +207,7 @@ public:
             }
 
             // Update SQLite metadata record in 'pages' table
-            bool success = db->SavePageMetadata(pageGuid, sectionGuid, title, createdDate, createdTime, order, hasBlob, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks, dedicatedPdfHighlights);
+            bool success = db->SavePageMetadata(pageGuid, sectionGuid, title, createdDate, createdTime, order, hasBlob, parentGuid, level, collapsed, isDedicatedPdf, dedicatedPdfPath, dedicatedPdfBookmarks, dedicatedPdfHighlights, isDedicatedMd);
             if (!success) {
                 LOG_ERROR(PageRepository, "Asynchronous page metadata write failed for GUID: " + pageGuid);
             }
@@ -486,6 +487,7 @@ public:
                 page->dedicatedPdfPath = pRec.dedicatedPdfPath;
                 page->dedicatedPdfBookmarks = pRec.dedicatedPdfBookmarks;
                 page->dedicatedPdfHighlights = pRec.dedicatedPdfHighlights;
+                page->isDedicatedMd = pRec.isDedicatedMd;
                 page->isLoaded = false; // Lazy loading: payload will be fetched on-demand
                 page->isModified = false;
                 section->pages.push_back(page);

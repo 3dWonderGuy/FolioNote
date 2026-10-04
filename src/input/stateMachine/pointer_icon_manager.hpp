@@ -34,7 +34,7 @@
 #include <SDL3/SDL.h>
 #include <cstdint>
 #include <unordered_map>
-#include "core/engine/gizmo_types.hpp"
+#include "core/canvas_engine/gizmo_types.hpp"
 
 namespace FolioInput {
 

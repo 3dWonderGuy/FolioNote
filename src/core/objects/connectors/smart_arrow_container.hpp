@@ -33,11 +33,11 @@
 #include <blend2d/blend2d.h>
 
 #include "core/objects/canvas_object.hpp"
-#include "core/engine/stroke_smoother.hpp"
+#include "core/canvas_engine/stroke_smoother.hpp"
 #include "core/objects/connectors/connector_types.hpp"
 #include "core/objects/primitives/shape_types.hpp"  // ShapeOutlineType reuse
 #include "core/spatial/aabb.hpp"
-#include "core/engine/canvas_transform.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
 
 namespace Folio {
 

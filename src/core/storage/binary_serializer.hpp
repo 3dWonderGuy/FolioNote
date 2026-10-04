@@ -158,8 +158,8 @@ public:
     /// Magic 4-byte header identifying valid FolioNote Canvas Page binary streams: "FNPG" (0x464E5047)
     static constexpr uint32_t MAGIC_HEADER = 0x464E5047;
 
-    /// Current binary format specification version (Version 5 includes Video and Audio objects)
-    static constexpr uint32_t FORMAT_VERSION = 5;
+    /// Current binary format specification version (Version 6 includes dedicated Markdown state)
+    static constexpr uint32_t FORMAT_VERSION = 6;
 
     /**
      * @brief Estimates raw uncompressed memory requirement for a page to optimize vector allocation.

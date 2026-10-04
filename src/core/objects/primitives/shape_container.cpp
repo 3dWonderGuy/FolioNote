@@ -28,8 +28,8 @@
 #include <algorithm>
 
 #include "core/objects/primitives/shape_container.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
-#include "core/engine/canvas_transform.hpp"  // for Viewport
+#include "core/canvas_engine/stroke_outline_builder.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"  // for Viewport
 #include "core/objects/object_registry.hpp"
 
 // Prevent MSVC min/max macro conflicts with <algorithm>

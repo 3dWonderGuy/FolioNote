@@ -1,5 +1,5 @@
 #include "core/storage/binary_serializer.hpp"
-#include "core/engine/stroke_outline_builder.hpp"
+#include "core/canvas_engine/stroke_outline_builder.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/logger.hpp"
@@ -912,7 +912,11 @@ bool BinarySerializer::SerializePage(const CanvasPage& page, std::vector<uint8_t
     writer.WriteString(page.dedicatedPdfBookmarks);
     writer.WriteString(page.dedicatedPdfHighlights);
 
-    // 5. Canvas Objects
+    // 5. Dedicated Standalone Markdown Document State (v6+)
+    writer.WriteBool(page.isDedicatedMd);
+    writer.WriteString(page.dedicatedMdContent);
+
+    // 6. Canvas Objects
     writer.WriteU32(static_cast<uint32_t>(page.objects.size()));
     stats.objectCount = static_cast<uint32_t>(page.objects.size());
 
@@ -1049,6 +1053,15 @@ bool BinarySerializer::DeserializePage(const uint8_t* blobData, size_t blobSize,
         outPage.dedicatedPdfPath       = reader.ReadString();
         outPage.dedicatedPdfBookmarks  = reader.ReadString();
         outPage.dedicatedPdfHighlights = reader.ReadString();
+
+        // 5. Dedicated Standalone Markdown Document State (v6+)
+        if (version >= 6) {
+            outPage.isDedicatedMd      = reader.ReadBool();
+            outPage.dedicatedMdContent = reader.ReadString();
+        } else {
+            outPage.isDedicatedMd      = false;
+            outPage.dedicatedMdContent = "";
+        }
 
         outPage.Clear();
 

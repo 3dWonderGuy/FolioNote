@@ -14,9 +14,9 @@
 #endif
 
 #include "core/spatial/aabb.hpp"
-#include "core/engine/stroke_smoother.hpp"
-#include "core/engine/canvas_transform.hpp"
-#include "core/engine/gizmo_types.hpp"
+#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/gizmo_types.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/objects/connectors/smart_arrow_container.hpp"
 #include "core/document/document_session.hpp"
@@ -981,11 +981,17 @@ private:
         fontAttempted = true;
 
         const char* candidatePaths[] = {
+            "assets/fonts/segoeui.ttf",
+            "../assets/fonts/segoeui.ttf",
+            "../../assets/fonts/segoeui.ttf",
+            "bin/assets/fonts/segoeui.ttf",
             "assets/fonts/Roboto-Medium.ttf",
             "../assets/fonts/Roboto-Medium.ttf",
             "../../assets/fonts/Roboto-Medium.ttf",
             "C:/Windows/Fonts/segoeui.ttf",
             "C:/Windows/Fonts/arial.ttf",
+            "/usr/share/fonts/inter/Inter-Regular.ttf",
+            "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
             "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
             "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
             "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",

@@ -6,10 +6,10 @@
 #include <functional>
 #include <blend2d/blend2d.h>
 
-#include "core/engine/canvas_transform.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/engine/stroke_smoother.hpp"
-#include "core/engine/live_layer_pipeline.hpp"
+#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/canvas_engine/live_layer_pipeline.hpp"
 
 class SelectionGizmo;
 

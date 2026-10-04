@@ -163,6 +163,7 @@ bool DBManager::InitSchema() {
             dedicated_pdf_path TEXT,
             dedicated_pdf_bookmarks TEXT,
             dedicated_pdf_highlights TEXT,
+            is_dedicated_md INTEGER NOT NULL DEFAULT 0,
             deleted_at INTEGER DEFAULT NULL,
             FOREIGN KEY (section_guid) REFERENCES sections(guid) ON DELETE CASCADE
         );
@@ -195,6 +196,7 @@ bool DBManager::InitSchema() {
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_path TEXT;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_bookmarks TEXT;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN dedicated_pdf_highlights TEXT;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN is_dedicated_md INTEGER NOT NULL DEFAULT 0;", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE pages ADD COLUMN deleted_at INTEGER DEFAULT NULL;", nullptr, nullptr, nullptr);
 
     // Phase 3: Create relational and query acceleration indexes AFTER all columns exist
@@ -553,13 +555,14 @@ bool DBManager::SavePageMetadata(const std::string& pageGuid, const std::string&
                                  int32_t nestingLevel, bool isCollapsed,
                                  bool isDedicatedPdf, const std::string& dedicatedPdfPath,
                                  const std::string& dedicatedPdfBookmarks,
-                                 const std::string& dedicatedPdfHighlights) {
+                                 const std::string& dedicatedPdfHighlights,
+                                 bool isDedicatedMd) {
     std::lock_guard<std::mutex> lock(dbMutex);
     if (!db) return false;
 
     const char* sql = R"(
-        INSERT INTO pages (guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, last_accessed, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks, dedicated_pdf_highlights)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pages (guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, last_accessed, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks, dedicated_pdf_highlights, is_dedicated_md)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(guid) DO UPDATE SET
             section_guid = excluded.section_guid,
             title = excluded.title,
@@ -574,7 +577,8 @@ bool DBManager::SavePageMetadata(const std::string& pageGuid, const std::string&
             is_dedicated_pdf = excluded.is_dedicated_pdf,
             dedicated_pdf_path = excluded.dedicated_pdf_path,
             dedicated_pdf_bookmarks = excluded.dedicated_pdf_bookmarks,
-            dedicated_pdf_highlights = excluded.dedicated_pdf_highlights;
+            dedicated_pdf_highlights = excluded.dedicated_pdf_highlights,
+            is_dedicated_md = excluded.is_dedicated_md;
     )";
 
     sqlite3_stmt* stmt = nullptr;
@@ -615,6 +619,7 @@ bool DBManager::SavePageMetadata(const std::string& pageGuid, const std::string&
     } else {
         sqlite3_bind_null(stmt, 15);
     }
+    sqlite3_bind_int(stmt, 16, isDedicatedMd ? 1 : 0);
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -649,7 +654,7 @@ std::vector<DBPageRecord> DBManager::LoadPagesMetadata(const std::string& sectio
     std::vector<DBPageRecord> results;
     if (!db) return results;
 
-    const char* sql = "SELECT guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks, dedicated_pdf_highlights, deleted_at FROM pages WHERE section_guid = ? AND (deleted_at IS NULL OR deleted_at = 0) ORDER BY sort_order ASC;";
+    const char* sql = "SELECT guid, section_guid, title, created_date, created_time, parent_page_guid, nesting_level, sort_order, is_collapsed, has_blob, is_dedicated_pdf, dedicated_pdf_path, dedicated_pdf_bookmarks, dedicated_pdf_highlights, is_dedicated_md, deleted_at FROM pages WHERE section_guid = ? AND (deleted_at IS NULL OR deleted_at = 0) ORDER BY sort_order ASC;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         LOG_ERROR(DBManager, "Failed to prepare LoadPagesMetadata: " + std::string(sqlite3_errmsg(db)));
@@ -678,7 +683,8 @@ std::vector<DBPageRecord> DBManager::LoadPagesMetadata(const std::string& sectio
         page.dedicatedPdfBookmarks = pdfBkText ? pdfBkText : "";
         const auto* pdfHlText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
         page.dedicatedPdfHighlights = pdfHlText ? pdfHlText : "";
-        page.deletedAt = sqlite3_column_int64(stmt, 14);
+        page.isDedicatedMd = (sqlite3_column_int(stmt, 14) != 0);
+        page.deletedAt = sqlite3_column_int64(stmt, 15);
         results.push_back(std::move(page));
     }
 
@@ -903,7 +909,7 @@ std::vector<DBPageRecord> DBManager::LoadDeletedPages(const std::string& noteboo
         SELECT p.guid, p.section_guid, p.title, p.created_date, p.created_time, 
                p.parent_page_guid, p.nesting_level, p.sort_order, p.is_collapsed, 
                p.has_blob, p.is_dedicated_pdf, p.dedicated_pdf_path, 
-               p.dedicated_pdf_bookmarks, p.dedicated_pdf_highlights, p.deleted_at 
+               p.dedicated_pdf_bookmarks, p.dedicated_pdf_highlights, p.is_dedicated_md, p.deleted_at 
         FROM pages p 
         JOIN sections s ON p.section_guid = s.guid 
         WHERE s.notebook_guid = ? AND p.deleted_at > 0 
@@ -937,7 +943,8 @@ std::vector<DBPageRecord> DBManager::LoadDeletedPages(const std::string& noteboo
         page.dedicatedPdfBookmarks = pdfBkText ? pdfBkText : "";
         const auto* pdfHlText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
         page.dedicatedPdfHighlights = pdfHlText ? pdfHlText : "";
-        page.deletedAt = sqlite3_column_int64(stmt, 14);
+        page.isDedicatedMd = (sqlite3_column_int(stmt, 14) != 0);
+        page.deletedAt = sqlite3_column_int64(stmt, 15);
         results.push_back(std::move(page));
     }
 

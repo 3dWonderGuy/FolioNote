@@ -19,7 +19,7 @@
  */
 
 #include "input/stateMachine/input_state_machine.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
 #include "utils/logger.hpp"
 

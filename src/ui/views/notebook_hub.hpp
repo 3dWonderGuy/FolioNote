@@ -23,7 +23,7 @@ using Folio::FOLIO_LIBRARY_MARKER_FILE;
 #include "core/export/export_manager.hpp"
 #include "core/import/import_manager.hpp"
 #include "core/import/package_importer.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "app/app_view_mode.hpp"
 #include "utils/usage_tracker.hpp"
 #include "utils/printer_installer.hpp"

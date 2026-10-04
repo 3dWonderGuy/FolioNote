@@ -6,7 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include "core/document/document_session.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 #include "app/theme_manager.hpp"
 #include "ui/imgui_theme.hpp"
 #include "ui/icon_manager.hpp"
@@ -980,7 +980,8 @@ private:
         bool* outChevronClicked = nullptr,
         bool isLocked = false,
         bool isDedicatedPdf = false,
-        ImVec4 itemColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+        ImVec4 itemColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f),
+        bool isDedicatedMd = false
     ) {
         ImGui::SetCursorPosX(5.0f + indentX);
         ImVec2 pMin = ImGui::GetCursorScreenPos();
@@ -1091,6 +1092,28 @@ private:
 
             // Vertical & horizontal centering for compact "PDF" label
             const char* badgeText = "PDF";
+            ImVec2 bTextSz = ImGui::CalcTextSize(badgeText);
+            float bTx = bMin.x + (badgeW - bTextSz.x) * 0.5f;
+            float bTy = bMin.y + (badgeH - bTextSz.y) * 0.5f;
+            drawList->AddText(ImVec2(bTx, bTy), IM_COL32(255, 255, 255, 255), badgeText);
+
+            curX += badgeW + 6.0f;
+        }
+
+        // Dedicated standalone Markdown badge indicator
+        if (isDedicatedMd) {
+            float badgeH = 16.0f;
+            float badgeW = 26.0f;
+            float badgeY = pMin.y + (size.y - badgeH) * 0.5f;
+            ImVec2 bMin(curX, badgeY);
+            ImVec2 bMax(curX + badgeW, badgeY + badgeH);
+
+            ImU32 badgeBg = isSelected ? IM_COL32(37, 99, 235, 240) : IM_COL32(30, 64, 175, 185);
+            ImU32 badgeBorder = IM_COL32(96, 165, 250, 190);
+            drawList->AddRectFilled(bMin, bMax, badgeBg, 3.0f);
+            drawList->AddRect(bMin, bMax, badgeBorder, 3.0f, 0, 1.0f);
+
+            const char* badgeText = "MD";
             ImVec2 bTextSz = ImGui::CalcTextSize(badgeText);
             float bTx = bMin.x + (badgeW - bTextSz.x) * 0.5f;
             float bTy = bMin.y + (badgeH - bTextSz.y) * 0.5f;
@@ -2068,12 +2091,15 @@ private:
         ImGui::BeginChild("##ColPages", ImVec2(colWidth, colHeight), false, 
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         
-        // Add Page Action Button (Thinner, background-matching resting state)
+        // Add Page Action Buttons (+ Add Page and + MD)
         float btnMargin = ModernNavConfig::ACTION_BUTTON_MARGIN;
-        float btnWidth = std::max(60.0f, colWidth - (btnMargin * 2.0f));
+        float totalAvailW = std::max(60.0f, colWidth - (btnMargin * 2.0f));
+        float btnAddPageW = std::floor((totalAvailW - 6.0f) * 0.70f);
+        float btnAddMdW = totalAvailW - 6.0f - btnAddPageW;
+
         ImGui::SetCursorPos(ImVec2(btnMargin, 3.0f));
         ImGui::PushFont(FolioTheme::FontNavBoldLarge ? FolioTheme::FontNavBoldLarge : FolioTheme::FontBold);
-        if (RenderActionButton("+ Add Page", btnWidth, ModernNavConfig::ACTION_BUTTON_HEIGHT, theme, theme.colorPageBg)) {
+        if (RenderActionButton("+ Add Page", btnAddPageW, ModernNavConfig::ACTION_BUTTON_HEIGHT, theme, theme.colorPageBg)) {
             auto activeSec = activeNb ? activeNb->GetActiveSection() : nullptr;
             if (activeSec) {
                 auto newPage = std::make_shared<CanvasPage>("New Untitled");
@@ -2084,6 +2110,23 @@ private:
                 canvas.ClearSelection(&session);
                 canvas.ApplyDefaultTemplate();
             }
+        }
+        ImGui::SameLine(0.0f, 6.0f);
+        if (RenderActionButton("+ MD", btnAddMdW, ModernNavConfig::ACTION_BUTTON_HEIGHT, theme, theme.colorPageBg)) {
+            auto activeSec = activeNb ? activeNb->GetActiveSection() : nullptr;
+            if (activeSec) {
+                auto newPage = std::make_shared<CanvasPage>("New Note");
+                newPage->nestingLevel = 0;
+                newPage->isDedicatedMd = true;
+                newPage->dedicatedMdContent = "# Untitled Note\n\nStart writing here...\n";
+                activeSec->AddPage(newPage);
+                activeSec->activePageIndex = activeSec->pages.size() - 1;
+                session.workspace.FlushActiveNotebookAsync();
+                canvas.ClearSelection(&session);
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Create New Markdown Document");
         }
         ImGui::PopFont();
 
@@ -2135,8 +2178,8 @@ private:
                 bool isSelected = (activeSec->activePageIndex == p);
                 std::string pageId = "##PageItem_" + page->guid;
 
-                // Render page item card, displaying dedicated PDF badge if this page is a continuous PDF reader
-                if (RenderHierarchyItemCard(pageId.c_str(), page->title.c_str(), isSelected, itemW, theme, 0, indentX, hasChildren, page->isCollapsed, false, &chevronClicked, false, page->isDedicatedPdf)) {
+                // Render page item card, displaying dedicated PDF / MD badge if applicable
+                if (RenderHierarchyItemCard(pageId.c_str(), page->title.c_str(), isSelected, itemW, theme, 0, indentX, hasChildren, page->isCollapsed, false, &chevronClicked, false, page->isDedicatedPdf, ImVec4(1.0f, 1.0f, 1.0f, 1.0f), page->isDedicatedMd)) {
                     if (chevronClicked) {
                         page->isCollapsed = !page->isCollapsed;
                     } else {
@@ -2202,6 +2245,8 @@ private:
                     ImGui::TextColored(theme.colorTextMuted, "Page %zu of %zu", p + 1, activeSec->pages.size());
                     if (page->isDedicatedPdf) {
                         ImGui::TextColored(ImVec4(0.95f, 0.40f, 0.40f, 1.0f), "[Dedicated PDF Document]");
+                    } else if (page->isDedicatedMd) {
+                        ImGui::TextColored(ImVec4(0.38f, 0.65f, 0.98f, 1.0f), "[Dedicated Markdown Note]");
                     }
                     ImGui::Separator();
 
@@ -2229,6 +2274,32 @@ private:
                         session.workspace.FlushActiveNotebookAsync();
                         canvas.ClearSelection(&session);
                         canvas.ApplyDefaultTemplate();
+                    }
+                    if (ImGui::MenuItem("Add Markdown Note Below")) {
+                        auto newSub = std::make_shared<CanvasPage>("New Note");
+                        newSub->nestingLevel = std::min(2, page->nestingLevel + 1);
+                        newSub->parentPageGuid = page->guid;
+                        newSub->isDedicatedMd = true;
+                        newSub->dedicatedMdContent = "# Untitled Note\n\n";
+                        activeSec->InsertPage(p + 1, newSub);
+                        activeSec->activePageIndex = p + 1;
+                        session.workspace.FlushActiveNotebookAsync();
+                        canvas.ClearSelection(&session);
+                    }
+                    if (page->isDedicatedMd) {
+                        if (ImGui::MenuItem("Switch to Canvas Mode")) {
+                            page->isDedicatedMd = false;
+                            page->isModified = true;
+                            canvas.needsFullRebake = true;
+                        }
+                    } else if (!page->isDedicatedPdf) {
+                        if (ImGui::MenuItem("Switch to Markdown Mode")) {
+                            page->isDedicatedMd = true;
+                            if (page->dedicatedMdContent.empty()) {
+                                page->dedicatedMdContent = "# " + page->title + "\n\n";
+                            }
+                            page->isModified = true;
+                        }
                     }
                     if (ImGui::MenuItem("Make Subpage (Indent)", nullptr, false, page->nestingLevel < 2)) {
                         activeSec->DemotePage(p);

@@ -56,7 +56,7 @@ flowchart TD
 | **Document Domain** | `src/core/document/` | Working set manager, notebook hierarchy, dirty flag tracking. |
 | **Spatial Indexing** | `src/core/spatial/` | Axis-Aligned Bounding Box ($mm$) math and R-Tree culling. |
 | **Object Registry** | `src/core/scene/` | Flat $O(1)$ UID-to-object store and runtime ID allocations. |
-| **Canvas Engine** | `src/core/engine/` | Blend2D vector rasterization, live tail builder, GPU upload. |
+| **Canvas Engine** | `src/core/canvas_engine/` | Blend2D vector rasterization, live tail builder, GPU upload. |
 | **Storage Engine** | `src/core/storage/` | SQLite database transactions and compressed `.ink` serializers. |
 | **UI Components** | `src/ui/` | Navigation sidebar, top ribbon bar, canvas viewport wrapper. |
 

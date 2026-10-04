@@ -4,7 +4,7 @@
 #include <string>
 #include <memory>
 #include "core/document/document_session.hpp"
-#include "core/engine/canvas_engine.hpp"
+#include "core/canvas_engine/canvas_engine.hpp"
 
 struct NotebookNav {
     void Render(float x, float y, float totalWidth, float height, DocumentSession& session, CanvasEngine& canvas) {

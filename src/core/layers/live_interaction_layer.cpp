@@ -20,8 +20,8 @@
  */
 
 #include "core/layers/live_interaction_layer.hpp"
-#include "core/engine/selection_gizmo.hpp"
-#include "core/engine/canvas_transform.hpp"
+#include "core/canvas_engine/selection_gizmo.hpp"
+#include "core/canvas_engine/canvas_transform.hpp"
 #include <cmath>
 #include <algorithm>
 
