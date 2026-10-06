@@ -9,6 +9,11 @@
 #include <string>
 #include <cmath>
 
+#ifdef _WIN32
+#undef min
+#undef max
+#endif
+
 namespace Folio {
 
 #if defined(FOLIO_HAS_PDFIUM)

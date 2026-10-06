@@ -26,6 +26,7 @@ if(MSVC)
     # /utf-8  — set both source and execution character sets to UTF-8 so that
     #           std::string and std::filesystem::path handle Unicode/non-ASCII characters seamlessly.
     add_compile_options(/FS /bigobj /utf-8)
+    add_compile_definitions(NOMINMAX)
 endif()
 
 # System OpenGL

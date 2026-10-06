@@ -11,6 +11,11 @@
 #include <fpdf_doc.h>
 #endif
 
+#ifdef _WIN32
+#undef min
+#undef max
+#endif
+
 namespace Folio {
 
 void PdfTextLayer::Clear() {
