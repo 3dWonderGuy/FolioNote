@@ -122,6 +122,25 @@ public:
      */
     [[nodiscard]] const BLImage& GetSurface() const noexcept { return m_bakedSurface; }
 
+    struct PaperTheme {
+        BLRgba32 bgColor{0xFF, 0xFF, 0xFF};
+        BLRgba32 gridColor{0xEB, 0xEE, 0xF2};
+        BLRgba32 borderColor{0xD0, 0xD4, 0xDC};
+    };
+
+    void SetPaperTheme(BLRgba32 bgColor, BLRgba32 gridColor, BLRgba32 borderColor) noexcept {
+        if (m_theme.bgColor.value != bgColor.value ||
+            m_theme.gridColor.value != gridColor.value ||
+            m_theme.borderColor.value != borderColor.value) {
+            m_theme.bgColor = bgColor;
+            m_theme.gridColor = gridColor;
+            m_theme.borderColor = borderColor;
+            Invalidate();
+        }
+    }
+
+    [[nodiscard]] const PaperTheme& GetPaperTheme() const noexcept { return m_theme; }
+
 private:
     // --- Backing Store ---
     BLImage   m_bakedSurface;  ///< Cached 32-bit premultiplied ARGB raster surface
@@ -134,6 +153,7 @@ private:
     bool m_isDirty         = true; ///< True when any rasterization pass is queued
     bool m_needsFullRebake = true; ///< True for Path A (full frustum rebake), false for Path B (partial)
     AABB m_dirtyWorldRegion;       ///< Accumulated world-space bounding box requiring re-baking
+    PaperTheme m_theme;            ///< Paper background, grid line, and border styling colors
 
     /**
      * @brief Renders paper color backdrop, page margins, and grid/dot patterns.
@@ -142,13 +162,6 @@ private:
      * @param[in] viewport   Active viewport for world-space grid line spacing.
      */
     void DrawBackground(CanvasPage* activePage, const Viewport& viewport);
-
-    /**
-     * @brief Resolves color palette based on system/page theme settings.
-     *
-     * @param[in] activePage Current active page specifying background color or dark mode flags.
-     */
-    void ColorTheme(CanvasPage* activePage);
 };
 
 } // namespace Folio

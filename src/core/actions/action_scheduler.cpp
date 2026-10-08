@@ -58,9 +58,17 @@ void ActionScheduler::Schedule(std::unique_ptr<ICanvasAction> action, ActionCont
     // Initialize the incoming action
     action->OnStart(ctx);
 
+    // If incoming action claims Camera, Selection, or DocumentStructure, instantly mark layer dirty
+    if ((reqResources & (ToResourceMask(CanvasResource::Camera) |
+                         ToResourceMask(CanvasResource::Selection) |
+                         ToResourceMask(CanvasResource::DocumentStructure))) != 0) {
+        ctx.InvalidateLayer();
+    }
+
     // If action completed immediately during OnStart (e.g. InstantAction)
     if (action->IsFinished(ctx)) {
         action->OnEnd(ActionEndReason::Finished, ctx);
+        ctx.InvalidateLayer();
         RecalculateResourceMask();
         return;
     }
@@ -76,6 +84,7 @@ void ActionScheduler::CancelWithResources(uint32_t resourceMask, ActionContext& 
     for (auto it = activeActions.begin(); it != activeActions.end(); ) {
         if ((it->resources & resourceMask) != 0) {
             it->action->OnEnd(ActionEndReason::Interrupted, ctx);
+            ctx.InvalidateLayer();
             it = activeActions.erase(it);
         } else {
             ++it;
@@ -100,6 +109,7 @@ void ActionScheduler::CancelAll(ActionContext& ctx) {
         }
     }
     pendingQueue.clear();
+    ctx.InvalidateLayer();
 }
 
 void ActionScheduler::Update(double dt, ActionContext& ctx) {
@@ -109,8 +119,16 @@ void ActionScheduler::Update(double dt, ActionContext& ctx) {
     for (auto it = activeActions.begin(); it != activeActions.end(); ) {
         it->action->OnUpdate(dt, ctx);
 
+        // Instantly mark layer dirty during active camera, selection, or document actions
+        if ((it->resources & (ToResourceMask(CanvasResource::Camera) |
+                              ToResourceMask(CanvasResource::Selection) |
+                              ToResourceMask(CanvasResource::DocumentStructure))) != 0) {
+            ctx.InvalidateLayer();
+        }
+
         if (it->action->IsFinished(ctx)) {
             it->action->OnEnd(ActionEndReason::Finished, ctx);
+            ctx.InvalidateLayer();
             it = activeActions.erase(it);
         } else {
             ++it;

@@ -157,9 +157,10 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
             }
         }
 
-        // 3. Sort strictly by ascending z-order to preserve back-to-front visual layering
+        // 3. Sort strictly by ascending z-order and document pageIndex to preserve back-to-front visual layering
         std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
-            return a->zOrder < b->zOrder;
+            if (a->zOrder != b->zOrder) return a->zOrder < b->zOrder;
+            return a->pageIndex < b->pageIndex;
         });
 
         // 4. Apply camera world-to-screen matrix transform and rasterize objects
@@ -199,9 +200,10 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
                 }
             }
 
-            // 5. Sort strictly by ascending z-order
+            // 5. Sort strictly by ascending z-order and document pageIndex
             std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
-                return a->zOrder < b->zOrder;
+                if (a->zOrder != b->zOrder) return a->zOrder < b->zOrder;
+                return a->pageIndex < b->pageIndex;
             });
 
             for (const auto& obj : candidates) {
@@ -221,26 +223,169 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
 }
 
 /**
- * @brief Renders the paper color backdrop and surface clearing.
+ * @brief Renders the paper color backdrop, page margins, and grid/dot patterns.
  *
  * @param[in] activePage The active canvas page with theme settings.
  * @param[in] viewport   Active viewport for coordinate reference.
  */
-void BakedCanvasLayer::DrawBackground(CanvasPage* activePage, const Viewport& /*viewport*/) {
-    ColorTheme(activePage);
+void BakedCanvasLayer::DrawBackground(CanvasPage* activePage, const Viewport& viewport) {
+    if (!activePage) {
+        m_bakedContext.fill_all(m_theme.bgColor);
+        return;
+    }
 
-    // Fill entire backing bitmap or active page region with paper color
-    m_bakedContext.fill_all();
-}
+    const auto infinityMode = activePage->infinityMode;
+    const auto paperStyle = activePage->paperStyle;
+    const double gridSpacingMm = (activePage->gridSpacingMm > 0.5) ? activePage->gridSpacingMm : 5.0;
 
-/**
- * @brief Resolves color styling and paper background fills.
- *
- * @param[in] activePage Current active page.
- */
-void BakedCanvasLayer::ColorTheme(CanvasPage* /*activePage*/) {
-    // Set Blend2D fill/stroke properties based on theme configuration
-    m_bakedContext.set_fill_style(BLRgba32(245, 245, 247, 255)); // Default light paper
+    double pageWMm = (activePage->pageWidthMm > 0.0) ? activePage->pageWidthMm : 215.9;
+    double pageHMm = (activePage->pageHeightMm > 0.0) ? activePage->pageHeightMm : 279.4;
+    if (activePage->pageIsLandscape) {
+        std::swap(pageWMm, pageHMm);
+    }
+
+    Point2D originScreen = viewport.WorldToScreen(0.0, 0.0);
+    Point2D cornerScreen = viewport.WorldToScreen(pageWMm, pageHMm);
+    double rectScreenW = cornerScreen.x - originScreen.x;
+    double rectScreenH = cornerScreen.y - originScreen.y;
+
+    if (infinityMode == CanvasInfinityMode::VerticalScroll) {
+        BLRgba32 deskCol = (m_theme.bgColor.r() > 128)
+            ? BLRgba32(static_cast<uint8_t>(m_theme.bgColor.r() * 0.93),
+                       static_cast<uint8_t>(m_theme.bgColor.g() * 0.93),
+                       static_cast<uint8_t>(m_theme.bgColor.b() * 0.94))
+            : BLRgba32(static_cast<uint8_t>(std::min(255, (int)(m_theme.bgColor.r() * 1.25 + 10))),
+                       static_cast<uint8_t>(std::min(255, (int)(m_theme.bgColor.g() * 1.25 + 10))),
+                       static_cast<uint8_t>(std::min(255, (int)(m_theme.bgColor.b() * 1.25 + 12))));
+        m_bakedContext.fill_all(deskCol);
+        m_bakedContext.fill_rect(originScreen.x, std::max(0.0, originScreen.y), rectScreenW, m_surfaceHeight - std::max(0.0, originScreen.y), m_theme.bgColor);
+    } else if (infinityMode == CanvasInfinityMode::HorizontalScroll) {
+        BLRgba32 deskCol = (m_theme.bgColor.r() > 128)
+            ? BLRgba32(static_cast<uint8_t>(m_theme.bgColor.r() * 0.93),
+                       static_cast<uint8_t>(m_theme.bgColor.g() * 0.93),
+                       static_cast<uint8_t>(m_theme.bgColor.b() * 0.94))
+            : BLRgba32(static_cast<uint8_t>(std::min(255, (int)(m_theme.bgColor.r() * 1.25 + 10))),
+                       static_cast<uint8_t>(std::min(255, (int)(m_theme.bgColor.g() * 1.25 + 10))),
+                       static_cast<uint8_t>(std::min(255, (int)(m_theme.bgColor.b() * 1.25 + 12))));
+        m_bakedContext.fill_all(deskCol);
+        m_bakedContext.fill_rect(std::max(0.0, originScreen.x), originScreen.y, m_surfaceWidth - std::max(0.0, originScreen.x), rectScreenH, m_theme.bgColor);
+    } else {
+        m_bakedContext.fill_all(m_theme.bgColor);
+    }
+
+    if (activePage->showPageBorder) {
+        m_bakedContext.save();
+        m_bakedContext.set_stroke_style(m_theme.borderColor);
+        double strokePx = std::max(1.0, activePage->pageBorderWidth * viewport.zoom);
+        m_bakedContext.set_stroke_width(strokePx);
+
+        double bx = originScreen.x;
+        double by = originScreen.y;
+        double bw = rectScreenW;
+        double bh = rectScreenH;
+
+        if (activePage->pageBorderStyle == PageBorderStyle::Dashed) {
+            BLArray<double> dashArray;
+            dashArray.append(8.0);
+            dashArray.append(6.0);
+            m_bakedContext.set_stroke_dash_array(dashArray);
+        }
+
+        if (activePage->pageBorderStyle == PageBorderStyle::Corners) {
+            double arm = std::min(std::min(bw, bh) * 0.25, 20.0 * viewport.zoom);
+            if (arm > 2.0) {
+                m_bakedContext.stroke_line(bx, by + arm, bx, by);
+                m_bakedContext.stroke_line(bx, by, bx + arm, by);
+                m_bakedContext.stroke_line(bx + bw - arm, by, bx + bw, by);
+                m_bakedContext.stroke_line(bx + bw, by, bx + bw, by + arm);
+                m_bakedContext.stroke_line(bx, by + bh - arm, bx, by + bh);
+                m_bakedContext.stroke_line(bx, by + bh, bx + arm, by + bh);
+                m_bakedContext.stroke_line(bx + bw - arm, by + bh, bx + bw, by + bh);
+                m_bakedContext.stroke_line(bx + bw, by + bh, bx + bw, by + bh - arm);
+            }
+        } else {
+            m_bakedContext.stroke_rect(bx, by, bw, bh);
+        }
+        m_bakedContext.restore();
+    }
+
+    if (paperStyle == PaperStyle::Blank) {
+        return;
+    }
+
+    const double stepMm = gridSpacingMm;
+    m_bakedContext.save();
+    double startX = std::floor(viewport.bounds.minX / stepMm) * stepMm;
+    double endX   = std::ceil(viewport.bounds.maxX / stepMm) * stepMm;
+    double startY = std::floor(viewport.bounds.minY / stepMm) * stepMm;
+    double endY   = std::ceil(viewport.bounds.maxY / stepMm) * stepMm;
+
+    m_bakedContext.set_stroke_style(m_theme.gridColor);
+    m_bakedContext.set_stroke_width(1.0);
+
+    if (paperStyle == PaperStyle::Dotted) {
+        m_bakedContext.set_fill_style(m_theme.gridColor);
+        for (double wy = startY; wy <= endY; wy += stepMm) {
+            if (infinityMode != CanvasInfinityMode::FullInfinity && wy < 0.0) continue;
+            if (infinityMode == CanvasInfinityMode::HorizontalScroll && wy > pageHMm) continue;
+            for (double wx = startX; wx <= endX; wx += stepMm) {
+                if (infinityMode != CanvasInfinityMode::FullInfinity && wx < 0.0) continue;
+                if (infinityMode == CanvasInfinityMode::VerticalScroll && wx > pageWMm) continue;
+                Point2D pt = viewport.WorldToScreen(wx, wy);
+                m_bakedContext.fill_circle(pt.x, pt.y, 1.2);
+            }
+        }
+    }
+    else {
+        if (paperStyle == PaperStyle::Grid) {
+            for (double wx = startX; wx <= endX; wx += stepMm) {
+                if (infinityMode != CanvasInfinityMode::FullInfinity && wx < 0.0) continue;
+                if (infinityMode == CanvasInfinityMode::VerticalScroll && wx > pageWMm) continue;
+                double minY = viewport.bounds.minY;
+                double maxY = viewport.bounds.maxY;
+                if (infinityMode != CanvasInfinityMode::FullInfinity) minY = std::max(0.0, minY);
+                if (infinityMode == CanvasInfinityMode::HorizontalScroll) maxY = std::min(pageHMm, maxY);
+                if (minY < maxY) {
+                    Point2D sTop = viewport.WorldToScreen(wx, minY);
+                    Point2D sBot = viewport.WorldToScreen(wx, maxY);
+                    m_bakedContext.stroke_line(sTop.x, sTop.y, sBot.x, sBot.y);
+                }
+            }
+        }
+
+        // Horizontal lines for Grid, Lined, and Cornell
+        for (double wy = startY; wy <= endY; wy += stepMm) {
+            if (infinityMode != CanvasInfinityMode::FullInfinity && wy < 0.0) continue;
+            if (infinityMode == CanvasInfinityMode::HorizontalScroll && wy > pageHMm) continue;
+            double minX = viewport.bounds.minX;
+            double maxX = viewport.bounds.maxX;
+            if (infinityMode != CanvasInfinityMode::FullInfinity) minX = std::max(0.0, minX);
+            if (infinityMode == CanvasInfinityMode::VerticalScroll) maxX = std::min(pageWMm, maxX);
+            if (minX < maxX) {
+                Point2D sLeft  = viewport.WorldToScreen(minX, wy);
+                Point2D sRight = viewport.WorldToScreen(maxX, wy);
+                m_bakedContext.stroke_line(sLeft.x, sLeft.y, sRight.x, sRight.y);
+            }
+        }
+
+        if (paperStyle == PaperStyle::Cornell) {
+            // Cornell summary margin vertical line at 50mm from left
+            double marginXMm = 50.0;
+            if (viewport.bounds.minX <= marginXMm && viewport.bounds.maxX >= marginXMm) {
+                double minY = (infinityMode != CanvasInfinityMode::FullInfinity) ? std::max(0.0, viewport.bounds.minY) : viewport.bounds.minY;
+                double maxY = (infinityMode == CanvasInfinityMode::HorizontalScroll) ? std::min(pageHMm, viewport.bounds.maxY) : viewport.bounds.maxY;
+                if (minY < maxY) {
+                    m_bakedContext.set_stroke_style(BLRgba32(0xFF, 0x52, 0x52, 0x88));
+                    m_bakedContext.set_stroke_width(1.5);
+                    Point2D sTop = viewport.WorldToScreen(marginXMm, minY);
+                    Point2D sBot = viewport.WorldToScreen(marginXMm, maxY);
+                    m_bakedContext.stroke_line(sTop.x, sTop.y, sBot.x, sBot.y);
+                }
+            }
+        }
+    }
+
+    m_bakedContext.restore();
 }
 
 } // namespace Folio

@@ -15,6 +15,22 @@
 
 namespace Folio {
 
+namespace {
+
+/**
+ * @brief Centralized helper to invalidate canvas engine render caches and optionally reset selection.
+ */
+inline void InvalidateEngine(CanvasEngine* engine, bool clearSelection = false) {
+    if (!engine) return;
+    if (clearSelection) {
+        engine->ClearSelection();
+    }
+    engine->isDirty = true;
+    engine->needsFullRebake = true;
+}
+
+} // anonymous namespace
+
 // =========================================================================================
 // AddObjectCommand Implementation
 // =========================================================================================
@@ -29,11 +45,7 @@ void AddObjectCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
         object->isSelected = 0;
         page.AddObject(object);
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 void AddObjectCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -43,11 +55,7 @@ void AddObjectCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
         object->isSelected = 0;
         page.RemoveObject(object);
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB AddObjectCommand::GetTargetBounds() const {
@@ -78,11 +86,7 @@ void AddObjectsCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             page.AddObject(obj);
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 void AddObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -94,11 +98,7 @@ void AddObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             page.RemoveObject(obj);
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB AddObjectsCommand::GetTargetBounds() const {
@@ -133,11 +133,7 @@ void RemoveObjectsCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             page.RemoveObject(obj);
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 void RemoveObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -149,11 +145,7 @@ void RemoveObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             page.AddObject(obj);
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB RemoveObjectsCommand::GetTargetBounds() const {
@@ -206,11 +198,7 @@ void BatchEraseCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             }
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 void BatchEraseCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -240,11 +228,7 @@ void BatchEraseCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             page.AddObject(del);
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB BatchEraseCommand::GetTargetBounds() const {
@@ -280,11 +264,7 @@ void TransformObjectsCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             page.ReplaceObject(e.uid, clone);
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 void TransformObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -298,11 +278,7 @@ void TransformObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             page.ReplaceObject(e.uid, clone);
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB TransformObjectsCommand::GetTargetBounds() const {
@@ -338,10 +314,7 @@ void GroupObjectsCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             e.object->groupId = newGroupId;
         }
     }
-    if (engine) {
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/false);
 }
 
 void GroupObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -350,11 +323,7 @@ void GroupObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             e.object->groupId = e.previousGroupId;
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB GroupObjectsCommand::GetTargetBounds() const {
@@ -388,10 +357,7 @@ void UngroupObjectsCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             e.object->groupId.clear();
         }
     }
-    if (engine) {
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/false);
 }
 
 void UngroupObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -400,11 +366,7 @@ void UngroupObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             e.object->groupId = e.previousGroupId;
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB UngroupObjectsCommand::GetTargetBounds() const {
@@ -440,10 +402,7 @@ void MacroCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
     for (auto& cmd : subCommands) {
         if (cmd) cmd->Execute(page, engine);
     }
-    if (engine) {
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/false);
 }
 
 void MacroCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -451,11 +410,7 @@ void MacroCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
     for (auto it = subCommands.rbegin(); it != subCommands.rend(); ++it) {
         if (*it) (*it)->Undo(page, engine);
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB MacroCommand::GetTargetBounds() const {
@@ -496,11 +451,7 @@ void LockObjectsCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             s.object->zOrder = targetZOrder;
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 void LockObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -512,11 +463,7 @@ void LockObjectsCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             s.object->zOrder = s.wasZOrder;
         }
     }
-    if (engine) {
-        engine->ClearSelection();
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/true);
 }
 
 AABB LockObjectsCommand::GetTargetBounds() const {
@@ -535,16 +482,6 @@ std::string LockObjectsCommand::GetName() const {
 // ModifyTextCommand Implementation
 // =========================================================================================
 
-/**
- * @brief Constructs a reversible text modification command.
- * @param uid Target TextBoxObject runtime unique identifier.
- * @param prevText Pre-mutation text string.
- * @param nextText Post-mutation text string.
- * @param prevW Previous world width in mm.
- * @param nextW New world width in mm.
- * @param prevH Previous world height in mm.
- * @param nextH New world height in mm.
- */
 ModifyTextCommand::ModifyTextCommand(uint32_t uid, std::string prevText, std::string nextText,
                                      double prevW, double nextW, double prevH, double nextH)
     : textBoxUid(uid),
@@ -555,9 +492,6 @@ ModifyTextCommand::ModifyTextCommand(uint32_t uid, std::string prevText, std::st
       previousHeight(prevH),
       newHeight(nextH) {}
 
-/**
- * @brief Re-applies the text mutation and synchronizes typographical bounds into the R-Tree.
- */
 void ModifyTextCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
     auto obj = page.FindObjectByUid(textBoxUid);
     if (obj && obj->type == ObjectType::Text) {
@@ -574,15 +508,9 @@ void ModifyTextCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
             engine->textEditor.ReflowLayout();
         }
     }
-    if (engine) {
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/false);
 }
 
-/**
- * @brief Reverses the text mutation, restoring prior text and bounds into the R-Tree.
- */
 void ModifyTextCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
     auto obj = page.FindObjectByUid(textBoxUid);
     if (obj && obj->type == ObjectType::Text) {
@@ -599,10 +527,7 @@ void ModifyTextCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
             engine->textEditor.ReflowLayout();
         }
     }
-    if (engine) {
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/false);
 }
 
 AABB ModifyTextCommand::GetTargetBounds() const {
@@ -643,10 +568,7 @@ void RelinkAttachmentCommand::Execute(CanvasPage& page, CanvasEngine* engine) {
         attach->SetFileValid(!resolved.empty() && FileManager::Exists(resolved));
         page.isModified = true;
     }
-    if (engine) {
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/false);
 }
 
 void RelinkAttachmentCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
@@ -662,10 +584,7 @@ void RelinkAttachmentCommand::Undo(CanvasPage& page, CanvasEngine* engine) {
         attach->SetFileValid(!resolved.empty() && FileManager::Exists(resolved));
         page.isModified = true;
     }
-    if (engine) {
-        engine->isDirty = true;
-        engine->needsFullRebake = true;
-    }
+    InvalidateEngine(engine, /*clearSelection=*/false);
 }
 
 AABB RelinkAttachmentCommand::GetTargetBounds() const {

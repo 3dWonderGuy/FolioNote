@@ -8,7 +8,9 @@
 
 #include <cstdint>
 #include <string_view>
+#include <functional>
 
+struct AABB;
 class CanvasPage;
 class CanvasEngine;
 class DocumentSession;
@@ -16,6 +18,7 @@ class DocumentSession;
 namespace Folio {
 
 class CommandHistory;
+class LayerCompositorManager;
 
 /**
  * @brief Resource flags for mutual exclusion arbitration across active canvas operations.
@@ -58,14 +61,36 @@ enum class ActionEndReason : uint8_t {
 };
 
 /**
- * @brief Context passed to action lifecycle methods providing access to engine & document state.
+ * @brief Context passed to action lifecycle methods providing access to engine, layer manager & document state.
  */
 struct ActionContext {
     CanvasPage* page{nullptr};
     CanvasEngine* engine{nullptr};
     DocumentSession* session{nullptr};
     CommandHistory* history{nullptr};
+    LayerCompositorManager* layerManager{nullptr};
+    std::function<void()> onInvalidateLayer;
+    std::function<void(const AABB&)> onInvalidateLayerRect;
     double frameTimeSeconds{0.0};
+
+    /**
+     * @brief Instantly marks the active canvas layer dirty for full viewport re-bake.
+     * Propagates immediately from ActionManager into LayerManager to ensure zero skipped frames.
+     */
+    void InvalidateLayer() noexcept {
+        if (onInvalidateLayer) {
+            onInvalidateLayer();
+        }
+    }
+
+    /**
+     * @brief Instantly marks a localized bounding box dirty on the active canvas layer.
+     */
+    void InvalidateLayerRect(const AABB& dirtyBounds) noexcept {
+        if (onInvalidateLayerRect) {
+            onInvalidateLayerRect(dirtyBounds);
+        }
+    }
 };
 
 using ActionId = uint64_t;

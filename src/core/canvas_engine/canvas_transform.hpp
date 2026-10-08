@@ -31,6 +31,20 @@ struct Viewport {
     double cameraY = 0.0;
     BLMatrix2D worldToScreenMatrix{ 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
 
+    [[nodiscard]] constexpr double GetEffectiveScale() const noexcept {
+        return pixelsPerMm * zoom;
+    }
+
+    [[nodiscard]] Point2D WorldToScreen(double worldXMm, double worldYMm) const noexcept {
+        const double scale = GetEffectiveScale();
+        return {
+            (worldXMm + cameraX) * scale,
+            (worldYMm + cameraY) * scale,
+            1.0f,
+            0.0
+        };
+    }
+
     /**
      * @brief Transforms an axis-aligned bounding box from world space (mm) to screen coordinates (px).
      *

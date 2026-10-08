@@ -127,15 +127,19 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     } 
     else if (currentAction == InteractionState::Eraser) {
         pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Hidden);
+        double currentTimeSec = (latestEventTimeSec > 0.0) ? latestEventTimeSec : (SDL_GetTicks() * 0.001);
+        bool isPointerMoving = isMoving || (mouse.dx != 0.0f || mouse.dy != 0.0f);
+        float effectiveRadius = UpdateDynamicEraserRadius(canvasLocalX, canvasLocalY, currentTimeSec, isPointerMoving, isEraserActive || justDown);
+
         if (justDown) {
             pointerIcons.Lock(FolioInput::PointerCursorShape::Hidden, FolioInput::CursorLockReason::Eraser);
             lastEraserX = canvasLocalX;
             lastEraserY = canvasLocalY;
             isEraserActive = true;
             session.BeginEraseTransaction();
-            canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+            canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, effectiveRadius, session, isStrokeEraser);
         } else if (isMoving && isEraserActive) {
-            canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+            canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, effectiveRadius, session, isStrokeEraser);
             lastEraserX = canvasLocalX;
             lastEraserY = canvasLocalY;
         } else if (justUp) {
@@ -144,7 +148,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             session.EndEraseTransaction(&canvas);
         }
 
-        canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
+        canvas.SetEraserCursor(canvasLocalX, canvasLocalY, effectiveRadius, isEraserActive, isStrokeEraser);
     }
     else if (currentAction == InteractionState::Selecting) {
         if (justDown) {
@@ -293,8 +297,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             if (canvas.selectionGizmo.isDragging) {
                 if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform,
                                                        canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
-                    canvas.needsFullRebake = true;
-                    canvas.isDirty = true;
+                    canvas.InvalidateLayer();
                 }
             } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                 canvas.OnLassoMove(canvasLocalX, canvasLocalY);
@@ -314,8 +317,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
             if (canvas.selectionGizmo.isDragging) {
                 canvas.selectionGizmo.OnPointerUp(&session);
                 canvas.SyncSelectionToSpatialIndex(&session);
-                canvas.needsFullRebake = true;
-                canvas.isDirty = true;
+                canvas.InvalidateLayer();
             } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                 canvas.OnLassoUp(&session);
             } else if (canvas.marqueeBox.isActive) {

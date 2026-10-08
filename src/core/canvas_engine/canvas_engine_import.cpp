@@ -106,9 +106,7 @@ void SDLCALL CanvasEngine::OnImageFileSelected(void* userdata, const char* const
             img->UpdateBounds();
 
             ctx->session->AddImage(img);
-            ctx->canvas->needsFullRebake = true;
-            ctx->canvas->isDirty = true;
-            ctx->canvas->layerCompositor.InvalidateBakedCanvas();
+            ctx->canvas->InvalidateLayer();
             LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "' (" + Folio::ImageFormatToString(img->imageFormat).data() + ")");
         }
     }
@@ -305,9 +303,7 @@ void CanvasEngine::CommitAttachment(bool embed, DocumentSession* session) {
         session->NotifyPageModified(activePage);
     }
 
-    needsFullRebake = true;
-    isDirty         = true;
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
 
     LOG_INFO(CanvasEngine, "Committed attachment '" + m_pendingAttachName +
                            "' mode=" + std::string(embed && embeddedOk ? "embedded" : "link") +
@@ -351,8 +347,7 @@ void SDLCALL CanvasEngine::OnPdfFileSelected(void* userdata, const char* const* 
                     if (ctx->session) {
                         ctx->session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(pdfObj));
                     }
-                    ctx->canvas->needsFullRebake = true;
-                    ctx->canvas->isDirty = true;
+                    ctx->canvas->InvalidateLayer();
                 }
             }
         }
@@ -398,9 +393,7 @@ bool CanvasEngine::InsertImageFromClipboard(DocumentSession* session) {
                     img->UpdateBounds();
 
                     session->AddImage(img);
-                    needsFullRebake = true;
-                    isDirty = true;
-                    layerCompositor.InvalidateBakedCanvas();
+                    InvalidateLayer();
                     SDL_free(clipData);
                     LOG_INFO(CanvasEngine, "Pasted image from clipboard (" + std::to_string(img->naturalWidth) + "x" + std::to_string(img->naturalHeight) + " px, " + Folio::ImageFormatToString(img->imageFormat).data() + ")");
                     return true;
@@ -485,15 +478,12 @@ bool CanvasEngine::InsertVideoFromFile(const std::string& filePath, DocumentSess
     vid->UpdateBounds();
 
     vid->Play([this]() {
-        needsFullRebake = true;
-        isDirty = true;
+        InvalidateLayer();
     });
     vid->Pause();
 
     session->AddVideo(vid);
-    needsFullRebake = true;
-    isDirty = true;
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
 
     LOG_INFO(CanvasEngine, "Inserted VideoObject: " + fspath.filename().string() +
              " (" + std::to_string(static_cast<int>(w)) + "mm x " +
@@ -527,21 +517,17 @@ bool CanvasEngine::InsertVideoFromUrl(const std::string& url, const std::string&
 
     if (vid->IsYouTube()) {
         vid->FetchYouTubeThumbnailAsync([this]() {
-            needsFullRebake = true;
-            isDirty = true;
+            InvalidateLayer();
         });
     } else {
         vid->Play([this]() {
-            needsFullRebake = true;
-            isDirty = true;
+            InvalidateLayer();
         });
         vid->Pause();
     }
 
     session->AddVideo(vid);
-    needsFullRebake = true;
-    isDirty = true;
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
 
     LOG_INFO(CanvasEngine, "Inserted URL VideoObject: " + url);
     return true;
@@ -637,9 +623,7 @@ bool CanvasEngine::InsertAudioFromFile(const std::string& filePath, DocumentSess
     audioObj->UpdateBounds();
 
     session->AddObject(audioObj);
-    needsFullRebake = true;
-    isDirty = true;
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
 
     LOG_INFO(CanvasEngine, "Inserted AudioObject: " + importedPath);
     return true;

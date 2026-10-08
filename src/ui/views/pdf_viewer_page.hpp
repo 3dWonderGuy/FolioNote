@@ -615,11 +615,20 @@ public:
                         double pageTopMm = GetPageTopMm(i);
                         AABB pageAabb{ -50.0, pageTopMm - 5.0, mmW + 50.0, pageTopMm + mmH + 5.0 };
                         std::vector<uint32_t> inkUids = activePage->spatialIndex.Query(pageAabb);
-
+                        std::vector<std::shared_ptr<InkContainer>> inkCandidates;
+                        inkCandidates.reserve(inkUids.size());
                         for (uint32_t uid : inkUids) {
                             auto obj = activePage->FindObjectByUid(uid);
-                            if (!obj || !obj->isVisible || obj->type != ObjectType::InkContainer) continue;
-                            auto ink = std::static_pointer_cast<InkContainer>(obj);
+                            if (obj && obj->isVisible && obj->type == ObjectType::InkContainer) {
+                                inkCandidates.push_back(std::static_pointer_cast<InkContainer>(std::move(obj)));
+                            }
+                        }
+                        std::sort(inkCandidates.begin(), inkCandidates.end(), [](const auto& a, const auto& b) {
+                            if (a->zOrder != b->zOrder) return a->zOrder < b->zOrder;
+                            return a->pageIndex < b->pageIndex;
+                        });
+
+                        for (const auto& ink : inkCandidates) {
 
                             for (const auto& strk : ink->strokes) {
                                 bool isHighlighter = (strk.blendMode == BlendMode::Multiply || ink->isHighlighter);

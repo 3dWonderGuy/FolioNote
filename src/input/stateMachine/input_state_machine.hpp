@@ -14,6 +14,7 @@
 #include "input/stateMachine/pointer_icon_manager.hpp"
 #include "core/canvas_engine/stroke_smoother.hpp"
 #include "utils/logger.hpp"
+#include "utils/physics_model.hpp"
 #include <array>
 #include <string>
 #include <cstdint>
@@ -105,10 +106,24 @@ public:
     StylusState       oldStylusState     = StylusState::OutOfRange;
     StylusButtonState stylusButtons      = StylusButtonState::None;
     bool  isStrokeEraser                 = true;
+    bool  isDynamicEraser                = false;
     float eraserRadiusMm                 = 3.0f;
+    float currentDynamicEraserRadiusMm   = 3.0f;
+    float dynamicEraserMinRadiusMm       = 1.5f;
+    float dynamicEraserMaxRadiusMm       = 16.0f;
     float lastEraserX                    = 0.0f;
     float lastEraserY                    = 0.0f;
+    float lastVelocityX                  = 0.0f;
+    float lastVelocityY                  = 0.0f;
+    double lastEraserTimeSec             = 0.0;
     bool  isEraserActive                 = false;
+    Folio::Physics::DynamicEraserPhysicsModel eraserPhysics;
+
+    /**
+     * @brief Computes velocity-scaled dynamic eraser radius when isDynamicEraser is active.
+     * Faster movement expands the swept radius for broad wiping; slower movement contracts for surgical precision.
+     */
+    float UpdateDynamicEraserRadius(float currentX, float currentY, double currentTimeSec, bool isMoving, bool isDown);
 
     // -------------------------------------------------------------------------
     // HARDWARE TELEMETRY CONTAINERS

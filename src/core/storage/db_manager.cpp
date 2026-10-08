@@ -4,6 +4,11 @@
 
 namespace Folio {
 
+static inline std::string SafeColumnText(sqlite3_stmt* stmt, int col) {
+    const unsigned char* text = sqlite3_column_text(stmt, col);
+    return text ? reinterpret_cast<const char*>(text) : "";
+}
+
 DBManager::~DBManager() {
     Close();
 }
@@ -51,6 +56,8 @@ void DBManager::Close() {
 
 void DBManager::CloseInternal() {
     if (db) {
+        // Merge WAL pages back to database file before closing
+        sqlite3_wal_checkpoint_v2(db, nullptr, SQLITE_CHECKPOINT_PASSIVE, nullptr, nullptr);
         // Attempt clean close
         int rc = sqlite3_close(db);
         if (rc != SQLITE_OK) {
@@ -309,8 +316,8 @@ bool DBManager::LoadNotebookMeta(DBNotebookRecord& outRecord) {
 
     int rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
-        outRecord.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        outRecord.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        outRecord.guid = SafeColumnText(stmt, 0);
+        outRecord.name = SafeColumnText(stmt, 1);
         outRecord.colorR = static_cast<float>(sqlite3_column_double(stmt, 2));
         outRecord.colorG = static_cast<float>(sqlite3_column_double(stmt, 3));
         outRecord.colorB = static_cast<float>(sqlite3_column_double(stmt, 4));
@@ -416,11 +423,10 @@ std::vector<DBSectionGroupRecord> DBManager::LoadSectionGroups(const std::string
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         DBSectionGroupRecord grp;
-        grp.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        grp.notebookGuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        const auto* parentText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        grp.parentGroupGuid = parentText ? parentText : "";
-        grp.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        grp.guid = SafeColumnText(stmt, 0);
+        grp.notebookGuid = SafeColumnText(stmt, 1);
+        grp.parentGroupGuid = SafeColumnText(stmt, 2);
+        grp.name = SafeColumnText(stmt, 3);
         grp.colorR = static_cast<float>(sqlite3_column_double(stmt, 4));
         grp.colorG = static_cast<float>(sqlite3_column_double(stmt, 5));
         grp.colorB = static_cast<float>(sqlite3_column_double(stmt, 6));
@@ -525,11 +531,10 @@ std::vector<DBSectionRecord> DBManager::LoadSections(const std::string& notebook
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         DBSectionRecord sec;
-        sec.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        sec.notebookGuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        const auto* grpText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        sec.groupGuid = grpText ? grpText : "";
-        sec.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        sec.guid = SafeColumnText(stmt, 0);
+        sec.notebookGuid = SafeColumnText(stmt, 1);
+        sec.groupGuid = SafeColumnText(stmt, 2);
+        sec.name = SafeColumnText(stmt, 3);
         sec.colorR = static_cast<float>(sqlite3_column_double(stmt, 4));
         sec.colorG = static_cast<float>(sqlite3_column_double(stmt, 5));
         sec.colorB = static_cast<float>(sqlite3_column_double(stmt, 6));
@@ -665,24 +670,20 @@ std::vector<DBPageRecord> DBManager::LoadPagesMetadata(const std::string& sectio
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         DBPageRecord page;
-        page.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        page.sectionGuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        page.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        page.createdDate = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        page.createdTime = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        const auto* parentText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-        page.parentPageGuid = parentText ? parentText : "";
+        page.guid = SafeColumnText(stmt, 0);
+        page.sectionGuid = SafeColumnText(stmt, 1);
+        page.title = SafeColumnText(stmt, 2);
+        page.createdDate = SafeColumnText(stmt, 3);
+        page.createdTime = SafeColumnText(stmt, 4);
+        page.parentPageGuid = SafeColumnText(stmt, 5);
         page.nestingLevel = sqlite3_column_int(stmt, 6);
         page.sortOrder = sqlite3_column_int(stmt, 7);
         page.isCollapsed = (sqlite3_column_int(stmt, 8) != 0);
         page.hasBlob = (sqlite3_column_int(stmt, 9) != 0);
         page.isDedicatedPdf = (sqlite3_column_int(stmt, 10) != 0);
-        const auto* pdfPathText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
-        page.dedicatedPdfPath = pdfPathText ? pdfPathText : "";
-        const auto* pdfBkText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
-        page.dedicatedPdfBookmarks = pdfBkText ? pdfBkText : "";
-        const auto* pdfHlText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
-        page.dedicatedPdfHighlights = pdfHlText ? pdfHlText : "";
+        page.dedicatedPdfPath = SafeColumnText(stmt, 11);
+        page.dedicatedPdfBookmarks = SafeColumnText(stmt, 12);
+        page.dedicatedPdfHighlights = SafeColumnText(stmt, 13);
         page.isDedicatedMd = (sqlite3_column_int(stmt, 14) != 0);
         page.deletedAt = sqlite3_column_int64(stmt, 15);
         results.push_back(std::move(page));
@@ -877,11 +878,10 @@ std::vector<DBSectionRecord> DBManager::LoadDeletedSections(const std::string& n
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         DBSectionRecord sec;
-        sec.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        sec.notebookGuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        const auto* grpText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        sec.groupGuid = grpText ? grpText : "";
-        sec.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        sec.guid = SafeColumnText(stmt, 0);
+        sec.notebookGuid = SafeColumnText(stmt, 1);
+        sec.groupGuid = SafeColumnText(stmt, 2);
+        sec.name = SafeColumnText(stmt, 3);
         sec.colorR = static_cast<float>(sqlite3_column_double(stmt, 4));
         sec.colorG = static_cast<float>(sqlite3_column_double(stmt, 5));
         sec.colorB = static_cast<float>(sqlite3_column_double(stmt, 6));
@@ -925,24 +925,20 @@ std::vector<DBPageRecord> DBManager::LoadDeletedPages(const std::string& noteboo
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         DBPageRecord page;
-        page.guid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        page.sectionGuid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        page.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        page.createdDate = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        page.createdTime = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        const auto* parentText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-        page.parentPageGuid = parentText ? parentText : "";
+        page.guid = SafeColumnText(stmt, 0);
+        page.sectionGuid = SafeColumnText(stmt, 1);
+        page.title = SafeColumnText(stmt, 2);
+        page.createdDate = SafeColumnText(stmt, 3);
+        page.createdTime = SafeColumnText(stmt, 4);
+        page.parentPageGuid = SafeColumnText(stmt, 5);
         page.nestingLevel = sqlite3_column_int(stmt, 6);
         page.sortOrder = sqlite3_column_int(stmt, 7);
         page.isCollapsed = (sqlite3_column_int(stmt, 8) != 0);
         page.hasBlob = (sqlite3_column_int(stmt, 9) != 0);
         page.isDedicatedPdf = (sqlite3_column_int(stmt, 10) != 0);
-        const auto* pdfPathText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
-        page.dedicatedPdfPath = pdfPathText ? pdfPathText : "";
-        const auto* pdfBkText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 12));
-        page.dedicatedPdfBookmarks = pdfBkText ? pdfBkText : "";
-        const auto* pdfHlText = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 13));
-        page.dedicatedPdfHighlights = pdfHlText ? pdfHlText : "";
+        page.dedicatedPdfPath = SafeColumnText(stmt, 11);
+        page.dedicatedPdfBookmarks = SafeColumnText(stmt, 12);
+        page.dedicatedPdfHighlights = SafeColumnText(stmt, 13);
         page.isDedicatedMd = (sqlite3_column_int(stmt, 14) != 0);
         page.deletedAt = sqlite3_column_int64(stmt, 15);
         results.push_back(std::move(page));

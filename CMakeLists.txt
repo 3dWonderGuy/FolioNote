@@ -605,3 +605,92 @@ if(NOT ANDROID)
     add_test(NAME test_action_scheduler COMMAND test_action_scheduler)
 endif()
 
+# 15. Standalone Local Test Executable: PhysicsModel
+if(NOT ANDROID)
+    add_executable(test_physics_model
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_physics_model.cpp"
+    )
+
+    target_include_directories(test_physics_model PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    add_test(NAME test_physics_model COMMAND test_physics_model)
+
+    # 15. Standalone Local Test Executable: Layer Order & Stacking
+    add_executable(test_layer_order
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_layer_order.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/history/command_history.cpp"
+        ${FOLIO_IO_SOURCES}
+    )
+
+    target_include_directories(test_layer_order PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+    )
+
+    target_link_libraries(test_layer_order PRIVATE
+        blend2d::blend2d
+        SDL3::SDL3
+    )
+
+    if(WIN32)
+        target_link_libraries(test_layer_order PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(test_layer_order PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+
+    add_test(NAME test_layer_order COMMAND test_layer_order)
+
+    # 16. Standalone Local Test Executable: Storage & Serialization Subsystem
+    add_executable(test_storage
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_storage.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/storage/binary_serializer.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/storage/db_manager.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/search/notebook_search_index.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/ink_container/ink_container.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/text/text_box.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/text/font_manager.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/object_registry.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/history/command_history.cpp"
+        ${FOLIO_IO_SOURCES}
+    )
+
+    target_include_directories(test_storage PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3"
+        "${IMGUI_DIR}"
+    )
+
+    target_link_libraries(test_storage PRIVATE
+        blend2d::blend2d
+        SDL3::SDL3
+        sqlite3
+    )
+
+    if(WIN32)
+        target_link_libraries(test_storage PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(test_storage PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+
+    add_test(NAME test_storage COMMAND test_storage)
+endif()
+
+

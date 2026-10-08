@@ -13,6 +13,7 @@
 #include "core/history/command_history.hpp"
 #include "core/canvas_engine/canvas_transform.hpp"
 #include "utils/guid_generator.hpp"
+#include "utils/uid_generator.hpp"
 #include "utils/logger.hpp"
 
 /**
@@ -345,6 +346,20 @@ public:
     }
 
     /**
+     * @brief Refreshes the monotonic page sequence indices across all resident objects.
+     * Guarantees deterministic back-to-front painter's algorithm rendering order when zOrders are equal.
+     *
+     * @param startIndex First element index needing sequential re-indexing (defaults to 0 for full re-index).
+     */
+    void ReindexObjects(size_t startIndex = 0) noexcept {
+        for (size_t i = startIndex; i < objects.size(); ++i) {
+            if (objects[i]) {
+                objects[i]->pageIndex = static_cast<uint32_t>(i);
+            }
+        }
+    }
+
+    /**
      * @brief Adds a canvas object to the page, registers it in the R-Tree, and inserts it into the fast UID map.
      *
      * MATHEMATICAL & TIME COMPLEXITY PROCESS:
@@ -360,15 +375,72 @@ public:
      */
     void AddObject(const std::shared_ptr<CanvasObject>& obj, bool autoStackZ = false) {
         if (!obj) return;
+        if (obj->uid == 0) {
+            obj->uid = UIDGenerator::Next();
+        }
+        auto existingIt = objectMap.find(obj->uid);
+        if (existingIt != objectMap.end()) {
+            if (existingIt->second == obj) {
+                // Object is already registered on this page; avoid duplicate entry
+                return;
+            }
+            // Collision with another object: assign fresh unique runtime UID
+            obj->uid = UIDGenerator::Next();
+        }
         if (autoStackZ && obj->zOrder <= 1) {
             int32_t highest = GetHighestZUnder(obj->bounds);
             if (highest >= 1) {
                 obj->zOrder = highest + 1;
             }
         }
+        obj->pageIndex = static_cast<uint32_t>(objects.size());
         objects.push_back(obj);
         objectMap[obj->uid] = obj;
         spatialIndex.Insert(obj->uid, obj->bounds);
+        isModified = true;
+        Touch();
+    }
+
+    /**
+     * @brief Inserts a new object immediately adjacent to an existing anchor object in the document stacking order.
+     * Used by eraser slicing and compound container operations to prevent newly created fragments from jumping layers.
+     *
+     * @param anchorObj Existing canvas object to position adjacent to (or nullptr to append).
+     * @param newObj New canvas object to insert into the document.
+     */
+    void InsertObjectAdjacent(const std::shared_ptr<CanvasObject>& anchorObj,
+                              const std::shared_ptr<CanvasObject>& newObj) {
+        if (!newObj) return;
+        if (newObj->uid == 0) {
+            newObj->uid = UIDGenerator::Next();
+        }
+        auto existingIt = objectMap.find(newObj->uid);
+        if (existingIt != objectMap.end()) {
+            if (existingIt->second == newObj) return;
+            newObj->uid = UIDGenerator::Next();
+        }
+        if (anchorObj) {
+            newObj->zOrder = anchorObj->zOrder;
+        }
+
+        size_t insertIdx = objects.size();
+        if (anchorObj) {
+            auto it = std::find(objects.begin(), objects.end(), anchorObj);
+            if (it != objects.end()) {
+                insertIdx = static_cast<size_t>(std::distance(objects.begin(), it) + 1);
+            }
+        }
+
+        if (insertIdx >= objects.size()) {
+            newObj->pageIndex = static_cast<uint32_t>(objects.size());
+            objects.push_back(newObj);
+        } else {
+            objects.insert(objects.begin() + insertIdx, newObj);
+            ReindexObjects(insertIdx);
+        }
+
+        objectMap[newObj->uid] = newObj;
+        spatialIndex.Insert(newObj->uid, newObj->bounds);
         isModified = true;
         Touch();
     }
@@ -389,7 +461,9 @@ public:
         objectMap.erase(obj->uid);
         auto it = std::find(objects.begin(), objects.end(), obj);
         if (it != objects.end()) {
+            size_t idx = static_cast<size_t>(std::distance(objects.begin(), it));
             objects.erase(it);
+            ReindexObjects(idx);
         }
         isModified = true;
         Touch();
@@ -433,6 +507,7 @@ public:
         if (vit != objects.end()) {
             objects.erase(vit);
             objects.push_back(obj);
+            ReindexObjects();
         }
         isModified = true;
         Touch();
@@ -467,6 +542,7 @@ public:
         if (vit != objects.end()) {
             objects.erase(vit);
             objects.insert(objects.begin(), obj);
+            ReindexObjects();
         }
         isModified = true;
         Touch();
@@ -497,6 +573,7 @@ public:
             if ((*nextIt)->zOrder < (*vit)->zOrder) {
                 (*nextIt)->zOrder = (*vit)->zOrder;
             }
+            ReindexObjects();
             isModified = true;
             Touch();
         }
@@ -527,6 +604,7 @@ public:
             if ((*prevIt)->zOrder > (*vit)->zOrder) {
                 (*prevIt)->zOrder = (*vit)->zOrder;
             }
+            ReindexObjects();
             isModified = true;
             Touch();
         }
@@ -543,11 +621,14 @@ public:
         if (!newObj) return;
         auto existing = FindObjectByUid(uid);
         if (existing) {
+            newObj->uid = uid;
+            newObj->zOrder = existing->zOrder;
             spatialIndex.Remove(uid);
             objectMap[uid] = newObj;
-            spatialIndex.Insert(newObj->uid, newObj->bounds);
+            spatialIndex.Insert(uid, newObj->bounds);
             auto it = std::find(objects.begin(), objects.end(), existing);
             if (it != objects.end()) {
+                newObj->pageIndex = static_cast<uint32_t>(std::distance(objects.begin(), it));
                 *it = newObj;
             }
             isModified = true;
@@ -714,10 +795,10 @@ public:
             }
         }
 
-        // Sort by ascending zOrder so lower layers render first, higher layers render on top.
-        // std::stable_sort preserves insertion order for objects sharing identical zOrder.
-        std::stable_sort(visible.begin(), visible.end(), [](const auto& a, const auto& b) {
-            return a->zOrder < b->zOrder;
+        // Sort strictly by ascending zOrder, tie-broken by document pageIndex for deterministic painter's algorithm rendering.
+        std::sort(visible.begin(), visible.end(), [](const auto& a, const auto& b) {
+            if (a->zOrder != b->zOrder) return a->zOrder < b->zOrder;
+            return a->pageIndex < b->pageIndex;
         });
 
         return visible;
@@ -749,6 +830,7 @@ public:
             }
         }
         if (purgedCount > 0) {
+            ReindexObjects();
             isModified = true;
             Touch();
         }

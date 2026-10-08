@@ -148,8 +148,11 @@ public:
      * @return std::future<bool> Future indicating completion and success of the background save operation.
      */
     std::future<bool> SavePageAsync(std::shared_ptr<CanvasPage> page, const std::string& sectionGuid, int32_t sortOrder = 0) {
-        // Validation check
-        if (!page || !dbManager || !dbManager->IsOpen()) {
+        // Validation check: require open DB and active resident page in memory
+        if (!page || !page->isLoaded || !dbManager || !dbManager->IsOpen()) {
+            if (page && !page->isLoaded) {
+                LOG_ERROR(PageRepository, "SavePageAsync rejected: cannot save unloaded page stub (GUID: " + page->guid + ")");
+            }
             std::promise<bool> p;
             p.set_value(false);
             return p.get_future();
@@ -338,8 +341,8 @@ public:
                     // when no ink was drawn on the page (isModified would be false).
                     dbManager->UpdatePageSortOrder(page->guid, pIdx);
 
-                    // Full blob + metadata save: only needed when canvas content changed
-                    if (page->isModified || !page->isLoaded) {
+                    // Full blob + metadata save: only needed when resident page was modified
+                    if (page->isLoaded && page->isModified) {
                         SavePageAsync(page, section->guid, pIdx);
                     }
                 }

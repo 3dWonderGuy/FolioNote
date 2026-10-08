@@ -421,8 +421,10 @@ public:
         ribbon.rulerEnabled = SettingsManager::Instance().rulerEnabled;
         ribbon.autoShapesEnabled = SettingsManager::Instance().autoShapesEnabled;
         ribbon.isStrokeEraser = SettingsManager::Instance().isStrokeEraser;
+        ribbon.isDynamicEraser = SettingsManager::Instance().isDynamicEraser;
         ribbon.eraserSizeMm = SettingsManager::Instance().eraserSizeMm;
         inputManager.stateMachine.isStrokeEraser = SettingsManager::Instance().isStrokeEraser;
+        inputManager.stateMachine.isDynamicEraser = SettingsManager::Instance().isDynamicEraser;
         inputManager.stateMachine.eraserRadiusMm = SettingsManager::Instance().eraserSizeMm * 0.5f;
         ribbon.isCanvasInverted = SettingsManager::Instance().isCanvasInverted;
 
@@ -1062,8 +1064,9 @@ public:
                         if (!modernNav.IsAnimating() && !ribbon.IsAnimating()) {
                             canvas.Resize(static_cast<int>(canvasSize.x), static_cast<int>(canvasSize.y));
                         }
+                        canvas.Update(io.DeltaTime, &session);
                         std::vector<std::shared_ptr<CanvasObject>> visibleObjects = session.QueryVisible(canvas.GetViewport());
-                        canvas.Render(visibleObjects, &session);
+                        canvas.Render(visibleObjects, &session, io.DeltaTime);
                     }
 
                     if (canvas.glTexture != 0) {
@@ -1283,6 +1286,7 @@ public:
         SettingsManager::Instance().rulerEnabled = ribbon.rulerEnabled;
         SettingsManager::Instance().autoShapesEnabled = ribbon.autoShapesEnabled;
         SettingsManager::Instance().isStrokeEraser = ribbon.isStrokeEraser;
+        SettingsManager::Instance().isDynamicEraser = ribbon.isDynamicEraser;
         SettingsManager::Instance().eraserSizeMm = ribbon.eraserSizeMm;
         SettingsManager::Instance().isCanvasInverted = ribbon.isCanvasInverted;
 

@@ -982,7 +982,6 @@ bool BinarySerializer::DeserializePage(const uint8_t* blobData, size_t blobSize,
 
     const uint8_t* payloadPtr = nullptr;
     size_t payloadSize = 0;
-    bool hasCRC = false;
     uint32_t expectedCRC = 0;
 
     if (blobSize >= 12) {
@@ -993,17 +992,26 @@ bool BinarySerializer::DeserializePage(const uint8_t* blobData, size_t blobSize,
 
         uint32_t actualCRC = CRC32::Compute(blobData + 8, blobSize - 8);
         if (actualCRC == expectedCRC) {
-            hasCRC = true;
             payloadPtr = blobData + 8;
             payloadSize = blobSize - 8;
             stats.crc32Checksum = actualCRC;
+        } else if (blobData[8] == 0x78) {
+            LOG_ERROR(BinarySerializer, "DeserializePage failed: CRC32 integrity check failed! Expected: 0x" +
+                      std::to_string(expectedCRC) + " | Actual: 0x" + std::to_string(actualCRC) +
+                      " (Data corruption detected in page payload)");
+            return false;
         }
     }
 
-    if (!hasCRC) {
-        payloadPtr = blobData + 4;
-        payloadSize = blobSize - 4;
-        stats.crc32Checksum = 0;
+    if (!payloadPtr) {
+        if (blobSize >= 4 && blobData[4] == 0x78) {
+            payloadPtr = blobData + 4;
+            payloadSize = blobSize - 4;
+            stats.crc32Checksum = 0;
+        } else {
+            LOG_ERROR(BinarySerializer, "DeserializePage failed: unrecognized or corrupted container header");
+            return false;
+        }
     }
 
     std::vector<uint8_t> uncompressed;

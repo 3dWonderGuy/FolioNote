@@ -159,6 +159,7 @@ void MdEditorView::Render(
                 break;
             }
         }
+        CommitToPage(activePg.get());
     }
     ImGui::End();
 

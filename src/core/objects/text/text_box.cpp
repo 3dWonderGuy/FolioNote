@@ -23,8 +23,6 @@
 
 #include "core/objects/text/text_box.hpp"
 #include "core/objects/text/text_editor_state.hpp"
-#include "core/canvas_engine/canvas_engine.hpp"
-#include "core/document/document_session.hpp"
 #include "core/text/font_manager.hpp"
 #include "core/objects/object_registry.hpp"
 #include "utils/logger.hpp"

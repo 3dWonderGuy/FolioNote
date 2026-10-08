@@ -77,8 +77,10 @@ inline const std::vector<ImVec4> SECTION_PRESET_COLORS = {
  * @return ImVec4 Random RGBA color vector from SECTION_PRESET_COLORS.
  */
 inline ImVec4 GetRandomSectionColor() {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
+    thread_local std::mt19937 gen([]() {
+        std::random_device rd;
+        return std::mt19937(rd());
+    }());
     std::uniform_int_distribution<size_t> dis(0, SECTION_PRESET_COLORS.size() - 1);
     return SECTION_PRESET_COLORS[dis(gen)];
 }

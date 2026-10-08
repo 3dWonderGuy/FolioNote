@@ -24,6 +24,8 @@
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
 #include "utils/logger.hpp"
+#include <algorithm>
+#include <cmath>
 
 /**
  * @brief Counts the number of active capacitive finger contacts.
@@ -167,4 +169,69 @@ void InputStateMachine::ProcessInputState(CanvasEngine& canvas, DocumentSession&
     oldStylusState = currentStylusState;
     wasMouseDown   = mouse.leftButton;
     wasMiddleDown  = mouse.middleButton;
+}
+
+/**
+ * @brief Computes velocity-scaled dynamic eraser radius when isDynamicEraser is active.
+ *
+ * Mathematical Model:
+ * Let dt = currentTimeSec - lastEraserTimeSec.
+ * Pointer displacement distPx = hypot(dx, dy).
+ * Instantaneous velocity v = distPx / dt in pixels per second.
+ *
+ * Normalized velocity parameter t = clamp((v - 100.0) / 1900.0, 0.0, 1.0).
+ * Response curve: s = sqrt(t) (concave curve providing fast initial scaling).
+ * Target radius: R_target = R_min + s * (R_max - R_min).
+ *
+ * Asymmetric smoothing:
+ * alpha = 0.35 when expanding (fast swipe opens broad wiping swath).
+ * alpha = 0.12 when contracting (gentle recovery prevents jitter).
+ * R_current += alpha * (R_target - R_current).
+ */
+float InputStateMachine::UpdateDynamicEraserRadius(float currentX, float currentY, double currentTimeSec, bool isMoving, bool isDown) {
+    if (!isDynamicEraser) {
+        return eraserRadiusMm;
+    }
+
+    if (currentTimeSec <= 0.0) {
+        currentTimeSec = SDL_GetTicks() * 0.001;
+    }
+
+    // Keep min/max radius bounds in sync with state machine parameters
+    auto params = eraserPhysics.GetParameters();
+    if (params.minRadiusMm != dynamicEraserMinRadiusMm || params.maxRadiusMm != dynamicEraserMaxRadiusMm) {
+        params.minRadiusMm = dynamicEraserMinRadiusMm;
+        params.maxRadiusMm = dynamicEraserMaxRadiusMm;
+        eraserPhysics.SetParameters(params);
+    }
+
+    // Handle initial state or temporal discontinuity (> 250ms gap)
+    double dt = currentTimeSec - lastEraserTimeSec;
+    if (lastEraserTimeSec <= 0.0 || dt > 0.25 || dt <= 0.0001) {
+        lastVelocityX = currentX;
+        lastVelocityY = currentY;
+        lastEraserTimeSec = currentTimeSec;
+        if (currentDynamicEraserRadiusMm < dynamicEraserMinRadiusMm) {
+            currentDynamicEraserRadiusMm = dynamicEraserMinRadiusMm;
+            eraserPhysics.Reset(dynamicEraserMinRadiusMm);
+        }
+        return currentDynamicEraserRadiusMm;
+    }
+
+    float dx = currentX - lastVelocityX;
+    float dy = currentY - lastVelocityY;
+    float distPx = std::hypot(dx, dy);
+
+    float speedPxPerSec = 0.0f;
+    if (distPx > 0.5f) {
+        speedPxPerSec = static_cast<float>(distPx / dt);
+        lastVelocityX = currentX;
+        lastVelocityY = currentY;
+    }
+
+    // Run physical mass-spring-damper simulation step
+    currentDynamicEraserRadiusMm = eraserPhysics.Update(speedPxPerSec, static_cast<float>(dt));
+    lastEraserTimeSec = currentTimeSec;
+
+    return currentDynamicEraserRadiusMm;
 }

@@ -22,6 +22,7 @@
 #include "core/storage/pdf_storage.hpp"
 #include "core/canvas_engine/canvas_transform.hpp"
 #include "core/layers/layer_compositor_manager.hpp"
+#include "core/actions/action_scheduler.hpp"
 #include "core/canvas_engine/selection_gizmo.hpp"
 #include "core/document/document_session.hpp"
 #include "core/history/canvas_command.hpp"
@@ -76,6 +77,7 @@ class CanvasEngine {
 public:
     CanvasTransform transform;
     Folio::LayerCompositorManager layerCompositor;
+    Folio::ActionManager actionManager;
     SelectionGizmo selectionGizmo;
     Folio::TextEditorState textEditor;
     Folio::InteractiveOverlayHost interactiveOverlayHost;
@@ -171,13 +173,10 @@ public:
 
     bool isDirty = true;
     bool needsFullRebake = true;      // Background grid + all objects
-    bool needsObjectRebake = false;   // Only re-stroke dirty InkContainers, skip background redraw
 
     // Canvas-level ink color invert (dark mode trick: keeps ink readable without changing presets)
     bool inkColorInverted = false;
 
-    BLImage staticCanvasLayer;
-    BLImage liveInkingLayer;
     BLImage compositeSurface;
     GLuint glTexture = 0;
     int viewportW = 0;
@@ -195,6 +194,27 @@ public:
     void ZoomAt(double screenX, double screenY, double factor) noexcept;
     [[nodiscard]] Viewport GetViewport() const noexcept;
     void HomeOrCenterPage() noexcept;
+
+    /**
+     * @brief Instantly marks the active canvas layer dirty for full viewport re-bake.
+     * Fires immediately into LayerCompositorManager so the layer is never skipped.
+     */
+    void InvalidateLayer() noexcept;
+
+    /**
+     * @brief Instantly marks a localized sub-region dirty on the baked canvas layer.
+     */
+    void InvalidateLayerRect(const AABB& dirtyBounds) noexcept;
+
+    /**
+     * @brief Constructs an ActionContext tying together CanvasEngine, LayerManager, and Session.
+     */
+    Folio::ActionContext CreateActionContext(DocumentSession* session, double frameTimeSec = 0.0) noexcept;
+
+    /**
+     * @brief Advances temporal canvas actions and synchronizes layer state for the frame.
+     */
+    void Update(double dt, DocumentSession* session);
 
     // -------------------------------------------------------------
     // LIVE INGESTION HOOKS (Screen Px -> World mm)
@@ -346,6 +366,5 @@ public:
     void Render(const std::vector<std::shared_ptr<CanvasObject>>& visibleBakedObjects, DocumentSession* session = nullptr, double deltaTime = 1.0 / 60.0);
 
 private:
-    void DrawTiledBackground(BLContext& ctx, const Viewport& currentView);
     void RenderDevModeAABBs(BLContext& ctx, const std::vector<std::shared_ptr<CanvasObject>>& visibleObjects, const CanvasTransform& tr);
 };

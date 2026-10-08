@@ -15,13 +15,20 @@ double MeasureSpanWidth(const std::string& text, float fontSizePt, bool isCode =
     double avgCharWidth = isCode ? (fontHeightMm * 0.60) : (fontHeightMm * 0.52);
 
     double total = 0.0;
-    for (char c : text) {
+    for (size_t idx = 0; idx < text.size(); ++idx) {
+        uint8_t c = static_cast<uint8_t>(text[idx]);
+        // Skip UTF-8 continuation bytes to avoid counting multibyte codepoints multiple times
+        if ((c & 0xC0) == 0x80) continue;
+
         if (c == ' ' || c == '\t') {
             total += avgCharWidth * 0.65;
         } else if (c == 'i' || c == 'l' || c == '.' || c == ',' || c == '!') {
             total += avgCharWidth * (isCode ? 1.0 : 0.45);
         } else if (c == 'm' || c == 'w' || c == 'M' || c == 'W') {
             total += avgCharWidth * (isCode ? 1.0 : 1.40);
+        } else if (c >= 0x80) {
+            // Non-ASCII codepoint (CJK, Cyrillic, Greek, accented latin)
+            total += avgCharWidth * (isCode ? 1.0 : 1.15);
         } else {
             total += avgCharWidth;
         }
@@ -168,7 +175,7 @@ double MdLayoutEngine::LayoutDocument(std::vector<MdBlock>& blocks, const MdStyl
 }
 
 size_t MdLayoutEngine::HitTestOffset(
-    double /*localX_mm*/,
+    double localX_mm,
     double localY_mm,
     const std::vector<MdBlock>& blocks,
     const MdStyleConfig& config
@@ -177,7 +184,34 @@ size_t MdLayoutEngine::HitTestOffset(
 
     for (const auto& block : blocks) {
         if (localY_mm >= block.localY_mm && localY_mm <= block.localY_mm + block.height_mm) {
-            return block.sourceStartOffset;
+            if (block.spans.empty()) {
+                return block.sourceStartOffset;
+            }
+
+            double indentX = config.marginLeftMm;
+            if (block.type == MdBlockType::BulletList || block.type == MdBlockType::NumberedList || block.type == MdBlockType::TaskList) {
+                indentX += (config.listIndentMm * block.level + 6.0);
+            } else if (block.type == MdBlockType::Blockquote) {
+                indentX += (config.blockquoteIndentMm + 4.0);
+            }
+
+            double targetX = localX_mm - indentX;
+            if (targetX <= 0.0) {
+                return block.sourceStartOffset;
+            }
+
+            double curX = 0.0;
+            for (const auto& sp : block.spans) {
+                if (targetX <= curX + sp.widthMm) {
+                    double relX = std::max(0.0, targetX - curX);
+                    double ratio = (sp.widthMm > 0.0) ? (relX / sp.widthMm) : 0.0;
+                    size_t charOffset = static_cast<size_t>(std::round(ratio * sp.sourceLength));
+                    return sp.sourceOffset + std::min(charOffset, sp.sourceLength);
+                }
+                curX += sp.widthMm;
+            }
+
+            return block.spans.back().sourceOffset + block.spans.back().sourceLength;
         }
     }
 
@@ -214,6 +248,21 @@ MdCaret MdLayoutEngine::GetCaretForOffset(
             if (!block.spans.empty()) {
                 caret.heightMm = block.spans.front().sizePt * PT_TO_MM;
             }
+
+            double spanAccX = 0.0;
+            for (const auto& sp : block.spans) {
+                if (offset <= sp.sourceOffset) {
+                    break;
+                } else if (offset >= sp.sourceOffset + sp.sourceLength) {
+                    spanAccX += sp.widthMm;
+                } else {
+                    size_t relOffset = offset - sp.sourceOffset;
+                    double ratio = (sp.sourceLength > 0) ? (static_cast<double>(relOffset) / sp.sourceLength) : 0.0;
+                    spanAccX += sp.widthMm * ratio;
+                    break;
+                }
+            }
+            caret.worldPosMm.x += spanAccX;
             break;
         }
     }

@@ -42,6 +42,7 @@ public:
     bool autoShapesEnabled = false;
     bool isInsertSpaceActive = false;
     bool isStrokeEraser = true;
+    bool isDynamicEraser = false;
     float eraserSizeMm = 6.0f;
     DocumentSession* currentSession = nullptr;
 
@@ -2740,14 +2741,15 @@ public:
 
                     // 1. Eraser Split Dropdown
                     bool isEraser = (inputSM.currentAction == InteractionState::Eraser);
-                    const char* eraserLabel = isStrokeEraser ? "Stroke Eraser" : "Point Eraser";
-                    const char* eraserTooltip = isStrokeEraser ? "Vector Stroke Eraser (click to erase whole stroke)" : "Simple Eraser (erase by radius)";
+                    const char* eraserLabel = isStrokeEraser ? "Stroke Eraser" : (isDynamicEraser ? "Dynamic Eraser" : "Point Eraser");
+                    const char* eraserTooltip = isStrokeEraser ? "Vector Stroke Eraser (click to erase whole stroke)" : (isDynamicEraser ? "Dynamic Eraser (scales radius with pointer speed)" : "Simple Eraser (erase by radius)");
 
                     sec.AddSplitButton("eraser", iconEraser, eraserLabel, eraserTooltip, isEraser,
                         [&]() { 
                             inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Eraser);
                             inputSM.currentAction = InteractionState::Eraser;
                             inputSM.isStrokeEraser = isStrokeEraser;
+                            inputSM.isDynamicEraser = isDynamicEraser;
                             inputSM.eraserRadiusMm = eraserSizeMm * 0.5f;
                         },
                         [&](FolioUI::FlyoutMenuBuilder& menu) {
@@ -2765,6 +2767,7 @@ public:
                                 inputSM.SetToolForDevice(inputSM.ActiveDevice, InteractionState::Eraser);
                                 inputSM.currentAction = InteractionState::Eraser;
                                 inputSM.isStrokeEraser = false;
+                                inputSM.isDynamicEraser = isDynamicEraser;
                                 inputSM.eraserRadiusMm = eraserSizeMm * 0.5f;
                                 SettingsManager::Instance().isStrokeEraser = false;
                                 SettingsManager::Instance().Save();
@@ -2774,29 +2777,38 @@ public:
                                 menu.AddSeparator();
                                 menu.AddHeader("Eraser Size");
                                 menu.AddItem("Small (2.0 mm)", 0, "", [&]() {
+                                    isDynamicEraser = false;
+                                    inputSM.isDynamicEraser = false;
                                     eraserSizeMm = 2.0f;
                                     inputSM.eraserRadiusMm = 1.0f;
+                                    SettingsManager::Instance().isDynamicEraser = false;
                                     SettingsManager::Instance().eraserSizeMm = 2.0f;
                                     SettingsManager::Instance().Save();
-                                }, std::abs(eraserSizeMm - 2.0f) < 0.5f);
+                                }, !isDynamicEraser && std::abs(eraserSizeMm - 2.0f) < 0.5f);
                                 menu.AddItem("Medium (6.0 mm)", 0, "", [&]() {
+                                    isDynamicEraser = false;
+                                    inputSM.isDynamicEraser = false;
                                     eraserSizeMm = 6.0f;
                                     inputSM.eraserRadiusMm = 3.0f;
+                                    SettingsManager::Instance().isDynamicEraser = false;
                                     SettingsManager::Instance().eraserSizeMm = 6.0f;
                                     SettingsManager::Instance().Save();
-                                }, std::abs(eraserSizeMm - 6.0f) < 0.5f);
+                                }, !isDynamicEraser && std::abs(eraserSizeMm - 6.0f) < 0.5f);
                                 menu.AddItem("Large (12.0 mm)", 0, "", [&]() {
+                                    isDynamicEraser = false;
+                                    inputSM.isDynamicEraser = false;
                                     eraserSizeMm = 12.0f;
                                     inputSM.eraserRadiusMm = 6.0f;
+                                    SettingsManager::Instance().isDynamicEraser = false;
                                     SettingsManager::Instance().eraserSizeMm = 12.0f;
                                     SettingsManager::Instance().Save();
-                                }, std::abs(eraserSizeMm - 12.0f) < 0.5f);
-                                menu.AddItem("Extra Large (20.0 mm)", 0, "", [&]() {
-                                    eraserSizeMm = 20.0f;
-                                    inputSM.eraserRadiusMm = 10.0f;
-                                    SettingsManager::Instance().eraserSizeMm = 20.0f;
+                                }, !isDynamicEraser && std::abs(eraserSizeMm - 12.0f) < 0.5f);
+                                menu.AddItem("Dynamic (Speed-Responsive)", 0, "", [&]() {
+                                    isDynamicEraser = true;
+                                    inputSM.isDynamicEraser = true;
+                                    SettingsManager::Instance().isDynamicEraser = true;
                                     SettingsManager::Instance().Save();
-                                }, std::abs(eraserSizeMm - 20.0f) < 0.5f);
+                                }, isDynamicEraser);
                             }
                         }, false, ImVec2(80.0f, 58.0f)
                     );

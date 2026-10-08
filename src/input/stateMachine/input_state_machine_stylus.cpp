@@ -128,8 +128,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                 if (canvas.selectionGizmo.isDragging) {
                     if (canvas.selectionGizmo.OnPointerMove(canvasLocalX, canvasLocalY, canvas.transform,
                                                            canvas.shapeCreation.lockToGrid, canvas.gridSpacingMm)) {
-                        canvas.needsFullRebake = true;
-                        canvas.isDirty = true;
+                        canvas.InvalidateLayer();
                     }
                 } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                     canvas.OnLassoMove(canvasLocalX, canvasLocalY);
@@ -141,8 +140,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
                 if (canvas.selectionGizmo.isDragging) {
                     canvas.selectionGizmo.OnPointerUp(&session);
                     canvas.SyncSelectionToSpatialIndex(&session);
-                    canvas.needsFullRebake = true;
-                    canvas.isDirty = true;
+                    canvas.InvalidateLayer();
                 } else if (canvas.selectionMode == CanvasEngine::SelectionMode::Lasso) {
                     canvas.OnLassoUp(&session);
                 } else if (canvas.marqueeBox.isActive) {
@@ -156,21 +154,24 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
         // ERASER (Segment and Stroke Erasing)
         // =====================================================================
         case InteractionState::Eraser: {
+            double currentTimeSec = (latestEventTimeSec > 0.0) ? latestEventTimeSec : (SDL_GetTicks() * 0.001);
+            float effectiveRadius = UpdateDynamicEraserRadius(canvasLocalX, canvasLocalY, currentTimeSec, isMoving, isEraserActive || justDown);
+
             if (justDown) {
                 lastEraserX = canvasLocalX;
                 lastEraserY = canvasLocalY;
                 isEraserActive = true;
                 session.BeginEraseTransaction();
-                canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+                canvas.EraseSegment(canvasLocalX, canvasLocalY, canvasLocalX, canvasLocalY, effectiveRadius, session, isStrokeEraser);
             } else if (isMoving && isEraserActive) {
-                canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, eraserRadiusMm, session, isStrokeEraser);
+                canvas.EraseSegment(lastEraserX, lastEraserY, canvasLocalX, canvasLocalY, effectiveRadius, session, isStrokeEraser);
                 lastEraserX = canvasLocalX;
                 lastEraserY = canvasLocalY;
             } else if (justUp) {
                 isEraserActive = false;
                 session.EndEraseTransaction(&canvas);
             }
-            canvas.SetEraserCursor(canvasLocalX, canvasLocalY, eraserRadiusMm, isEraserActive, isStrokeEraser);
+            canvas.SetEraserCursor(canvasLocalX, canvasLocalY, effectiveRadius, isEraserActive, isStrokeEraser);
             break;
         }
 

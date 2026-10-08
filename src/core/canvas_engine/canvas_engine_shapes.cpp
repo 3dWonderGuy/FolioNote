@@ -212,9 +212,7 @@ std::shared_ptr<CanvasObject> CanvasEngine::OnShapeDrawUp(DocumentSession* sessi
         if (!shapeCreation.lockDrawingMode) {
             shapeCreation.isActive = false;
         }
-        needsFullRebake = true;
-        isDirty = true;
-        layerCompositor.InvalidateBakedCanvas();
+        InvalidateLayer();
 
         LOG_INFO(CanvasEngine, "Created SmartArrowObject connector (uid=" + std::to_string(arrow->uid) +
                  ", style=" + std::to_string(static_cast<int>(arrow->connectorStyle)) +
@@ -291,9 +289,7 @@ std::shared_ptr<CanvasObject> CanvasEngine::OnShapeDrawUp(DocumentSession* sessi
     shp->isSelected = 1;
     selectionGizmo.SetSelectedObjects(activePage->objects);
 
-    needsFullRebake = true;
-    isDirty = true;
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
 
     LOG_INFO(CanvasEngine, "Created vector shape by drag (type=" + std::to_string(static_cast<int>(shapeCreation.shapeType)) +
              ", uid=" + std::to_string(shp->uid) + ", bounds=[" + std::to_string(minX) + "," + std::to_string(minY) + " " + std::to_string(w) + "x" + std::to_string(h) + "])");
@@ -357,9 +353,7 @@ std::shared_ptr<Folio::TextBoxObject> CanvasEngine::InsertTextBox(DocumentSessio
     auto box = std::make_shared<Folio::TextBoxObject>(worldX, worldY, 70.0, 20.0);
     session->AddTextBox(box);
     textEditor.Attach(box.get());
-    needsFullRebake = true;
-    isDirty = true;
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
     return box;
 }
 
@@ -393,9 +387,7 @@ std::shared_ptr<Folio::ShapeObject> CanvasEngine::InsertShape(Folio::ShapeType t
     shp->isSelected = 1;
     selectionGizmo.SetSelectedObjects(activePage->objects);
 
-    needsFullRebake = true;
-    isDirty = true;
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
 
     LOG_INFO(CanvasEngine, "Inserted vector shape (type=" + std::to_string(static_cast<int>(type)) + ", uid=" + std::to_string(shp->uid) + ")");
     return shp;

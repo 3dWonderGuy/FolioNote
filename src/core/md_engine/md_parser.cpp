@@ -430,18 +430,28 @@ std::vector<MdBlock> MdParser::ParseDocument(const std::string& markdown) {
         if (std::isdigit(static_cast<unsigned char>(trimmed[0]))) {
             size_t dotPos = trimmed.find(". ");
             if (dotPos != std::string::npos && dotPos <= 5) {
-                int itemIdx = std::stoi(trimmed.substr(0, dotPos));
-                std::string listText = trimmed.substr(dotPos + 2);
-                MdBlock block;
-                block.type = MdBlockType::NumberedList;
-                block.listIndex = itemIdx;
-                block.sourceStartOffset = lineStartOffset;
-                block.sourceEndOffset = lineStartOffset + line.size();
-                size_t spanOffset = lineStartOffset + (line.find(listText));
-                block.spans = ParseInlineSpans(listText, spanOffset);
-                blocks.push_back(std::move(block));
-                ++lineIdx;
-                continue;
+                bool allDigits = true;
+                for (size_t d = 0; d < dotPos; ++d) {
+                    if (!std::isdigit(static_cast<unsigned char>(trimmed[d]))) {
+                        allDigits = false;
+                        break;
+                    }
+                }
+                if (allDigits) {
+                    int itemIdx = 1;
+                    try { itemIdx = std::stoi(trimmed.substr(0, dotPos)); } catch (...) {}
+                    std::string listText = trimmed.substr(dotPos + 2);
+                    MdBlock block;
+                    block.type = MdBlockType::NumberedList;
+                    block.listIndex = itemIdx;
+                    block.sourceStartOffset = lineStartOffset;
+                    block.sourceEndOffset = lineStartOffset + line.size();
+                    size_t spanOffset = lineStartOffset + (line.find(listText));
+                    block.spans = ParseInlineSpans(listText, spanOffset);
+                    blocks.push_back(std::move(block));
+                    ++lineIdx;
+                    continue;
+                }
             }
         }
 

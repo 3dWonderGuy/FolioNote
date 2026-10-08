@@ -355,6 +355,7 @@ std::unique_ptr<CanvasObject> InkContainer::Clone() const {
     clone->worldHeight = this->worldHeight;
     clone->transform = this->transform;
     clone->zOrder = this->zOrder;
+    clone->pageIndex = this->pageIndex;
     clone->opacity = this->opacity;
     clone->isVisible = this->isVisible;
     clone->isLocked = this->isLocked;
@@ -427,6 +428,14 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                 } else {
                     auto fragContainer = std::make_shared<InkContainer>();
                     fragContainer->transform = this->transform;
+                    fragContainer->zOrder = this->zOrder;
+                    fragContainer->pageIndex = this->pageIndex;
+                    fragContainer->opacity = this->opacity;
+                    fragContainer->isHighlighter = this->isHighlighter;
+                    fragContainer->isVisible = this->isVisible;
+                    fragContainer->isLocked = this->isLocked;
+                    fragContainer->isSelectable = this->isSelectable;
+                    fragContainer->groupId = this->groupId;
                     fragContainer->AddStroke(newStroke);
                     outNewFragments.push_back(fragContainer);
                 }

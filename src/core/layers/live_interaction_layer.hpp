@@ -115,8 +115,6 @@ struct ActiveMarqueeData {
     double                   strokeWidthPx = 1.5;
 };
 
-class SelectionGizmo;
-
 /**
  * @class LiveInteractionLayer
  * @brief Layer 2 Host: Ephemeral, non-cached rendering overlay for 120Hz+ live interactions.

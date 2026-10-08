@@ -63,6 +63,7 @@ public:
     bool rulerEnabled = false;
     bool autoShapesEnabled = false;
     bool isStrokeEraser = true;
+    bool isDynamicEraser = false;
     float eraserSizeMm = 6.0f;
     std::vector<PenPreset> inkingPresets;
 
@@ -275,6 +276,7 @@ public:
                 if (jInking.contains("rulerEnabled")) rulerEnabled = jInking["rulerEnabled"].get<bool>();
                 if (jInking.contains("autoShapesEnabled")) autoShapesEnabled = jInking["autoShapesEnabled"].get<bool>();
                 if (jInking.contains("isStrokeEraser")) isStrokeEraser = jInking["isStrokeEraser"].get<bool>();
+                if (jInking.contains("isDynamicEraser")) isDynamicEraser = jInking["isDynamicEraser"].get<bool>();
                 if (jInking.contains("eraserSizeMm")) eraserSizeMm = jInking["eraserSizeMm"].get<float>();
                 // Device default tools — placeholder, settings UI not yet built
                 if (jInking.contains("defaultStylusTool")) defaultStylusTool = jInking["defaultStylusTool"].get<std::string>();
@@ -488,6 +490,7 @@ public:
                 { "rulerEnabled", rulerEnabled },
                 { "autoShapesEnabled", autoShapesEnabled },
                 { "isStrokeEraser", isStrokeEraser },
+                { "isDynamicEraser", isDynamicEraser },
                 { "eraserSizeMm", eraserSizeMm },
                 // Device default tools — placeholder, settings UI not yet built
                 { "defaultStylusTool", defaultStylusTool },

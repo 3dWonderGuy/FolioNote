@@ -57,6 +57,7 @@ public:
     AABB bounds;                                        // Cached world-space bounding box for R-Tree queries
 
     int32_t zOrder = 1;                                 // Stacking order (higher = foreground)
+    uint32_t pageIndex = 0;                             // Document sequence index for stable painter's algorithm tie-breaking
     float opacity = 1.0f;                               // Global alpha multiplier [0.0, 1.0]
     GizmoStyle gizmoStyle = GizmoStyle::BoundingBox;    // Manipulation handle configuration (BoundingBox, TwoPoint, MoveOnly, None)
 

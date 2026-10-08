@@ -13,13 +13,14 @@ void CanvasEngine::SetEraserCursor(float screenX, float screenY, double radiusMm
     bool wasVisible = eraserVisual.isVisible;
     float oldX = eraserVisual.screenX;
     float oldY = eraserVisual.screenY;
+    double oldR = eraserVisual.radiusMm;
     eraserVisual.isVisible = true;
     eraserVisual.screenX = screenX;
     eraserVisual.screenY = screenY;
     eraserVisual.radiusMm = radiusMm;
     eraserVisual.isDown = isDown;
     eraserVisual.isStrokeEraser = isStroke;
-    if (!wasVisible || std::abs(oldX - screenX) > 0.5f || std::abs(oldY - screenY) > 0.5f) {
+    if (!wasVisible || std::abs(oldX - screenX) > 0.5f || std::abs(oldY - screenY) > 0.5f || std::abs(oldR - radiusMm) > 0.05) {
         isDirty = true;
     }
 }
@@ -121,16 +122,27 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
                 if (inkModified) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
                     std::vector<std::shared_ptr<InkContainer>> survivingFragments;
+
+                    std::shared_ptr<CanvasObject> anchor = ink;
                     if (ink->strokes.empty()) {
+                        for (auto& frag : newFragments) {
+                            frag->uid = UIDGenerator::Next();
+                            frag->zOrder = ink->zOrder;
+                            activePage->InsertObjectAdjacent(anchor, frag);
+                            anchor = frag;
+                            survivingFragments.push_back(frag);
+                        }
                         activePage->RemoveObject(ink);
                     } else {
                         activePage->UpdateObject(ink);
                         survivingFragments.push_back(ink);
-                    }
-                    for (auto& frag : newFragments) {
-                        frag->uid = UIDGenerator::Next();
-                        activePage->AddObject(frag);
-                        survivingFragments.push_back(frag);
+                        for (auto& frag : newFragments) {
+                            frag->uid = UIDGenerator::Next();
+                            frag->zOrder = ink->zOrder;
+                            activePage->InsertObjectAdjacent(anchor, frag);
+                            anchor = frag;
+                            survivingFragments.push_back(frag);
+                        }
                     }
                     session.RecordSlicedStroke(originalClone, survivingFragments);
                     modified = true;
@@ -153,8 +165,7 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
     if (modified || devMode) {
         isDirty = true;
         if (modified) {
-            needsFullRebake = true;
-            layerCompositor.InvalidateBakedCanvas();
+            InvalidateLayer();
             ::Folio::UsageTracker::Instance().RecordEraserAction();
             LOG_INFO(CanvasEngine, "Erased content on page (strokeEraser=" + std::string(isStrokeEraser ? "true" : "false") + ")");
         }

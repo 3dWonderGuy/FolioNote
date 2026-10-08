@@ -51,7 +51,7 @@ std::vector<Point2D> CanvasEngine::OnLassoUp(DocumentSession* session) {
                 }
             }
             selectionGizmo.SetSelectedObjects(activePage->objects);
-            needsFullRebake = true;
+            InvalidateLayer();
         }
     }
     return lasso;
@@ -110,7 +110,7 @@ void CanvasEngine::OnBoxSelectUp(DocumentSession* session) {
                     }
                 }
                 selectionGizmo.SetSelectedObjects(activePage->objects);
-                needsFullRebake = true;
+                InvalidateLayer();
             }
         }
     }
@@ -126,16 +126,14 @@ void CanvasEngine::ClearSelection(DocumentSession* session) {
         }
     }
     selectionGizmo.ClearSelection();
-    needsFullRebake = true;
-    isDirty = true;
+    InvalidateLayer();
 }
 
 void CanvasEngine::OnActivePageChanged() {
     selectionGizmo.ClearSelection();
     layerCompositor.GetEmbeddedAppLayer().DismountAll();
     layerCompositor.GetLiveInteractionLayer().Clear();
-    layerCompositor.InvalidateBakedCanvas();
-    isDirty = true;
+    InvalidateLayer();
 }
 
 bool CanvasEngine::DeleteSelectedObjects(DocumentSession* session) {
@@ -143,9 +141,7 @@ bool CanvasEngine::DeleteSelectedObjects(DocumentSession* session) {
     size_t deletedCount = session->DeleteSelection();
     if (deletedCount > 0) {
         selectionGizmo.ClearSelection();
-        needsFullRebake = true;
-        isDirty = true;
-        layerCompositor.InvalidateBakedCanvas();
+        InvalidateLayer();
         return true;
     }
     return false;

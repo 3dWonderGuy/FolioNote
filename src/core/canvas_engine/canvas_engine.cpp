@@ -32,8 +32,6 @@ void CanvasEngine::Resize(int width, int height) {
     allocatedCapacityW = viewportW;
     allocatedCapacityH = viewportH;
 
-    staticCanvasLayer.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
-    liveInkingLayer.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
     compositeSurface.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
 
     glBindTexture(GL_TEXTURE_2D, glTexture);
@@ -46,8 +44,6 @@ void CanvasEngine::Resize(int width, int height) {
         allocatedCapacityW = std::max(allocatedCapacityW, 3840);
         allocatedCapacityH = std::max(allocatedCapacityH, 2160);
 
-        staticCanvasLayer.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
-        liveInkingLayer.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
         compositeSurface.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
 
         glBindTexture(GL_TEXTURE_2D, glTexture);
@@ -55,28 +51,57 @@ void CanvasEngine::Resize(int width, int height) {
     }
 #endif
 
-    isDirty = true;
-    needsFullRebake = true;
+    InvalidateLayer();
 }
 
 void CanvasEngine::SetDPI(float dpi) noexcept {
     transform.SetDPI(dpi);
+    InvalidateLayer();
+}
+
+void CanvasEngine::InvalidateLayer() noexcept {
     isDirty = true;
     needsFullRebake = true;
+    layerCompositor.InvalidateBakedCanvas();
+}
+
+void CanvasEngine::InvalidateLayerRect(const AABB& dirtyBounds) noexcept {
+    isDirty = true;
+    layerCompositor.InvalidateBakedCanvasRect(dirtyBounds);
+}
+
+Folio::ActionContext CanvasEngine::CreateActionContext(DocumentSession* session, double frameTimeSec) noexcept {
+    Folio::ActionContext ctx;
+    ctx.engine = this;
+    ctx.session = session;
+    ctx.page = session ? session->GetActivePage().get() : nullptr;
+    ctx.history = session ? session->GetCommandManager() : nullptr;
+    ctx.layerManager = &layerCompositor;
+    ctx.frameTimeSeconds = frameTimeSec;
+    ctx.onInvalidateLayer = [this]() {
+        InvalidateLayer();
+    };
+    ctx.onInvalidateLayerRect = [this](const AABB& bounds) {
+        InvalidateLayerRect(bounds);
+    };
+    return ctx;
+}
+
+void CanvasEngine::Update(double dt, DocumentSession* session) {
+    auto ctx = CreateActionContext(session, 0.0);
+    actionManager.Update(dt, ctx);
 }
 
 void CanvasEngine::Pan(double screenDx, double screenDy) noexcept {
     if (screenDx == 0.0 && screenDy == 0.0) return;
     transform.PanByScreenPixels(screenDx, screenDy);
-    isDirty = true;
-    needsFullRebake = true;
+    InvalidateLayer();
     ::Folio::UsageTracker::Instance().RecordPanGesture();
 }
 
 void CanvasEngine::ZoomAt(double screenX, double screenY, double factor) noexcept {
     transform.ZoomAtScreenPoint(screenX, screenY, factor);
-    isDirty = true;
-    needsFullRebake = true;
+    InvalidateLayer();
     ::Folio::UsageTracker::Instance().RecordZoomGesture();
 }
 
@@ -88,8 +113,7 @@ void CanvasEngine::SetInfinityMode(CanvasInfinityMode mode) {
     infinityMode = mode;
     transform.infinityMode = mode;
     transform.ClampPan();
-    isDirty = true;
-    needsFullRebake = true;
+    InvalidateLayer();
 }
 
 void CanvasEngine::HomeOrCenterPage() noexcept {
@@ -117,13 +141,22 @@ void CanvasEngine::HomeOrCenterPage() noexcept {
     }
     transform.panYMm = 15.0;
 
-    isDirty = true;
-    needsFullRebake = true;
+    InvalidateLayer();
 }
 
 void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visibleBakedObjects, DocumentSession* session, double deltaTime) {
     if (viewportW <= 0 || viewportH <= 0) return;
-    if (!isDirty && !needsFullRebake) return;
+
+    layerCompositor.GetBakedCanvasLayer().SetPaperTheme(canvasBgColor, gridLineColor, pageBorderColor);
+
+    if (needsFullRebake) {
+        layerCompositor.InvalidateBakedCanvas();
+        needsFullRebake = false;
+    }
+
+    if (!isDirty && !layerCompositor.GetBakedCanvasLayer().IsDirty() && !layerCompositor.GetLiveInteractionLayer().HasActiveInteraction()) {
+        return;
+    }
 
     Viewport currentView = GetViewport();
     CanvasPage* activePage = session ? session->GetActivePage().get() : nullptr;

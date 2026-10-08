@@ -51,7 +51,6 @@ void CanvasEngine::OnPointerUp(DocumentSession& session, const PenTool& tool) {
     FinishedStrokeData data = layerCompositor.GetLiveInteractionLayer().FinishStroke();
 
     isDirty = true;
-    needsObjectRebake = true;
 
     if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
         if (tool.penType == PenType::LaserPointer) {
@@ -67,5 +66,5 @@ void CanvasEngine::OnPointerUp(DocumentSession& session, const PenTool& tool) {
         }
     }
 
-    layerCompositor.InvalidateBakedCanvas();
+    InvalidateLayer();
 }

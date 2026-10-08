@@ -27,8 +27,10 @@
  */
 
 #include "core/text/font_manager.hpp"
+#include <vector>
 #include <filesystem>
 #include <algorithm>
+#include <cstdlib>
 
 namespace Folio {
 
