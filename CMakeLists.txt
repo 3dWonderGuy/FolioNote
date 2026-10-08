@@ -459,6 +459,7 @@ set(FOLIO_IO_SOURCES
 )
 
 # testing
+enable_testing()
 # 10. Standalone Local Test Executable
 if(NOT ANDROID)
     add_executable(test_rtree
@@ -488,6 +489,7 @@ if(NOT ANDROID)
     set_target_properties(test_rtree PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
+    add_test(NAME test_rtree COMMAND test_rtree)
 endif()
 
 # 11. Standalone Local Test Executable: FileManager
@@ -515,6 +517,7 @@ if(NOT ANDROID)
     set_target_properties(test_file_manager PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
+    add_test(NAME test_file_manager COMMAND test_file_manager)
 endif()
 
 # 12. Standalone Local Test Executable: ThreadPool
@@ -542,6 +545,7 @@ if(NOT ANDROID)
     set_target_properties(test_thread_pool PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
+    add_test(NAME test_thread_pool COMMAND test_thread_pool)
 endif()
 
 # 13. Standalone Local Test Executable: FileSaver
@@ -569,4 +573,35 @@ if(NOT ANDROID)
     set_target_properties(test_file_saver PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
+    add_test(NAME test_file_saver COMMAND test_file_saver)
 endif()
+
+# 14. Standalone Local Test Executable: ActionScheduler
+if(NOT ANDROID)
+    add_executable(test_action_scheduler
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_action_scheduler.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/actions/action_scheduler.cpp"
+    )
+
+    target_include_directories(test_action_scheduler PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+    )
+
+    target_link_libraries(test_action_scheduler PRIVATE
+        SDL3::SDL3
+    )
+
+    if(WIN32)
+        target_link_libraries(test_action_scheduler PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(test_action_scheduler PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
+
+    add_test(NAME test_action_scheduler COMMAND test_action_scheduler)
+endif()
+
