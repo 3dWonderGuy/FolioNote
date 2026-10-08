@@ -1,0 +1,7 @@
+[submodule "third_party/SDL_image/external/libwebp"]
+	path = third_party/SDL_image/external/libwebp
+	url = https://github.com/libsdl-org/libwebp.git
+
+[submodule "third_party/webview"]
+	path = third_party/webview
+	url = https://github.com/webview/webview.git
