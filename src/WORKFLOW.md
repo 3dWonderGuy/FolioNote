@@ -219,10 +219,6 @@ src/
 │   │       ├── text_editor_state.hpp/.cpp# Interactive text cursor, selection span, font styling, word wrap
 │   │       └── text_run.hpp              # Atomic run of characters sharing identical font, weight, and color
 │   │
-│   ├── render/                           # Rendering utilities and specialized layers
-│   │   ├── pdf_renderer.hpp              # High-speed PDF rasterization bridge using PDFium/lunasvg
-│   │   └── pdf_text_layer.hpp            # Selectable invisible vector text overlay on top of rendered PDF
-│   │
 │   ├── search/                           # Full-text indexing and fuzzy notebook searching
 │   │   └── notebook_search_index.hpp/.cpp# SQLite FTS5 indexer for handwriting, text boxes, and PDF text
 │   │

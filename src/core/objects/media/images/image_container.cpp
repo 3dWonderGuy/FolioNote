@@ -417,7 +417,7 @@ void ImageObject::CustomizeActions(std::vector<Folio::ContextMenuItem>& actions)
     copyAct.order = 51;
     copyAct.onTrigger = [this]() {
         if (!imagePath.empty()) {
-            FileManager::SetClipboardText(imagePath);
+            SDL_SetClipboardText(imagePath.c_str());
         }
     };
     actions.push_back(std::move(copyAct));

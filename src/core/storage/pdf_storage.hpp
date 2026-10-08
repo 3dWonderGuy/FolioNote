@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <string>
 #include <vector>
@@ -10,7 +10,7 @@
 #include "utils/logger.hpp"
 #include "io/file_manager.hpp"
 #include "core/document/document_session.hpp"
-#include "core/render/pdf_renderer.hpp"
+#include "core/pdf_engine/pdf_renderer.hpp"
 
 namespace Folio {
 

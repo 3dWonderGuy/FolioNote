@@ -449,13 +449,22 @@ endif()
 
 
 
+set(FOLIO_IO_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/path_utils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/app_directories.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/system_dialogs.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_writer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_reader.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
+)
+
 # testing
 # 10. Standalone Local Test Executable
 if(NOT ANDROID)
     add_executable(test_rtree
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_rtree.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
+        ${FOLIO_IO_SOURCES}
     )
 
     target_include_directories(test_rtree PRIVATE
@@ -485,7 +494,7 @@ endif()
 if(NOT ANDROID)
     add_executable(test_file_manager
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_manager.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
+        ${FOLIO_IO_SOURCES}
     )
 
     target_include_directories(test_file_manager PRIVATE
@@ -512,7 +521,7 @@ endif()
 if(NOT ANDROID)
     add_executable(test_thread_pool
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_thread_pool.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
+        ${FOLIO_IO_SOURCES}
     )
 
     target_include_directories(test_thread_pool PRIVATE
@@ -539,7 +548,7 @@ endif()
 if(NOT ANDROID)
     add_executable(test_file_saver
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_saver.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
+        ${FOLIO_IO_SOURCES}
     )
 
     target_include_directories(test_file_saver PRIVATE
