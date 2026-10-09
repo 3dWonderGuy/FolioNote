@@ -71,6 +71,10 @@ public:
         return AppDirectories::GetAppRootDirectory(overridePath);
     }
 
+    static void SetAppRootDirectory(const std::string& root) {
+        AppDirectories::SetAppRootDirectory(root);
+    }
+
     static std::string GetLibrariesDirectory() {
         return AppDirectories::GetLibrariesDirectory();
     }

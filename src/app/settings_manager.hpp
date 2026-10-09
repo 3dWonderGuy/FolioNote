@@ -235,9 +235,13 @@ public:
         if (!customPath.empty()) return customPath;
 
 #if defined(__ANDROID__)
-        const char* prefPath = SDL_GetPrefPath("UniversalFramework", "FolioNote");
-        if (prefPath) {
-            return std::string(prefPath) + "config/settings.json";
+        if (SDL_WasInit(0) != 0) {
+            char* prefPath = SDL_GetPrefPath("UniversalFramework", "FolioNote");
+            if (prefPath) {
+                std::string path = std::string(prefPath) + "config/settings.json";
+                SDL_free(prefPath);
+                return path;
+            }
         }
 #endif
         return "config/settings.json";

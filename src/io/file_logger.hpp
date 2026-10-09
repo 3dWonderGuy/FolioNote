@@ -49,25 +49,10 @@ private:
     std::deque<FolioLogEntry> history;
     const size_t maxHistorySize = 300;
 
-    FileLogger() {
-        std::string logsDir = FileManager::GetLogsDirectory();
-        std::string logFilePath = FileManager::JoinPath(logsDir, "folionote_session.log");
-
-        std::error_code ec;
-        if (!FileManager::CreateDirectories(logsDir)) {
-            return;
-        }
-
-        // Open session log in append or truncate mode
-        logFile.open(std::filesystem::path(logFilePath), std::ios::out | std::ios::trunc);
-        if (logFile.is_open()) {
-            isInitialized = true;
-            logFile << "=================================================\n";
-            logFile << "           FolioNote Session Started             \n";
-            logFile << "=================================================\n";
-            logFile.flush();
-        }
-    }
+    // Default constructor does NOT perform filesystem I/O.
+    // This allows safe logging during translation-unit static initialization
+    // before SDL, platform directories, or Android sandboxes are initialized.
+    FileLogger() = default;
 
     ~FileLogger() {
         std::lock_guard<std::mutex> lock(fileMutex);
@@ -100,25 +85,56 @@ public:
     }
 
     /**
-     * @brief Writes a structured log entry to disk and updates the in-memory cache.
+     * @brief Initializes the physical session log file on disk.
+     * Safe to invoke after the application document/logs directory has been resolved.
+     * Drains any prior log entries cached in memory to the physical file.
+     */
+    void Initialize(const std::string& customLogsDir = "") {
+        std::lock_guard<std::mutex> lock(fileMutex);
+        if (isInitialized && logFile.is_open()) return;
+
+        std::string logsDir = customLogsDir.empty() ? FileManager::GetLogsDirectory() : customLogsDir;
+        if (logsDir.empty()) return;
+
+        if (!FileManager::CreateDirectories(logsDir)) {
+            return;
+        }
+
+        std::string logFilePath = FileManager::JoinPath(logsDir, "folionote_session.log");
+        logFile.open(std::filesystem::path(logFilePath), std::ios::out | std::ios::trunc);
+        if (logFile.is_open()) {
+            isInitialized = true;
+            logFile << "=================================================\n";
+            logFile << "           FolioNote Session Started             \n";
+            logFile << "=================================================\n";
+
+            // Drain pre-boot log records recorded in memory before file initialization
+            for (const auto& entry : history) {
+                logFile << "[" << entry.timestamp << "] [" << entry.level << "] [" << entry.source << "] " << entry.message << "\n";
+            }
+            logFile.flush();
+        }
+    }
+
+    /**
+     * @brief Writes a structured log entry to the in-memory cache and disk file if initialized.
      * Flushes immediately only on ERROR to preserve 60/120 FPS frame timing.
      */
     void WriteLog(const FolioLogEntry& entry) {
-        if (!isInitialized) return;
         std::lock_guard<std::mutex> lock(fileMutex);
 
-        // 1. Stream formatted message to physical log
-        logFile << "[" << entry.timestamp << "] [" << entry.level << "] [" << entry.source << "] " << entry.message << "\n";
-        
-        // Immediate flush on errors to guarantee persistence across fatal crashes
-        if (entry.level == "ERROR") {
-            logFile.flush();
-        }
-
-        // 2. Cache in memory with O(1) ring-buffer replacement
+        // 1. Always maintain bounded in-memory ring buffer
         history.push_back(entry);
         if (history.size() > maxHistorySize) {
             history.pop_front();
+        }
+
+        // 2. Stream formatted message to physical log if file handle is active
+        if (isInitialized && logFile.is_open()) {
+            logFile << "[" << entry.timestamp << "] [" << entry.level << "] [" << entry.source << "] " << entry.message << "\n";
+            if (entry.level == "ERROR") {
+                logFile.flush();
+            }
         }
     }
 

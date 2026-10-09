@@ -33,6 +33,9 @@
 #include "ui/views/notebook_hub.hpp"
 #include "ui/views/pdf_viewer_page.hpp"
 #include "ui/views/md_editor_view.hpp"
+#include "ui/shell/app_shell.hpp"
+#include "ui/overlays/overlay_manager.hpp"
+#include "app/actions/ui_action_registry.hpp"
 #include "input/input_manager.hpp"
 #include "io/file_reader.hpp"
 #include "utils/usage_tracker.hpp"
@@ -61,10 +64,15 @@ public:
     RibbonBar ribbon;
     ModernNavPanel modernNav;
     NotebookHubView hubView;
-    DebugOverlay devTelemetry;
-    InkingTuningOverlay tuningStudio;
-    ToolbarDemoOverlay toolbarDemo;
-    Folio::PdfImportModal pdfImportModal;
+
+    // Modularized Overlays & Modals Subsystem
+    Folio::OverlayManager overlayManager;
+    DebugOverlay& devTelemetry = overlayManager.devTelemetry;
+    InkingTuningOverlay& tuningStudio = overlayManager.tuningStudio;
+    ToolbarDemoOverlay& toolbarDemo = overlayManager.toolbarDemo;
+    Folio::PdfImportModal& pdfImportModal = overlayManager.pdfImportModal;
+    Folio::ActionCommandPalette& commandPalette = overlayManager.commandPalette;
+
     Folio::PdfViewerPage pdfViewer;
     Folio::MdEditorView mdEditor;
 
@@ -374,10 +382,11 @@ public:
         // SDL_GetPrefPath() returns a guaranteed writable private app directory:
         //   e.g. /data/user/0/org.libsdl.app/files/
         // This directory is sandboxed to our app and persists across launches.
-        const char* prefPath = SDL_GetPrefPath("UniversalFramework", "FolioNote");
+        char* prefPath = SDL_GetPrefPath("UniversalFramework", "FolioNote");
         std::filesystem::path folioPath;
         if (prefPath) {
             folioPath = std::filesystem::path(prefPath);
+            SDL_free(prefPath);
         } else {
             folioPath = std::filesystem::path(".") / "FolioNote";
         }
@@ -403,6 +412,10 @@ public:
             std::filesystem::create_directories(folioPath, ec);
         }
 #endif
+
+        // Centralize directory and disk logging initialization now that platform directories are live
+        Folio::AppDirectories::SetAppRootDirectory(folioPath.string());
+        Folio::FileLogger::Instance().Initialize(Folio::PathUtils::JoinPath(folioPath.string(), "logs"));
 
         // Initialize the SQLite session using this physical directory
         session.Init(folioPath.string());
@@ -495,6 +508,11 @@ public:
         };
 
         // ---------------------------------------------------------
+        // CENTRALIZED UI ACTION REGISTRATION (Spotlight & Shortcuts)
+        // ---------------------------------------------------------
+        RegisterDefaultActions();
+
+        // ---------------------------------------------------------
         // IMPORTS DIRECTORY & CLI STAGED DOCUMENT INITIALIZATION
         // ---------------------------------------------------------
         EnsureImportsDirectory(folioPath);
@@ -504,6 +522,300 @@ public:
 
         devTelemetry.LogEvent("FolioNote initialized.", LogCategory::System);
         return true;
+    }
+
+    /**
+     * @brief Registers default application and canvas commands into the centralized UIActionRegistry.
+     *
+     * Enables command discovery and keyboard shortcuts across:
+     * - Spotlight Action Command Palette (Ctrl+K / Ctrl+P)
+     * - Ribbon Bar and Toolbars
+     * - Global hotkey dispatching
+     */
+    void RegisterDefaultActions() {
+        auto& reg = Folio::UIActionRegistry::Instance();
+
+        // =========================================================================
+        // 1. CANVAS VIEWPORT OPERATIONS
+        // =========================================================================
+        reg.RegisterAction(Folio::UIAction("Zoom In", "Ctrl++", "🔍", false, true, false, [this]() {
+            canvas.transform.zoom = std::min(10.0, canvas.transform.zoom * 1.25);
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 10, false, "zoom_in", 0, "canvas.zoom_in", "Canvas"));
+
+        reg.RegisterAction(Folio::UIAction("Zoom Out", "Ctrl+-", "🔍", false, true, false, [this]() {
+            canvas.transform.zoom = std::max(0.1, canvas.transform.zoom / 1.25);
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 11, false, "zoom_out", 0, "canvas.zoom_out", "Canvas"));
+
+        reg.RegisterAction(Folio::UIAction("Reset Zoom (100%)", "Ctrl+0", "🔍", false, true, false, [this]() {
+            canvas.transform.zoom = 1.0;
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 12, false, "zoom_reset", 0, "canvas.zoom_reset", "Canvas"));
+
+        reg.RegisterAction(Folio::UIAction("Reset View to Origin", "Home", "⌂", false, true, false, [this]() {
+            canvas.transform.panXMm = 0.0;
+            canvas.transform.panYMm = 0.0;
+            canvas.transform.zoom = 1.0;
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 13, false, "home", 0, "canvas.reset_view", "Canvas"));
+
+        reg.RegisterAction(Folio::UIAction("Toggle Dark / Inverted Canvas", "Ctrl+I", "🌓", false, true, false, [this]() {
+            ribbon.isCanvasInverted = !ribbon.isCanvasInverted;
+            if (ribbon.isCanvasInverted) {
+                canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
+                canvas.gridLineColor = BLRgba32(0x34, 0x38, 0x44);
+                canvas.inkColorInverted = true;
+            } else {
+                canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
+                canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
+                canvas.inkColorInverted = false;
+            }
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 14, false, "contrast", 0, "canvas.invert", "Canvas"));
+
+        // =========================================================================
+        // 2. SELECTION, EDITING & CLIPBOARD OPERATIONS
+        // =========================================================================
+        reg.RegisterAction(Folio::UIAction("Select All", "Ctrl+A", "⬚", false, true, false, [this]() {
+            canvas.SelectAll(&session);
+        }, 20, false, "select_all", 0, "edit.select_all", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Clear Selection", "Esc", "✕", false, true, false, [this]() {
+            canvas.selectionGizmo.ClearSelection();
+            canvas.isDirty = true;
+        }, 21, false, "clear_selection", 0, "edit.clear_selection", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Undo", "Ctrl+Z", "↶", false, true, false, [this]() {
+            session.Undo(&canvas);
+        }, 22, false, "undo", 0, "edit.undo", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Redo", "Ctrl+Y", "↷", false, true, false, [this]() {
+            session.Redo(&canvas);
+        }, 23, false, "redo", 0, "edit.redo", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Copy", "Ctrl+C", "📋", false, true, false, [this]() {
+            auto selected = session.GetSelectedObjects();
+            if (!selected.empty()) {
+                Folio::ClipboardManager::Instance().CopyObjects(selected);
+            }
+        }, 24, false, "copy", 0, "edit.copy", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Cut", "Ctrl+X", "✂", false, true, false, [this]() {
+            auto selected = session.GetSelectedObjects();
+            if (!selected.empty()) {
+                Folio::ClipboardManager::Instance().CutObjects(selected, session);
+                canvas.selectionGizmo.ClearSelection();
+                canvas.isDirty = true;
+                canvas.needsFullRebake = true;
+            }
+        }, 25, false, "cut", 0, "edit.cut", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Paste", "Ctrl+V", "📋", false, true, false, [this]() {
+            Point2D centerWorld = canvas.transform.ScreenToWorld(
+                static_cast<float>(canvas.viewportW) * 0.5f,
+                static_cast<float>(canvas.viewportH) * 0.5f
+            );
+            Folio::ClipboardManager::Instance().Paste(session, canvas, centerWorld.x, centerWorld.y);
+        }, 26, false, "paste", 0, "edit.paste", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Duplicate Selection", "Ctrl+D", "📄", false, true, false, [this]() {
+            session.DuplicateSelection(10.0);
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 27, false, "duplicate", 0, "edit.duplicate", "Edit"));
+
+        reg.RegisterAction(Folio::UIAction("Delete Selection", "Del", "🗑", false, true, true, [this]() {
+            canvas.DeleteSelectedObjects(&session);
+        }, 28, false, "trash", 0, "edit.delete", "Edit"));
+
+        // =========================================================================
+        // 3. PRIMARY CANVAS TOOLS
+        // =========================================================================
+        reg.RegisterAction(Folio::UIAction("Pen Tool", "P", "✏", false, true, false, [this]() {
+            inputManager.stateMachine.SetToolForDevice(inputManager.stateMachine.ActiveDevice, InteractionState::Inking);
+            inputManager.stateMachine.palette.activePen.penType = PenType::Pen;
+        }, 30, false, "pen", 0, "tool.pen", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Highlighter Tool", "H", "🖍", false, true, false, [this]() {
+            inputManager.stateMachine.SetToolForDevice(inputManager.stateMachine.ActiveDevice, InteractionState::Inking);
+            inputManager.stateMachine.palette.activePen.penType = PenType::Highlighter;
+        }, 31, false, "highlighter", 0, "tool.highlighter", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Pencil Tool", "", "✏", false, true, false, [this]() {
+            inputManager.stateMachine.SetToolForDevice(inputManager.stateMachine.ActiveDevice, InteractionState::Inking);
+            inputManager.stateMachine.palette.activePen.penType = PenType::Pencil;
+        }, 32, false, "pencil", 0, "tool.pencil", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Eraser Tool", "E", "🧹", false, true, false, [this]() {
+            inputManager.stateMachine.SetToolForDevice(inputManager.stateMachine.ActiveDevice, InteractionState::Eraser);
+        }, 33, false, "eraser", 0, "tool.eraser", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Lasso Selection Tool", "S", "⬚", false, true, false, [this]() {
+            inputManager.stateMachine.SetToolForDevice(inputManager.stateMachine.ActiveDevice, InteractionState::Selecting);
+        }, 34, false, "select", 0, "tool.select", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Text Box (Click-to-Type)", "T", "🔤", false, true, false, [this]() {
+            inputManager.stateMachine.SetToolForDevice(inputManager.stateMachine.ActiveDevice, InteractionState::Text);
+        }, 35, false, "text", 0, "tool.text", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Hand / Pan Viewport", "Space", "✋", false, true, false, [this]() {
+            inputManager.stateMachine.SetToolForDevice(inputManager.stateMachine.ActiveDevice, InteractionState::Panning);
+        }, 36, false, "hand", 0, "tool.pan", "Tools"));
+
+        // =========================================================================
+        // 4. DOCUMENT & PAGE HIERARCHY OPERATIONS
+        // =========================================================================
+        reg.RegisterAction(Folio::UIAction("New Page", "Ctrl+N", "➕", false, true, false, [this]() {
+            session.CreateNewPage();
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 40, false, "add_page", 0, "page.new", "Document"));
+
+        reg.RegisterAction(Folio::UIAction("Duplicate Active Page", "", "📄", false, true, false, [this]() {
+            session.DuplicateActivePage();
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 41, false, "duplicate_page", 0, "page.duplicate", "Document"));
+
+        reg.RegisterAction(Folio::UIAction("Delete Active Page", "Ctrl+Shift+Del", "🗑", false, true, true, [this]() {
+            session.DeleteActivePage(true);
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 42, false, "trash", 0, "page.delete", "Document"));
+
+        reg.RegisterAction(Folio::UIAction("Next Page", "PageDown", "⏩", false, true, false, [this]() {
+            session.NextPage();
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 43, false, "next_page", 0, "page.next", "Document"));
+
+        reg.RegisterAction(Folio::UIAction("Previous Page", "PageUp", "⏪", false, true, false, [this]() {
+            session.PreviousPage();
+            canvas.isDirty = true;
+            canvas.needsFullRebake = true;
+        }, 44, false, "prev_page", 0, "page.prev", "Document"));
+
+        reg.RegisterAction(Folio::UIAction("Save Notebook", "Ctrl+S", "💾", false, true, false, [this]() {
+            session.SaveAllModifiedPages();
+        }, 45, false, "save", 0, "doc.save", "Document"));
+
+        // =========================================================================
+        // 5. VIEW & WINDOW MODES
+        // =========================================================================
+        reg.RegisterAction(Folio::UIAction("Open Notebook Hub", "Ctrl+H", "📚", false, true, false, [this]() {
+            currentView = AppViewMode::NotebookHub;
+        }, 50, false, "hub", 0, "view.notebook_hub", "View"));
+
+        reg.RegisterAction(Folio::UIAction("Switch to Canvas Workspace", "", "📐", false, true, false, [this]() {
+            currentView = AppViewMode::CanvasWorkspace;
+        }, 51, false, "canvas", 0, "view.canvas_workspace", "View"));
+
+        reg.RegisterAction(Folio::UIAction("Toggle Fullscreen", "F11", "⛶", false, true, false, [this]() {
+            bool fs = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+            SDL_SetWindowFullscreen(window, !fs);
+        }, 52, false, "fullscreen", 0, "view.toggle_fullscreen", "View"));
+
+        reg.RegisterAction(Folio::UIAction("Toggle Ribbon Collapse", "Ctrl+F1", "📑", false, true, false, [this]() {
+            ribbon.ToggleCollapse();
+        }, 53, false, "ribbon", 0, "view.toggle_ribbon", "View"));
+
+        reg.RegisterAction(Folio::UIAction("Cycle Ribbon Display Mode", "", "🔄", false, true, false, [this]() {
+            ribbon.CycleDisplayMode();
+        }, 54, false, "cycle", 0, "view.cycle_ribbon_mode", "View"));
+
+        // =========================================================================
+        // 6. TOOLS, MODALS & DIAGNOSTIC OVERLAYS
+        // =========================================================================
+        reg.RegisterAction(Folio::UIAction("Spotlight Command Palette", "Ctrl+K", "🔍", false, true, false, [this]() {
+            overlayManager.ToggleCommandPalette();
+        }, 60, false, "search", 0, "tools.command_palette", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Toggle Diagnostics Telemetry", "F3", "📊", false, true, false, [this]() {
+            devTelemetry.isVisible = !devTelemetry.isVisible;
+        }, 61, false, "telemetry", 0, "tools.telemetry", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Toggle Inking Tuning Studio", "F5", "⚙", false, true, false, [this]() {
+            tuningStudio.isVisible = !tuningStudio.isVisible;
+        }, 62, false, "tuning", 0, "tools.tuning", "Tools"));
+
+        reg.RegisterAction(Folio::UIAction("Toggle Toolbar Components Demo", "F6", "🎨", false, true, false, [this]() {
+            toolbarDemo.isVisible = !toolbarDemo.isVisible;
+        }, 63, false, "demo", 0, "tools.toolbar_demo", "Tools"));
+    }
+
+    /**
+     * @brief Dispatches global keyboard shortcuts cleanly through UIActionRegistry.
+     *
+     * Evaluates keydown combinations when ImGui keyboard capture is not asserted.
+     * Prevents duplicate shortcut handling logic across multiple frame event polling loops.
+     *
+     * @param event The active SDL event of type SDL_EVENT_KEY_DOWN.
+     * @return true if an action or shortcut was recognized and handled; false otherwise.
+     */
+    bool HandleGlobalShortcut(const SDL_Event& event) {
+        if (event.type != SDL_EVENT_KEY_DOWN) return false;
+
+        const SDL_Keymod mod = SDL_GetModState();
+        const bool isCtrl = (mod & SDL_KMOD_CTRL) != 0;
+        const bool isShift = (mod & SDL_KMOD_SHIFT) != 0;
+        const auto key = event.key.key;
+        auto& reg = Folio::UIActionRegistry::Instance();
+
+        // Spotlight Command Palette (Ctrl+K or Ctrl+P) - allowed even when ImGui has focus
+        if (isCtrl && (key == SDLK_K || key == SDLK_P)) {
+            reg.Execute("tools.command_palette");
+            return true;
+        }
+
+        // Developer overlays and diagnostic toggles
+        if (key == SDLK_F3) { reg.Execute("tools.telemetry"); return true; }
+        if (key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; return true; }
+        if (key == SDLK_F5) { reg.Execute("tools.tuning"); return true; }
+        if (key == SDLK_F6) { reg.Execute("tools.toolbar_demo"); return true; }
+        if (key == SDLK_F11) { reg.Execute("view.toggle_fullscreen"); return true; }
+        if (isCtrl && key == SDLK_F1) { reg.Execute("view.cycle_ribbon_mode"); return true; }
+
+        // If Dear ImGui active widgets (like text boxes) want keyboard focus, bypass general editor hotkeys
+        if (ImGui::GetIO().WantCaptureKeyboard) {
+            return false;
+        }
+
+        // Clipboard & Selection hotkeys
+        if (isCtrl && key == SDLK_C) { return reg.Execute("edit.copy"); }
+        if (isCtrl && key == SDLK_X) { return reg.Execute("edit.cut"); }
+        if (isCtrl && key == SDLK_V) { return reg.Execute("edit.paste"); }
+        if (isCtrl && key == SDLK_D) { return reg.Execute("edit.duplicate"); }
+        if (isCtrl && key == SDLK_A) { return reg.Execute("edit.select_all"); }
+        if (key == SDLK_ESCAPE)      { return reg.Execute("edit.clear_selection"); }
+        if (key == SDLK_DELETE)      { return reg.Execute("edit.delete"); }
+
+        // Undo / Redo
+        if (isCtrl && key == SDLK_Z) {
+            return isShift ? reg.Execute("edit.redo") : reg.Execute("edit.undo");
+        }
+        if (isCtrl && key == SDLK_Y) { return reg.Execute("edit.redo"); }
+
+        // Document & Navigation hotkeys
+        if (isCtrl && key == SDLK_N) { return reg.Execute("page.new"); }
+        if (isCtrl && key == SDLK_S) { return reg.Execute("doc.save"); }
+        if (isCtrl && key == SDLK_H) { return reg.Execute("view.notebook_hub"); }
+        if (isCtrl && key == SDLK_I) { return reg.Execute("canvas.invert"); }
+        if (key == SDLK_PAGEDOWN)    { return reg.Execute("page.next"); }
+        if (key == SDLK_PAGEUP)      { return reg.Execute("page.prev"); }
+        if (key == SDLK_HOME)        { return reg.Execute("canvas.reset_view"); }
+
+        // Canvas Viewport hotkeys
+        if (isCtrl && (key == SDLK_PLUS || key == SDLK_EQUALS)) { return reg.Execute("canvas.zoom_in"); }
+        if (isCtrl && key == SDLK_MINUS) { return reg.Execute("canvas.zoom_out"); }
+        if (isCtrl && key == SDLK_0)     { return reg.Execute("canvas.zoom_reset"); }
+
+        return false;
     }
     // DEBUG ISOLATION RESULT: Level 1 (bare SDL/GL, no VSync, no ImGui, no canvas)
     // still froze on Intel Arc. Root cause CONFIRMED = Intel Arc OpenGL driver
@@ -638,43 +950,7 @@ public:
                     running = false;
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
-                    if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
-                    else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
-                    else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
-                    else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
-                    else if (event.key.key == SDLK_C && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        auto selected = session.GetSelectedObjects();
-                        if (!selected.empty()) {
-                            Folio::ClipboardManager::Instance().CopyObjects(selected);
-                        }
-                    }
-                    else if (event.key.key == SDLK_X && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        auto selected = session.GetSelectedObjects();
-                        if (!selected.empty()) {
-                            Folio::ClipboardManager::Instance().CutObjects(selected, session);
-                            canvas.selectionGizmo.ClearSelection();
-                            canvas.isDirty = true;
-                            canvas.needsFullRebake = true;
-                        }
-                    }
-                    else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        Point2D centerWorld = canvas.transform.ScreenToWorld(static_cast<float>(canvas.viewportW) * 0.5f, static_cast<float>(canvas.viewportH) * 0.5f);
-                        Folio::ClipboardManager::Instance().Paste(session, canvas, centerWorld.x, centerWorld.y);
-                    }
-                    else if (event.key.key == SDLK_Z && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        if (SDL_GetModState() & SDL_KMOD_SHIFT) {
-                            session.Redo(&canvas);
-                        } else {
-                            session.Undo(&canvas);
-                        }
-                    }
-                    else if (event.key.key == SDLK_Y && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        session.Redo(&canvas);
-                    }
-                    else if (event.key.key == SDLK_A && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        canvas.SelectAll(&session);
-                    }
-                    else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
+                    HandleGlobalShortcut(event);
                 }
                 else if (event.type == SDL_EVENT_DROP_FILE) {
                     if (event.drop.data) {
@@ -728,44 +1004,7 @@ public:
                             running = false;
                         }
                         else if (event.type == SDL_EVENT_KEY_DOWN) {
-                            if (event.key.key == SDLK_F3) devTelemetry.isVisible = !devTelemetry.isVisible;
-                            else if (event.key.key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; }
-                            else if (event.key.key == SDLK_F5) tuningStudio.isVisible = !tuningStudio.isVisible;
-                            else if (event.key.key == SDLK_F6) toolbarDemo.isVisible = !toolbarDemo.isVisible;
-                            else if (event.key.key == SDLK_C && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                                auto selected = session.GetSelectedObjects();
-                                if (!selected.empty()) {
-                                    Folio::ClipboardManager::Instance().CopyObjects(selected);
-                                }
-                            }
-                            else if (event.key.key == SDLK_X && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                                auto selected = session.GetSelectedObjects();
-                                if (!selected.empty()) {
-                                    Folio::ClipboardManager::Instance().CutObjects(selected, session);
-                                    canvas.selectionGizmo.ClearSelection();
-                                    canvas.isDirty = true;
-                                    canvas.needsFullRebake = true;
-                                }
-                            }
-                            else if (event.key.key == SDLK_V && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                                Point2D centerWorld = canvas.transform.ScreenToWorld(static_cast<float>(canvas.viewportW) * 0.5f, static_cast<float>(canvas.viewportH) * 0.5f);
-                                Folio::ClipboardManager::Instance().Paste(session, canvas, centerWorld.x, centerWorld.y);
-                            }
-                            else if (event.key.key == SDLK_Z && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                                if (SDL_GetModState() & SDL_KMOD_SHIFT) {
-                                    session.Redo(&canvas);
-                                } else {
-                                    session.Undo(&canvas);
-                                }
-                            }
-                            else if (event.key.key == SDLK_Y && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                                session.Redo(&canvas);
-                            }
-                            else if (event.key.key == SDLK_A && (SDL_GetModState() & SDL_KMOD_CTRL) && !ImGui::GetIO().WantCaptureKeyboard) {
-                                canvas.SelectAll(&session);
-                            }
-                            else if (event.key.key == SDLK_DELETE) canvas.DeleteSelectedObjects(&session);
-                            else if (event.key.key == SDLK_F1 && (SDL_GetModState() & SDL_KMOD_CTRL)) ribbon.CycleDisplayMode();
+                            HandleGlobalShortcut(event);
                         }
 
                         inputManager.ProcessEvent(event, canvas, session, windowSM);
@@ -828,7 +1067,18 @@ public:
 
             Uint32 winFlags = SDL_GetWindowFlags(window);
             bool isFullscreen = (winFlags & SDL_WINDOW_FULLSCREEN) != 0;
-            float titleBarH = (customTitleBar.isVisible && !isFullscreen) ? CustomTitleBar::TITLEBAR_HEIGHT : 0.0f;
+
+            Folio::ShellLayoutMetrics layout = Folio::AppShell::ComputeLayout(
+                screenW,
+                screenH,
+                isFullscreen,
+                customTitleBar.isVisible,
+                CustomTitleBar::TITLEBAR_HEIGHT,
+                ribbon.GetAnimatedHeight(),
+                modernNav.GetTotalWidth()
+            );
+
+            float titleBarH = layout.titleBarH;
 
             // 0. CUSTOM SOFTWARE TITLE BAR (Borderless Window Frame)
             if (titleBarH > 0.0f) {
@@ -852,7 +1102,7 @@ public:
                 hubView.Render(0.0f, titleBarH, screenW, screenH - titleBarH, currentView, themeManager, session, canvas, window);
             } else {
                 // 1. TOP RIBBON BAR (Smooth Animated 4-State Ribbon)
-                float ribbonH = ribbon.GetAnimatedHeight();
+                float ribbonH = layout.ribbonH;
                 if (ribbonH > 0.5f) {
                     ImGui::SetNextWindowPos(ImVec2(0.0f, titleBarH));
                     ImGui::SetNextWindowSize(ImVec2(screenW, ribbonH));
@@ -880,9 +1130,9 @@ public:
                 }
 
                 // Floating Pull Tab when ribbon is collapsed/hidden into canvas fullscreen
-                if (ribbonH <= 8.0f) {
-                    ImGui::SetNextWindowPos(ImVec2((screenW - 130.0f) * 0.5f, titleBarH + 4.0f));
-                    ImGui::SetNextWindowSize(ImVec2(130.0f, 32.0f));
+                if (layout.showRibbonPullTab) {
+                    ImGui::SetNextWindowPos(ImVec2(layout.pullTabX, layout.pullTabY));
+                    ImGui::SetNextWindowSize(ImVec2(layout.pullTabW, layout.pullTabH));
                     ImGuiWindowFlags pullTabFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
                                                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | 
                                                     ImGuiWindowFlags_NoBackground;
@@ -903,15 +1153,15 @@ public:
                 }
 
                 // 2. MODERN NAVIGATION SIDEBAR
-                float contentY = titleBarH + ribbonH;
-                float contentH = screenH - contentY;
+                float contentY = layout.navY;
+                float contentH = layout.navH;
 
                 modernNav.Render(0.0f, contentY, contentH, session, canvas, themeManager, &currentView);
 
                 // 3. CANVAS WORKSPACE OR DEDICATED PDF VIEWER (FILLS EXACT REMAINDER)
-                float navW = modernNav.GetTotalWidth();
-                float canvasX = navW;
-                float canvasW = screenW - navW;
+                float navW = layout.navW;
+                float canvasX = layout.viewportX;
+                float canvasW = layout.viewportW;
 
                 // =========================================================
                 // CANVAS VIEWPORT PRESERVATION ON PAGE SWITCH (CONTINUITY)
@@ -923,7 +1173,7 @@ public:
                 // viewport starts default (hasCustomViewport = false), resetting
                 // to homed (0, 0, 1.0) viewports as desired.
                 auto activePg = session.GetActivePage();
-                if (activePg && !activePg->isDedicatedPdf && !activePg->isDedicatedMd) {
+                if (activePg && !activePg->isDedicatedPdf) {
                     std::string newGuid = activePg->guid;
                     if (newGuid != lastActivePageGuid) {
                         uint64_t nowMs = SDL_GetTicks();
@@ -1010,18 +1260,12 @@ public:
                     }
                 }
 
+                // Dedicated continuous PDF viewer
                 if (activePg && activePg->isDedicatedPdf) {
                     pdfViewer.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager, canvas.inkColorInverted);
                     inputManager.wasCanvasImageHovered = pdfViewer.isPdfContentHovered;
                     inputManager.stateMachine.isCanvasHovered = false; // Prevent background canvas marquee selection
                     inputManager.stateMachine.isPdfCanvasHovered = pdfViewer.isPdfContentHovered;
-                    inputManager.stateMachine.canvasOriginX = canvasX;
-                    inputManager.stateMachine.canvasOriginY = contentY;
-                } else if (activePg && activePg->isDedicatedMd) {
-                    mdEditor.Render(canvasX, canvasW, screenH, titleBarH, ribbonH, session, inputManager.stateMachine, themeManager, canvas.inkColorInverted);
-                    inputManager.wasCanvasImageHovered = false;
-                    inputManager.stateMachine.isCanvasHovered = false;
-                    inputManager.stateMachine.isPdfCanvasHovered = false;
                     inputManager.stateMachine.canvasOriginX = canvasX;
                     inputManager.stateMachine.canvasOriginY = contentY;
                 } else {
@@ -1184,23 +1428,11 @@ public:
                 ImGui::PopStyleVar();
                 } // End of if (activePg && activePg->isDedicatedPdf) else
 
-                // =========================================================================
-                // FLOATING AUDIO CONTROLLER CAPSULE OVERLAY
-                // =========================================================================
-                // When an AudioObject is selected on the canvas, render a floating modern
-                // glassmorphic capsule HUD directly below the badge tracking canvas transform.
-                {
-                    ImVec2 canvasOrigin(inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY);
-                    for (const auto& obj : session.GetSelectedObjects()) {
-                        if (obj && obj->type == ObjectType::Audio) {
-                            if (auto audioObj = std::dynamic_pointer_cast<Folio::AudioObject>(obj)) {
-                                Folio::AudioOverlayUI::Render(*audioObj, canvas.transform, canvasOrigin, [&]() {
-                                    canvas.isDirty = true;
-                                });
-                            }
-                        }
-                    }
-                }
+                // Floating Audio Controller Capsule Overlay
+                overlayManager.RenderCanvasFloatingHUDs(
+                    canvas, session,
+                    ImVec2(inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY)
+                );
 
                 // 4. ADVANCED DOCUMENT OPTIONS SLIDING PANEL
                 // Floats over canvas from right side when View tab -> Adv. Options is toggled.
@@ -1214,56 +1446,13 @@ public:
             }
 
             // =========================================================
-            // DIAGNOSTICS & MODAL OVERLAYS
+            // DIAGNOSTICS & MODAL OVERLAYS (Z-INDEX TOP PASS)
             // =========================================================
-            
-            // 6. ATTACHMENT FLOW MODAL
-            // Triggered when OpenAttachmentFileDialog stores a pending file.
-            if (canvas.m_attachModalOpen) {
-                ImGui::OpenPopup("Attach File##Modal");
-            }
-
-            ImGui::SetNextWindowSize(ImVec2(380, 0), ImGuiCond_Appearing);
-            if (ImGui::BeginPopupModal("Attach File##Modal", nullptr, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoResize)) {
-                ImGui::Text("File: %s", canvas.m_pendingAttachName.c_str());
-                ImGui::Separator();
-                ImGui::Spacing();
-                
-                ImGui::TextWrapped("How would you like to attach this file?");
-                ImGui::Spacing();
-                
-                if (ImGui::Button("Embed in Notebook", ImVec2(-1, 30))) {
-                    canvas.CommitAttachment(true, canvas.m_pendingAttachSession);
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::TextColored(themeManager.colorTextMuted, "Copies the file into the notebook sidecar. Portable and safe.");
-                ImGui::Spacing();
-                
-                if (ImGui::Button("Attach as Link", ImVec2(-1, 30))) {
-                    canvas.CommitAttachment(false, canvas.m_pendingAttachSession);
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::TextColored(themeManager.colorTextMuted, "Stores the original absolute path. Breaks if the file is moved.");
-                
-                ImGui::Spacing();
-                ImGui::Separator();
-                if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-                    canvas.m_attachModalOpen = false;
-                    canvas.m_pendingAttachPath.clear();
-                    canvas.m_pendingAttachName.clear();
-                    canvas.m_pendingAttachSession = nullptr;
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
-            }
-            devTelemetry.Render(canvas, inputManager.stateMachine, windowSM, session, inputManager.stateMachine.canvasOriginX, inputManager.stateMachine.canvasOriginY, themeManager);
-            tuningStudio.Render(themeManager);
             if (ribbon.showDemoOverlay) {
                 toolbarDemo.isVisible = true;
                 ribbon.showDemoOverlay = false;
             }
-            toolbarDemo.Render(themeManager);
-            pdfImportModal.Render(session, canvas, themeManager);
+            overlayManager.RenderModalsAndOverlays(canvas, inputManager.stateMachine, windowSM, session, themeManager);
 
             ImGui::Render();
             glViewport(0, 0, pixelW, pixelH);

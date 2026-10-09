@@ -11,24 +11,54 @@ namespace Folio {
 namespace {
 std::mutex s_packageRootMutex;
 std::string s_activePackageRoot;
+std::mutex s_appRootMutex;
+std::string s_activeAppRoot;
 } // anonymous namespace
+
+void AppDirectories::SetAppRootDirectory(const std::string& root) {
+    std::lock_guard<std::mutex> lock(s_appRootMutex);
+    s_activeAppRoot = PathUtils::NormalizeSeparators(root);
+}
 
 std::string AppDirectories::GetAppRootDirectory(const std::string& overridePath) {
     if (!overridePath.empty()) {
         return PathUtils::NormalizeSeparators(overridePath);
     }
 
+    {
+        std::lock_guard<std::mutex> lock(s_appRootMutex);
+        if (!s_activeAppRoot.empty()) {
+            return s_activeAppRoot;
+        }
+    }
+
 #if defined(__ANDROID__)
-    const char* pref = SDL_GetPrefPath("UniversalFramework", "FolioNote");
-    if (pref && pref[0] != '\0') {
-        return PathUtils::NormalizeSeparators(std::string(pref));
+    // CRITICAL: On Android, SDL_GetPrefPath() uses JNI (context.getFilesDir()).
+    // Calling it before SDL is initialized (SDL_WasInit) or during static initialization
+    // causes a fatal SIGSEGV in ART JNI because the JVM environment is unattached.
+    // Guard with SDL_WasInit to ensure JNI is initialized before querying.
+    if (SDL_WasInit(0) != 0) {
+        char* pref = SDL_GetPrefPath("UniversalFramework", "FolioNote");
+        if (pref && pref[0] != '\0') {
+            std::string res = PathUtils::NormalizeSeparators(std::string(pref));
+            SDL_free(pref);
+            std::lock_guard<std::mutex> lock(s_appRootMutex);
+            s_activeAppRoot = res;
+            return res;
+        }
+        if (pref) {
+            SDL_free(pref);
+        }
     }
     return PathUtils::NormalizeSeparators("./FolioNote");
 #else
     const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
     if (docs && docs[0] != '\0') {
         std::filesystem::path appRoot = PathUtils::Utf8ToNativePath(docs) / "FolioNote";
-        return PathUtils::NormalizeSeparators(PathUtils::NativePathToUtf8(appRoot));
+        std::string res = PathUtils::NormalizeSeparators(PathUtils::NativePathToUtf8(appRoot));
+        std::lock_guard<std::mutex> lock(s_appRootMutex);
+        s_activeAppRoot = res;
+        return res;
     }
 
     LOG_WARN(FileManager, "SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS) returned null; falling back to './FolioNote'");

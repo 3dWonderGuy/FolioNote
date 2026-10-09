@@ -34,7 +34,6 @@ public:
     {
         if (presets.empty()) {
             presets = SettingsManager::GetDefaultPenPresets();
-            SettingsManager::Instance().Save();
         }
     }
 

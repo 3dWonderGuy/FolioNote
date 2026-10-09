@@ -108,69 +108,72 @@ std::vector<ContextMenuItem> ObjectActionRegistry::BuildActionsForObject(
         actions.push_back(std::move(act));
     }
 
-    // Action: Bring to Front (order: 200)
+    // Action: Order / Layering Cascading Submenu (order: 200)
     {
-        ContextMenuItem act;
-        act.label = "Bring to Front";
-        act.shortcut = "Ctrl+Shift+]";
-        act.icon = "⬆";
-        act.iconKey = "bring_to_front";
-        act.order = 200;
-        act.isSeparatorBefore = true;
-        act.onTrigger = [page, &engine, uid = obj->uid]() {
+        ContextMenuItem layerMenu;
+        layerMenu.label = "Order";
+        layerMenu.icon = "📑";
+        layerMenu.iconKey = "layers";
+        layerMenu.order = 200;
+        layerMenu.isSeparatorBefore = true;
+
+        // Subaction: Bring to Front
+        ContextMenuItem front;
+        front.label = "Bring to Front";
+        front.shortcut = "Ctrl+Shift+]";
+        front.icon = "⬆";
+        front.iconKey = "bring_to_front";
+        front.order = 201;
+        front.onTrigger = [page, &engine, uid = obj->uid]() {
             page->BringToFront(uid);
             engine.isDirty = true;
             engine.needsFullRebake = true;
         };
-        actions.push_back(std::move(act));
-    }
+        layerMenu.AddSubAction(std::move(front));
 
-    // Action: Bring Forward (Single-step z-order increment, order: 210)
-    {
-        ContextMenuItem act;
-        act.label = "Bring Forward";
-        act.shortcut = "Ctrl+]";
-        act.icon = "⇡";
-        act.iconKey = "bring_forward";
-        act.order = 210;
-        act.onTrigger = [page, &engine, uid = obj->uid]() {
+        // Subaction: Bring Forward (Single-step z-order increment)
+        ContextMenuItem forward;
+        forward.label = "Bring Forward";
+        forward.shortcut = "Ctrl+]";
+        forward.icon = "⇡";
+        forward.iconKey = "bring_forward";
+        forward.order = 202;
+        forward.onTrigger = [page, &engine, uid = obj->uid]() {
             page->ShiftFront(uid);
             engine.isDirty = true;
             engine.needsFullRebake = true;
         };
-        actions.push_back(std::move(act));
-    }
+        layerMenu.AddSubAction(std::move(forward));
 
-    // Action: Send Backward (Single-step z-order decrement, order: 220)
-    {
-        ContextMenuItem act;
-        act.label = "Send Backward";
-        act.shortcut = "Ctrl+[";
-        act.icon = "⇣";
-        act.iconKey = "send_backward";
-        act.order = 220;
-        act.onTrigger = [page, &engine, uid = obj->uid]() {
+        // Subaction: Send Backward (Single-step z-order decrement)
+        ContextMenuItem backward;
+        backward.label = "Send Backward";
+        backward.shortcut = "Ctrl+[";
+        backward.icon = "⇣";
+        backward.iconKey = "send_backward";
+        backward.order = 203;
+        backward.onTrigger = [page, &engine, uid = obj->uid]() {
             page->ShiftBack(uid);
             engine.isDirty = true;
             engine.needsFullRebake = true;
         };
-        actions.push_back(std::move(act));
-    }
+        layerMenu.AddSubAction(std::move(backward));
 
-    // Action: Send to Back (order: 230)
-    {
-        ContextMenuItem act;
-        act.label = "Send to Back";
-        act.shortcut = "Ctrl+Shift+[";
-        act.icon = "⬇";
-        act.iconKey = "send_to_back";
-        act.order = 230;
-        act.onTrigger = [page, &engine, uid = obj->uid]() {
+        // Subaction: Send to Back
+        ContextMenuItem back;
+        back.label = "Send to Back";
+        back.shortcut = "Ctrl+Shift+[";
+        back.icon = "⬇";
+        back.iconKey = "send_to_back";
+        back.order = 204;
+        back.onTrigger = [page, &engine, uid = obj->uid]() {
             page->SendToBack(uid);
             engine.isDirty = true;
             engine.needsFullRebake = true;
         };
-        actions.push_back(std::move(act));
+        layerMenu.AddSubAction(std::move(back));
+
+        actions.push_back(std::move(layerMenu));
     }
 
     // Action: Set as Background / Unlock from Background (order: 190)

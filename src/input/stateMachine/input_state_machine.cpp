@@ -152,10 +152,11 @@ void InputStateMachine::ProcessInputState(CanvasEngine& canvas, DocumentSession&
 
     auto activePg = session.GetActivePage();
     isPdfModeActive = (activePg && activePg->isDedicatedPdf);
-    bool isDedicatedDocActive = isPdfModeActive || (activePg && activePg->isDedicatedMd);
+    // Markdown editor is disabled for prerelease; dedicated PDF viewer manages its own pointer events.
+    bool isDedicatedDocActive = isPdfModeActive;
 
-    // If active page is a dedicated standalone PDF or Markdown note, stroke projection and interaction
-    // are handled directly by their respective views to prevent writing to the background canvas.
+    // If active page is a dedicated standalone PDF document, stroke projection and interaction
+    // are handled directly by its view to prevent writing to the background canvas.
     if (!isDedicatedDocActive) {
         switch (ActiveDevice) {
             case DeviceType::Stylus: DispatchStylus(canvas, session, imguiWantsInput); break;

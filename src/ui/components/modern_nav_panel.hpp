@@ -2091,11 +2091,11 @@ private:
         ImGui::BeginChild("##ColPages", ImVec2(colWidth, colHeight), false, 
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         
-        // Add Page Action Buttons (+ Add Page and + MD)
+        // Add Page Action Button (+ Add Page)
+        // Markdown note creation is disabled for prerelease to focus on the core Canvas engine.
         float btnMargin = ModernNavConfig::ACTION_BUTTON_MARGIN;
         float totalAvailW = std::max(60.0f, colWidth - (btnMargin * 2.0f));
-        float btnAddPageW = std::floor((totalAvailW - 6.0f) * 0.70f);
-        float btnAddMdW = totalAvailW - 6.0f - btnAddPageW;
+        float btnAddPageW = totalAvailW;
 
         ImGui::SetCursorPos(ImVec2(btnMargin, 3.0f));
         ImGui::PushFont(FolioTheme::FontNavBoldLarge ? FolioTheme::FontNavBoldLarge : FolioTheme::FontBold);
@@ -2110,23 +2110,6 @@ private:
                 canvas.ClearSelection(&session);
                 canvas.ApplyDefaultTemplate();
             }
-        }
-        ImGui::SameLine(0.0f, 6.0f);
-        if (RenderActionButton("+ MD", btnAddMdW, ModernNavConfig::ACTION_BUTTON_HEIGHT, theme, theme.colorPageBg)) {
-            auto activeSec = activeNb ? activeNb->GetActiveSection() : nullptr;
-            if (activeSec) {
-                auto newPage = std::make_shared<CanvasPage>("New Note");
-                newPage->nestingLevel = 0;
-                newPage->isDedicatedMd = true;
-                newPage->dedicatedMdContent = "# Untitled Note\n\nStart writing here...\n";
-                activeSec->AddPage(newPage);
-                activeSec->activePageIndex = activeSec->pages.size() - 1;
-                session.workspace.FlushActiveNotebookAsync();
-                canvas.ClearSelection(&session);
-            }
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Create New Markdown Document");
         }
         ImGui::PopFont();
 
@@ -2245,8 +2228,7 @@ private:
                     ImGui::TextColored(theme.colorTextMuted, "Page %zu of %zu", p + 1, activeSec->pages.size());
                     if (page->isDedicatedPdf) {
                         ImGui::TextColored(ImVec4(0.95f, 0.40f, 0.40f, 1.0f), "[Dedicated PDF Document]");
-                    } else if (page->isDedicatedMd) {
-                        ImGui::TextColored(ImVec4(0.38f, 0.65f, 0.98f, 1.0f), "[Dedicated Markdown Note]");
+
                     }
                     ImGui::Separator();
 
@@ -2275,32 +2257,7 @@ private:
                         canvas.ClearSelection(&session);
                         canvas.ApplyDefaultTemplate();
                     }
-                    if (ImGui::MenuItem("Add Markdown Note Below")) {
-                        auto newSub = std::make_shared<CanvasPage>("New Note");
-                        newSub->nestingLevel = std::min(2, page->nestingLevel + 1);
-                        newSub->parentPageGuid = page->guid;
-                        newSub->isDedicatedMd = true;
-                        newSub->dedicatedMdContent = "# Untitled Note\n\n";
-                        activeSec->InsertPage(p + 1, newSub);
-                        activeSec->activePageIndex = p + 1;
-                        session.workspace.FlushActiveNotebookAsync();
-                        canvas.ClearSelection(&session);
-                    }
-                    if (page->isDedicatedMd) {
-                        if (ImGui::MenuItem("Switch to Canvas Mode")) {
-                            page->isDedicatedMd = false;
-                            page->isModified = true;
-                            canvas.needsFullRebake = true;
-                        }
-                    } else if (!page->isDedicatedPdf) {
-                        if (ImGui::MenuItem("Switch to Markdown Mode")) {
-                            page->isDedicatedMd = true;
-                            if (page->dedicatedMdContent.empty()) {
-                                page->dedicatedMdContent = "# " + page->title + "\n\n";
-                            }
-                            page->isModified = true;
-                        }
-                    }
+
                     if (ImGui::MenuItem("Make Subpage (Indent)", nullptr, false, page->nestingLevel < 2)) {
                         activeSec->DemotePage(p);
                     }

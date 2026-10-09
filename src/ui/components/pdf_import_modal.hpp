@@ -30,7 +30,7 @@ public:
     bool isOpen = false;
     PdfDocumentInfo currentDoc;
     PdfImportMode importMode = PdfImportMode::LocalCopy;
-    PdfPlacementMode placementMode = PdfPlacementMode::OnePagePerCanvas;
+    PdfPlacementMode placementMode = PdfPlacementMode::AllPagesStacked;
 
     // Page selection: 0 = All, 1 = Custom Range
     int pageSelectionType = 0;
@@ -74,12 +74,12 @@ public:
         showNewSectionInput = false;
         showNewPageInput = false;
 
-        // Long document default recommendation
+        // Long document default recommendation: Standalone dedicated viewer for 20+ pages
         if (currentDoc.isLongDocument) {
             placementMode = PdfPlacementMode::StandaloneViewer;
             setAsBackground = true;
         } else {
-            placementMode = PdfPlacementMode::OnePagePerCanvas;
+            placementMode = PdfPlacementMode::AllPagesStacked;
             setAsBackground = true;
         }
 

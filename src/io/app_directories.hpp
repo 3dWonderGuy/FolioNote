@@ -18,6 +18,12 @@ public:
     static std::string GetAppRootDirectory(const std::string& overridePath = "");
 
     /**
+     * @brief Explicitly overrides and configures the global application document root directory.
+     * Essential on Android once private storage sandbox path is established by the Activity.
+     */
+    static void SetAppRootDirectory(const std::string& root);
+
+    /**
      * @brief Resolves the directory housing user library bundles (<AppRoot>/Libraries).
      */
     static std::string GetLibrariesDirectory();

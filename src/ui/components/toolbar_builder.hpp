@@ -4,6 +4,7 @@
 #include "ui/imgui_theme.hpp"
 #include "ui/icon_manager.hpp"
 #include "input/preset_manager.hpp"
+#include "app/actions/ui_action.hpp"
 #include <string>
 #include <vector>
 #include <functional>
@@ -76,6 +77,13 @@ public:
         bool isChecked,
         std::function<void(bool)> onToggle = nullptr
     );
+
+    /**
+     * @brief Ingests a decoupled UIAction descriptor, supporting submenus, shortcuts, and icon lookup.
+     * @param action Universal action descriptor.
+     * @return true if activated/clicked.
+     */
+    bool AddAction(const Folio::UIAction& action);
 
     void AddCustom(const std::function<void()>& drawFunc);
 };

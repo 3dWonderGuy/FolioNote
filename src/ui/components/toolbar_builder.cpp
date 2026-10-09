@@ -127,6 +127,38 @@ void FlyoutMenuBuilder::AddCustom(const std::function<void()>& drawFunc) {
     }
 }
 
+bool FlyoutMenuBuilder::AddAction(const Folio::UIAction& action) {
+    if (!action.IsVisible()) return false;
+    if (action.isSeparatorBefore) AddSeparator();
+
+    std::string displayLabel = (action.icon.empty() ? "" : action.icon + " ") + action.label;
+
+    if (action.HasSubActions()) {
+        hasItems = true;
+        if (ImGui::BeginMenu(displayLabel.c_str(), action.IsEnabled())) {
+            for (const auto& sub : action.subActions) {
+                AddAction(sub);
+            }
+            ImGui::EndMenu();
+        }
+        return false;
+    }
+
+    const char* sc = action.shortcut.empty() ? nullptr : action.shortcut.c_str();
+    GLuint tex = static_cast<GLuint>(action.iconTexture);
+    if (tex == 0 && !action.iconKey.empty()) {
+        tex = g_IconManager.LoadOrGetSVG(action.iconKey, "assets/icons/" + action.iconKey + ".svg", 64, true);
+    }
+
+    return AddItem(
+        displayLabel.c_str(),
+        tex,
+        sc,
+        action.IsChecked(),
+        [action]() { action.Execute(); }
+    );
+}
+
 // ============================================================================
 // 2. SETTINGS POPOVER BUILDER IMPLEMENTATION
 // ============================================================================
