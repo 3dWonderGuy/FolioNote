@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =========================================================================================
  * @file backup_manager.cpp
  * @brief Implementation of the 3-Tier Autonomous Backup & Disaster Recovery Engine
@@ -175,6 +175,84 @@ bool ParseBackupMetadata(const std::string& snapshotDir, BackupInfo& outInfo) {
     return true;
 }
 
+/**
+ * @brief Recursively copies a directory tree while gracefully handling OneDrive cloud placeholders,
+ * broken reparse points, and files locked by background processes.
+ *
+ * GENERAL WORKING PROCESS & ERROR RESILIENCE:
+ * 1. Directory Tree Traversal:
+ *    Iterates through sourceDir using std::filesystem::recursive_directory_iterator with
+ *    skip_permission_denied enabled to prevent OS permission traps from crashing the pass.
+ * 2. Reparse Point & Symlink Verification:
+ *    Cloud providers (like Microsoft OneDrive or iCloud) create placeholder reparse points for
+ *    dehydrated files. If a placeholder has no local backing or cannot be resolved, a naive
+ *    std::filesystem::copy fails immediately with ERROR_PATH_NOT_FOUND (The system cannot find the path specified).
+ *    RobustCopyDirectory inspects each entry individually: if it is a broken reparse point/symlink,
+ *    it emits a diagnostic warning and skips it rather than aborting the backup of valid notebooks and data.
+ * 3. Atomic Per-File Replication:
+ *    Directories are created on the destination as encountered. Regular files are copied with
+ *    overwrite_existing. Any single file read error (e.g. temporary sharing violation) is logged as a
+ *    warning and does not invalidate the entire snapshot.
+ *
+ * @param sourceDir Absolute source directory path.
+ * @param destDir Target snapshot directory path.
+ * @param ec Output error code, set only if destination directory cannot be created at all.
+ * @return true if destination directory was prepared and valid content was copied; false on fatal initialization failure.
+ */
+bool RobustCopyDirectory(const std::filesystem::path& sourceDir, const std::filesystem::path& destDir, std::error_code& ec) {
+    ec.clear();
+    std::filesystem::create_directories(destDir, ec);
+    if (ec) {
+        return false;
+    }
+
+    auto options = std::filesystem::directory_options::skip_permission_denied;
+    for (std::filesystem::recursive_directory_iterator it(sourceDir, options, ec), end; it != end; it.increment(ec)) {
+        if (ec) {
+            LOG_WARN(FileManager, "RobustCopyDirectory: Skipping unreadable traversal node: " + ec.message());
+            ec.clear();
+            continue;
+        }
+
+        try {
+            const auto& entry = *it;
+            std::error_code relEc;
+            auto relPath = std::filesystem::relative(entry.path(), sourceDir, relEc);
+            if (relEc) {
+                continue;
+            }
+            auto targetPath = destDir / relPath;
+
+            std::error_code statusEc;
+            auto symStatus = entry.symlink_status(statusEc);
+            if (statusEc) {
+                continue;
+            }
+
+            // Check for broken symlinks and cloud placeholders
+            if (std::filesystem::is_symlink(symStatus)) {
+                if (!std::filesystem::exists(entry.path(), statusEc)) {
+                    LOG_WARN(FileManager, "RobustCopyDirectory: Skipping broken cloud reparse point / symlink: " + entry.path().string());
+                    continue;
+                }
+            }
+
+            if (entry.is_directory(statusEc)) {
+                std::filesystem::create_directories(targetPath, statusEc);
+            } else if (entry.is_regular_file(statusEc)) {
+                std::filesystem::create_directories(targetPath.parent_path(), statusEc);
+                std::filesystem::copy_file(entry.path(), targetPath, std::filesystem::copy_options::overwrite_existing, statusEc);
+                if (statusEc) {
+                    LOG_WARN(FileManager, "RobustCopyDirectory: Skipping copy for file (" + statusEc.message() + "): " + entry.path().string());
+                }
+            }
+        } catch (const std::exception& ex) {
+            LOG_WARN(FileManager, std::string("RobustCopyDirectory exception on entry: ") + ex.what());
+        }
+    }
+    return true;
+}
+
 } // anonymous namespace
 
 // =========================================================================================
@@ -201,7 +279,15 @@ BackupTier BackupManager::StringToTier(const std::string& str) {
 }
 
 std::string BackupManager::GetTierDirectory(BackupTier tier, const std::string& customRoot) {
-    std::string root = customRoot.empty() ? FileManager::GetBackupsDirectory() : customRoot;
+    std::string root = customRoot;
+    if (root.empty()) {
+        const auto& sm = SettingsManager::Instance();
+        if (!sm.primaryBackupDirectory.empty()) {
+            root = sm.primaryBackupDirectory;
+        } else {
+            root = FileManager::GetBackupsDirectory();
+        }
+    }
     if (tier == BackupTier::Manual) {
         return FileManager::JoinPath(root, "manual");
     }
@@ -286,21 +372,29 @@ bool BackupManager::BackupLibraryTiered(const std::string& libraryPath, BackupTi
         }
     }
 
-    std::filesystem::copy(
-        libraryPath,
-        snapshotPath,
-        std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
-        ec
-    );
-
-    if (ec) {
-        LOG_ERROR(FileManager, "BackupLibraryTiered recursive copy failed: " + ec.message());
-        std::filesystem::remove_all(snapshotPath, ec);
+    std::error_code copyEc;
+    if (!RobustCopyDirectory(libraryPath, snapshotPath, copyEc)) {
+        LOG_ERROR(FileManager, "BackupLibraryTiered recursive copy failed: " + copyEc.message());
+        std::filesystem::remove_all(snapshotPath, copyEc);
         return false;
     }
 
     std::string backupId = "backup_lib_" + TierToString(tier) + "_" + timeSuffix;
     WriteBackupMetadata(snapshotPath, backupId, libName, libraryPath, true, nbCount, tier);
+
+    // If a secondary backup mirror destination is configured, mirror the snapshot to it
+    const auto& secDir = SettingsManager::Instance().secondaryBackupDirectory;
+    if (!secDir.empty() && customRoot.empty()) {
+        std::string secTargetDir = GetTierDirectory(tier, secDir);
+        if (FileManager::CreateDirectories(secTargetDir)) {
+            std::string secSnapshotPath = FileManager::JoinPath(secTargetDir, backupFolderName);
+            std::error_code secEc;
+            if (RobustCopyDirectory(snapshotPath, secSnapshotPath, secEc)) {
+                WriteBackupMetadata(secSnapshotPath, backupId, libName, libraryPath, true, nbCount, tier);
+                LOG_INFO(FileManager, "Mirrored backup snapshot to secondary destination: " + secSnapshotPath);
+            }
+        }
+    }
 
     uint64_t totalBytes = CalculateDirectorySize(snapshotPath);
     LOG_INFO(FileManager, "Completed " + TierToString(tier) + " library backup. Snapshot: '" + snapshotPath +
@@ -353,21 +447,29 @@ bool BackupManager::BackupNotebookTiered(const std::string& notebookPath, Backup
         return false;
     }
 
-    std::filesystem::copy(
-        notebookPath,
-        snapshotPath,
-        std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
-        ec
-    );
-
-    if (ec) {
-        LOG_ERROR(FileManager, "BackupNotebookTiered recursive copy failed: " + ec.message());
-        std::filesystem::remove_all(snapshotPath, ec);
+    std::error_code copyEc;
+    if (!RobustCopyDirectory(notebookPath, snapshotPath, copyEc)) {
+        LOG_ERROR(FileManager, "BackupNotebookTiered recursive copy failed: " + copyEc.message());
+        std::filesystem::remove_all(snapshotPath, copyEc);
         return false;
     }
 
     std::string backupId = "backup_nb_" + TierToString(tier) + "_" + timeSuffix;
     WriteBackupMetadata(snapshotPath, backupId, nbName, notebookPath, false, 1, tier);
+
+    // If a secondary backup mirror destination is configured, mirror the snapshot to it
+    const auto& secDir = SettingsManager::Instance().secondaryBackupDirectory;
+    if (!secDir.empty() && customRoot.empty()) {
+        std::string secTargetDir = GetTierDirectory(tier, secDir);
+        if (FileManager::CreateDirectories(secTargetDir)) {
+            std::string secSnapshotPath = FileManager::JoinPath(secTargetDir, backupFolderName);
+            std::error_code secEc;
+            if (RobustCopyDirectory(snapshotPath, secSnapshotPath, secEc)) {
+                WriteBackupMetadata(secSnapshotPath, backupId, nbName, notebookPath, false, 1, tier);
+                LOG_INFO(FileManager, "Mirrored notebook backup snapshot to secondary destination: " + secSnapshotPath);
+            }
+        }
+    }
 
     uint64_t totalBytes = CalculateDirectorySize(snapshotPath);
     LOG_INFO(FileManager, "Completed " + TierToString(tier) + " notebook backup. Snapshot: '" + snapshotPath +

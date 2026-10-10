@@ -137,6 +137,8 @@ public:
     int dailyBackupsRetention = 7;         ///< Number of rolling daily snapshots to retain
     int weeklyBackupsRetention = 4;        ///< Number of rolling weekly snapshots to retain
     int monthlyBackupsRetention = 12;      ///< Number of rolling monthly snapshots to retain
+    std::string primaryBackupDirectory = "";   ///< Local filesystem backup directory. If empty, defaults to isolated local app data (%LOCALAPPDATA%/FolioNote/backups)
+    std::string secondaryBackupDirectory = ""; ///< Optional secondary mirror destination (e.g. secondary drive) for multi-location redundancy
 
     // ==========================================================================
     // Canvas Objects & Media Constraints Configuration
@@ -413,6 +415,8 @@ public:
                 if (jB.contains("dailyBackupsRetention")) dailyBackupsRetention = jB["dailyBackupsRetention"].get<int>();
                 if (jB.contains("weeklyBackupsRetention")) weeklyBackupsRetention = jB["weeklyBackupsRetention"].get<int>();
                 if (jB.contains("monthlyBackupsRetention")) monthlyBackupsRetention = jB["monthlyBackupsRetention"].get<int>();
+                if (jB.contains("primaryBackupDirectory")) primaryBackupDirectory = jB["primaryBackupDirectory"].get<std::string>();
+                if (jB.contains("secondaryBackupDirectory")) secondaryBackupDirectory = jB["secondaryBackupDirectory"].get<std::string>();
             }
 
             // 9. Canvas Objects & Media Constraints Settings
@@ -583,7 +587,9 @@ public:
                 { "autoBackupMonthlyEnabled", autoBackupMonthlyEnabled },
                 { "dailyBackupsRetention", dailyBackupsRetention },
                 { "weeklyBackupsRetention", weeklyBackupsRetention },
-                { "monthlyBackupsRetention", monthlyBackupsRetention }
+                { "monthlyBackupsRetention", monthlyBackupsRetention },
+                { "primaryBackupDirectory", primaryBackupDirectory },
+                { "secondaryBackupDirectory", secondaryBackupDirectory }
             };
 
             // Synchronize with global ObjectConfig in case limits were updated via API

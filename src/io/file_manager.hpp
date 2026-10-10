@@ -95,6 +95,10 @@ public:
         return AppDirectories::GetLogsDirectory();
     }
 
+    static std::string GetLocalDataDirectory() {
+        return AppDirectories::GetLocalDataDirectory();
+    }
+
     static std::string GetBackupsDirectory() {
         return AppDirectories::GetBackupsDirectory();
     }

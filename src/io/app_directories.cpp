@@ -6,6 +6,17 @@
 #include <filesystem>
 #include <SDL3/SDL.h>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shlobj.h>
+#endif
+
 namespace Folio {
 
 namespace {
@@ -13,6 +24,8 @@ std::mutex s_packageRootMutex;
 std::string s_activePackageRoot;
 std::mutex s_appRootMutex;
 std::string s_activeAppRoot;
+std::mutex s_localDataMutex;
+std::string s_activeLocalDataRoot;
 } // anonymous namespace
 
 void AppDirectories::SetAppRootDirectory(const std::string& root) {
@@ -74,8 +87,73 @@ std::string AppDirectories::GetConfigDirectory() {
     return PathUtils::JoinPath(GetAppRootDirectory(), "config");
 }
 
+/**
+ * @brief Resolves the dedicated, local-only application data directory deep in the system file system.
+ *
+ * GENERAL WORKING PROCESS & ARCHITECTURAL MOTIVATION:
+ * 1. Isolation from Cloud Services (OneDrive, Dropbox, iCloud):
+ *    User documents (active notebooks) live in the Documents folder so they can sync to the cloud if the user desires.
+ *    However, backups, ephemeral caches, and disaster recovery snapshots must NEVER be placed in a cloud-synced folder
+ *    because doing so triggers continuous upload churn, eats storage quotas, causes file-locking collisions,
+ *    and fails when encountering dehydrated cloud reparse points.
+ * 2. Platform-Specific Resolution:
+ *    - Windows: Uses SHGetKnownFolderPath with FOLDERID_LocalAppData (%LOCALAPPDATA%/FolioNote).
+ *      Guaranteed to be local machine storage excluded from OneDrive synchronization.
+ *    - Android: Resolves via SDL_GetPrefPath to internal app sandboxed storage.
+ *    - Linux/macOS: Uses SDL_FOLDER_LOCAL_APP_DATA or SDL_FOLDER_APPDATA (e.g. ~/.local/share/FolioNote).
+ *
+ * @return Canonical normalized UTF-8 filesystem path to local-only app data.
+ */
+std::string AppDirectories::GetLocalDataDirectory() {
+    {
+        std::lock_guard<std::mutex> lock(s_localDataMutex);
+        if (!s_activeLocalDataRoot.empty()) {
+            return s_activeLocalDataRoot;
+        }
+    }
+
+#if defined(_WIN32)
+    PWSTR localAppPathW = NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, NULL, &localAppPathW))) {
+        std::filesystem::path localRoot = std::filesystem::path(localAppPathW) / "FolioNote";
+        CoTaskMemFree(localAppPathW);
+        std::string res = PathUtils::NormalizeSeparators(PathUtils::NativePathToUtf8(localRoot));
+        std::lock_guard<std::mutex> lock(s_localDataMutex);
+        s_activeLocalDataRoot = res;
+        return res;
+    }
+#elif defined(__ANDROID__)
+    if (SDL_WasInit(0) != 0) {
+        char* pref = SDL_GetPrefPath("UniversalFramework", "FolioNote");
+        if (pref && pref[0] != '\0') {
+            std::string res = PathUtils::NormalizeSeparators(std::string(pref));
+            SDL_free(pref);
+            std::lock_guard<std::mutex> lock(s_localDataMutex);
+            s_activeLocalDataRoot = res;
+            return res;
+        }
+        if (pref) SDL_free(pref);
+    }
+#else
+    const char* appData = SDL_GetUserFolder(SDL_FOLDER_LOCAL_APP_DATA);
+    if (!appData) appData = SDL_GetUserFolder(SDL_FOLDER_APPDATA);
+    if (appData && appData[0] != '\0') {
+        std::filesystem::path localRoot = PathUtils::Utf8ToNativePath(appData) / "FolioNote";
+        std::string res = PathUtils::NormalizeSeparators(PathUtils::NativePathToUtf8(localRoot));
+        std::lock_guard<std::mutex> lock(s_localDataMutex);
+        s_activeLocalDataRoot = res;
+        return res;
+    }
+#endif
+
+    std::string fallback = PathUtils::JoinPath(GetAppRootDirectory(), "local");
+    std::lock_guard<std::mutex> lock(s_localDataMutex);
+    s_activeLocalDataRoot = fallback;
+    return fallback;
+}
+
 std::string AppDirectories::GetCacheDirectory() {
-    return PathUtils::JoinPath(GetAppRootDirectory(), "cache");
+    return PathUtils::JoinPath(GetLocalDataDirectory(), "cache");
 }
 
 std::string AppDirectories::GetExportsDirectory() {
@@ -87,7 +165,7 @@ std::string AppDirectories::GetLogsDirectory() {
 }
 
 std::string AppDirectories::GetBackupsDirectory() {
-    return PathUtils::JoinPath(GetAppRootDirectory(), "backups");
+    return PathUtils::JoinPath(GetLocalDataDirectory(), "backups");
 }
 
 std::string AppDirectories::GetTempDirectory() {

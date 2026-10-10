@@ -49,7 +49,15 @@ public:
     static std::string GetLogsDirectory();
 
     /**
-     * @brief Resolves the backup snapshot directory (<AppRoot>/backups).
+     * @brief Resolves the dedicated local application data directory.
+     * Guaranteed to reside deep inside the local machine file system (e.g. %LOCALAPPDATA%/FolioNote on Windows,
+     * ~/.local/share/FolioNote on Linux, or app sandbox on Android/macOS).
+     * Strictly isolated from cloud synchronization services like OneDrive, Dropbox, or iCloud.
+     */
+    static std::string GetLocalDataDirectory();
+
+    /**
+     * @brief Resolves the backup snapshot directory (defaults to <LocalData>/backups).
      */
     static std::string GetBackupsDirectory();
 
