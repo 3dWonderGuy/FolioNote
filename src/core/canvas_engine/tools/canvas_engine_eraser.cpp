@@ -69,6 +69,7 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
         debugCollision.candidateUids = candidateUids;
     }
 
+    AABB damageBox = sweptBox;
     bool modified = false;
     for (uint32_t uid : candidateUids) {
         auto obj = activePage->FindObjectByUid(uid);
@@ -90,6 +91,7 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
             }
             if (hit) {
                 if (devMode) debugCollision.hitUids.push_back(obj->uid);
+                damageBox.Merge(obj->bounds);
                 session.RecordErasedObject(obj);
                 activePage->RemoveObject(obj);
                 modified = true;
@@ -98,53 +100,37 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
             if (obj->type == ObjectType::InkContainer) {
                 auto ink = std::static_pointer_cast<InkContainer>(obj);
                 double segLen = std::hypot(w1.x - w0.x, w1.y - w0.y);
-                int steps = std::clamp(static_cast<int>(std::ceil(segLen / (r * 0.6))), 1, 30);
+                int steps = std::clamp(static_cast<int>(std::ceil(segLen / (r * 0.8))), 1, 4);
 
-                auto originalClone = std::shared_ptr<InkContainer>(static_cast<InkContainer*>(ink->Clone().release()));
-
+                std::shared_ptr<InkContainer> originalClone = nullptr;
                 bool inkModified = false;
-                std::vector<std::shared_ptr<InkContainer>> newFragments;
+                std::vector<std::shared_ptr<InkContainer>> dummyFrags;
 
                 for (int s = (steps > 1 ? 0 : 1); s <= steps; ++s) {
                     double t = (steps == 1) ? 1.0 : (static_cast<double>(s) / steps);
                     double curX = w0.x + t * (w1.x - w0.x);
                     double curY = w0.y + t * (w1.y - w0.y);
 
-                    std::vector<std::shared_ptr<InkContainer>> stepFrags;
-                    if (ink->SliceStrokeAt(curX, curY, r, stepFrags)) {
+                    if (!originalClone) {
+                        originalClone = std::shared_ptr<InkContainer>(static_cast<InkContainer*>(ink->Clone().release()));
+                    }
+
+                    if (ink->SliceStrokeAt(curX, curY, r, dummyFrags)) {
                         inkModified = true;
-                        for (auto& frag : stepFrags) {
-                            newFragments.push_back(std::move(frag));
-                        }
                     }
                 }
 
                 if (inkModified) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
-                    std::vector<std::shared_ptr<InkContainer>> survivingFragments;
-
-                    std::shared_ptr<CanvasObject> anchor = ink;
+                    damageBox.Merge(originalClone->bounds);
                     if (ink->strokes.empty()) {
-                        for (auto& frag : newFragments) {
-                            frag->uid = UIDGenerator::Next();
-                            frag->zOrder = ink->zOrder;
-                            activePage->InsertObjectAdjacent(anchor, frag);
-                            anchor = frag;
-                            survivingFragments.push_back(frag);
-                        }
+                        session.RecordErasedObject(ink);
                         activePage->RemoveObject(ink);
                     } else {
+                        damageBox.Merge(ink->bounds);
                         activePage->UpdateObject(ink);
-                        survivingFragments.push_back(ink);
-                        for (auto& frag : newFragments) {
-                            frag->uid = UIDGenerator::Next();
-                            frag->zOrder = ink->zOrder;
-                            activePage->InsertObjectAdjacent(anchor, frag);
-                            anchor = frag;
-                            survivingFragments.push_back(frag);
-                        }
+                        session.RecordSlicedStroke(originalClone, { ink });
                     }
-                    session.RecordSlicedStroke(originalClone, survivingFragments);
                     modified = true;
                 }
             } else {
@@ -154,6 +140,7 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
                 }
                 if (hit) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
+                    damageBox.Merge(obj->bounds);
                     session.RecordErasedObject(obj);
                     activePage->RemoveObject(obj);
                     modified = true;
@@ -165,7 +152,7 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
     if (modified || devMode) {
         isDirty = true;
         if (modified) {
-            InvalidateLayer();
+            InvalidateLayerRect(damageBox);
             ::Folio::UsageTracker::Instance().RecordEraserAction();
             LOG_INFO(CanvasEngine, "Erased content on page (strokeEraser=" + std::string(isStrokeEraser ? "true" : "false") + ")");
         }

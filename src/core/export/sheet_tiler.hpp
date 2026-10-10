@@ -24,7 +24,7 @@
 #include <string>
 #include <cstdint>
 #include "core/spatial/aabb.hpp"
-#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
 
 class CanvasPage;
 class CanvasObject;

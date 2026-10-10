@@ -11,7 +11,7 @@
 #include "core/spatial/aabb.hpp"
 #include "core/objects/canvas_object.hpp"
 #include "core/history/command_history.hpp"
-#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/logger.hpp"

@@ -1,5 +1,5 @@
 #include "core/storage/binary_serializer.hpp"
-#include "core/canvas_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/stroke_outline_builder.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/logger.hpp"

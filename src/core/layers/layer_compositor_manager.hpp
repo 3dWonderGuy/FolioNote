@@ -39,7 +39,7 @@
 #include <unordered_map>
 #include <blend2d/blend2d.h>
 
-#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "core/layers/baked_canvas_layer.hpp"
 #include "core/layers/live_interaction_layer.hpp"
 #include "core/layers/embedded_app_layer.hpp"
@@ -110,18 +110,21 @@ public:
      * @return Reference to Layer 1 host.
      */
     [[nodiscard]] BakedCanvasLayer& GetBakedCanvasLayer() noexcept { return m_bakedLayer; }
+    [[nodiscard]] const BakedCanvasLayer& GetBakedCanvasLayer() const noexcept { return m_bakedLayer; }
 
     /**
      * @brief Direct access to Layer 2 (LiveInteractionLayer).
      * @return Reference to Layer 2 host.
      */
     [[nodiscard]] LiveInteractionLayer& GetLiveInteractionLayer() noexcept { return m_liveLayer; }
+    [[nodiscard]] const LiveInteractionLayer& GetLiveInteractionLayer() const noexcept { return m_liveLayer; }
 
     /**
      * @brief Direct access to Layer 3 (EmbeddedAppLayer).
      * @return Reference to Layer 3 host.
      */
     [[nodiscard]] EmbeddedAppLayer& GetEmbeddedAppLayer() noexcept { return m_appLayer; }
+    [[nodiscard]] const EmbeddedAppLayer& GetEmbeddedAppLayer() const noexcept { return m_appLayer; }
 
 private:
     BakedCanvasLayer     m_bakedLayer;  ///< Layer 1: Static committed entity cache

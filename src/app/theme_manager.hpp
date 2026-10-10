@@ -62,6 +62,22 @@ public:
     ImVec4 colorToolbarItemActive    = ImVec4(0.82f, 0.83f, 0.88f, 0.90f); // Button active background inside shelf
     ImVec4 colorToolbarSeparator     = ImVec4(0.84f, 0.85f, 0.89f, 0.80f); // Section vertical separator line
 
+    // Canvas Background & Grid Line Theming (Global Definitions)
+    ImVec4 colorCanvasBgLight    = ImVec4(1.00f, 1.00f, 1.00f, 1.00f); // Pure white paper (#FFFFFF)
+    ImVec4 colorCanvasBgDark     = ImVec4(0.12f, 0.13f, 0.15f, 1.00f); // Dark canvas paper (#1E2026)
+    ImVec4 colorCanvasGridLight  = ImVec4(0.92f, 0.93f, 0.95f, 1.00f); // Light grid rule (#EBEEF2)
+    ImVec4 colorCanvasGridDark   = ImVec4(0.20f, 0.22f, 0.27f, 1.00f); // Dark grid rule (#343844)
+
+    [[nodiscard]] bool IsDarkMode() const noexcept {
+        return currentPreset == ThemePreset::FolioDark || colorBg.x < 0.5f;
+    }
+    [[nodiscard]] ImVec4 GetCanvasBgColor(bool isDark) const noexcept {
+        return isDark ? colorCanvasBgDark : colorCanvasBgLight;
+    }
+    [[nodiscard]] ImVec4 GetCanvasGridColor(bool isDark) const noexcept {
+        return isDark ? colorCanvasGridDark : colorCanvasGridLight;
+    }
+
     // Geometry Rounding Metrics
     float windowRounding     = 0.0f;
     float childRounding      = 6.0f;

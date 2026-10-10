@@ -114,8 +114,9 @@ namespace Folio {
         return s_logMtx;
     }
 
-    /// When true, all INFO logs are streamed to console, disk, and listeners (like Klipper verbose logging)
-    inline bool enableVerboseLogging = true;
+    /// When true, all INFO logs are streamed to console, disk, and listeners (like Klipper verbose logging).
+    /// Default is false to keep the console clean and eliminate high-frequency input logging overhead.
+    inline bool enableVerboseLogging = false;
 
     // --- CLI / External Streamer Hook ---
     using LogStreamListener = std::function<void(const FolioLogEntry&)>;

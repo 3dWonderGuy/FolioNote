@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file core/canvas_engine/stroke_smoother.hpp
+ * @file core/ink_engine/stroke_smoother.hpp
  * @brief Core Vector Ink Geometry Primitives (Point2D, Segment1D, FinishedStrokeData)
  * =========================================================================================
  *
@@ -11,7 +11,7 @@
 
 #include <vector>
 #include <blend2d/blend2d.h>
-#include "core/canvas_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/stroke_outline_builder.hpp"
 
 /**
  * @struct Point2D

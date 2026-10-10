@@ -20,8 +20,8 @@
  */
 
 #include "core/layers/live_interaction_layer.hpp"
-#include "core/canvas_engine/selection_gizmo.hpp"
-#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/gizmo/selection_gizmo.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -34,7 +34,8 @@ LiveInteractionLayer::LiveInteractionLayer() {
 }
 
 bool LiveInteractionLayer::HasActiveInteraction() const noexcept {
-    return m_livePipeline.HasActiveData() ||
+    return m_inkEngine.IsStrokeActive() ||
+           !m_inkEngine.GetEphemeralStrokes().empty() ||
            m_hasBorrowedStroke ||
            m_hasActiveGizmo    ||
            (m_boundGizmo && m_boundGizmo->HasSelection()) ||
@@ -57,6 +58,14 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
 
     // Pass 2: Laser Pointer Glowing Trail (World Coordinates with chronological alpha fade)
     RenderLaserPointer(ctx, viewport);
+    if (!m_inkEngine.GetEphemeralStrokes().empty()) {
+        ctx.save();
+        ctx.set_transform(viewport.worldToScreenMatrix);
+        uint64_t nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+        m_inkEngine.RenderEphemeralStrokes(ctx, nowMs);
+        ctx.restore();
+    }
 
     // Pass 3: Selection / Transform Gizmo & Handles (Screen Coordinates for crisp fixed-size handles)
     RenderGizmo(ctx, viewport);
@@ -88,18 +97,10 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
  */
 void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& viewport) {
     // 1. Primary Vector Inking Engine: Continuous Modeled Ribbon Polygon (Google Ink & Spring Physics)
-    if (m_livePipeline.isStrokeActive) {
+    if (m_inkEngine.IsStrokeActive()) {
         ctx.save();
         ctx.set_transform(viewport.worldToScreenMatrix);
-        ctx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
-        ctx.set_fill_style(m_livePipeline.activePenTool.color);
-
-        if (!m_livePipeline.liveStrokeOutline.is_empty()) {
-            ctx.fill_path(m_livePipeline.liveStrokeOutline);
-        }
-        if (!m_livePipeline.predictedStrokeOutline.is_empty()) {
-            ctx.fill_path(m_livePipeline.predictedStrokeOutline);
-        }
+        m_inkEngine.RenderLiveStroke(ctx);
         ctx.restore();
         return;
     }
@@ -433,23 +434,23 @@ void LiveInteractionLayer::RenderEraser(BLContext& ctx) {
 
 void LiveInteractionLayer::BeginStroke(double worldXMm, double worldYMm, float pressure, double timeSec,
                                        const PenTool& tool, float zoomScale, float tiltX, float tiltY) {
-    m_livePipeline.BeginStroke(worldXMm, worldYMm, pressure, timeSec, tool, zoomScale, tiltX, tiltY);
+    m_inkEngine.BeginStroke(worldXMm, worldYMm, pressure, timeSec, tool, zoomScale, tiltX, tiltY);
     m_isInking = true;
 }
 
 void LiveInteractionLayer::AddStrokePoint(double worldXMm, double worldYMm, float pressure, double timeSec,
                                           float zoomScale, float tiltX, float tiltY) {
-    m_livePipeline.AddStrokePoint(worldXMm, worldYMm, pressure, timeSec, zoomScale, tiltX, tiltY);
+    m_inkEngine.AppendPoint(worldXMm, worldYMm, pressure, timeSec, tiltX, tiltY);
 }
 
 FinishedStrokeData LiveInteractionLayer::FinishStroke() {
     m_isInking = false;
-    return m_livePipeline.FinishStroke();
+    return m_inkEngine.FinishStroke();
 }
 
 void LiveInteractionLayer::CancelStroke() {
     m_isInking = false;
-    m_livePipeline.CancelStroke();
+    m_inkEngine.CancelStroke();
 }
 
 // -----------------------------------------------------------------------------

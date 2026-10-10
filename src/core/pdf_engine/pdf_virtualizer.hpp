@@ -3,7 +3,7 @@
 #include <vector>
 #include <utility>
 #include "imgui.h"
-#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/ink_engine/stroke_smoother.hpp"
 #include "core/pdf_engine/pdf_types.hpp"
 
 namespace Folio {

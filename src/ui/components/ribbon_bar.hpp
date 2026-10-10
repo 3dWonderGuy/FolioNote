@@ -3673,17 +3673,7 @@ public:
                         isCanvasInverted,
                         [&]() {
                             isCanvasInverted = !isCanvasInverted;
-                            if (isCanvasInverted) {
-                                canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
-                                canvas.gridLineColor = BLRgba32(0x34, 0x38, 0x44);
-                                canvas.inkColorInverted = true;
-                            } else {
-                                canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
-                                canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
-                                canvas.inkColorInverted = false;
-                            }
-                            canvas.isDirty = true;
-                            canvas.needsFullRebake = true;
+                            canvas.SetInkColorInverted(isCanvasInverted);
                         }, false, ImVec2(78.0f, 58.0f)
                     );
 
@@ -4398,17 +4388,7 @@ public:
             bool invCanvas = isCanvasInverted;
             if (ImGui::Checkbox("Invert Canvas Mode", &invCanvas)) {
                 isCanvasInverted = invCanvas;
-                if (isCanvasInverted) {
-                    canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
-                    canvas.gridLineColor = BLRgba32(0x34, 0x38, 0x44);
-                    canvas.inkColorInverted = true;
-                } else {
-                    canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
-                    canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
-                    canvas.inkColorInverted = false;
-                }
-                canvas.isDirty = true;
-                canvas.needsFullRebake = true;
+                canvas.SetInkColorInverted(isCanvasInverted);
             }
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, theme.colorTextMuted);
@@ -5022,18 +5002,9 @@ public:
         if (ImGui::Button("Set as Default", ImVec2(btnW, 32.0f))) {
             canvas.defaultTemplate.paperStyle = canvas.currentPaperStyle;
             canvas.defaultTemplate.gridSpacingMm = canvas.gridSpacingMm;
-            if (isCanvasInverted) {
-                canvas.defaultTemplate.invertedBgColor = canvas.canvasBgColor;
-                canvas.defaultTemplate.invertedLineColor = canvas.gridLineColor;
-            } else {
-                canvas.defaultTemplate.normalBgColor = canvas.canvasBgColor;
-                canvas.defaultTemplate.normalLineColor = canvas.gridLineColor;
-            }
-            canvas.defaultTemplate.showBorder = canvas.showPageBorder;
-            canvas.defaultTemplate.borderColor = canvas.pageBorderColor;
-            canvas.defaultTemplate.borderWidth = canvas.pageBorderWidth;
-            canvas.defaultTemplate.borderType = canvas.pageBorderType;
-            canvas.defaultTemplate.borderStyle = canvas.pageBorderStyle;
+            canvas.defaultTemplate.paperColor = canvas.canvasBgColor;
+            canvas.defaultTemplate.gridColor = canvas.gridLineColor;
+            canvas.defaultTemplate.border = canvas.pageBorder;
             canvas.defaultTemplate.pageSizeFormat = canvas.pageSizeFormat;
             canvas.defaultTemplate.pageIsLandscape = canvas.pageIsLandscape;
             canvas.defaultTemplate.infinityMode = canvas.infinityMode;
@@ -5052,11 +5023,8 @@ public:
         if (ImGui::Button("Reset", ImVec2(btnW, 32.0f))) {
             canvas.currentPaperStyle = PaperStyle::Grid;
             canvas.gridSpacingMm = 5.0;
-            canvas.canvasBgColor = isCanvasInverted ? BLRgba32(0x1E, 0x20, 0x26) : BLRgba32(0xFF, 0xFF, 0xFF);
-            canvas.gridLineColor = isCanvasInverted ? BLRgba32(0x34, 0x38, 0x44) : BLRgba32(0xEB, 0xEE, 0xF2);
-            canvas.showPageBorder = false;
-            canvas.pageBorderType = PageBorderType::Automatic;
-            canvas.pageBorderStyle = PageBorderStyle::Continuous;
+            canvas.UpdateThemeColors();
+            canvas.pageBorder = {};
             canvas.pageSizeFormat = PageSizeFormat::Letter;
             canvas.pageIsLandscape = false;
             canvas.SetInfinityMode(CanvasInfinityMode::SemiInfinity);

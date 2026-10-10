@@ -50,8 +50,8 @@
 
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/object_registry.hpp"
-#include "core/canvas_engine/stroke_collision.hpp"
-#include "core/canvas_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/stroke_collision.hpp"
+#include "core/ink_engine/stroke_outline_builder.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -422,23 +422,7 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                 }
 
                 newStroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, newStroke.capType, newStroke.strokePattern);
-
-                if (newStrokes.empty() && subIdx == 0) {
-                    newStrokes.push_back(std::move(newStroke));
-                } else {
-                    auto fragContainer = std::make_shared<InkContainer>();
-                    fragContainer->transform = this->transform;
-                    fragContainer->zOrder = this->zOrder;
-                    fragContainer->pageIndex = this->pageIndex;
-                    fragContainer->opacity = this->opacity;
-                    fragContainer->isHighlighter = this->isHighlighter;
-                    fragContainer->isVisible = this->isVisible;
-                    fragContainer->isLocked = this->isLocked;
-                    fragContainer->isSelectable = this->isSelectable;
-                    fragContainer->groupId = this->groupId;
-                    fragContainer->AddStroke(newStroke);
-                    outNewFragments.push_back(fragContainer);
-                }
+                newStrokes.push_back(std::move(newStroke));
             }
         } else {
             newStrokes.push_back(stroke);

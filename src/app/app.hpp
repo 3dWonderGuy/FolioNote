@@ -11,9 +11,9 @@
 #include "imgui.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_opengl3.h"
-#include "ui/components/tuning_overlay.hpp"
-#include "ui/components/toolbar_demo_overlay.hpp"
-#include "ui/components/pdf_import_modal.hpp"
+#include "ui/overlays/tuning_overlay.hpp"
+#include "ui/overlays/toolbar_demo_overlay.hpp"
+#include "ui/overlays/pdf_import_modal.hpp"
 #include "app/settings_manager.hpp"
 #include "app/theme_manager.hpp"
 #include "app/window_state_manager.hpp"
@@ -28,7 +28,7 @@
 #include "ui/imgui_theme.hpp"
 #include "ui/components/ribbon_bar.hpp"
 #include "ui/components/modern_nav_panel.hpp"
-#include "ui/components/debug_overlay.hpp"
+#include "ui/overlays/debug_overlay.hpp"
 #include "ui/components/custom_titlebar.hpp"
 #include "ui/views/notebook_hub.hpp"
 #include "ui/views/pdf_viewer_page.hpp"
@@ -432,6 +432,7 @@ public:
         // Sync loaded settings to RibbonBar and InputStateMachine
         ribbon.drawWithTouch = SettingsManager::Instance().drawWithTouch;
         ribbon.rulerEnabled = SettingsManager::Instance().rulerEnabled;
+        canvas.ruler.SetEnabled(ribbon.rulerEnabled);
         ribbon.autoShapesEnabled = SettingsManager::Instance().autoShapesEnabled;
         ribbon.isStrokeEraser = SettingsManager::Instance().isStrokeEraser;
         ribbon.isDynamicEraser = SettingsManager::Instance().isDynamicEraser;
@@ -464,15 +465,7 @@ public:
 
             sm.currentAction = sm.GetActiveDeviceTool();
         }
-        if (ribbon.isCanvasInverted) {
-            canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
-            canvas.gridLineColor = BLRgba32(0x34, 0x38, 0x44);
-            canvas.inkColorInverted = true;
-        } else {
-            canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
-            canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
-            canvas.inkColorInverted = false;
-        }
+        canvas.SetInkColorInverted(ribbon.isCanvasInverted);
 
         // Apply loaded presets and active preset
         ribbon.presetManager.LoadFromSettings();
@@ -566,17 +559,7 @@ public:
 
         reg.RegisterAction(Folio::UIAction("Toggle Dark / Inverted Canvas", "Ctrl+I", "🌓", false, true, false, [this]() {
             ribbon.isCanvasInverted = !ribbon.isCanvasInverted;
-            if (ribbon.isCanvasInverted) {
-                canvas.canvasBgColor = BLRgba32(0x1E, 0x20, 0x26);
-                canvas.gridLineColor = BLRgba32(0x34, 0x38, 0x44);
-                canvas.inkColorInverted = true;
-            } else {
-                canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
-                canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
-                canvas.inkColorInverted = false;
-            }
-            canvas.isDirty = true;
-            canvas.needsFullRebake = true;
+            canvas.SetInkColorInverted(ribbon.isCanvasInverted);
         }, 14, false, "contrast", 0, "canvas.invert", "Canvas"));
 
         // =========================================================================
@@ -1328,6 +1311,22 @@ public:
                         inputManager.wasCanvasImageHovered = false;
                         inputManager.stateMachine.isCanvasHovered = false;
                         inputManager.stateMachine.pointerIcons.Apply(false, ImGui::GetIO().WantCaptureMouse);
+                    }
+
+                    // -------------------------------------------------------------------------
+                    // DIGITAL STRAIGHTEDGE RULER OVERLAY
+                    // -------------------------------------------------------------------------
+                    if (canvas.ruler.IsEnabled() != ribbon.rulerEnabled) {
+                        canvas.ruler.SetEnabled(ribbon.rulerEnabled);
+                        if (ribbon.rulerEnabled) {
+                            Point2D viewCenter = canvas.transform.ScreenToWorld(canvasSize.x * 0.5f, canvasSize.y * 0.5f);
+                            canvas.ruler.SetCenter(viewCenter.x, viewCenter.y);
+                        }
+                    }
+                    if (canvas.ruler.IsEnabled()) {
+                        const bool isDarkTheme = (themeManager.currentPreset == ThemePreset::FolioDark) || (themeManager.colorPanel.x < 0.5f);
+                        canvas.ruler.RenderImGui(canvas.transform, canvasOrigin, canvasSize, isDarkTheme);
+                        ribbon.rulerEnabled = canvas.ruler.IsEnabled();
                     }
 
                     // =========================================================================

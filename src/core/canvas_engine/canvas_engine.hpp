@@ -6,71 +6,64 @@
 #include <SDL3/SDL_opengl.h>
 #endif
 #include <blend2d/blend2d.h>
-#include "core/objects/canvas_object.hpp"
-#include "core/objects/ink_container/ink_container.hpp"
-#include "core/objects/media/images/image_container.hpp"
-#include "core/objects/media/images/image_decoder.hpp"
-#include "core/objects/media/audio/audio_container.hpp"
-#include "core/objects/primitives/shape_container.hpp"
-#include "core/objects/pdf_container.hpp"
-#include "core/objects/connectors/smart_arrow_container.hpp"
-#include "core/objects/attachment_container/attachment_container.hpp"
-#include "core/objects/text/text_box.hpp"
-#include "core/objects/text/text_editor_state.hpp"
-#include "core/overlay/interactive_overlay_host.hpp"
-#include "core/overlay/web_overlay.hpp"
-#include "core/storage/pdf_storage.hpp"
-#include "core/canvas_engine/canvas_transform.hpp"
-#include "core/layers/layer_compositor_manager.hpp"
-#include "core/actions/action_scheduler.hpp"
-#include "core/canvas_engine/selection_gizmo.hpp"
-#include "core/document/document_session.hpp"
-#include "core/history/canvas_command.hpp"
-#include "utils/usage_tracker.hpp"
-#include "utils/logger.hpp"
-#include "utils/error_codes.hpp"
-#include "utils/uid_generator.hpp"
-#include "utils/guid_generator.hpp"
 #include <vector>
 #include <string>
 #include <memory>
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <functional>
-#include <chrono>
+#include <cstdint>
 #include <SDL3/SDL_dialog.h>
 
+#include "core/objects/canvas_object.hpp"
+#include "core/objects/text/text_editor_state.hpp"
+#include "core/overlay/interactive_overlay_host.hpp"
+#include "core/storage/pdf_storage.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
+#include "core/layers/layer_compositor_manager.hpp"
+#include "core/actions/action_scheduler.hpp"
+#include "core/canvas_engine/gizmo/selection_gizmo.hpp"
+#include "core/objects/primitives/shape_types.hpp"
+#include "core/objects/connectors/connector_types.hpp"
+#include "core/ink_engine/ink_engine.hpp"
+#include "core/canvas_engine/tools/ruler_tool.hpp"
+
+// Forward declarations
+class DocumentSession;
+struct SDL_Window;
+
+namespace Folio {
+    class ShapeObject;
+    class SmartArrowObject;
+    class TextBoxObject;
+}
+
+/**
+ * @struct PageTemplateDefaults
+ * @brief Default paper styling, encapsulated border configuration, and spatial dimensions for new pages.
+ *
+ * Theme-driven colors (such as dark/inverted paper and grid lines) are managed globally via
+ * ThemeManager / ObjectConfig. Templates specify structural paper style and encapsulated border metrics.
+ */
 struct PageTemplateDefaults {
-    PaperStyle paperStyle = PaperStyle::Grid;
-    double gridSpacingMm = 5.0;
-    BLRgba32 normalBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
-    BLRgba32 invertedBgColor = BLRgba32(0x1E, 0x20, 0x26);
-    BLRgba32 normalLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
-    BLRgba32 invertedLineColor = BLRgba32(0x34, 0x38, 0x44);
-    bool showBorder = false;
-    BLRgba32 borderColor = BLRgba32(0xD0, 0xD4, 0xDC);
-    double borderWidth = 1.5;
-    PageBorderType borderType = PageBorderType::Automatic;
-    PageBorderStyle borderStyle = PageBorderStyle::Continuous;
+    PaperSettings paper;                                          ///< Encapsulated paper style, grid spacing, and colors
+    PageBorderSettings border;                                    ///< Encapsulated border configuration
+
+    // Compatibility aliases for legacy direct access
+    PaperStyle& paperStyle = paper.style;
+    double& gridSpacingMm = paper.gridSpacingMm;
+    BLRgba32& paperColor = paper.paperColor;
+    BLRgba32& gridColor  = paper.gridColor;
+
+    // Compatibility aliases for legacy direct access
+    bool& showBorder = border.isVisible;
+    BLRgba32& borderColor = border.color;
+    double& borderWidth = border.width;
+    PageBorderType& borderType = border.type;
+    PageBorderStyle& borderStyle = border.style;
+
     PageSizeFormat pageSizeFormat = PageSizeFormat::Letter;
     bool pageIsLandscape = false;
     CanvasInfinityMode infinityMode = CanvasInfinityMode::SemiInfinity;
     double calibrationDpi = 96.0;
-};
-
-/**
- * @struct EphemeralStroke
- * @brief Represents a transient presentation stroke (e.g. Laser Pointer) that decays quadratically over time.
- */
-struct EphemeralStroke {
-    BLPath outlinePath;
-    BLRgba32 baseColor;
-    uint64_t startTimeMs = 0;
-    uint32_t durationMs = 2500;
 };
 
 class CanvasEngine {
@@ -81,6 +74,13 @@ public:
     SelectionGizmo selectionGizmo;
     Folio::TextEditorState textEditor;
     Folio::InteractiveOverlayHost interactiveOverlayHost;
+    Folio::RulerTool ruler;                                       ///< Interactive digital straightedge ruler
+    [[nodiscard]] Folio::InkEngine& GetInkEngine() noexcept {
+        return layerCompositor.GetLiveInteractionLayer().GetInkEngine();
+    }
+    [[nodiscard]] const Folio::InkEngine& GetInkEngine() const noexcept {
+        return layerCompositor.GetLiveInteractionLayer().GetInkEngine();
+    }
 
     // -------------------------------------------------------------------------
     // DEFAULT TYPOGRAPHY SETTINGS (Basic Text Ribbon Group & Click-to-Type)
@@ -95,9 +95,11 @@ public:
     BLRgba32 defaultTextHighlightColor{0x00, 0x00, 0x00, 0x00};
     uint8_t defaultTextAlignment = 0; // 0: Left, 1: Center, 2: Right
 
-    // Ephemeral Presentation Ink / Laser Pointer storage
-    std::vector<EphemeralStroke> ephemeralStrokes;
-
+    // Ephemeral Presentation Ink / Laser Pointer (delegated to LiveInteractionLayer's inkEngine)
+    using EphemeralStroke = Folio::EphemeralStroke;
+    [[nodiscard]] const std::vector<EphemeralStroke>& GetEphemeralStrokes() const noexcept {
+        return layerCompositor.GetLiveInteractionLayer().GetInkEngine().GetEphemeralStrokes();
+    }
     void AddEphemeralStroke(BLPath path, BLRgba32 color, uint32_t durationMs = 2500);
     void ClearEphemeralStrokes();
 
@@ -108,21 +110,25 @@ public:
     char pageTitle[128] = "New Untitled";
     std::string pageDateStr = "Tuesday, August 18, 2026";
     std::string pageTimeStr = "9:54 PM";
-    PaperStyle currentPaperStyle = PaperStyle::Grid;
+    // Encapsulated paper style, grid intervals, and coloring
+    PaperSettings paperSettings;
 
-    // Grid spacing standard: 5.0 mm rule
-    double gridSpacingMm = 5.0;
+    // Compatibility aliases for direct member access
+    PaperStyle& currentPaperStyle = paperSettings.style;
+    double& gridSpacingMm = paperSettings.gridSpacingMm;
+    BLRgba32& canvasBgColor = paperSettings.paperColor;
+    BLRgba32& gridLineColor = paperSettings.gridColor;
 
-    // Theme-driven canvas paper colors (defaults to light mode paper)
-    BLRgba32 canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
-    BLRgba32 gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
+    // Encapsulated page border settings
+    PageBorderSettings pageBorder;
 
-    // Page Border settings
-    bool showPageBorder = false;
-    BLRgba32 pageBorderColor = BLRgba32(0xD0, 0xD4, 0xDC);
-    double pageBorderWidth = 1.5;
-    PageBorderType pageBorderType = PageBorderType::Automatic;
-    PageBorderStyle pageBorderStyle = PageBorderStyle::Continuous;
+    // Compatibility aliases for direct member access
+    bool& showPageBorder = pageBorder.isVisible;
+    BLRgba32& pageBorderColor = pageBorder.color;
+    double& pageBorderWidth = pageBorder.width;
+    PageBorderType& pageBorderType = pageBorder.type;
+    PageBorderStyle& pageBorderStyle = pageBorder.style;
+
     PageSizeFormat pageSizeFormat = PageSizeFormat::Letter;
     bool pageIsLandscape = false;
     double customPageWidthMm = 215.9;
@@ -174,8 +180,13 @@ public:
     bool isDirty = true;
     bool needsFullRebake = true;      // Background grid + all objects
 
-    // Canvas-level ink color invert (dark mode trick: keeps ink readable without changing presets)
+    // Canvas-level ink color invert and dark mode state
+    bool isDarkMode = false;
     bool inkColorInverted = false;
+
+    void SetDarkMode(bool dark) noexcept;
+    void SetInkColorInverted(bool inverted) noexcept;
+    void UpdateThemeColors();
 
     BLImage compositeSurface;
     GLuint glTexture = 0;

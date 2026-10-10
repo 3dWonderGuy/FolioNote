@@ -92,6 +92,9 @@ public:
     bool isDarkMode = true;
     bool isCanvasInverted = false;
 
+    // Diagnostics & Logging State
+    bool verboseLogging = false; ///< When true, streams high-frequency [INFO] logs to console/disk; when false, silences them to eliminate console spam.
+
     /**
      * @brief Global default notebook accent color for newly created notebooks.
      * Normalized RGBA float array [R, G, B, A] spanning [0.0f, 1.0f].
@@ -441,6 +444,15 @@ public:
                 }
             }
 
+            // 10. Diagnostics & Verbose Logging
+            if (j.contains("diagnostics") && j["diagnostics"].is_object()) {
+                const auto& jDiag = j["diagnostics"];
+                if (jDiag.contains("verboseLogging")) {
+                    verboseLogging = jDiag["verboseLogging"].get<bool>();
+                    Folio::enableVerboseLogging = verboseLogging;
+                }
+            }
+
             // Synchronize in-memory global ObjectConfig singleton with loaded constraints and theme
             objectConfig.isDarkMode = isDarkMode;
             objectConfig.isCanvasInverted = isCanvasInverted;
@@ -587,6 +599,11 @@ public:
                 { "maxAttachmentFileSizeBytes", objectConfig.maxAttachmentFileSizeBytes },
                 { "attachmentChipWidthMm", objectConfig.attachmentChipWidthMm },
                 { "attachmentChipHeightMm", objectConfig.attachmentChipHeightMm }
+            };
+
+            // Diagnostics section
+            j["diagnostics"] = {
+                { "verboseLogging", verboseLogging }
             };
 
             return Folio::FileWriter::WriteString(filepath, j.dump(2));

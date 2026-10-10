@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file ui/actions/action_command_palette.hpp
+ * @file ui/overlays/command_palette.hpp
  * @brief Spotlight-Style Interactive Action Search & Command Palette Modal
  * =========================================================================================
  *

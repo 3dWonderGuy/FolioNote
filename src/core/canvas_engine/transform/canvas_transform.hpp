@@ -3,13 +3,42 @@
 #include <algorithm>
 #include <cmath>
 #include <blend2d/blend2d.h>
-#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/ink_engine/stroke_smoother.hpp"
 #include "core/spatial/aabb.hpp"
 
 enum class PaperStyle { Grid, Lined, Blank, Dotted, Cornell };
 enum class PageBorderType { Automatic, Fixed };
 enum class PageBorderStyle { Continuous, Dashed, Corners };
 enum class PageSizeFormat { Letter, A4, A3, A5, Custom };
+
+/**
+ * @struct PaperSettings
+ * @brief Encapsulates paper pattern style, grid intervals, and background coloring.
+ *
+ * Provides a unified data model for paper layout and rules across template defaults,
+ * canvas engine state, and page rasterization passes.
+ */
+struct PaperSettings {
+    PaperStyle style = PaperStyle::Grid;                          ///< Grid, Lined, Blank, Dotted, Cornell
+    double gridSpacingMm = 5.0;                                   ///< Rule / dot grid interval in physical world mm
+    BLRgba32 paperColor = BLRgba32(0xFF, 0xFF, 0xFF);             ///< Base paper background color
+    BLRgba32 gridColor  = BLRgba32(0xEB, 0xEE, 0xF2);             ///< Grid rule / dot stroke color
+};
+
+/**
+ * @struct PageBorderSettings
+ * @brief Encapsulates page border visibility, stroke styling, metrics, and sizing type.
+ *
+ * Provides a unified data model for page boundaries across template defaults,
+ * canvas engine state, and document rendering pipelines.
+ */
+struct PageBorderSettings {
+    bool isVisible = false;                                       ///< Whether page boundaries are visually demarcated
+    BLRgba32 color = BLRgba32(0xD0, 0xD4, 0xDC);                  ///< Border stroke outline color
+    double width = 1.5;                                           ///< Border stroke outline thickness in points/mm
+    PageBorderType type = PageBorderType::Automatic;              ///< Dynamic content-fitted or fixed dimensions
+    PageBorderStyle style = PageBorderStyle::Continuous;          ///< Continuous line, dashed, or corner brackets
+};
 
 enum class CanvasInfinityMode {
     SemiInfinity,      // OneNote style: origin (0, 0), extends right and down

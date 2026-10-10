@@ -87,6 +87,7 @@ int main(int argc, char* argv[])
                       << "Usage: FolioNote [options] [document.pdf]\n\n"
                       << "Options:\n"
                       << "  --import <path>       Import a PDF document into FolioNote\n"
+                      << "  --verbose, -v, --debug Enable verbose diagnostics and info logging\n"
                       << "  --install-printer     Register 'Print to FolioNote' virtual printer (requires Admin UAC)\n"
                       << "  --uninstall-printer   Remove 'Print to FolioNote' virtual printer (requires Admin UAC)\n"
                       << "  --check-printer       Verify if 'Print to FolioNote' virtual printer is installed\n"
@@ -107,6 +108,8 @@ int main(int argc, char* argv[])
             bool installed = Folio::PrinterInstaller::IsPrinterInstalled();
             std::cout << "[FolioNote] 'Print to FolioNote' printer is " << (installed ? "installed." : "not installed.") << std::endl;
             return installed ? 0 : 1;
+        } else if (arg == "--verbose" || arg == "-v" || arg == "--debug") {
+            Folio::enableVerboseLogging = true;
         } else if (arg == "--import" && i + 1 < argc) {
             initialImportPath = argv[++i];
         } else if (arg.size() >= 4 && (arg.substr(arg.size() - 4) == ".pdf" || arg.substr(arg.size() - 4) == ".PDF")) {

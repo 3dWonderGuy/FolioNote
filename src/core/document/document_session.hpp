@@ -15,7 +15,7 @@
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text/text_box.hpp"
-#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/ink_engine/stroke_smoother.hpp"
 #include "input/pen_palette.hpp"
 #include "core/history/canvas_command.hpp"
 #include "core/backup/page_version_manager.hpp"

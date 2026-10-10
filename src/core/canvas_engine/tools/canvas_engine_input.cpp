@@ -5,19 +5,24 @@
 #include <cmath>
 
 void CanvasEngine::AddEphemeralStroke(BLPath path, BLRgba32 color, uint32_t durationMs) {
-    auto nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count());
-    ephemeralStrokes.push_back(EphemeralStroke{std::move(path), color, nowMs, durationMs});
+    layerCompositor.GetLiveInteractionLayer().GetInkEngine().AddEphemeralStroke(std::move(path), color, durationMs);
     isDirty = true;
 }
 
 void CanvasEngine::ClearEphemeralStrokes() {
-    ephemeralStrokes.clear();
+    layerCompositor.GetLiveInteractionLayer().GetInkEngine().ClearEphemeralStrokes();
     isDirty = true;
 }
 
 void CanvasEngine::OnPointerDown(float screenX, float screenY, float pressure, double timeSec, const PenTool& tool, float tiltX, float tiltY) {
     Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
+    if (ruler.IsEnabled()) {
+        auto snap = ruler.SnapPoint(worldMm);
+        if (snap.isSnapped) {
+            worldMm = snap.point;
+            ruler.SetActiveInkingState(true, 0.0);
+        }
+    }
     lastInkingWorldMm = worldMm;
     isCurrentlyInking = true;
 
@@ -31,6 +36,14 @@ void CanvasEngine::OnPointerDown(float screenX, float screenY, float pressure, d
 
 void CanvasEngine::OnPointerMove(float screenX, float screenY, float pressure, double timeSec, float tiltX, float tiltY) {
     Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
+    if (ruler.IsEnabled()) {
+        auto snap = ruler.SnapPoint(worldMm);
+        if (snap.isSnapped) {
+            worldMm = snap.point;
+            double drawnLen = std::hypot(worldMm.x - lastInkingWorldMm.x, worldMm.y - lastInkingWorldMm.y);
+            ruler.SetActiveInkingState(true, drawnLen);
+        }
+    }
     if (isCurrentlyInking) {
         double dx = worldMm.x - lastInkingWorldMm.x;
         double dy = worldMm.y - lastInkingWorldMm.y;
@@ -48,6 +61,9 @@ void CanvasEngine::OnPointerMove(float screenX, float screenY, float pressure, d
 
 void CanvasEngine::OnPointerUp(DocumentSession& session, const PenTool& tool) {
     isCurrentlyInking = false;
+    if (ruler.IsEnabled()) {
+        ruler.SetActiveInkingState(false, 0.0);
+    }
     FinishedStrokeData data = layerCompositor.GetLiveInteractionLayer().FinishStroke();
 
     isDirty = true;

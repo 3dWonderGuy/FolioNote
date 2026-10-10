@@ -1,11 +1,11 @@
 /**
  * =========================================================================================
- * @file ui/actions/action_command_palette.cpp
+ * @file ui/overlays/command_palette.cpp
  * @brief Implementation of Spotlight-Style Action Command Palette
  * =========================================================================================
  */
 
-#include "ui/actions/action_command_palette.hpp"
+#include "ui/overlays/command_palette.hpp"
 #include "app/actions/ui_action_registry.hpp"
 #include "ui/imgui_theme.hpp"
 #include <algorithm>

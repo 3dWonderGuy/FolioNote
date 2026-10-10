@@ -12,7 +12,7 @@
 #include "input/stateMachine/input_configuration.hpp"
 #include "input/stateMachine/special_action_manager.hpp"
 #include "input/stateMachine/pointer_icon_manager.hpp"
-#include "core/canvas_engine/stroke_smoother.hpp"
+#include "core/ink_engine/stroke_smoother.hpp"
 #include "utils/logger.hpp"
 #include "utils/physics_model.hpp"
 #include <array>

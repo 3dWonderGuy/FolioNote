@@ -1,4 +1,5 @@
 #include "core/canvas_engine/canvas_engine.hpp"
+#include "core/objects/object_config.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/media/images/image_container.hpp"
 #include <algorithm>
@@ -42,17 +43,34 @@ void CanvasEngine::GetCalculatedPageBoundsMm(double& outW, double& outH) const {
 void CanvasEngine::ApplyDefaultTemplate() {
     currentPaperStyle = defaultTemplate.paperStyle;
     gridSpacingMm = defaultTemplate.gridSpacingMm;
-    canvasBgColor = inkColorInverted ? defaultTemplate.invertedBgColor : defaultTemplate.normalBgColor;
-    gridLineColor = inkColorInverted ? defaultTemplate.invertedLineColor : defaultTemplate.normalLineColor;
-    showPageBorder = defaultTemplate.showBorder;
-    pageBorderColor = defaultTemplate.borderColor;
-    pageBorderWidth = defaultTemplate.borderWidth;
-    pageBorderType = defaultTemplate.borderType;
-    pageBorderStyle = defaultTemplate.borderStyle;
+
+    // Theme-controlled canvas background and grid colors (global single source of truth)
+    bool dark = isDarkMode || inkColorInverted;
+    canvasBgColor = Folio::ObjectConfig::Get().GetCanvasBackgroundColor(dark);
+    gridLineColor = Folio::ObjectConfig::Get().GetCanvasGridColor(dark);
+
+    pageBorder = defaultTemplate.border;
     pageSizeFormat = defaultTemplate.pageSizeFormat;
     pageIsLandscape = defaultTemplate.pageIsLandscape;
     SetInfinityMode(defaultTemplate.infinityMode);
     transform.SetDPI(static_cast<float>(defaultTemplate.calibrationDpi));
+    InvalidateLayer();
+}
+
+void CanvasEngine::SetDarkMode(bool dark) noexcept {
+    isDarkMode = dark;
+    UpdateThemeColors();
+}
+
+void CanvasEngine::SetInkColorInverted(bool inverted) noexcept {
+    inkColorInverted = inverted;
+    UpdateThemeColors();
+}
+
+void CanvasEngine::UpdateThemeColors() {
+    bool dark = isDarkMode || inkColorInverted;
+    canvasBgColor = Folio::ObjectConfig::Get().GetCanvasBackgroundColor(dark);
+    gridLineColor = Folio::ObjectConfig::Get().GetCanvasGridColor(dark);
     InvalidateLayer();
 }
 

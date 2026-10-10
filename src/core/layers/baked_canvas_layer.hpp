@@ -32,7 +32,7 @@
 #include <blend2d/blend2d.h>
 
 #include "core/spatial/aabb.hpp"
-#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
 
 class CanvasPage;
 class CanvasObject;

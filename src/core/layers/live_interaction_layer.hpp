@@ -6,10 +6,10 @@
 #include <functional>
 #include <blend2d/blend2d.h>
 
-#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/canvas_engine/stroke_smoother.hpp"
-#include "core/canvas_engine/live_layer_pipeline.hpp"
+#include "core/ink_engine/stroke_smoother.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 
 class SelectionGizmo;
 
@@ -240,8 +240,8 @@ public:
      */
     void CancelStroke();
 
-    [[nodiscard]] LiveLayerPipeline& GetInkingPipeline() noexcept { return m_livePipeline; }
-    [[nodiscard]] const LiveLayerPipeline& GetInkingPipeline() const noexcept { return m_livePipeline; }
+    [[nodiscard]] InkEngine& GetInkEngine() noexcept { return m_inkEngine; }
+    [[nodiscard]] const InkEngine& GetInkEngine() const noexcept { return m_inkEngine; }
 
     // --- Direct Ingestion API for Fallback / Raw Telemetry Views ---
     /**
@@ -360,8 +360,8 @@ private:
     std::vector<Point2D>   m_internalLassoPoints;
     bool                   m_isLassoing = false;
 
-    // High-performance physics-modeled inking pipeline
-    LiveLayerPipeline      m_livePipeline;
+    // High-performance physics-modeled inking engine
+    InkEngine              m_inkEngine;
 
     std::function<void(BLContext&, const Viewport&)> m_customRenderer;
 };

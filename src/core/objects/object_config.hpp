@@ -60,6 +60,12 @@ struct ObjectConfig {
     uint32_t cardEmbeddedColor    = 0xD200B39A; ///< Mint Teal for self-contained sidecar attachments
     uint32_t cardLinkColor        = 0xBE0078D4; ///< Acrylic Blue for external disk links
 
+    // Canvas Paper & Grid Tokens (32-bit ARGB packed hex)
+    uint32_t canvasBgColorLight   = 0xFFFFFFFF; ///< Light mode pure white paper (#FFFFFF)
+    uint32_t canvasBgColorDark    = 0xFF1E2026; ///< Dark/inverted charcoal canvas paper (#1E2026)
+    uint32_t canvasGridColorLight = 0xFFEBEEF2; ///< Light mode subtle grid line (#EBEEF2)
+    uint32_t canvasGridColorDark  = 0xFF343844; ///< Dark/inverted subtle grid line (#343844)
+
     // Card Geometry & Typography Tokens
     double cardCornerRadiusMm     = 2.0;        ///< Corner fillet radius in physical world mm
     double cardTypeBandWidthMm    = 8.0;        ///< Left filetype color-band strip width (mm)
@@ -114,6 +120,26 @@ struct ObjectConfig {
         uint8_t baseAlpha = static_cast<uint8_t>((c >> 24) & 0xFF);
         uint8_t a = static_cast<uint8_t>(baseAlpha * std::clamp(alphaMultiplier, 0.0f, 1.0f));
         return BLRgba32((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, a);
+    }
+
+    /**
+     * @brief Resolves the global canvas paper background color for light or dark/inverted mode.
+     * @param isDark True for dark mode or inverted canvas.
+     * @return BLRgba32 evaluated background color.
+     */
+    [[nodiscard]] BLRgba32 GetCanvasBackgroundColor(bool isDark) const noexcept {
+        uint32_t c = isDark ? canvasBgColorDark : canvasBgColorLight;
+        return BLRgba32((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, (c >> 24) & 0xFF);
+    }
+
+    /**
+     * @brief Resolves the global canvas grid/rule line color for light or dark/inverted mode.
+     * @param isDark True for dark mode or inverted canvas.
+     * @return BLRgba32 evaluated grid line color.
+     */
+    [[nodiscard]] BLRgba32 GetCanvasGridColor(bool isDark) const noexcept {
+        uint32_t c = isDark ? canvasGridColorDark : canvasGridColorLight;
+        return BLRgba32((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, (c >> 24) & 0xFF);
     }
 
     // =========================================================================

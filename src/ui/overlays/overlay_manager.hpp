@@ -34,11 +34,11 @@
 #include <string>
 #include <imgui.h>
 
-#include "ui/actions/action_command_palette.hpp"
-#include "ui/components/debug_overlay.hpp"
-#include "ui/components/tuning_overlay.hpp"
-#include "ui/components/toolbar_demo_overlay.hpp"
-#include "ui/components/pdf_import_modal.hpp"
+#include "ui/overlays/command_palette.hpp"
+#include "ui/overlays/debug_overlay.hpp"
+#include "ui/overlays/tuning_overlay.hpp"
+#include "ui/overlays/toolbar_demo_overlay.hpp"
+#include "ui/overlays/pdf_import_modal.hpp"
 #include "app/theme_manager.hpp"
 
 // Forward declarations

@@ -17,6 +17,7 @@
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
+#include <SDL3/SDL_dialog.h>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN

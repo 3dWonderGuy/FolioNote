@@ -77,7 +77,7 @@
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/overlay/web_overlay.hpp"
-#include "core/canvas_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/stroke_outline_builder.hpp"
 #include "utils/logger.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/uid_generator.hpp"

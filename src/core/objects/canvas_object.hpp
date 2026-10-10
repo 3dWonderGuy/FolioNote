@@ -6,8 +6,8 @@
 #include <blend2d/blend2d.h>
 #include "core/spatial/aabb.hpp"
 #include "core/spatial/aabb_utils.hpp"
-#include "core/canvas_engine/gizmo_types.hpp"
-#include "core/canvas_engine/canvas_transform.hpp"
+#include "core/canvas_engine/gizmo/gizmo_types.hpp"
+#include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "core/objects/object_config.hpp"
 
 namespace Folio {

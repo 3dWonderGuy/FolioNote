@@ -4,6 +4,7 @@
 #include "input/input_state_machine.hpp"
 #include "app/window_state_manager.hpp"
 #include "app/theme_manager.hpp"
+#include "app/settings_manager.hpp"
 #include "io/file_logger.hpp"
 #include "core/document/document_session.hpp"
 #include <deque>
@@ -357,6 +358,11 @@ public:
 
                 ImGui::SameLine();
                 ImGui::Checkbox("Auto-Scroll", &autoScroll);
+                ImGui::SameLine();
+                if (ImGui::Checkbox("Verbose Console Logs", &::Folio::enableVerboseLogging)) {
+                    SettingsManager::Instance().verboseLogging = ::Folio::enableVerboseLogging;
+                    SettingsManager::Instance().Save();
+                }
 
                 ImGui::Separator();
 
