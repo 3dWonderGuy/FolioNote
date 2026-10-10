@@ -36,6 +36,8 @@
 #include "ui/shell/app_shell.hpp"
 #include "ui/overlays/overlay_manager.hpp"
 #include "app/actions/ui_action_registry.hpp"
+#include "ui/framework/ui_animation_manager.hpp"
+#include "ui/framework/ui_overlay_host.hpp"
 #include "input/input_manager.hpp"
 #include "io/file_reader.hpp"
 #include "utils/usage_tracker.hpp"
@@ -1038,6 +1040,9 @@ public:
             ImGui_ImplSDL3_NewFrame();
             ImGui::NewFrame();
 
+            // Advance frame-rate independent UI animations, springs, and tweens
+            Folio::UI::UIAnimationManager::Instance().Update(io.DeltaTime);
+
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                 ::Folio::UsageTracker::Instance().RecordClick();
             }
@@ -1452,6 +1457,9 @@ public:
                 ribbon.showDemoOverlay = false;
             }
             overlayManager.RenderModalsAndOverlays(canvas, inputManager.stateMachine, windowSM, session, themeManager);
+
+            // Render modern floating overlays, modals, and toast notification stack
+            Folio::UI::UIOverlayHost::Instance().Render(io.DeltaTime);
 
             ImGui::Render();
             glViewport(0, 0, pixelW, pixelH);

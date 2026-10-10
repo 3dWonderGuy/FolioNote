@@ -27,6 +27,16 @@ enum class ThemePreset {
 
 class ThemeManager {
 public:
+    inline static ThemeManager* s_activeInstance = nullptr;
+    static ThemeManager& Instance() {
+        static ThemeManager s_fallback;
+        return s_activeInstance ? *s_activeInstance : s_fallback;
+    }
+
+    ThemeManager() {
+        s_activeInstance = this;
+    }
+
     ThemePreset currentPreset = ThemePreset::FolioColor;
 
     // Core Color Palette (FolioColor Light Mode Defaults - Signature Orange)

@@ -34,16 +34,19 @@ To keep official releases stable, this repository uses a staged branching model:
 
 ## 3. Development Guidelines & Philosophy
 
-- **Readability Over Hyper-Optimization:** Clear, understandable, and maintainable code is prioritized over clever micro-optimizations. Avoid deeply nested logic or overly obscure pointer tricks unless profiling proves a critical hot path bottleneck.
+- **Readability Over Hyper-Optimization:** Clear, understandable, and maintainable code is prioritized over clever micro-optimizations. Avoid deeply nested logic or overly obscure pointer tricks unless profiling proves a critical hot path bottleneck. Keep files organized and don't let them get too big.
 - **Consistent Common Formatting:** Keep formatting clean and match the style of the surrounding codebase (standard 4-space indentation, clear variable names, and logical function decomposition).
 - **Cross-Platform Integrity:** Verify that changes do not break desktop builds or Android NDK targets.
 - **Memory Safety:** Favor modern C++ standards, RAII, and standard containers over unmanaged manual allocations where feasible.
+- **AI use:** I have nothing against ai use but don't let it write code for you. Make sure you review it, understand it, we don't what this complex application turn into ai bloat.
+
 
 ---
 
 ## 4. Submitting a Pull Request (PR)
 
 1. Ensure your branch builds cleanly without compiler errors or warnings on your development platform.
+If it is data critical modifications make sure they pass the test in testing folder, if changes are extensive make sure testing file is updated as well, document your chanages throughly.
 2. Push your branch to your fork on GitHub.
 3. Open a Pull Request **targeting the `develop` branch**.
 4. Fill in the provided **Pull Request Template** completely with the context of your changes and platforms tested.
@@ -53,4 +56,4 @@ To keep official releases stable, this repository uses a staged branching model:
 ## 5. Reporting Bugs & Requesting Features
 
 - Use the dedicated **Bug Report** and **Feature Request** issue forms available in the repository's Issues tab.
-- For architectural questions, math discussions, or general inquiries, please use **GitHub Discussions** instead of opening an issue.
+- For architectural questions, math discussions, or general inquiries, please use **GitHub Discussions** instead of opening an issue. In future I might start discored sever
