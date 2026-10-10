@@ -1,16 +1,18 @@
 /**
  * =========================================================================================
- * @file io/file_manager.cpp
+ * @file io/facade/file_manager.cpp
  * @brief Implementation of Core Filesystem Tree Operations & Directory Mutations
  * =========================================================================================
  */
 
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/error_codes.hpp"
 
 #include <filesystem>
 #include <algorithm>
+#include <vector>
+#include <SDL3/SDL.h>
 
 namespace Folio {
 
@@ -85,24 +87,66 @@ bool FileManager::RemoveDirectoryRecursive(const std::string& dirPath) {
 }
 
 bool FileManager::CopySingleFile(const std::string& sourcePath, const std::string& destinationPath, bool overwrite) {
-    std::error_code ec;
-    auto srcNative = PathUtils::Utf8ToNativePath(sourcePath);
-    auto dstNative = PathUtils::Utf8ToNativePath(destinationPath);
+    if (sourcePath.empty() || destinationPath.empty()) {
+        return false;
+    }
 
     std::string parentDir = PathUtils::GetParentPath(destinationPath);
     if (!parentDir.empty()) {
         CreateDirectories(parentDir);
     }
 
-    auto options = overwrite ? std::filesystem::copy_options::overwrite_existing 
-                             : std::filesystem::copy_options::skip_existing;
-    bool ok = std::filesystem::copy_file(srcNative, dstNative, options, ec);
-    if (ec) {
-        LOG_ERROR(FileManager, FormatError(FolioErrorCode::SysFileWriteFailed, 
-            "CopySingleFile failed: " + sourcePath + " -> " + destinationPath + " | " + ec.message()));
+    std::error_code ec;
+    auto srcNative = PathUtils::Utf8ToNativePath(sourcePath);
+    auto dstNative = PathUtils::Utf8ToNativePath(destinationPath);
+
+    // If source is a standard disk path (not an Android content:// URI), try fast OS copy first
+    if (sourcePath.rfind("content://", 0) != 0) {
+        auto options = overwrite ? std::filesystem::copy_options::overwrite_existing 
+                                 : std::filesystem::copy_options::skip_existing;
+        if (std::filesystem::copy_file(srcNative, dstNative, options, ec) && !ec) {
+            return true;
+        }
+    }
+
+    // Fallback: Cross-platform stream copy via SDL_IOStream
+    // Essential on Android where SAF returns content:// URIs that standard C++ filesystem cannot open
+    SDL_IOStream* inStream = SDL_IOFromFile(sourcePath.c_str(), "rb");
+    if (!inStream) {
+        LOG_ERROR(FileManager, FormatError(FolioErrorCode::SysFileReadFailed, 
+            "CopySingleFile failed to open source: " + sourcePath + " (" + SDL_GetError() + ")"));
         return false;
     }
-    return ok;
+
+    SDL_IOStream* outStream = SDL_IOFromFile(destinationPath.c_str(), overwrite ? "wb" : "ab");
+    if (!outStream) {
+        SDL_CloseIO(inStream);
+        LOG_ERROR(FileManager, FormatError(FolioErrorCode::SysFileWriteFailed, 
+            "CopySingleFile failed to open destination: " + destinationPath + " (" + SDL_GetError() + ")"));
+        return false;
+    }
+
+    std::vector<uint8_t> buffer(65536);
+    size_t bytesRead = 0;
+    bool writeSuccess = true;
+    while ((bytesRead = SDL_ReadIO(inStream, buffer.data(), buffer.size())) > 0) {
+        if (SDL_WriteIO(outStream, buffer.data(), bytesRead) != bytesRead) {
+            writeSuccess = false;
+            break;
+        }
+    }
+
+    SDL_CloseIO(inStream);
+    SDL_CloseIO(outStream);
+
+    if (!writeSuccess) {
+        LOG_ERROR(FileManager, FormatError(FolioErrorCode::SysFileWriteFailed, 
+            "CopySingleFile stream write failed: " + sourcePath + " -> " + destinationPath));
+        std::filesystem::remove(dstNative, ec);
+        return false;
+    }
+
+    return true;
 }
 
 bool FileManager::CopyDirectoryRecursive(const std::string& sourceDir, const std::string& destinationDir) {

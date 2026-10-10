@@ -632,8 +632,6 @@ void InputManager::HandleTouchEvent(const SDL_Event& event) {
     // FINGER CONTACT DOWN: Allocate slot
     // -------------------------------------------------------------------------
     if (event.type == SDL_EVENT_FINGER_DOWN) {
-        LOG_INFO(InputManager, "TOUCH FINGER DOWN: ID=" + std::to_string(event.tfinger.fingerID) +
-                               " at (" + std::to_string(px) + ", " + std::to_string(py) + ")");
         for (auto& slot : stateMachine.activeFingers) {
             // Find first unused slot marked by sentinel fingerID == -1
             if (slot.fingerID == -1) {
@@ -666,7 +664,6 @@ void InputManager::HandleTouchEvent(const SDL_Event& event) {
     // FINGER UP / CANCELED: Free slot
     // -------------------------------------------------------------------------
     else if (event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED) {
-        LOG_INFO(InputManager, "TOUCH FINGER UP: ID=" + std::to_string(event.tfinger.fingerID));
         for (auto& slot : stateMachine.activeFingers) {
             if (slot.fingerID == event.tfinger.fingerID) {
                 // Return slot to pool by resetting sentinel to -1

@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file io/file_manager.hpp
+ * @file io/facade/file_manager.hpp
  * @brief Centralized, Modular, Cross-Platform Filesystem Abstraction Layer for FolioNote
  * =========================================================================================
  *
@@ -10,21 +10,21 @@
  * operations in FolioNote. To maintain clean modularity and keep implementation files
  * maintainable (< 300 lines each), low-level domains are partitioned into dedicated submodules:
  *
- * - PathUtils: Unicode-aware path manipulation, normalization, and sanitization.
- * - AppDirectories: Standard application and package folder resolution.
- * - SystemDialogs: Native OS file pickers, shell launchers, and clipboard bridge.
- * - FileWriter: Crash-resilient atomic persistence and physical drive synchronization.
- * - FileReader: Cross-platform asset loading, stream acquisition, and content hashing.
+ * - PathUtils (io/paths/path_utils.hpp): Unicode-aware path manipulation, normalization, and sanitization.
+ * - AppDirectories (io/paths/app_directories.hpp): Standard application and package folder resolution.
+ * - SystemDialogs (io/platform/system_dialogs.hpp): Native OS file pickers, shell launchers, and clipboard bridge.
+ * - FileWriter (io/storage/file_writer.hpp): Crash-resilient atomic persistence and physical drive synchronization.
+ * - FileReader (io/storage/file_reader.hpp): Cross-platform asset loading, stream acquisition, and content hashing.
  *
- * All public interfaces remain accessible via FileManager to guarantee complete
- * backward compatibility across the codebase.
+ * All public interfaces remain accessible via FileManager to guarantee clean,
+ * centralized access across the codebase.
  */
 
-#include "io/path_utils.hpp"
-#include "io/app_directories.hpp"
-#include "io/system_dialogs.hpp"
-#include "io/file_writer.hpp"
-#include "io/file_reader.hpp"
+#include "io/paths/path_utils.hpp"
+#include "io/paths/app_directories.hpp"
+#include "io/platform/system_dialogs.hpp"
+#include "io/storage/file_writer.hpp"
+#include "io/storage/file_reader.hpp"
 
 #include <string>
 #include <string_view>

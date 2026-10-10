@@ -1,0 +1,27 @@
+var struct_inking_tuning_config =
+[
+    [ "EvaluatePressure", "struct_inking_tuning_config.html#a3976d8a595ffaecc881c7895cc6f7c74", null ],
+    [ "barrelButton1", "struct_inking_tuning_config.html#a650778a6e12366aec6747d5f662b81f1", null ],
+    [ "barrelButton2", "struct_inking_tuning_config.html#a5dc9a57fd0c0712edd5849e9a81998c5", null ],
+    [ "enablePressureCurve", "struct_inking_tuning_config.html#a3069715705ed48f9e388649720d137d2", null ],
+    [ "google_drag_constant", "struct_inking_tuning_config.html#aa073cb06f718faee9cd2b80976dd9f23", null ],
+    [ "google_dynamic_width_smoothing", "struct_inking_tuning_config.html#a28a68658b8ffd73911a85898637e1772", null ],
+    [ "google_enable_prediction", "struct_inking_tuning_config.html#a6e8f3714d8665efab5424a6d0c35baf2", null ],
+    [ "google_max_width_multiplier", "struct_inking_tuning_config.html#a951d5ce9cb724c7c28db6069a3f37d2b", null ],
+    [ "google_min_width_multiplier", "struct_inking_tuning_config.html#a90345d55422520702ceee9704e1ccb1b", null ],
+    [ "google_spring_mass_constant", "struct_inking_tuning_config.html#ae9f048bf8ee135875593458396e1baba", null ],
+    [ "google_use_pressure", "struct_inking_tuning_config.html#a09868c4467e0d0fb2967a423dd135e0b", null ],
+    [ "google_use_velocity", "struct_inking_tuning_config.html#ae60e6b73b6b8c47e053118369bbd5fd3", null ],
+    [ "google_velocity_thinning_max_speed", "struct_inking_tuning_config.html#af450142815180736e9a6779679149c59", null ],
+    [ "google_wobble_enable", "struct_inking_tuning_config.html#ae45157bc133755a137330827ab60e2bc", null ],
+    [ "google_wobble_speed_ceiling", "struct_inking_tuning_config.html#a809e30d0159110c98a0f9f02e3e63dd1", null ],
+    [ "google_wobble_speed_floor", "struct_inking_tuning_config.html#a05a0cd630e404468e14449309bb64346", null ],
+    [ "google_wobble_timeout_s", "struct_inking_tuning_config.html#aeea9196320ed55bc84964bd9668fc24f", null ],
+    [ "manualOffsetXMm", "struct_inking_tuning_config.html#a8d88999efeae9a72460eda9eac4b9659", null ],
+    [ "manualOffsetYMm", "struct_inking_tuning_config.html#aea625c490ccd265fa2d26deaf93794be", null ],
+    [ "minRelativeThicknessFraction", "struct_inking_tuning_config.html#a38a546c2fb01fb28f29344043d996ccd", null ],
+    [ "pressureDeadzoneMin", "struct_inking_tuning_config.html#a29cf2ab6f211355eefd3b3d1652c9416", null ],
+    [ "pressureGamma", "struct_inking_tuning_config.html#a3d7ec021f7b0da231803678d08b42de8", null ],
+    [ "pressureSaturationMax", "struct_inking_tuning_config.html#a653429b00487dd3b4e434b279bbcfbb5", null ],
+    [ "tailEraserTip", "struct_inking_tuning_config.html#a786049728047dfdcb03084108b460474", null ]
+];

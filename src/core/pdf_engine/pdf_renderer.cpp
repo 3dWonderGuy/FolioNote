@@ -1,7 +1,7 @@
 #include "core/pdf_engine/pdf_renderer.hpp"
 #include "utils/logger.hpp"
-#include "io/file_reader.hpp"
-#include "io/file_manager.hpp"
+#include "io/storage/file_reader.hpp"
+#include "io/facade/file_manager.hpp"
 
 #include <SDL3/SDL.h>
 #include <algorithm>

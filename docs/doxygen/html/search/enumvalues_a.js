@@ -1,0 +1,23 @@
+var searchData=
+[
+  ['large_0',['Large',['../namespace_folio_u_i.html#af0ffba5e51f953e7d3abdc4e0367cba7a3a69b34ce86dacb205936a8094f6c743',1,'FolioUI::Large'],['../namespace_folio_1_1_u_i.html#a881e668f7200647f63b2508fcbf177a9a3a69b34ce86dacb205936a8094f6c743',1,'Folio::UI::Large']]],
+  ['laserpointer_1',['LaserPointer',['../pen__palette_8hpp.html#a78db2b3e38509743bd78678a43926255a83b431cf6a2e07a16610da81d3b77719',1,'pen_palette.hpp']]],
+  ['lasso_2',['Lasso',['../class_canvas_engine.html#a4fc44cbb9e95b36f686335c3ef0cb6afa57c9b9c47ca1d9e07f7a39184ce0173d',1,'CanvasEngine']]],
+  ['lassotool_3',['LassoTool',['../tuning__overlay_8hpp.html#a272e1fb91d84be2ab8bd2ab174f2d9c1af5ae9efb743262f798b96cabb59d62d0',1,'tuning_overlay.hpp']]],
+  ['layercompositormanager_4',['LayerCompositorManager',['../namespace_folio.html#a6a4a1b0ae6f46fd303d34631a0919babae0dd7e6aadb518704aa586093a7373d4',1,'Folio']]],
+  ['leftcenter_5',['LeftCenter',['../gizmo__types_8hpp.html#a9bb407805a3b1239566f68b4cccccb6eac7304bf037c39d7f1dcc0f8b81398247',1,'gizmo_types.hpp']]],
+  ['letter_6',['Letter',['../canvas__transform_8hpp.html#aa68ccfd76923ea9b205e190b3caebf78a17a53d1a012580ef609b70ef6a25d1f1',1,'canvas_transform.hpp']]],
+  ['libraryfolders_7',['LibraryFolders',['../notebook__hub_8hpp.html#a6a884465b5da808a5e8f4535ae45f749abc6a8a91e9e9d72e631cb0e713480511',1,'notebook_hub.hpp']]],
+  ['librarymanager_8',['LibraryManager',['../namespace_folio.html#a6a4a1b0ae6f46fd303d34631a0919babadc1b8a5d7ce7df798f3b89f4bca8d47a',1,'Folio']]],
+  ['librarypackage_9',['LibraryPackage',['../namespace_folio.html#abeb2cdcdacdbe2aac5f8d014b6e1bee0a6548d90d13883510d32b89cb3da3053e',1,'Folio']]],
+  ['line_10',['Line',['../namespace_folio.html#a50848f0c126e6c3c42c106bdec65b957a4803e6b9e63dabf04de980788d6a13c4',1,'Folio']]],
+  ['linear_11',['Linear',['../namespace_folio_1_1_u_i.html#a0a6c98b6a620ad2131bee76439ffd543a32a843da6ea40ab3b17a3421ccdf671b',1,'Folio::UI']]],
+  ['lineargradient_12',['LinearGradient',['../namespace_folio.html#ae013138364b655e91aba61f1020aad37a2a7a5ee931feedab83c9c05a3a707a71',1,'Folio']]],
+  ['linearpolylines_13',['LinearPolylines',['../tuning__overlay_8hpp.html#a3c7eadfa13047b10bfba05f390a6e135a4d23c714c0074ae1219c40fff6d530c1',1,'tuning_overlay.hpp']]],
+  ['linearrow_14',['LineArrow',['../namespace_folio.html#a50848f0c126e6c3c42c106bdec65b957a92e2c4781703f4241cae7d35d5553ee5',1,'Folio']]],
+  ['lined_15',['Lined',['../canvas__transform_8hpp.html#a206bb7b2b237cc2142874b6b0d447c73a3f141ed5a81c38221731c718828d6f40',1,'canvas_transform.hpp']]],
+  ['link_16',['Link',['../namespace_folio.html#ae55a5c0a1120c6d1becb7507e101817fa97e7c9a7d06eac006a28bf05467fcc8b',1,'Folio::Link'],['../canvas__object_8hpp.html#ad77a2400b6233b221e23bc962da32b0da97e7c9a7d06eac006a28bf05467fcc8b',1,'Link:&#160;canvas_object.hpp']]],
+  ['livemathsolver_17',['LiveMathSolver',['../namespace_folio.html#a4407541329ab590acc864ca8bacf2663ada809911152610ef0711dded52d985df',1,'Folio']]],
+  ['loading_18',['Loading',['../namespace_folio.html#a7e670a1b1348444a9ee6ad8a97adeecda16bfbf9c462762cf1cba4134ec53c504',1,'Folio']]],
+  ['localcopy_19',['LocalCopy',['../namespace_folio.html#a9d4d39ef09dc711b5b4a05f120525caaa91f611e1bb6f4f79f17f8b4368819fd1',1,'Folio']]]
+];

@@ -6,7 +6,7 @@
  */
 
 #include "core/objects/media/images/image_decoder.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 
 #include <lunasvg.h>
 #include <algorithm>

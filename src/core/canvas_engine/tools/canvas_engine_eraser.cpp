@@ -4,7 +4,6 @@
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/primitives/shape_container.hpp"
 #include "utils/uid_generator.hpp"
-#include "utils/usage_tracker.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <cmath>
@@ -153,7 +152,6 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
         isDirty = true;
         if (modified) {
             InvalidateLayerRect(damageBox);
-            ::Folio::UsageTracker::Instance().RecordEraserAction();
             LOG_INFO(CanvasEngine, "Erased content on page (strokeEraser=" + std::string(isStrokeEraser ? "true" : "false") + ")");
         }
     }

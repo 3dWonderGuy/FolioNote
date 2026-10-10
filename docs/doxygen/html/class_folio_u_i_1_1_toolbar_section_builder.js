@@ -1,0 +1,27 @@
+var class_folio_u_i_1_1_toolbar_section_builder =
+[
+    [ "ToolbarSectionBuilder", "class_folio_u_i_1_1_toolbar_section_builder.html#a52144ff15bb33bb9142317bc860008e0", null ],
+    [ "AddCircleButton", "class_folio_u_i_1_1_toolbar_section_builder.html#aa3de0af0b429f93d784219aca5c0c79b", null ],
+    [ "AddLargeButton", "class_folio_u_i_1_1_toolbar_section_builder.html#a7a547a47108e9b8dd6a4932bf374d49a", null ],
+    [ "AddPenNibControl", "class_folio_u_i_1_1_toolbar_section_builder.html#ae9066ee6c6519db27b3a093455180c45", null ],
+    [ "AddPillButton", "class_folio_u_i_1_1_toolbar_section_builder.html#a1415293bd371a260224cbc3bb98d3b15", null ],
+    [ "AddSmallButton", "class_folio_u_i_1_1_toolbar_section_builder.html#aa34452a75a7859fa87f44d223c889078", null ],
+    [ "AddSplitButton", "class_folio_u_i_1_1_toolbar_section_builder.html#a65f82297e1a515ec581000300a72039a", null ],
+    [ "AddWidget", "class_folio_u_i_1_1_toolbar_section_builder.html#a47634e026bed7dce0c45f36df060d001", null ],
+    [ "AddZoomCompound", "class_folio_u_i_1_1_toolbar_section_builder.html#abd1674d6aaf4b2d9b971881c3dac25d6", null ],
+    [ "BeginStack", "class_folio_u_i_1_1_toolbar_section_builder.html#a850edbf7d29656b75f206e3372098133", null ],
+    [ "EndStack", "class_folio_u_i_1_1_toolbar_section_builder.html#a61d25fa500db774162f01fe9ac5e1b75", null ],
+    [ "FlowNextItem", "class_folio_u_i_1_1_toolbar_section_builder.html#a5c85bdff31072152ecce7e503886d1d6", null ],
+    [ "GetMiniMode", "class_folio_u_i_1_1_toolbar_section_builder.html#a6b6ee40c732dab5ace44bf04e2622255", null ],
+    [ "Render", "class_folio_u_i_1_1_toolbar_section_builder.html#ae669c8e8b9d519d8d093c401a5d8afe8", null ],
+    [ "SetMiniMode", "class_folio_u_i_1_1_toolbar_section_builder.html#ab8ceb7cc4d65aa869d93f61115431247", null ],
+    [ "hasItems", "class_folio_u_i_1_1_toolbar_section_builder.html#a4d835f5f6af44c1df84944ad4b2724be", null ],
+    [ "inStack", "class_folio_u_i_1_1_toolbar_section_builder.html#a6a87625e0074f9a38debf56ddcade910", null ],
+    [ "isMiniMode", "class_folio_u_i_1_1_toolbar_section_builder.html#a0654aecc0e3ee60eaa85cc22beffac9d", null ],
+    [ "sectionId", "class_folio_u_i_1_1_toolbar_section_builder.html#ae7e426756255b26d92462737ac5e8474", null ],
+    [ "sectionTitle", "class_folio_u_i_1_1_toolbar_section_builder.html#a811caab59d54efdd9a84e130c8f5bf51", null ],
+    [ "stackItemCount", "class_folio_u_i_1_1_toolbar_section_builder.html#a246697b5753f652b80f8e7ef3e65ea76", null ],
+    [ "stackMaxW", "class_folio_u_i_1_1_toolbar_section_builder.html#a0fe54642fd2d7d5af5d1b401eeb779b7", null ],
+    [ "stackStartPos", "class_folio_u_i_1_1_toolbar_section_builder.html#a3d66d916727cc0b7d9c9f8bcab5d9fa5", null ],
+    [ "theme", "class_folio_u_i_1_1_toolbar_section_builder.html#ac3078ac201ff3e834830c4d49d473a0c", null ]
+];

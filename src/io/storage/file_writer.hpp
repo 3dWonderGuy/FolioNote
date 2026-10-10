@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file io/file_writer.hpp
+ * @file io/storage/file_writer.hpp
  * @brief Crash-resilient atomic file writing and persistence service for FolioNote
  * =========================================================================================
  */

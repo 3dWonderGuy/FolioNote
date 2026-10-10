@@ -1,5 +1,5 @@
-#include "io/system_dialogs.hpp"
-#include "io/path_utils.hpp"
+#include "io/platform/system_dialogs.hpp"
+#include "io/paths/path_utils.hpp"
 #include "utils/logger.hpp"
 #include "utils/error_codes.hpp"
 
@@ -58,7 +58,7 @@ std::string SystemDialogs::ShowOpenFileDialog(const std::string& title) {
     }
     pclose(pipe);
     return PathUtils::NormalizeSeparators(result);
-#elif defined(__linux__)
+#elif defined(__linux__) && !defined(__ANDROID__)
     // Native Linux file picker via standard desktop portal (Zenity or KDialog)
     std::string cmd;
     if (std::system("which zenity >/dev/null 2>&1") == 0) {
@@ -126,7 +126,7 @@ std::string SystemDialogs::ShowSaveFileDialog(const std::string& title, const st
     }
     pclose(pipe);
     return PathUtils::NormalizeSeparators(result);
-#elif defined(__linux__)
+#elif defined(__linux__) && !defined(__ANDROID__)
     // Native Linux save file picker via standard desktop portal (Zenity or KDialog)
     std::string cmd;
     std::string defArg = defaultFileName.empty() ? "" : (" --filename=\"" + defaultFileName + "\"");

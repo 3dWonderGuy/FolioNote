@@ -62,7 +62,7 @@
 #include <fstream>
 #include <algorithm>
 
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 
 #define TEST_ASSERT(cond, msg) \
     do { \

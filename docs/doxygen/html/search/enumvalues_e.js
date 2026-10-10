@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['page_0',['Page',['../class_modern_nav_panel.html#a72c1852003737b30d4682e91667e5fffa193cfc9be3b995831c6af2fea6650e60',1,'ModernNavPanel']]],
+  ['pagerepository_1',['PageRepository',['../namespace_folio.html#a6a4a1b0ae6f46fd303d34631a0919babaa8427fba1446f41c09ceb6e5d2bb6e12',1,'Folio']]],
+  ['pagesonly_2',['PagesOnly',['../modern__nav__panel_8hpp.html#a65bdc9dd99f322026d59f450661d1ae0a6482965369ed43a9a65c7d080b11dc5f',1,'modern_nav_panel.hpp']]],
+  ['pagetitle_3',['PageTitle',['../namespace_folio.html#a23d43e499692d188ab3303656eb073e6a57a08c88b9aff49612ca6b19fd8bea90',1,'Folio']]],
+  ['paleyellow_4',['PaleYellow',['../namespace_folio.html#acfe3feca8a416362c9c70df70b12780aa1c12aeac6231fcd4dccef12cdd4388a5',1,'Folio']]],
+  ['pancanvas_5',['PanCanvas',['../tuning__overlay_8hpp.html#a272e1fb91d84be2ab8bd2ab174f2d9c1abff6470f4706b554f35c9eb213f2e4a7',1,'tuning_overlay.hpp']]],
+  ['panning_6',['Panning',['../state_machine_2input__state__machine_8hpp.html#a2033d423f59775dd041da663a02cb12fadca95d9cc3ee8f3a4b539114455981c9',1,'Panning:&#160;input_state_machine.hpp'],['../namespace_folio_input.html#a964d8f307f4394a487df5298259ae8f5adca95d9cc3ee8f3a4b539114455981c9',1,'FolioInput::Panning']]],
+  ['paragraph_7',['Paragraph',['../namespace_folio.html#ab5feaee751e56924866982ed1a813c82afeaf0a320c3d678ad30dd179b7d21584',1,'Folio']]],
+  ['paused_8',['Paused',['../namespace_folio.html#a7e670a1b1348444a9ee6ad8a97adeecdae99180abf47a8b3a856e0bcb2656990a',1,'Folio']]],
+  ['pdf_9',['PDF',['../canvas__object_8hpp.html#ad77a2400b6233b221e23bc962da32b0dabcd1b68617759b1dfcff0403a6b5a8d1',1,'canvas_object.hpp']]],
+  ['pdf_10',['Pdf',['../class_canvas_page.html#a7dd407f106dba4448ac3b2d338aa0721ae4204641574e4827600356b4dcacd276',1,'CanvasPage']]],
+  ['pdf_5fprint_11',['PDF_Print',['../namespace_folio.html#abeb2cdcdacdbe2aac5f8d014b6e1bee0a1c3a8d08941a97d2dfe697611d64d73b',1,'Folio']]],
+  ['pdf_5fvector_12',['PDF_Vector',['../namespace_folio.html#abeb2cdcdacdbe2aac5f8d014b6e1bee0a58a79d9c25ac2089f2c1f3412fc830a9',1,'Folio']]],
+  ['pdfstorage_13',['PdfStorage',['../namespace_folio.html#a6a4a1b0ae6f46fd303d34631a0919baba3ecb8978ee1266c338bbbbc23a7ccd27',1,'Folio']]],
+  ['pdftools_14',['PdfTools',['../ribbon__bar_8hpp.html#aadcb63989a34044bc5b56446e9553f2faefcb53ffd1593645b5e5e970cfb3666b',1,'ribbon_bar.hpp']]],
+  ['pen_15',['Pen',['../namespace_folio.html#a3f0223b55d373481ff8cec5e6f63f3f1aef829858697fad3a25da0692aaaeca0b',1,'Folio::Pen'],['../pen__palette_8hpp.html#a78db2b3e38509743bd78678a43926255aef829858697fad3a25da0692aaaeca0b',1,'Pen:&#160;pen_palette.hpp']]],
+  ['pencil_16',['Pencil',['../pen__palette_8hpp.html#a78db2b3e38509743bd78678a43926255ab1e2171bb6be58c408f58debe611ee0f',1,'pen_palette.hpp']]],
+  ['pill_17',['Pill',['../namespace_folio_u_i.html#af0ffba5e51f953e7d3abdc4e0367cba7a5579726f3f99842c8bd6aa672b0ba1df',1,'FolioUI']]],
+  ['playing_18',['Playing',['../namespace_folio.html#a7e670a1b1348444a9ee6ad8a97adeecdac9dbb2b7c84159b632d71e512eba8428',1,'Folio']]],
+  ['png_19',['PNG',['../namespace_folio.html#a928807520f4d9870f1665a5420498729a55505ba281b015ec31f03ccb151b2a34',1,'Folio']]],
+  ['pressandhold_20',['PressAndHold',['../touch__gesture__recognizer_8hpp.html#a452390e8588a17ff51a57046021db6d2abef71eee04ec02f2742367b462342d6c',1,'touch_gesture_recognizer.hpp']]],
+  ['previewonly_21',['PreviewOnly',['../class_folio_1_1_md_editor_view.html#a9cfb597e89e09a9a3f7a70820f4bd1faa630fedce59223c0ca4efb334149fc768',1,'Folio::MdEditorView']]],
+  ['primary_22',['Primary',['../namespace_folio_1_1_u_i.html#a83ea0c5f5319f22ec014f3d0398ef925a074de7e7c226d5c60f8af14c20725352',1,'Folio::UI']]]
+];

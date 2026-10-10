@@ -33,7 +33,7 @@
 #include <filesystem>
 #include <sqlite3.h>
 
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/thread_pool.hpp"
 #include "utils/logger.hpp"
 #include "app/settings_manager.hpp"

@@ -1,0 +1,25 @@
+var searchData=
+[
+  ['value_5f_0',['value_',['../class_folio_1_1_u_i_1_1_switch_builder.html#ad446da0ca12c047be3f5dcb88cb7ccc5',1,'Folio::UI::SwitchBuilder']]],
+  ['variant_5f_1',['variant_',['../class_folio_1_1_u_i_1_1_button_builder.html#a40e059f79cc7a9247b997920f4403b64',1,'Folio::UI::ButtonBuilder']]],
+  ['velocity_2',['velocity',['../struct_folio_1_1_u_i_1_1_spring_state.html#a50684d8d84ce714469543836dcc84acb',1,'Folio::UI::SpringState']]],
+  ['verboselogging_3',['verboseLogging',['../class_settings_manager.html#a3fbd96c47dbe9182e5ba00959985e5f7',1,'SettingsManager']]],
+  ['versionid_4',['versionId',['../struct_folio_1_1_page_revision_info.html#a6e2750a0d762c7dac57ac8d1e8d72538',1,'Folio::PageRevisionInfo']]],
+  ['versionname_5',['versionName',['../struct_folio_1_1_page_revision_info.html#a41bf7d4bf5ffb69934a3febf38d9ead0',1,'Folio::PageRevisionInfo']]],
+  ['videocontrolsfadedelayms_6',['videoControlsFadeDelayMs',['../struct_folio_1_1_object_config.html#a1ed0f3c19276fbd9558193a99a77f08d',1,'Folio::ObjectConfig']]],
+  ['videoh_7',['videoH',['../class_folio_1_1_video_player_instance.html#ad1e8ec98101000f21512ddc9de859ab7',1,'Folio::VideoPlayerInstance']]],
+  ['videow_8',['videoW',['../class_folio_1_1_video_player_instance.html#a0dff897a045c5eca5df3eb8329309247',1,'Folio::VideoPlayerInstance']]],
+  ['viewporth_9',['viewportH',['../class_canvas_engine.html#ab43d1a07400d7002082f9bf817902385',1,'CanvasEngine::viewportH'],['../struct_folio_1_1_shell_layout_metrics.html#a138dee86bdffd28b943136bc9cfc9ab5',1,'Folio::ShellLayoutMetrics::viewportH']]],
+  ['viewportw_10',['viewportW',['../class_canvas_engine.html#a2e54e2b1f8420da9b431886b593c1856',1,'CanvasEngine::viewportW'],['../struct_folio_1_1_shell_layout_metrics.html#a4a1feb2ea76f3c47907cdf031884216b',1,'Folio::ShellLayoutMetrics::viewportW']]],
+  ['viewportx_11',['viewportX',['../struct_folio_1_1_shell_layout_metrics.html#a78abf65d7edf22ffe4a72357a5618213',1,'Folio::ShellLayoutMetrics']]],
+  ['viewporty_12',['viewportY',['../struct_folio_1_1_shell_layout_metrics.html#afb07e56ac92c4d993d3816b04023ded1',1,'Folio::ShellLayoutMetrics']]],
+  ['virtualizer_13',['virtualizer',['../class_folio_1_1_pdf_engine.html#ae824ffb645aed9bd7e80bcd08aeb9126',1,'Folio::PdfEngine']]],
+  ['visible_14',['visible',['../struct_folio_1_1_md_caret.html#a734869484833ba6c1cf7368531ba3ef2',1,'Folio::MdCaret']]],
+  ['visibleworldbounds_15',['visibleWorldBounds',['../struct_viewport.html#a05257a28ad5e1273478dff63cdcf5721',1,'Viewport']]],
+  ['vlcinstance_16',['vlcInstance',['../class_folio_1_1_audio_object.html#a8e6cb8a828ccdbef3ed9356df4966c11',1,'Folio::AudioObject']]],
+  ['vlcmedia_17',['vlcMedia',['../class_folio_1_1_audio_object.html#a1742e3057b04e23dbef248e0131c68e6',1,'Folio::AudioObject']]],
+  ['vlcplayer_18',['vlcPlayer',['../class_folio_1_1_audio_object.html#aa1f2d56a3be6d3cdac2e82ebc8d9f832',1,'Folio::AudioObject']]],
+  ['volume_19',['volume',['../class_folio_1_1_audio_object.html#aaf6ec25ed3479d495471f70a95cd3451',1,'Folio::AudioObject::volume'],['../class_folio_1_1_video_object.html#a1523c794eb98e6c225797a3086d5dc06',1,'Folio::VideoObject::volume']]],
+  ['volumepercent_20',['volumePercent',['../class_folio_1_1_video_player_instance.html#a43bb5944f801bc3b267a4a686b5ad929',1,'Folio::VideoPlayerInstance']]],
+  ['vsyncenabled_21',['vsyncEnabled',['../struct_notebook_hub_view.html#abadeab7022c940f98096d235f7e04e78',1,'NotebookHubView']]]
+];

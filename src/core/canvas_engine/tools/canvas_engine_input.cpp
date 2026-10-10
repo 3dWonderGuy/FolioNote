@@ -1,6 +1,5 @@
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
-#include "utils/usage_tracker.hpp"
 #include <chrono>
 #include <cmath>
 
@@ -45,10 +44,6 @@ void CanvasEngine::OnPointerMove(float screenX, float screenY, float pressure, d
         }
     }
     if (isCurrentlyInking) {
-        double dx = worldMm.x - lastInkingWorldMm.x;
-        double dy = worldMm.y - lastInkingWorldMm.y;
-        double distMm = std::sqrt(dx * dx + dy * dy);
-        ::Folio::UsageTracker::Instance().RecordInkingDistance(distMm);
         lastInkingWorldMm = worldMm;
     }
 
@@ -77,8 +72,6 @@ void CanvasEngine::OnPointerUp(DocumentSession& session, const PenTool& tool) {
             }
         } else {
             session.CommitStroke(std::move(data), tool);
-            ::Folio::UsageTracker::Instance().RecordStrokeCommitted();
-            ::Folio::UsageTracker::Instance().RecordObjectCreated();
         }
     }
 

@@ -5,7 +5,7 @@
 #include "app/window_state_manager.hpp"
 #include "app/theme_manager.hpp"
 #include "app/settings_manager.hpp"
-#include "io/file_logger.hpp"
+#include "io/storage/file_logger.hpp"
 #include "core/document/document_session.hpp"
 #include <deque>
 #include <string>

@@ -9,8 +9,8 @@
 #include <iostream>
 #include "imgui.h"
 #include "input/pen_palette.hpp"
-#include "io/file_reader.hpp"
-#include "io/file_writer.hpp"
+#include "io/storage/file_reader.hpp"
+#include "io/storage/file_writer.hpp"
 #include "utils/logger.hpp"
 #include "core/objects/object_config.hpp"
 

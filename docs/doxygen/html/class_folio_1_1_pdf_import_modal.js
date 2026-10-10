@@ -1,0 +1,28 @@
+var class_folio_1_1_pdf_import_modal =
+[
+    [ "CommitImport", "class_folio_1_1_pdf_import_modal.html#a6e25ec9a510d98959878c39c28a8b114", null ],
+    [ "Open", "class_folio_1_1_pdf_import_modal.html#a833507471458d037658a1f9db23f96a2", null ],
+    [ "ParsePageRange", "class_folio_1_1_pdf_import_modal.html#a439b858b9901abd692dd7904ad461f80", null ],
+    [ "Render", "class_folio_1_1_pdf_import_modal.html#a9ebeaf5059042432870503ae3db928fc", null ],
+    [ "RenderSectionInTree", "class_folio_1_1_pdf_import_modal.html#a4d74386b0bf4f1d5ac1bed45652170c6", null ],
+    [ "confirmLongDocBreakout", "class_folio_1_1_pdf_import_modal.html#acb9096b9cdbe24bbe3fa25810199a07c", null ],
+    [ "currentDoc", "class_folio_1_1_pdf_import_modal.html#a9e6d0e12126dd2182c91318d035c29f9", null ],
+    [ "customRangeBuf", "class_folio_1_1_pdf_import_modal.html#a80d05e7dd04bfc0db7c0e1c5657b2b45", null ],
+    [ "DEFAULT_GAP_Y_MM", "class_folio_1_1_pdf_import_modal.html#aa8144d81928914e3483ad34e63b0c613", null ],
+    [ "DEFAULT_MARGIN_LEFT_MM", "class_folio_1_1_pdf_import_modal.html#a1f174ec97b8403e8ff46700789961dcb", null ],
+    [ "DEFAULT_MARGIN_TOP_MM", "class_folio_1_1_pdf_import_modal.html#ae0c478a816c883c5bd4686d4979fd369", null ],
+    [ "existingPagePlacement", "class_folio_1_1_pdf_import_modal.html#af345d6d35e53f822687a1f1a850c7ccb", null ],
+    [ "importMode", "class_folio_1_1_pdf_import_modal.html#a4a9da9e8305b290abd1f1ea4f0f20d01", null ],
+    [ "isOpen", "class_folio_1_1_pdf_import_modal.html#a5d55ee091d11f07ea3502eaf0c7e6e9a", null ],
+    [ "isTargetingExistingPage", "class_folio_1_1_pdf_import_modal.html#a03d006e2a249a8c828c26a61ac054cee", null ],
+    [ "newPageNameBuf", "class_folio_1_1_pdf_import_modal.html#a402ff3ae836fc42617f7a9e80f6451a6", null ],
+    [ "newSectionNameBuf", "class_folio_1_1_pdf_import_modal.html#a61ac9d4090acf56337b011362b37f214", null ],
+    [ "pageSelectionType", "class_folio_1_1_pdf_import_modal.html#afb093f9d824fe8610d42529e519e7f78", null ],
+    [ "placementMode", "class_folio_1_1_pdf_import_modal.html#aebe0d99db73f92f669088b0a78376689", null ],
+    [ "setAsBackground", "class_folio_1_1_pdf_import_modal.html#af61e31c4779dcba295a965402110bc23", null ],
+    [ "showNewPageInput", "class_folio_1_1_pdf_import_modal.html#adf927aa5c4ad458824b1c46a5f886904", null ],
+    [ "showNewSectionInput", "class_folio_1_1_pdf_import_modal.html#a5432e8564e1e0cfe01cb9314c92c492b", null ],
+    [ "targetNotebookGuid", "class_folio_1_1_pdf_import_modal.html#acf1cdb0854a78195cdca66381bdc55fc", null ],
+    [ "targetPageGuid", "class_folio_1_1_pdf_import_modal.html#ae863725ea1fb116cb10a6185b1567ba9", null ],
+    [ "targetSectionGuid", "class_folio_1_1_pdf_import_modal.html#a61af17bf1f54c62a9fd52e646af4a48a", null ]
+];

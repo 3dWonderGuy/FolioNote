@@ -22,6 +22,7 @@ void UIOverlayHost::ShowToast(
     const std::string& message,
     float durationSeconds
 ) {
+    std::lock_guard<std::mutex> lock(toastsMutex_);
     ToastMessage toast;
     toast.id = "toast_" + std::to_string(toasts_.size() + 1);
     toast.type = type;
@@ -30,6 +31,14 @@ void UIOverlayHost::ShowToast(
     toast.remainingSeconds = durationSeconds;
     toast.initialSeconds = durationSeconds;
     toasts_.push_back(toast);
+}
+
+void UIOverlayHost::ShowErrorToast(
+    const std::string& title,
+    const std::string& message,
+    float durationSeconds
+) {
+    ShowToast(UIToastType::Error, title, message, durationSeconds);
 }
 
 void UIOverlayHost::OpenModal(
@@ -47,6 +56,21 @@ void UIOverlayHost::OpenModal(
     // Reset entrance animation state
     UIAnimationManager::Instance().Snap("modal_scale_" + id, 0.92f);
     UIAnimationManager::Instance().Snap("modal_alpha_" + id, 0.0f);
+}
+
+void UIOverlayHost::ShowErrorModal(const std::string& title, const std::string& message) {
+    OpenModal("error_dialog", title, [message]() {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "⚠ Error");
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", message.c_str());
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0.0f, Spacing::md));
+        if (UI::Button("OK").Variant(UIButtonVariant::Primary).Width(120.0f).Render()) {
+            UIOverlayHost::Instance().CloseModal();
+        }
+    }, 450.0f);
 }
 
 void UIOverlayHost::CloseModal() {
@@ -122,67 +146,70 @@ void UIOverlayHost::Render(float dt) {
     // =========================================================================
     // 2. TOAST NOTIFICATION STACK (Top-Right Screen Corner)
     // =========================================================================
-    if (!toasts_.empty()) {
-        float toastW = 320.0f;
-        float toastH = 68.0f;
-        float padY = 10.0f;
-        float startX = displaySize.x - toastW - Spacing::lg;
-        float startY = Spacing::xl + 32.0f; // Below titlebar
+    {
+        std::lock_guard<std::mutex> lock(toastsMutex_);
+        if (!toasts_.empty()) {
+            float toastW = 320.0f;
+            float toastH = 68.0f;
+            float padY = 10.0f;
+            float startX = displaySize.x - toastW - Spacing::lg;
+            float startY = Spacing::xl + 32.0f; // Below titlebar
 
-        ImDrawList* fgDrawList = ImGui::GetForegroundDrawList();
+            ImDrawList* fgDrawList = ImGui::GetForegroundDrawList();
 
-        for (auto it = toasts_.begin(); it != toasts_.end(); ) {
-            it->remainingSeconds -= dt;
-            if (it->remainingSeconds <= 0.0f) {
-                it = toasts_.erase(it);
-                continue;
+            for (auto it = toasts_.begin(); it != toasts_.end(); ) {
+                it->remainingSeconds -= dt;
+                if (it->remainingSeconds <= 0.0f) {
+                    it = toasts_.erase(it);
+                    continue;
+                }
+
+                ImVec2 tMin(startX, startY);
+                ImVec2 tMax(startX + toastW, startY + toastH);
+
+                // Acrylic surface & shadow
+                ImU32 bgCol = isDark ? IM_COL32(32, 36, 48, 245) : IM_COL32(250, 252, 255, 245);
+                ImU32 borderCol = isDark ? IM_COL32(65, 72, 90, 200) : IM_COL32(215, 222, 232, 220);
+                UIShapeManager::DrawAcrylicPanel(fgDrawList, tMin, tMax, bgCol, borderCol, Radii::md, Elevation::high);
+
+                // Accent status indicator bar on left edge
+                ImU32 accentCol = IM_COL32(50, 150, 255, 255); // Info blue
+                const char* iconSymbol = "ℹ";
+                if (it->type == UIToastType::Success) {
+                    accentCol = IM_COL32(40, 195, 120, 255); // Emerald green
+                    iconSymbol = "✔";
+                } else if (it->type == UIToastType::Warning) {
+                    accentCol = IM_COL32(245, 175, 40, 255); // Amber yellow
+                    iconSymbol = "⚠";
+                } else if (it->type == UIToastType::Error) {
+                    accentCol = IM_COL32(235, 60, 60, 255);  // Rose red
+                    iconSymbol = "✖";
+                }
+
+                fgDrawList->AddRectFilled(tMin, ImVec2(tMin.x + 4.0f, tMax.y), accentCol, Radii::md);
+
+                // Icon symbol
+                fgDrawList->AddText(ImVec2(tMin.x + 14.0f, tMin.y + 14.0f), accentCol, iconSymbol);
+
+                // Title & message text
+                ImU32 titleCol = isDark ? IM_COL32(240, 243, 250, 255) : IM_COL32(20, 25, 35, 255);
+                ImU32 msgCol = isDark ? IM_COL32(160, 168, 185, 220) : IM_COL32(105, 112, 128, 220);
+
+                fgDrawList->AddText(ImVec2(tMin.x + 36.0f, tMin.y + 12.0f), titleCol, it->title.c_str());
+                fgDrawList->AddText(ImVec2(tMin.x + 36.0f, tMin.y + 32.0f), msgCol, it->message.c_str());
+
+                // Bottom countdown progress bar
+                float progressFraction = std::clamp(it->remainingSeconds / it->initialSeconds, 0.0f, 1.0f);
+                float progressW = (toastW - 8.0f) * progressFraction;
+                fgDrawList->AddRectFilled(
+                    ImVec2(tMin.x + 4.0f, tMax.y - 2.5f),
+                    ImVec2(tMin.x + 4.0f + progressW, tMax.y),
+                    ColorUtils::WithAlpha(accentCol, 0.65f)
+                );
+
+                startY += toastH + padY;
+                ++it;
             }
-
-            ImVec2 tMin(startX, startY);
-            ImVec2 tMax(startX + toastW, startY + toastH);
-
-            // Acrylic surface & shadow
-            ImU32 bgCol = isDark ? IM_COL32(32, 36, 48, 245) : IM_COL32(250, 252, 255, 245);
-            ImU32 borderCol = isDark ? IM_COL32(65, 72, 90, 200) : IM_COL32(215, 222, 232, 220);
-            UIShapeManager::DrawAcrylicPanel(fgDrawList, tMin, tMax, bgCol, borderCol, Radii::md, Elevation::high);
-
-            // Accent status indicator bar on left edge
-            ImU32 accentCol = IM_COL32(50, 150, 255, 255); // Info blue
-            const char* iconSymbol = "ℹ";
-            if (it->type == UIToastType::Success) {
-                accentCol = IM_COL32(40, 195, 120, 255); // Emerald green
-                iconSymbol = "✔";
-            } else if (it->type == UIToastType::Warning) {
-                accentCol = IM_COL32(245, 175, 40, 255); // Amber yellow
-                iconSymbol = "⚠";
-            } else if (it->type == UIToastType::Error) {
-                accentCol = IM_COL32(235, 60, 60, 255);  // Rose red
-                iconSymbol = "✖";
-            }
-
-            fgDrawList->AddRectFilled(tMin, ImVec2(tMin.x + 4.0f, tMax.y), accentCol, Radii::md);
-
-            // Icon symbol
-            fgDrawList->AddText(ImVec2(tMin.x + 14.0f, tMin.y + 14.0f), accentCol, iconSymbol);
-
-            // Title & message text
-            ImU32 titleCol = isDark ? IM_COL32(240, 243, 250, 255) : IM_COL32(20, 25, 35, 255);
-            ImU32 msgCol = isDark ? IM_COL32(160, 168, 185, 220) : IM_COL32(105, 112, 128, 220);
-
-            fgDrawList->AddText(ImVec2(tMin.x + 36.0f, tMin.y + 12.0f), titleCol, it->title.c_str());
-            fgDrawList->AddText(ImVec2(tMin.x + 36.0f, tMin.y + 32.0f), msgCol, it->message.c_str());
-
-            // Bottom countdown progress bar
-            float progressFraction = std::clamp(it->remainingSeconds / it->initialSeconds, 0.0f, 1.0f);
-            float progressW = (toastW - 8.0f) * progressFraction;
-            fgDrawList->AddRectFilled(
-                ImVec2(tMin.x + 4.0f, tMax.y - 2.5f),
-                ImVec2(tMin.x + 4.0f + progressW, tMax.y),
-                ColorUtils::WithAlpha(accentCol, 0.65f)
-            );
-
-            startY += toastH + padY;
-            ++it;
         }
     }
 }

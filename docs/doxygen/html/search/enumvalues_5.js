@@ -1,0 +1,22 @@
+var searchData=
+[
+  ['failed_0',['Failed',['../namespace_folio.html#af8b50871643cb72aef14939bfdcd6aecad7c8c85bf79bbe1b7188497c32c3b0ca',1,'Folio']]],
+  ['fileloader_1',['FileLoader',['../namespace_folio.html#a6a4a1b0ae6f46fd303d34631a0919baba06b95f57fb8a87877684b55630833495',1,'Folio']]],
+  ['filemanager_2',['FileManager',['../namespace_folio.html#a6a4a1b0ae6f46fd303d34631a0919baba0075136f1cbc7b0e01ef09f94ade05a4',1,'Folio']]],
+  ['filesaver_3',['FileSaver',['../namespace_folio.html#a6a4a1b0ae6f46fd303d34631a0919babac7cb5251839f448905b57e32901bbd45',1,'Folio']]],
+  ['finished_4',['Finished',['../namespace_folio.html#af8b50871643cb72aef14939bfdcd6aeca8f3d10eb21bd36347c258679eba9e92b',1,'Folio']]],
+  ['fixed_5',['Fixed',['../canvas__transform_8hpp.html#a2f158a7eac586b81ef7c0a9827caf3d8a4457d440870ad6d42bab9082d9bf9b61',1,'canvas_transform.hpp']]],
+  ['flat_6',['Flat',['../pen__palette_8hpp.html#a971589819173c6de8da4b9e269994d85a745e3db6a7ffd50e1a72b39482f0882d',1,'pen_palette.hpp']]],
+  ['foliocolor_7',['FolioColor',['../theme__manager_8hpp.html#a62592268a4950fd765dcd4c68a5f2d88a30a837c4d74d8ef6c082829146c14520',1,'theme_manager.hpp']]],
+  ['foliodark_8',['FolioDark',['../theme__manager_8hpp.html#a62592268a4950fd765dcd4c68a5f2d88aa4202d546a1e6811c96c2b65bcd05eac',1,'theme_manager.hpp']]],
+  ['foliolight_9',['FolioLight',['../theme__manager_8hpp.html#a62592268a4950fd765dcd4c68a5f2d88ae41917e7b3c799d2727af316e336dee3',1,'theme_manager.hpp']]],
+  ['foliopackage_10',['FolioPackage',['../namespace_folio.html#abeb2cdcdacdbe2aac5f8d014b6e1bee0a97d4339f5a3c56feaec0f739834906dc',1,'Folio']]],
+  ['fountain_11',['Fountain',['../pen__palette_8hpp.html#a78db2b3e38509743bd78678a43926255a7941ce00c308ef62cd69af52664e9788',1,'pen_palette.hpp']]],
+  ['frame_12',['Frame',['../canvas__object_8hpp.html#ad77a2400b6233b221e23bc962da32b0da3bb3e8c8a24891ba0f7608bcc96f8b0a',1,'canvas_object.hpp']]],
+  ['freehighlight_13',['FreeHighlight',['../namespace_folio.html#a3f0223b55d373481ff8cec5e6f63f3f1ac52f9f6d1ca02063cbba2e4314b4551d',1,'Folio']]],
+  ['fullinfinity_14',['FullInfinity',['../canvas__transform_8hpp.html#ac0c8f948ea33f145677d2ec0cfdd5edeab3be54efdc240926a559f10048c7d24c',1,'canvas_transform.hpp']]],
+  ['fullribbon_15',['FullRibbon',['../ribbon__bar_8hpp.html#a839895b3642557819b65eff2f4276587a1df4e29d8c4a60fbfce249e550057dad',1,'ribbon_bar.hpp']]],
+  ['fullscreen_16',['Fullscreen',['../window__state__manager_8hpp.html#a7688310f9a1664a9fc20b8989418de4aa0829ea6734059d66e6bf87096b215dc1',1,'window_state_manager.hpp']]],
+  ['fully_5fhidden_17',['Fully_Hidden',['../modern__nav__panel_8hpp.html#a65bdc9dd99f322026d59f450661d1ae0a573be3b40e96d9c7ec4576d92ee38dba',1,'modern_nav_panel.hpp']]],
+  ['fullyhidden_18',['FullyHidden',['../ribbon__bar_8hpp.html#a839895b3642557819b65eff2f4276587ac60f11a82b8cb55287fee3d9fe782cce',1,'ribbon_bar.hpp']]]
+];

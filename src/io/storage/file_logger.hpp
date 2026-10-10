@@ -2,7 +2,7 @@
 
 /**
  * =========================================================================================
- * @file io/file_logger.hpp
+ * @file io/storage/file_logger.hpp
  * @brief Thread-safe file logger and in-memory ring cache for FolioNote
  * =========================================================================================
  */
@@ -17,7 +17,7 @@
 #include <chrono>
 #include <iomanip>
 
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 
 #if defined(__ANDROID__)
 #include <SDL3/SDL.h>

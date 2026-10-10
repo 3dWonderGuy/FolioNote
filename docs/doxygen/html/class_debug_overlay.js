@@ -1,0 +1,26 @@
+var class_debug_overlay =
+[
+    [ "LogEvent", "class_debug_overlay.html#ad126d08dc3508e3fd88bfda885473d4d", null ],
+    [ "RecordInputPacket", "class_debug_overlay.html#a8dfd06c8d5bfa18808a266cbbb96a420", null ],
+    [ "Render", "class_debug_overlay.html#a6282d789f976e28c5553e7f71aa08a27", null ],
+    [ "UpdateStateTracking", "class_debug_overlay.html#a973c28ea7e443e991f291ab6c93452ba", null ],
+    [ "autoScroll", "class_debug_overlay.html#ae1acc6f70d4f02d367d778ad770b0437", null ],
+    [ "currentInputIntervalMs", "class_debug_overlay.html#af49473d2aa8bcf9975cd1f7cba838361", null ],
+    [ "currentInputSamplingHz", "class_debug_overlay.html#a78af0fefb018aed1fdba0e96a5633779", null ],
+    [ "exportStatusMessage", "class_debug_overlay.html#a86bb5f66f786cf2c0277c3f4bcca9914", null ],
+    [ "exportStatusTimestamp", "class_debug_overlay.html#ae197ce07db36ec277e97cbe0b04b102b", null ],
+    [ "frameTimeHistory", "class_debug_overlay.html#acd99d47766c8899be22e285585351506", null ],
+    [ "frameTimeOffset", "class_debug_overlay.html#ad70092f14a85219035f7ea1968cfdb47", null ],
+    [ "inputEventsThisSecond", "class_debug_overlay.html#a211497436436dfacf212821b72d430d2", null ],
+    [ "isVisible", "class_debug_overlay.html#a1208b0cf112bd5e49d3e593862d16ec4", null ],
+    [ "lastDeviceType", "class_debug_overlay.html#aaef8932e9d1c9ca9e896761cd765485a", null ],
+    [ "lastInputPacketTime", "class_debug_overlay.html#a4e127e682af36c2299c3258ce2be747e", null ],
+    [ "lastSecondTimestamp", "class_debug_overlay.html#aad2874a14f9095d6bc8212b7a5274e7c", null ],
+    [ "lastStylusAction", "class_debug_overlay.html#ab55d94f3c20dfa442df67c9bd24edaa5", null ],
+    [ "lastStylusState", "class_debug_overlay.html#a3659656c3804d9879d386a98f1398a4e", null ],
+    [ "lastWindowState", "class_debug_overlay.html#a13422eaec7b0de5d9d5acbdfd97bcd6b", null ],
+    [ "lastWindowStateFullscreen", "class_debug_overlay.html#a3bbfb492c54fa799eb4e76fb77d39418", null ],
+    [ "lastWindowStateMaximized", "class_debug_overlay.html#a509bc58a32cba802ce4c6d3d2ddb5fbe", null ],
+    [ "searchFilterText", "class_debug_overlay.html#a6208137c997d2ac8511001dc243288c8", null ],
+    [ "selectedCategoryFilter", "class_debug_overlay.html#af6813dd6953af57da2e1bf71034484d0", null ]
+];

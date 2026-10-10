@@ -14,7 +14,7 @@
 #include "core/objects/attachment_container/attachment_container.hpp"
 #include "core/objects/object_registry.hpp"
 #include "core/text/font_manager.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "app/context_menu_item.hpp"
 #include "utils/logger.hpp"
 #include <SDL3/SDL.h>

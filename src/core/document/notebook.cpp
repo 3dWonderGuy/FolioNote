@@ -24,7 +24,6 @@
 #include <algorithm>
 #include "utils/guid_generator.hpp"
 #include "utils/logger.hpp"
-#include "utils/usage_tracker.hpp"
 
 // =========================================================================================
 // Construction & Lifecycle
@@ -72,22 +71,18 @@ Notebook::Notebook(std::string notebookName, ImVec4 tag, std::string icon)
  * 2. Compares incoming section GUID against `activeSectionGuid` to detect actual switch.
  * 3. Updates `activeSectionGuid`.
  * 4. Iterates over root sections to find matching index; if located, updates `activeSectionIndex`.
- * 5. Telemetry: If a section change occurred, records event in `UsageTracker`.
  *
  * @param sec Shared pointer to the section to activate.
  */
 void Notebook::SetActiveSection(const std::shared_ptr<Section>& sec) {
     if (!sec) return;
-    bool changed = (activeSectionGuid != sec->guid);
     activeSectionGuid = sec->guid;
     for (size_t i = 0; i < sections.size(); ++i) {
         if (sections[i] && sections[i]->guid == sec->guid) {
             activeSectionIndex = i;
-            if (changed) ::Folio::UsageTracker::Instance().RecordSectionSwitch();
             return;
         }
     }
-    if (changed) ::Folio::UsageTracker::Instance().RecordSectionSwitch();
 }
 
 /**

@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file io/path_utils.hpp
+ * @file io/paths/path_utils.hpp
  * @brief Cross-platform Unicode-aware filesystem path utilities for FolioNote
  * =========================================================================================
  */

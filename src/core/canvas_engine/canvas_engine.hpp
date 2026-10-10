@@ -10,6 +10,7 @@
 #include <string>
 #include <memory>
 #include <functional>
+#include <mutex>
 #include <cstdint>
 #include <SDL3/SDL_dialog.h>
 
@@ -376,6 +377,16 @@ public:
 
     void Render(const std::vector<std::shared_ptr<CanvasObject>>& visibleBakedObjects, DocumentSession* session = nullptr, double deltaTime = 1.0 / 60.0);
 
+    /**
+     * @brief Thread-safe dispatch of tasks to be executed on the main UI/rendering thread.
+     * Prevents race conditions and segfaults from asynchronous platform callbacks (e.g., SDL file picker on Android JNI thread).
+     */
+    void EnqueueMainThreadTask(std::function<void()> task);
+    void ProcessMainThreadTasks();
+
 private:
+    std::mutex m_mainThreadTasksMutex;
+    std::vector<std::function<void()>> m_mainThreadTasks;
+
     void RenderDevModeAABBs(BLContext& ctx, const std::vector<std::shared_ptr<CanvasObject>>& visibleObjects, const CanvasTransform& tr);
 };

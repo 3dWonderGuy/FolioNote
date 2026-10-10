@@ -1,5 +1,5 @@
-#include "io/file_reader.hpp"
-#include "io/path_utils.hpp"
+#include "io/storage/file_reader.hpp"
+#include "io/paths/path_utils.hpp"
 #include "utils/logger.hpp"
 #include "utils/error_codes.hpp"
 

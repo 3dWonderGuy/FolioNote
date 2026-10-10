@@ -13,27 +13,59 @@
  * - Velocity-coupled dynamic radius physics specifically engineered for dynamic erasers
  * - High-order numerical integrators (Semi-Implicit Euler, Runge-Kutta 4)
  *
- * MATHEMATICAL FOUNDATION:
- * ------------------------
- * 1. Second-Order Damped Harmonic Oscillator:
- *    $$m \frac{d^2 x}{dt^2} + c \frac{dx}{dt} + k (x - x_{\text{target}}) = 0$$
- *    Dividing by mass $m$:
- *    $$\frac{d^2 x}{dt^2} + 2 \zeta \omega_n \frac{dx}{dt} + \omega_n^2 (x - x_{\text{target}}) = 0$$
- *    where:
- *      $\omega_n = \sqrt{k / m}$  (Natural undamped angular frequency)
- *      $\zeta    = \frac{c}{2 \sqrt{k m}}$  (Damping ratio)
+ * MATHEMATICAL FOUNDATIONS & NUMERICAL INTEGRATION:
+ * -------------------------------------------------
+ * 1. Second-Order Damped Harmonic Oscillator (Mass-Spring-Damper):
+ *    Governing linear ordinary differential equation of motion:
+ *        m * (d²x / dt²) + c * (dx / dt) + k * (x - x_target) = 0
  *
- *    Regimes:
- *      $\zeta = 1.0$  -> Critically Damped (fastest approach without overshoot)
- *      $\zeta < 1.0$  -> Underdamped (subtle natural harmonic oscillation/springiness)
- *      $\zeta > 1.0$  -> Overdamped (viscous, non-oscillatory smooth glide)
+ *    Dividing by mass m yields the canonical equation:
+ *        (d²x / dt²) + 2*ζ*ω_n * (dx / dt) + (ω_n)² * (x - x_target) = 0
  *
- * 2. Velocity-Coupled Dynamic Eraser Physics:
- *    Couples raw pointer speed $v$ (px/sec) to a dynamic virtual radius $r$ (mm):
- *    - Kinetic Energy / Target Mapping: Instantaneous speed maps monotonically to equilibrium radius $r_{\text{target}}$.
- *    - Asymmetric Stiffness: Fast acceleration uses higher stiffness (rapid expansion),
- *      while deceleration uses higher damping (jitter-free graceful settling).
- *    - Bounds Clamping: Physical boundary preservation ensuring $r \in [r_{\min}, r_{\max}]$.
+ *    Physical Parameters:
+ *        m        : Virtual inertial mass (kg)
+ *        k        : Restoring spring stiffness coefficient (N/m)
+ *        c        : Viscous damping coefficient (N*s/m)
+ *        ω_n      : Natural undamped angular frequency = sqrt(k / m)  [rad/s]
+ *        ζ (zeta) : Dimensionless damping ratio = c / (2 * sqrt(k * m))
+ *
+ *    Oscillator Regimes:
+ *        • ζ = 1.0 (Critically Damped):
+ *          Fastest asymptotic convergence to target position with zero overshoot or ringing.
+ *          Ideal for UI panels, camera tracking, and smooth cursor convergence.
+ *        • ζ < 1.0 (Underdamped):
+ *          Produces decaying harmonic oscillations around target before settling.
+ *          Useful for playful rubber-band bounces and elastic feedback.
+ *        • ζ > 1.0 (Overdamped):
+ *          Sluggish, non-oscillatory asymptotic exponential decay.
+ *          Useful for heavy inertial sliders and viscous fluid feel.
+ *
+ * 2. Numerical Discretization (Symplectic / Semi-Implicit Euler):
+ *    Standard Explicit (Forward) Euler is energy-increasing and unstable for oscillatory
+ *    systems. This engine implements Semi-Implicit Euler, which preserves the symplectic
+ *    2-form in phase space and maintains unconditional orbital stability:
+ *
+ *        a_n   = [ -k * (x_n - x_target) - c * v_n ] / m
+ *        v_n+1 = v_n + a_n * dt
+ *        x_n+1 = x_n + v_n+1 * dt     (Note: uses next velocity v_n+1, NOT v_n)
+ *
+ * 3. Sub-stepping & Numerical Stability:
+ *    To prevent numerical divergence during large frame deltas (e.g. frame hitch dt > 16ms),
+ *    Step() sub-steps iterations with a maximum slice:
+ *        dt_sub <= 8.33 ms (equivalent to >= 120 Hz internal physics tick rate).
+ *
+ * 4. Velocity-Coupled Dynamic Eraser Physics:
+ *    Couples raw pointer speed v (px/sec) to a dynamic virtual reticle radius r (mm):
+ *    - Kinetic Energy / Target Mapping:
+ *        v_norm   = clamp((v - v_min) / (v_max - v_min), 0.0, 1.0)
+ *        r_target = r_min + sqrt(v_norm) * (r_max - r_min)
+ *    - Asymmetric Dynamic Response:
+ *        • Rapid Expansion (v increases):
+ *          High stiffness (k_expand) ensures immediate reticle growth on fast strokes.
+ *        • Smooth Settling (v decreases):
+ *          Gentle stiffness and critical damping (c_contract) prevent jarring visual popping
+ *          when pointer abruptly decelerates.
+ *    - Bounds Clamping: Physical boundary preservation ensuring r remains in [r_min, r_max].
  */
 
 #include <cmath>
@@ -232,8 +264,8 @@ private:
  * @brief High-precision physical model for velocity-reactive dynamic eraser sizing.
  *
  * Couples instantaneous pointer speed to a virtual mass-spring-damper:
- * - Speed $v \in [v_{\min}, v_{\max}]$ maps through a smooth square-root transfer curve
- *   to an equilibrium radius $R_{\text{target}} \in [R_{\min}, R_{\max}]$.
+ * - Speed v in [v_min, v_max] maps through a smooth concave square-root transfer curve
+ *   to an equilibrium target radius R_target in [R_min, R_max].
  * - Asymmetric dynamics:
  *   * Acceleration / Expansion: Driven by high-stiffness spring with fast kinetic coupling.
  *   * Deceleration / Contraction: Damped smoothly with critical damping to eliminate reticle popping.

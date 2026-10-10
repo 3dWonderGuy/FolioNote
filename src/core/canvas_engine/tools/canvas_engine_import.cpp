@@ -9,11 +9,12 @@
 #include "core/objects/pdf_container.hpp"
 #include "core/storage/pdf_storage.hpp"
 #include "core/objects/object_config.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/error_codes.hpp"
+#include "ui/framework/ui_overlay_host.hpp"
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
@@ -30,15 +31,31 @@
 #include <commdlg.h>
 #endif
 
+/**
+ * @brief Deduplicates and persists an image into the active notebook's package directory.
+ *
+ * Mathematical Basis:
+ * Uses 64-bit FNV-1a hashing (Offset Basis: 14695981039346656037ULL, Prime: 1099511628211ULL)
+ * to compute a content hash over byte streams for fast O(1) content deduplication.
+ *
+ * Inputs:
+ * - srcPath: Optional path or content:// URI to the source image file on disk.
+ * - data: Optional pointer to raw in-memory image bytes.
+ * - size: Byte size of in-memory image buffer.
+ * - session: Pointer to active DocumentSession for notebook directory resolution.
+ * - ext: File extension (e.g., ".png", ".jpg").
+ *
+ * Output:
+ * - Relative package path (e.g., "imports/images/img_<hash>.png") or empty string on failure.
+ */
 std::string CanvasEngine::DeduplicateAndSaveImage(const std::string& srcPath, const void* data, size_t size, DocumentSession* session, const std::string& ext) {
     if (!session) return "";
     auto activeNb = session->workspace.GetActiveNotebook();
     if (!activeNb || activeNb->filePath.empty()) return "";
 
-    std::error_code ec;
     std::filesystem::path pkgPath(activeNb->filePath);
     std::filesystem::path imgDir = pkgPath / "imports" / "images";
-    std::filesystem::create_directories(imgDir, ec);
+    Folio::FileManager::CreateDirectories(imgDir.string());
 
     uint64_t hash = 14695981039346656037ULL;
     if (data && size > 0) {
@@ -47,14 +64,15 @@ std::string CanvasEngine::DeduplicateAndSaveImage(const std::string& srcPath, co
             hash ^= p[i];
             hash *= 1099511628211ULL;
         }
-    } else if (!srcPath.empty() && std::filesystem::exists(srcPath, ec)) {
-        std::ifstream f(srcPath, std::ios::binary);
-        char buf[8192];
-        while (f.read(buf, sizeof(buf)) || f.gcount() > 0) {
-            for (std::streamsize i = 0; i < f.gcount(); ++i) {
-                hash ^= static_cast<uint8_t>(buf[i]);
+    } else if (!srcPath.empty() && Folio::FileManager::Exists(srcPath)) {
+        std::vector<uint8_t> buf;
+        if (Folio::FileManager::ReadBinary(srcPath, buf) && !buf.empty()) {
+            for (size_t i = 0; i < buf.size(); ++i) {
+                hash ^= buf[i];
                 hash *= 1099511628211ULL;
             }
+        } else {
+            return "";
         }
     } else {
         return "";
@@ -65,20 +83,31 @@ std::string CanvasEngine::DeduplicateAndSaveImage(const std::string& srcPath, co
     std::string filename = std::string("img_") + hashStr + ext;
     std::filesystem::path destFile = imgDir / filename;
 
-    if (!std::filesystem::exists(destFile, ec)) {
-        if (!srcPath.empty() && std::filesystem::exists(srcPath, ec)) {
-            std::filesystem::copy_file(srcPath, destFile, std::filesystem::copy_options::overwrite_existing, ec);
-        } else if (data && size > 0) {
+    if (!Folio::FileManager::Exists(destFile.string())) {
+        if (data && size > 0) {
             std::ofstream out(destFile, std::ios::binary | std::ios::trunc);
             if (out.is_open()) {
-                out.write(static_cast<const char*>(data), size);
+                out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
             }
+        } else if (!srcPath.empty() && Folio::FileManager::Exists(srcPath)) {
+            Folio::FileManager::CopySingleFile(srcPath, destFile.string(), true);
         }
     }
 
     return (std::filesystem::path("imports") / "images" / filename).string();
 }
 
+/**
+ * @brief Asynchronous callback invoked by SDL when an image file is picked by the user.
+ *
+ * Working Process:
+ * 1. Reads binary payload using Folio::FileManager::ReadBinary (supporting Android SAF content:// URIs).
+ * 2. On failure, triggers an error toast notification without silent dropping.
+ * 3. Detects/sniffs magic byte headers if the file extension is absent or generic.
+ * 4. Deduplicates and caches image in notebook package.
+ * 5. Decodes image in background; if decoding fails, raises error toast.
+ * 6. Dispatches UI/session mutation to main thread via EnqueueMainThreadTask to prevent race conditions.
+ */
 void SDLCALL CanvasEngine::OnImageFileSelected(void* userdata, const char* const* filelist, int) {
     auto* ctx = static_cast<ImageFileDialogContext*>(userdata);
     if (!ctx) return;
@@ -86,30 +115,70 @@ void SDLCALL CanvasEngine::OnImageFileSelected(void* userdata, const char* const
     if (filelist && filelist[0] && filelist[0][0] != '\0') {
         std::string selectedPath = filelist[0];
         std::vector<uint8_t> rawBytes;
-        std::ifstream file(selectedPath, std::ios::binary | std::ios::ate);
-        if (file.is_open()) {
-            size_t sz = static_cast<size_t>(file.tellg());
-            file.seekg(0, std::ios::beg);
-            rawBytes.resize(sz);
-            file.read(reinterpret_cast<char*>(rawBytes.data()), sz);
+        bool readOk = Folio::FileManager::ReadBinary(selectedPath, rawBytes);
+        if (!readOk || rawBytes.empty()) {
+            LOG_ERROR(CanvasEngine, "Failed to read image bytes from path: " + selectedPath);
+            if (ctx->canvas) {
+                ctx->canvas->EnqueueMainThreadTask([selectedPath]() {
+                    Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                        "Image Import Failed", "Unable to read image file from storage: " + selectedPath);
+                });
+            }
+            delete ctx;
+            return;
         }
 
         std::string ext = Folio::FileManager::GetExtension(selectedPath);
-        if (ext.empty()) ext = "png";
+        // Sniff image magic bytes if extension is absent (standard for Android SAF content:// URIs)
+        if (ext.empty() || ext == "bin") {
+            if (rawBytes.size() >= 8 && rawBytes[0] == 0x89 && rawBytes[1] == 'P' && rawBytes[2] == 'N' && rawBytes[3] == 'G') {
+                ext = ".png";
+            } else if (rawBytes.size() >= 3 && rawBytes[0] == 0xFF && rawBytes[1] == 0xD8 && rawBytes[2] == 0xFF) {
+                ext = ".jpg";
+            } else if (rawBytes.size() >= 12 && rawBytes[0] == 'R' && rawBytes[1] == 'I' && rawBytes[2] == 'F' && rawBytes[3] == 'F' &&
+                       rawBytes[8] == 'W' && rawBytes[9] == 'E' && rawBytes[10] == 'B' && rawBytes[11] == 'P') {
+                ext = ".webp";
+            } else if (rawBytes.size() >= 6 && rawBytes[0] == 'G' && rawBytes[1] == 'I' && rawBytes[2] == 'F') {
+                ext = ".gif";
+            } else if (rawBytes.size() >= 2 && rawBytes[0] == 'B' && rawBytes[1] == 'M') {
+                ext = ".bmp";
+            } else {
+                ext = ".png";
+            }
+        }
         if (!ext.empty() && ext[0] != '.') ext = "." + ext;
-        std::string storedPath = DeduplicateAndSaveImage(selectedPath, rawBytes.data(), rawBytes.size(), ctx->session, ext);
+
+        std::string storedPath = ctx->canvas->DeduplicateAndSaveImage(selectedPath, rawBytes.data(), rawBytes.size(), ctx->session, ext);
 
         const double screenDpi = ctx->canvas->transform.pixelsPerMm * 25.4;
         auto img = std::make_shared<Folio::ImageObject>(rawBytes.data(), rawBytes.size(), storedPath.empty() ? selectedPath : storedPath, screenDpi);
-        if (img->isLoaded) {
-            img->worldX = ctx->insertPosWorld.x - img->worldWidth * 0.5;
-            img->worldY = ctx->insertPosWorld.y - img->worldHeight * 0.5;
+        if (!img->isLoaded) {
+            LOG_ERROR(CanvasEngine, "Failed to decode image from path: " + selectedPath);
+            if (ctx->canvas) {
+                ctx->canvas->EnqueueMainThreadTask([selectedPath]() {
+                    Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                        "Image Decode Failed", "Unsupported or corrupted image format: " + selectedPath);
+                });
+            }
+            delete ctx;
+            return;
+        }
+
+        CanvasEngine* canvas = ctx->canvas;
+        DocumentSession* session = ctx->session;
+        Point2D insertPos = ctx->insertPosWorld;
+
+        // Dispatch canvas insertion to the main UI thread
+        canvas->EnqueueMainThreadTask([canvas, session, img, insertPos, selectedPath, storedPath]() {
+            if (!session) return;
+            img->worldX = insertPos.x - img->worldWidth * 0.5;
+            img->worldY = insertPos.y - img->worldHeight * 0.5;
             img->UpdateBounds();
 
-            ctx->session->AddImage(img);
-            ctx->canvas->InvalidateLayer();
+            session->AddImage(img);
+            canvas->InvalidateLayer();
             LOG_INFO(CanvasEngine, "Imported image from '" + selectedPath + "' -> '" + (storedPath.empty() ? selectedPath : storedPath) + "' (" + Folio::ImageFormatToString(img->imageFormat).data() + ")");
-        }
+        });
     }
 
     delete ctx;
@@ -145,12 +214,16 @@ void SDLCALL CanvasEngine::OnAttachmentFileSelected(void* userdata, const char* 
         std::string filename = std::filesystem::path(selectedPath).filename().string();
         if (filename.empty()) filename = selectedPath;
 
-        if (ctx->canvas) {
-            ctx->canvas->m_pendingAttachPath    = selectedPath;
-            ctx->canvas->m_pendingAttachName    = filename;
-            ctx->canvas->m_pendingAttachSession = ctx->session;
-            ctx->canvas->m_attachModalOpen      = true;
-            LOG_INFO(CanvasEngine, "Attachment file selected (async): '" + filename + "' — awaiting embed/link decision.");
+        CanvasEngine* canvas = ctx->canvas;
+        DocumentSession* session = ctx->session;
+        if (canvas) {
+            canvas->EnqueueMainThreadTask([canvas, session, selectedPath, filename]() {
+                canvas->m_pendingAttachPath    = selectedPath;
+                canvas->m_pendingAttachName    = filename;
+                canvas->m_pendingAttachSession = session;
+                canvas->m_attachModalOpen      = true;
+                LOG_INFO(CanvasEngine, "Attachment file selected (async): '" + filename + "' — awaiting embed/link decision.");
+            });
         }
     }
 
@@ -231,6 +304,14 @@ void CanvasEngine::OpenAttachmentFileDialog(SDL_Window* parentWin, DocumentSessi
 #endif
 }
 
+/**
+ * @brief Commits a selected attachment file, either copying into the package attachments sidecar
+ * or retaining it as an external filesystem/URL link.
+ *
+ * Inputs:
+ * - embed: If true, copies the file into <notebook>/attachments/ and records relative path.
+ * - session: Pointer to active DocumentSession.
+ */
 void CanvasEngine::CommitAttachment(bool embed, DocumentSession* session) {
     if (m_pendingAttachPath.empty() || !session) {
         m_attachModalOpen = false;
@@ -244,36 +325,31 @@ void CanvasEngine::CommitAttachment(bool embed, DocumentSession* session) {
         auto activeNb = session->GetActiveNotebook();
         std::string notebookDir = (activeNb) ? activeNb->filePath : "";
         if (!notebookDir.empty()) {
-            namespace fs = std::filesystem;
-            fs::path attachDir = fs::path(notebookDir) / "attachments";
-
-            std::error_code ec;
-            fs::create_directories(attachDir, ec);
-
-            if (!ec) {
+            std::string attachDir = Folio::FileManager::JoinPath(notebookDir, "attachments");
+            if (Folio::FileManager::CreateDirectories(attachDir)) {
                 std::string safeFilename = GUIDGenerator::GenerateV4().substr(0, 8)
-                                         + "_" + m_pendingAttachName;
-                fs::path destPath = attachDir / safeFilename;
+                                         + "_" + Folio::FileManager::SanitizeFileName(m_pendingAttachName);
+                std::string destPath = Folio::FileManager::JoinPath(attachDir, safeFilename);
 
-                fs::copy_file(fs::path(m_pendingAttachPath), destPath,
-                              fs::copy_options::overwrite_existing, ec);
-
-                if (!ec) {
-                    finalPath  = "attachments/" + safeFilename;
+                if (Folio::FileManager::CopySingleFile(m_pendingAttachPath, destPath, true)) {
+                    finalPath  = Folio::FileManager::JoinPath("attachments", safeFilename);
                     embeddedOk = true;
                     LOG_INFO(CanvasEngine, "Embedded attachment: copied '" + m_pendingAttachName +
                                           "' to sidecar as '" + safeFilename + "'");
                 } else {
                     LOG_ERROR_CODE(CanvasEngine, Folio::FolioErrorCode::SysFileWriteFailed,
-                        "Failed to copy attachment to sidecar: " + ec.message() +
+                        "Failed to copy attachment to sidecar: " + m_pendingAttachPath +
                         " — falling back to link mode.");
+                    Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                        "Attachment Copy Failed", "System copy failed for attachment file. Falling back to link mode.");
                     finalPath  = m_pendingAttachPath;
                     embeddedOk = false;
                 }
             } else {
                 LOG_ERROR_CODE(CanvasEngine, Folio::FolioErrorCode::SysDirectoryCreateFailed,
-                    "Failed to create attachments sidecar directory: " + ec.message() +
-                    " — falling back to link mode.");
+                    "Failed to create attachments sidecar directory — falling back to link mode.");
+                Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                    "Folder Creation Failed", "Could not create attachments folder in notebook package.");
             }
         } else {
             LOG_WARN(CanvasEngine,
@@ -316,41 +392,56 @@ void CanvasEngine::CommitAttachment(bool embed, DocumentSession* session) {
     m_attachModalOpen      = false;
 }
 
+/**
+ * @brief Asynchronous callback invoked by SDL when a PDF file is picked by the user.
+ * Dispatches PDF ingestion and canvas object creation to the main rendering thread.
+ */
 void SDLCALL CanvasEngine::OnPdfFileSelected(void* userdata, const char* const* filelist, int) {
     auto* ctx = static_cast<PdfFileDialogContext*>(userdata);
     if (!ctx) return;
 
     if (filelist && filelist[0] && filelist[0][0] != '\0') {
         std::string selectedPath = filelist[0];
-        if (ctx->canvas && ctx->canvas->onPdfImportRequested) {
-            ctx->canvas->onPdfImportRequested(selectedPath, ctx->session);
-        } else {
-            Folio::PdfDocumentInfo docInfo;
-            if (Folio::PdfStorage::IngestPdf(selectedPath, ctx->session, ctx->importMode, docInfo)) {
-                if (docInfo.isLongDocument) {
-                    LOG_INFO(CanvasEngine, "[PDF Recommendation] " + docInfo.warningMessage);
-                }
+        CanvasEngine* canvas = ctx->canvas;
+        DocumentSession* session = ctx->session;
+        Point2D insertPos = ctx->insertPosWorld;
+        bool asBg = ctx->asBackground;
+        Folio::PdfImportMode mode = ctx->importMode;
 
-                auto activePage = ctx->session->GetActivePage();
-                if (activePage) {
-                    auto pdfObj = std::make_shared<Folio::PdfContainer>(
-                        docInfo.packagePath, docInfo.originalFileName, 0, docInfo.pageCount,
-                        ctx->insertPosWorld.x - 105.0, ctx->insertPosWorld.y - 148.5, 210.0, 297.0, ctx->asBackground
-                    );
-                    pdfObj->resolvedDiskPath = docInfo.diskPath;
-                    pdfObj->isExternalLink = docInfo.isExternal;
-                    pdfObj->guuid = GUIDGenerator::GenerateV4();
-                    pdfObj->uid = UIDGenerator::Next();
-                    pdfObj->EnsurePageLoaded();
-                    pdfObj->UpdateBounds();
+        if (canvas) {
+            canvas->EnqueueMainThreadTask([canvas, session, selectedPath, insertPos, asBg, mode]() {
+                if (canvas->onPdfImportRequested) {
+                    canvas->onPdfImportRequested(selectedPath, session);
+                } else {
+                    Folio::PdfDocumentInfo docInfo;
+                    if (Folio::PdfStorage::IngestPdf(selectedPath, session, mode, docInfo)) {
+                        if (docInfo.isLongDocument) {
+                            LOG_INFO(CanvasEngine, "[PDF Recommendation] " + docInfo.warningMessage);
+                        }
 
-                    activePage->AddObject(pdfObj, true);
-                    if (ctx->session) {
-                        ctx->session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(pdfObj));
+                        auto activePage = session ? session->GetActivePage() : nullptr;
+                        if (activePage) {
+                            auto pdfObj = std::make_shared<Folio::PdfContainer>(
+                                docInfo.packagePath, docInfo.originalFileName, 0, docInfo.pageCount,
+                                insertPos.x - 105.0, insertPos.y - 148.5, 210.0, 297.0, asBg
+                            );
+                            pdfObj->resolvedDiskPath = docInfo.diskPath;
+                            pdfObj->isExternalLink = docInfo.isExternal;
+                            pdfObj->guuid = GUIDGenerator::GenerateV4();
+                            pdfObj->uid = UIDGenerator::Next();
+                            pdfObj->EnsurePageLoaded();
+                            pdfObj->UpdateBounds();
+
+                            activePage->AddObject(pdfObj, true);
+                            session->RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(pdfObj));
+                            canvas->InvalidateLayer();
+                        }
+                    } else {
+                        Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                            "PDF Import Failed", "Could not import or read PDF: " + selectedPath);
                     }
-                    ctx->canvas->InvalidateLayer();
                 }
-            }
+            });
         }
     }
 
@@ -540,7 +631,16 @@ void SDLCALL CanvasEngine::OnVideoFileSelected(void* userdata, const char* const
 
     if (filelist && filelist[0] && filelist[0][0] != '\0') {
         std::string selectedPath = filelist[0];
-        ctx->canvas->InsertVideoFromFile(selectedPath, ctx->session);
+        CanvasEngine* canvas = ctx->canvas;
+        DocumentSession* session = ctx->session;
+        if (canvas) {
+            canvas->EnqueueMainThreadTask([canvas, selectedPath, session]() {
+                if (!canvas->InsertVideoFromFile(selectedPath, session)) {
+                    Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                        "Video Import Failed", "Could not load video file: " + selectedPath);
+                }
+            });
+        }
     }
 
     delete ctx;
@@ -636,7 +736,16 @@ void SDLCALL CanvasEngine::OnAudioFileSelected(void* userdata, const char* const
 
     if (filelist && filelist[0] && filelist[0][0] != '\0') {
         std::string selectedPath = filelist[0];
-        ctx->canvas->InsertAudioFromFile(selectedPath, ctx->session);
+        CanvasEngine* canvas = ctx->canvas;
+        DocumentSession* session = ctx->session;
+        if (canvas) {
+            canvas->EnqueueMainThreadTask([canvas, selectedPath, session]() {
+                if (!canvas->InsertAudioFromFile(selectedPath, session)) {
+                    Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                        "Audio Import Failed", "Could not load audio file: " + selectedPath);
+                }
+            });
+        }
     }
 
     delete ctx;

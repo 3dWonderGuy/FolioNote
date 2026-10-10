@@ -23,7 +23,7 @@
 #include "core/spatial/aabb_utils.hpp"
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "core/objects/object_registry.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/logger.hpp"
 
 #include <cstring>

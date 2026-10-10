@@ -1,5 +1,5 @@
-#include "io/app_directories.hpp"
-#include "io/path_utils.hpp"
+#include "io/paths/app_directories.hpp"
+#include "io/paths/path_utils.hpp"
 #include "utils/logger.hpp"
 
 #include <mutex>
@@ -100,7 +100,8 @@ std::string AppDirectories::GetConfigDirectory() {
  *    - Windows: Uses SHGetKnownFolderPath with FOLDERID_LocalAppData (%LOCALAPPDATA%/FolioNote).
  *      Guaranteed to be local machine storage excluded from OneDrive synchronization.
  *    - Android: Resolves via SDL_GetPrefPath to internal app sandboxed storage.
- *    - Linux/macOS: Uses SDL_FOLDER_LOCAL_APP_DATA or SDL_FOLDER_APPDATA (e.g. ~/.local/share/FolioNote).
+ *    - Linux/macOS: Uses SDL_GetPrefPath("", "FolioNote") resolving to $XDG_DATA_HOME/FolioNote/
+ *      (~/.local/share/FolioNote) or ~/Library/Application Support/FolioNote/.
  *
  * @return Canonical normalized UTF-8 filesystem path to local-only app data.
  */
@@ -135,14 +136,22 @@ std::string AppDirectories::GetLocalDataDirectory() {
         if (pref) SDL_free(pref);
     }
 #else
-    const char* appData = SDL_GetUserFolder(SDL_FOLDER_LOCAL_APP_DATA);
-    if (!appData) appData = SDL_GetUserFolder(SDL_FOLDER_APPDATA);
-    if (appData && appData[0] != '\0') {
-        std::filesystem::path localRoot = PathUtils::Utf8ToNativePath(appData) / "FolioNote";
-        std::string res = PathUtils::NormalizeSeparators(PathUtils::NativePathToUtf8(localRoot));
+    // Linux, macOS, and POSIX desktop platforms:
+    // SDL3 does not define a separate SDL_FOLDER_LOCAL_APP_DATA enum value.
+    // Instead, SDL_GetPrefPath("", "FolioNote") queries standard platform app storage:
+    //   - Linux: $XDG_DATA_HOME/FolioNote/ (defaults to ~/.local/share/FolioNote/)
+    //   - macOS: ~/Library/Application Support/FolioNote/
+    // This directory is strictly machine-local and immune to cloud folder sync churn.
+    char* pref = SDL_GetPrefPath("", "FolioNote");
+    if (pref && pref[0] != '\0') {
+        std::string res = PathUtils::NormalizeSeparators(std::string(pref));
+        SDL_free(pref);
         std::lock_guard<std::mutex> lock(s_localDataMutex);
         s_activeLocalDataRoot = res;
         return res;
+    }
+    if (pref) {
+        SDL_free(pref);
     }
 #endif
 

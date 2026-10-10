@@ -1,0 +1,25 @@
+var class_section_group =
+[
+    [ "SectionGroup", "class_section_group.html#a4b141e2c7b8579f5134dfb6e56a78b22", null ],
+    [ "AddSection", "class_section_group.html#a2a51fd323b8b460c05d016fc009890ae", null ],
+    [ "AddSubGroup", "class_section_group.html#abe737b3409b8eb60ec10f6badfe8f024", null ],
+    [ "Clone", "class_section_group.html#a7d7592f32be1a4f9b92449591d93b82f", null ],
+    [ "FindSectionByGuid", "class_section_group.html#a443b6f9d950b7ee4e6eceb2111677026", null ],
+    [ "FindSubGroupByGuid", "class_section_group.html#ad1706e71a6be951a1e9178fea1b7afe8", null ],
+    [ "GetActiveSection", "class_section_group.html#a84c217e6b6f098438b3cefec3cd13547", null ],
+    [ "GetAllPages", "class_section_group.html#a5cbcdd265ec9ef6ff487806c0f799972", null ],
+    [ "IsDeleted", "class_section_group.html#a04d9fa125a0e532730c5e0ebfbadb15a", null ],
+    [ "MoveSection", "class_section_group.html#a3ebb064e2559b1553e46cab486dd3030", null ],
+    [ "RemoveSection", "class_section_group.html#a902e707d4b9e14a7b46e17a305c6bbe0", null ],
+    [ "activeSectionIndex", "class_section_group.html#a73418a949ec10d1b802728e798e5e5d3", null ],
+    [ "colorTag", "class_section_group.html#ab888b32612122e953d7d529053d9c363", null ],
+    [ "deletedAt", "class_section_group.html#a7ca8384d739ff555c5fa047aa86f80fd", null ],
+    [ "guid", "class_section_group.html#acd0b59a9cb1e37b340dacea0932da8eb", null ],
+    [ "isCollapsed", "class_section_group.html#a621d9ee8003941db8d93254f3265933f", null ],
+    [ "name", "class_section_group.html#a576e423f89cc1330cf7a6a3adc3ed6ba", null ],
+    [ "notebookGuid", "class_section_group.html#a14941f9e2e83af472e3620725a13ae5c", null ],
+    [ "parentGroupGuid", "class_section_group.html#a395fc037376bf43a7900ae12219da98f", null ],
+    [ "sections", "class_section_group.html#a5c2d33f97b4c6fb885154dc63f7e1693", null ],
+    [ "sortOrder", "class_section_group.html#a1ed6c307d72960935843b94432b6dddb", null ],
+    [ "subGroups", "class_section_group.html#a629629f6d646df51c2fbdbbdcb6f8086", null ]
+];

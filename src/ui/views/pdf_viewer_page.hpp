@@ -18,7 +18,7 @@
 #include "app/theme_manager.hpp"
 #include "ui/imgui_theme.hpp"
 #include "utils/logger.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/thread_pool.hpp"
 
 namespace Folio {

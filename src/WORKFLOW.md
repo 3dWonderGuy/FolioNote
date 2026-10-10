@@ -2,7 +2,7 @@
 
 > **Document Location:** `src/WORKFLOW.md`  
 > **Version:** 2.0 (High-Performance Infinite Canvas Architecture)  
-> **Target Framework:** C++20, SDL3, Dear ImGui, Blend2D, SQLite3, Ink-Stroke-Modeler, LunaSVG  
+> **Target Framework:** C++20, SDL3, SDL_image, Dear ImGui, Blend2D, AsmJit, SQLite3, Ink-Stroke-Modeler, LunaSVG, Google PDFium, libVLC, WebView2, FreeType 2, nlohmann/json  
 
 ---
 
@@ -42,42 +42,57 @@ graph TD
         TouchRec["TouchGestureRecognizer (Pinch/Pan/Rotate)"]
         ISM["InputStateMachine (Device Arbitration)"]
         SpecAct["SpecialActionManager (Barrel Overrides)"]
+        PenPalette["PenPalette & PresetManager"]
     end
 
-    subgraph Core_Engine ["Core Engine & Spatial (src/core/)"]
-        StrokeModeler["InkStrokeModeler & StrokeSmoother"]
-        LivePipeline["LiveLayerPipeline (Blend2D Active Path)"]
-        CanvasEng["CanvasEngine (Viewport, Blit & Overlays)"]
+    subgraph Core_Engine ["Core Engine & Layers (src/core/)"]
+        CanvasEng["CanvasEngine (Viewport, Camera, Blit)"]
+        InkEng["InkEngine & InkStrokeModeler (Smoothing)"]
+        LayerMgr["LayerCompositorManager (Baked & Live Layers)"]
+        PDFEng["PDFEngine (Google PDFium Native Reader)"]
+        MDEng["MDEngine (Markdown AST Parser & Layout)"]
         RTreeIndex["R-Tree Spatial Index & AABB Culling"]
         SelectionGizmo["SelectionGizmo (Transform, Rotate, Scale)"]
         UndoRedo["UndoRedoManager & CanvasCommand History"]
+        ActionSched["ActionScheduler & Macro Transactions"]
+        ClipMgr["ClipboardManager (Cross-Page Serialization)"]
+    end
+
+    subgraph Filesystem_IO ["Filesystem & I/O Subsystem (src/io/)"]
+        FileMgr["FileManager (Unified Facade)"]
+        AppDirs["AppDirectories (Roots, Cache, Config)"]
+        PathUtils["PathUtils (Unicode & \\\\?\\ Long Paths)"]
+        SysDialogs["SystemDialogs (Native Pickers & Shell)"]
+        AtomicIO["FileWriter (Two-Phase .tmp Staging) & FileReader"]
+        PkgMarker["PackageMarker (Shell desktop.ini Branding)"]
     end
 
     subgraph Document_Hierarchy ["Document Model (src/core/document/)"]
         DocSession["DocumentSession (Controller / Facade)"]
-        Workspace["Workspace (Notebook Manager)"]
-        Notebook["Notebook (.fn Container)"]
-        SectionGroup["SectionGroup (Folders)"]
-        Section["Section"]
-        CanvasPage["CanvasPage (In-Memory Working Set)"]
+        Workspace["Workspace (Notebook Manager & LRU)"]
+        LibraryReg["Library (Discovery & .trash/ Quarantine)"]
+        Notebook["Notebook (.notebook Bundle Container)"]
+        SectionGroup["SectionGroup (Hierarchical Folders)"]
+        Section["Section (Thematic Tabs)"]
+        CanvasPage["CanvasPage (In-Memory Working Set & 2-Level Subpages)"]
     end
 
-    subgraph Storage_Persistence ["Persistence Layer (src/core/storage/ & utils/)"]
-        DbMgr["DBManager (SQLite3 WAL Mode)"]
-        BinSerializer["BinarySerializer (.ink Payload)"]
-        PageRepo["PageRepository (Async Flush)"]
-        ThreadPool["ThreadPool (Background I/O)"]
-        SearchIndex["NotebookSearchIndex (SQLite FTS5)"]
+    subgraph Storage_Persistence ["Persistence Layer (src/core/storage/ & backup/)"]
+        DbMgr["DBManager (SQLite3 WAL Mode structure.db)"]
+        BinSerializer["BinarySerializer (.ink Vector Payload)"]
+        PageRepo["PageRepository (4-Stage Async Save Pipeline)"]
+        ThreadPool["ThreadPool (Background I/O & Tasks)"]
+        SearchIndex["NotebookSearchIndex (SQLite FTS5 BM25)"]
         BackupMgr["BackupManager & PageVersionManager"]
     end
 
     subgraph UI_Presentation ["Presentation Layer (src/ui/ & src/app/)"]
-        ImGuiContext["Dear ImGui Framework"]
+        UIFramework["UI Framework (Tokens, Animations, Shapes, Builders, Sidebar)"]
         TitleBar["CustomTitleBar (Borderless Frame)"]
-        Ribbon["RibbonBar (Full / Mini / Collapsed / Hidden)"]
-        ModernNav["ModernNavPanel (Sidebar Navigation)"]
+        Ribbon["RibbonBar (Full / Mini / Collapsed)"]
+        ModernNav["ModernNavPanel & UISidebar (Navigation)"]
         CanvasPanel["Canvas Viewport Texture Quad"]
-        Overlays["Telemetry / Tuning / Import Modals"]
+        Overlays["CommandPalette, DebugOverlay, TuningStudio, Modals"]
         GL_Presenter["OpenGL 3.3 / GLES 3.0 Presenter"]
     end
 
@@ -91,30 +106,34 @@ graph TD
     InpMgr --> TouchRec
     InpMgr --> ISM
     ISM --> SpecAct
+    InpMgr --> PenPalette
 
-    ISM --> StrokeModeler
+    ISM --> InkEng
     ISM --> SelectionGizmo
-    StrokeModeler --> LivePipeline
-    LivePipeline --> CanvasEng
+    InkEng --> LayerMgr
+    LayerMgr --> CanvasEng
 
     ISM --> DocSession
     DocSession --> UndoRedo
+    DocSession --> ActionSched
     DocSession --> CanvasPage
     CanvasPage --> RTreeIndex
 
     CanvasEng --> CanvasPanel
-    TitleBar --> ImGuiContext
-    Ribbon --> ImGuiContext
-    ModernNav --> ImGuiContext
-    CanvasPanel --> ImGuiContext
-    Overlays --> ImGuiContext
-    ImGuiContext --> GL_Presenter
+    UIFramework --> TitleBar
+    UIFramework --> Ribbon
+    UIFramework --> ModernNav
+    CanvasPanel --> UIFramework
+    Overlays --> UIFramework
+    UIFramework --> GL_Presenter
 
     CanvasPage -.->|Async Save Request| PageRepo
     PageRepo --> BinSerializer
     PageRepo --> DbMgr
     DbMgr --> SearchIndex
     ThreadPool --> PageRepo
+    PageRepo --> AtomicIO
+    Workspace --> LibraryReg
     Workspace --> BackupMgr
 ```
 
@@ -124,36 +143,61 @@ graph TD
 
 ```
 src/
-├── main.cpp                              # App entry point, CLI arguments, headless virtual printer dispatch
-├── folionote.rc                          # Windows PE resource script (Icon, version metadata)
+├── main.cpp                              # Application bootstrap, CLI argument parser, SDL3 entry point
+├── folionote.rc                          # Win32 PE resource script (Application icon, version metadata)
 ├── logo.ico                              # High-resolution multi-size application icon
 ├── WORKFLOW.md                           # System workflow and architectural reference (this file)
 │
+├── android-project/                      # Android Studio & Gradle NDK deployment project
+│
 ├── app/                                  # High-level application lifecycle, windowing, and settings
-│   ├── app.hpp                           # Master Application class: init, 120Hz frame loop, layout composition, shutdown
+│   ├── actions/                          # Global UI action dispatchers and keybinding handlers
+│   ├── app.hpp                           # Master Application coordinator: init, 120Hz frame loop, layout composition, shutdown
 │   ├── app_view_mode.hpp                 # View routing enum (CanvasWorkspace vs NotebookHub)
-│   ├── settings_manager.hpp              # Persistent configuration JSON manager (pen palettes, view settings, LRU)
+│   ├── context_menu_item.hpp             # Right-click contextual menu item descriptor
+│   ├── context_menu_manager.hpp          # Context menu builder, layout, and event dispatcher
+│   ├── settings_manager.hpp              # Persistent configuration JSON manager (presets, defaults, view options)
 │   ├── theme_manager.hpp                 # Dynamic visual theming (Light/Dark mode, accent colors, tokens)
 │   └── window_state_manager.hpp          # Window resize stabilization, minimization freeze, frame throttling
 │
-├── core/                                 # Core document model, math, rendering engine, and spatial indexing
+├── core/                                 # Core document model, math, rendering engines, and persistence
+│   ├── actions/                          # Command action scheduler and macro transactions
+│   │   ├── action_scheduler.hpp / .cpp   # Asynchronous deferred task queue and thread synchronization
+│   │   ├── action_types.hpp              # Command transaction and execution priority flags
+│   │   └── canvas_action.hpp             # Polymorphic canvas action interface
+│   │
 │   ├── backup/                           # Version history, automatic snapshotting, and crash recovery
-│   │   ├── backup_manager.hpp / .cpp     # Whole-notebook zip/folder archive rotation and periodic backup
-│   │   └── page_version_manager.hpp/.cpp # Per-page snapshot commits and historical rollback diffs
+│   │   ├── backup_manager.hpp / .cpp     # Multi-frequency automated backup manager (monthly, weekly, daily rotation)
+│   │   ├── page_version_manager.hpp/.cpp # Per-page snapshot commits and historical rollback diffs
+│   │   └── README.md                     # Backup subsystem documentation
+│   │
+│   ├── canvas_engine/                    # High-speed graphics viewport, transforms, and scene rendering
+│   │   ├── canvas_engine.hpp / .cpp      # Master CanvasEngine: viewport blitting, grid rendering, tile composition
+│   │   ├── background/                   # Paper grid, ruling lines, dot matrices, and page borders
+│   │   ├── gizmo/                        # Interactive bounding box, transformation handles, rotation pivot
+│   │   ├── tools/                        # Canvas interaction tool controllers (Pan, Select, Shape, Text)
+│   │   ├── transform/                    # Affine transformation pipeline: Screen <-> Viewport <-> World mm
+│   │   └── README.md                     # CanvasEngine documentation
+│   │
+│   ├── clipboard/                        # Cross-page canvas object clipboard serialization
+│   │   ├── clipboard_data_package.hpp    # Standardized serializable clipboard container
+│   │   ├── clipboard_manager.hpp / .cpp  # System clipboard integration, JSON/binary object serialization
+│   │   └── platform/                     # Native Win32 / Linux / macOS clipboard API adapters
 │   │
 │   ├── document/                         # Hierarchical document structure and session management
-│   │   ├── canvas_page.hpp               # In-memory page object: object registry, R-Tree, viewport continuity, background style
+│   │   ├── canvas_page.hpp               # In-memory page object: object registry, R-Tree, viewport camera, 2-level subpages
 │   │   ├── document_observer.hpp         # Observer interface for reactive UI updates on document mutations
 │   │   ├── document_session.hpp          # Top-level runtime session facade orchestrating workspace, commands, and tools
-│   │   ├── notebook.hpp / .cpp           # Notebook entity: sections, section groups, metadata, dirty state tracking
+│   │   ├── notebook.hpp / .cpp           # Notebook package entity: sections, section groups, metadata, dirty state tracking
 │   │   ├── section.hpp                   # Section container holding ordered canvas pages
 │   │   ├── section_group.hpp             # Hierarchical folder grouping sections together
-│   │   ├── workspace.hpp                 # Multi-notebook repository, active notebook switching, LRU memory manager
-│   │   ├── library/                      # Notebook discovery, cloning, template creation, and trash bin
-│   │   │   ├── library.hpp / .cpp        # Master library registry scanning user notebooks directory
-│   │   │   ├── library_discovery.cpp     # File system traversal indexing .fn packages
-│   │   │   ├── library_trash.cpp         # Soft-delete recycle bin and restore orchestration
-│   │   │   └── notebook_cloner.cpp       # Deep cloning and template duplication logic
+│   │   ├── workspace.hpp                 # Multi-notebook repository, active notebook switching, LRU memory working set
+│   │   ├── README.md                     # Document subsystem architecture documentation
+│   │   ├── library/                      # Multi-library packaging, discovery, cloning, and trash quarantine
+│   │   │   ├── library.hpp / .cpp        # Master library registry scanning user notebooks directory (.foliolib)
+│   │   │   ├── library_discovery.cpp     # Filesystem traversal indexing library structures and metadata
+│   │   │   ├── library_trash.cpp         # Non-destructive .trash/ quarantine, collision-free moves, permanent purge
+│   │   │   └── notebook_cloner.cpp       # Binary package replication and template duplication
 │   │   └── session/                      # Split implementation domains of DocumentSession
 │   │       ├── session_canvas_ops.cpp    # Stroke additions, object transforms, grouping, clipboard insertion
 │   │       ├── session_history.cpp       # Undo/Redo dispatch, transaction boundaries, batch eraser commits
@@ -161,20 +205,11 @@ src/
 │   │       ├── session_metadata.cpp      # Page styling, paper templates, background grid spacing, metadata DTOs
 │   │       └── session_navigation.cpp   # Deep link navigation, page switching, in-memory camera caching
 │   │
-│   ├── engine/                           # High-speed graphics rendering engine and stroke processing
-│   │   ├── canvas_engine.hpp             # Viewport blitting, grid rendering, Blend2D software rasterizer to GL texture
-│   │   ├── canvas_transform.hpp          # Affine transformation pipeline: Screen <-> Viewport <-> World mm coordinates
-│   │   ├── gizmo_types.hpp               # Handle hit-test enumerations, pivot points, interaction modes
-│   │   ├── selection_gizmo.hpp           # Interactive bounding box: translation, non-uniform scale, rotation, flipping
-│   │   ├── stroke_collision.hpp          # High-speed geometric collision (Point-to-Stroke, Segment Slicing, Lasso Box)
-│   │   ├── stroke_outline_builder.hpp    # Polygonal stroke geometry generation from pressure-modeled centerline paths
-│   │   └── stroke_smoother.hpp           # Google InkStrokeModeler integration, spring-damper physics, prediction
-│   │
 │   ├── export/                           # Multi-format document serialization and printing exporters
 │   │   ├── export_manager.hpp / .cpp     # Central export dispatcher coordinating format conversions
 │   │   ├── html_svg_exporter.hpp / .cpp  # Self-contained responsive HTML5/SVG vector export
 │   │   ├── markdown_exporter.hpp / .cpp  # Markdown structured text export with embedded vector graphics
-│   │   ├── package_exporter.hpp / .cpp   # Zipped `.fn` notebook archive packager
+│   │   ├── package_exporter.hpp / .cpp   # Zipped `.fnb` notebook archive packager
 │   │   ├── pdf_vector_exporter.hpp / .cpp# High-resolution vector PDF exporter via Cairo/Blend2D
 │   │   └── sheet_tiler.hpp / .cpp        # Infinite canvas multi-page A4/Letter grid slicing and layout tiler
 │   │
@@ -184,43 +219,65 @@ src/
 │   │
 │   ├── import/                           # External document ingestion and parsing
 │   │   ├── import_manager.hpp / .cpp     # External asset dispatcher (Images, PDF documents, Text)
-│   │   └── package_importer.hpp / .cpp   # `.fn` zip container extractor and SQLite database validator
+│   │   └── package_importer.hpp / .cpp   # `.fnb` zip container extractor and SQLite database validator
+│   │
+│   ├── ink_engine/                       # High-speed stroke processing, physics, and spline generation
+│   │   ├── ink_engine.hpp / .cpp         # Stylus pipeline coordinator, stroke lifecycle, live ring buffer
+│   │   ├── stroke_collision.hpp          # Geometric collision math (Point-to-Stroke, Segment Slicing, Lasso)
+│   │   ├── stroke_outline_builder.hpp    # Polygonal stroke geometry generation from pressure centerline paths
+│   │   ├── stroke_smoother.hpp           # Google InkStrokeModeler integration, spring-damper physics, prediction
+│   │   └── README.md                     # Inking engine documentation
+│   │
+│   ├── layers/                           # Multi-tiered canvas layer composting
+│   │   ├── baked_canvas_layer.hpp / .cpp # Static background layer cached to offscreen Blend2D surface
+│   │   ├── embedded_app_layer.hpp / .cpp # Native child windows and embedded web/media surfaces
+│   │   ├── layer_compositor_manager.hpp/.cpp # Composition coordinator blitting layers in z-index order
+│   │   ├── live_interaction_layer.hpp/.cpp   # Transient live inking and active stroke interaction surface
+│   │   └── README.md                     # Layers subsystem documentation
+│   │
+│   ├── md_engine/                        # Dedicated integrated Markdown editor and document viewer
+│   │   ├── md_editor_state.hpp / .cpp    # Interactive cursor, selection, typing, and syntax highlighting
+│   │   ├── md_engine.hpp / .cpp          # Markdown document controller, file I/O, live rendering
+│   │   ├── md_layout_engine.hpp / .cpp   # Typography flow, heading blocks, code snippets, table layouts
+│   │   ├── md_parser.hpp / .cpp          # Fast CommonMark/GFM AST parser
+│   │   └── md_types.hpp                  # AST node structures, inline tokens, styling attributes
 │   │
 │   ├── objects/                          # Canvas element domain hierarchy (Polymorphic CanvasObject)
 │   │   ├── canvas_object.hpp             # Abstract base class: UID, AABB bounds, serialization, hit-test, render
-│   │   ├── attachment_container/         # File attachment tiles with embedded icon, name, and size
-│   │   ├── ink_container.hpp / .cpp      # Continuous vector ink stroke containing pressure points and smoothed paths
-│   │   ├── pdf_container.hpp             # Embedded PDF page object with vector background caching
-│   │   ├── shape_container.hpp / .cpp    # Unified vector shapes container (Rect, Ellipse, Polygon, Waves)
+│   │   ├── canvas_context.hpp            # Render and hit-test context passed to CanvasObject methods
+│   │   ├── object_action_registry.hpp/.cpp # Dynamic action catalog and command factories for objects
+│   │   ├── object_config.hpp             # Serialization format tags, default styles, type IDs
+│   │   ├── object_registry.hpp / .cpp    # Monotonic UID allocation and runtime type registry
+│   │   ├── pdf_container.hpp             # Embedded PDF document page canvas object
 │   │   ├── table_container.hpp           # Interactive vector table object with grid cells and text runs
-│   │   ├── text_box.hpp                  # Standalone text box container with rich formatting
-│   │   ├── connectors/                   # Dynamic vector connectors & smart arrows
-│   │   │   ├── connector_types.hpp       # Arrow head styles, curvature modes, anchor types
-│   │   │   └── smart_arrow_container.hpp # Smart connector with automatic bounding box magnetic docking
-│   │   ├── links/                        # Deep-linking canvas objects
-│   │   │   └── link_object.hpp           # Clickable hyperlinks referencing web URLs or internal pages
+│   │   ├── attachment_container/         # File attachment tiles with embedded icon, name, and size
+│   │   ├── connectors/                   # Dynamic vector connectors & smart magnetic arrows
+│   │   ├── ink_container/                # Continuous vector ink strokes and polygon fill containers
+│   │   ├── links/                        # Deep-linking hyperlinks referencing web URLs or internal pages
 │   │   ├── media/                        # Embedded audio, video, and image multimedia containers
 │   │   │   ├── audio/                    # Voice note audio player container with waveform visualizer
-│   │   │   │   ├── audio_container.hpp   # Header declaration & MoveOnly gizmo invariants
-│   │   │   │   └── audio_container.cpp   # Blend2D waveform chip rendering & playback logic
-│   │   │   ├── images/                   # Embedded raster image containers (PNG, JPEG, WebP, BMP, GIF, TIFF, QOI)
-│   │   │   │   ├── image_format.hpp      # ImageFormat enum and bidirectional MIME/ext converters
-│   │   │   │   ├── image_container.hpp   # Header declaration, hit-test math, aspect preservation
-│   │   │   │   └── image_container.cpp   # Surface decoding, inverse affine hit-testing, Blend2D blitting
-│   │   │   └── videos/                   # Linked video player containers (Local & YouTube)
-│   │   │       ├── video_container.hpp   # Header declaration, URL helpers, aspect ratio
-│   │   │       └── video_container.cpp   # Player card rendering, play/pause controls, YouTube badge
-│   │   ├── primitives/                   # Geometric primitives, dashers, and wave shapes
-│   │   │   ├── path_dasher.hpp           # Vector stroke dash and dot pattern generator
-│   │   │   ├── shape_types.hpp           # Geometric enumeration (Line, Arrow, DoubleArrow, Rect, Star, Callout)
-│   │   │   └── wave_shapes.hpp / .cpp    # Sine, triangle, and square wave algorithmic shape generators
-│   │   └── text/                         # Rich text processing and editor state
-│   │       ├── text_box.hpp / .cpp       # Multi-run rich text object supporting inline formatting
-│   │       ├── text_editor_state.hpp/.cpp# Interactive text cursor, selection span, font styling, word wrap
-│   │       └── text_run.hpp              # Atomic run of characters sharing identical font, weight, and color
+│   │   │   ├── images/                   # Embedded raster image containers (PNG, JPEG, WebP, BMP, TIFF)
+│   │   │   └── videos/                   # Linked video containers with libVLC hardware-accelerated playback
+│   │   ├── primitives/                   # Geometric primitives (Line, Rect, Ellipse, Arrow, Star, Callout, Waves)
+│   │   └── text/                         # Multi-run rich text object (`TextBox`) and text editor state
+│   │
+│   ├── overlay/                          # High-level canvas interactive overlay hosts
+│   │   ├── interactive_overlay.hpp       # Base overlay interface for canvas-space UI widgets
+│   │   ├── interactive_overlay_host.hpp/.cpp # Viewport overlay lifecycle and event coordinator
+│   │   ├── mock_dummy_overlay.hpp        # Debug and testing sandbox overlay
+│   │   └── web_overlay.hpp / .cpp        # Native WebView2 web browser overlay for interactive embeds
+│   │
+│   ├── pdf_engine/                       # Google PDFium native PDF reader and annotator subsystem
+│   │   ├── pdf_document.hpp / .cpp       # PDFium document handle, page catalog, metadata
+│   │   ├── pdf_engine.hpp / .cpp         # PDF lifecycle coordinator, page loading, navigation
+│   │   ├── pdf_renderer.hpp / .cpp       # Multi-threaded PDFium page rasterizer to Blend2D surfaces
+│   │   ├── pdf_text_layer.hpp / .cpp     # Selectable text extraction, bounding boxes, search highlight spans
+│   │   ├── pdf_tile_cache.hpp / .cpp     # Multi-resolution zoom tile cache for instant viewport response
+│   │   ├── pdf_types.hpp                 # PDF bookmarks, page dimensions, annotation primitives
+│   │   └── pdf_virtualizer.hpp / .cpp    # Continuous scrolling page virtualizer and memory culler
 │   │
 │   ├── search/                           # Full-text indexing and fuzzy notebook searching
-│   │   └── notebook_search_index.hpp/.cpp# SQLite FTS5 indexer for handwriting, text boxes, and PDF text
+│   │   └── notebook_search_index.hpp/.cpp# SQLite FTS5 indexer for handwriting, text boxes, and PDF text (BM25)
 │   │
 │   ├── spatial/                          # High-performance spatial query structures
 │   │   ├── aabb.hpp                      # 2D Axis-Aligned Bounding Box with intersection/union math
@@ -230,10 +287,10 @@ src/
 │   ├── storage/                          # Persistence engine, SQLite transactions, and binary serialization
 │   │   ├── binary_serializer.hpp / .cpp  # Ultra-fast binary stroke serializer/deserializer (.ink format)
 │   │   ├── db_manager.hpp / .cpp         # Multi-threaded SQLite3 manager (WAL mode, schema migrations)
-│   │   ├── page_repository.hpp           # Page data repository managing dirty writes and background threads
+│   │   ├── page_repository.hpp           # 4-stage async save pipeline, dirty write queues, LRU cache eviction
 │   │   └── pdf_storage.hpp               # PDF blob cache and deduplication manager
 │   │
-│   └── text/                             # Font caching and text measurement
+│   └── text/                             # Font caching and typography measurement
 │       └── font_manager.hpp / .cpp       # Dynamic FreeType / System font loader and glyph metric caching
 │
 ├── input/                                # Multimodal hardware input arbitration and state machine
@@ -251,38 +308,64 @@ src/
 │       ├── input_state_machine_touch.cpp # Touch-specific handlers (finger drawing vs 2-finger camera glide)
 │       └── special_action_manager.hpp/.cpp# Stylus hardware button triggers, eraser tip detection, quick actions
 │
+├── io/                                   # Cross-platform filesystem abstraction and atomic persistence
+│   ├── README.md                         # Comprehensive user data architecture & filesystem guide
+│   ├── WORKFLOW.md                       # I/O operational workflows, threat modeling, and concurrency model
+│   ├── facade/                           # Master subsystem facade & directory tree operations
+│   │   ├── file_manager.hpp / .cpp       # Facade for directory operations, copies, moves, and deletions
+│   ├── paths/                            # Path arithmetic, Unicode conversions, and standard OS roots
+│   │   ├── path_utils.hpp / .cpp         # UTF-8/UTF-16 Unicode conversion and long path (\\?\) handling
+│   │   └── app_directories.hpp / .cpp    # Resolution of document roots, config, cache, and log paths
+│   ├── storage/                          # Crash-resilient persistence, mmap streaming, and logging
+│   │   ├── file_writer.hpp / .cpp        # Two-phase atomic write staging (.tmp) and physical drive sync
+│   │   ├── file_reader.hpp / .cpp        # Zero-copy memory-mapped file access (mmap), streams, and hashing
+│   │   └── file_logger.hpp               # Structured multi-sink file logger with automatic size-based rotation
+│   └── platform/                         # Native OS shell integrations and package branding
+│       ├── system_dialogs.hpp / .cpp     # Native OS file dialogs (Win32, Linux, macOS)
+│       └── package_marker.hpp            # Windows Shell package branding (desktop.ini attributes & icons)
+│
 ├── ui/                                   # User interface, panels, ribbon, navigation, and overlays
+│   ├── WORKFLOW.md                       # Master UI architecture and workflow specification
 │   ├── icon_manager.hpp                  # Vector SVG icon renderer and GL texture atlas cache
 │   ├── imgui_theme.hpp                   # FolioTheme token definitions, fonts, color palettes, custom push helpers
 │   ├── components/                       # Modular reusable Dear ImGui UI components
 │   │   ├── custom_titlebar.hpp           # Windows/Linux custom borderless titlebar with window controls
-│   │   ├── debug_overlay.hpp             # Real-time telemetry: FPS, digitizer rate, frame latency, memory LRU
 │   │   ├── dialogs.hpp                   # Modal confirmation dialogs, rename prompts, delete warnings
 │   │   ├── modern_nav_panel.hpp          # Smooth animated sidebar: Notebooks, Section Groups, Sections, Pages
 │   │   ├── notebook_nav.hpp              # Tabbed section navigation strip with drag-to-reorder tabs
-│   │   ├── pdf_import_modal.hpp          # Interactive modal for placing newly printed/imported PDF documents
 │   │   ├── ribbon_bar.hpp                # Microsoft 365-style Ribbon toolbar (Tabs, Pen Gallery, Action Groups)
 │   │   ├── text_container_view.hpp       # In-place rich text editing container overlay with formatting floating bar
-│   │   ├── toolbar_builder.hpp / .cpp    # Declarative fluent builder for high-density tool strips
+│   │   └── toolbar_builder.hpp / .cpp    # Declarative fluent builder for high-density tool strips
+│   ├── framework/                        # Modern declarative, physics-animated UI framework layer
+│   │   ├── ui_animation_manager.hpp/.cpp # Spring-damper and exponential decay transition engine
+│   │   ├── ui_builder.hpp / .cpp         # Fluent widget builders (Buttons, Switches, Cards, Segmented controls)
+│   │   ├── ui_overlay_host.hpp / .cpp    # Global overlay, modal, and animated toast host
+│   │   ├── ui_shape_manager.hpp / .cpp   # Surface primitives: acrylic glass, elevation shadows, glows
+│   │   ├── ui_sidebar.hpp / .cpp         # Animated, dockable, responsive sidebar rail
+│   │   ├── ui_tokens.hpp                 # Central design tokens: spacing, corner radii, elevation levels
+│   │   └── README.md                     # UI framework subsystem documentation
+│   ├── overlays/                         # Floating HUDs, tool pickers, and calibration overlays
+│   │   ├── command_palette.hpp / .cpp    # Global quick-action search and command launcher
+│   │   ├── debug_overlay.hpp             # Real-time telemetry: FPS, digitizer rate, frame latency, memory LRU
+│   │   ├── overlay_manager.hpp / .cpp    # Overlay lifecycle and input hit-test routing
+│   │   ├── pdf_import_modal.hpp          # Interactive modal for placing newly printed/imported PDF documents
 │   │   ├── toolbar_demo_overlay.hpp      # Live preview testing sandbox for ribbon styles
 │   │   └── tuning_overlay.hpp            # Interactive live inking tuning studio (spring physics, smoothing weights)
+│   ├── shell/                            # Desktop application chrome and window framing
+│   │   └── app_shell.hpp / .cpp          # Top-level window frame layout and view hosting
 │   └── views/                            # Full-page dedicated application views
 │       ├── notebook_hub.hpp              # Notebook Hub: Grid/List view of all notebooks, templates, trash, settings
 │       └── pdf_viewer_page.hpp           # High-efficiency dedicated continuous PDF reader with annotation layer
 │
 └── utils/                                # Core utilities, logging, thread pooling, and platform helpers
+    ├── README.md                         # Utilities subsystem architecture and catalog
     ├── error_codes.hpp / .md             # Centralized structured application error codes and troubleshooting guide
-    ├── file_loader.hpp                   # Zero-copy memory-mapped file reader helper
-    ├── file_logger.hpp                   # Structured multi-sink file logger with automatic size-based rotation
-    ├── file_manager.hpp / .cpp           # High-level file system operations: atomic copy, directory tree management
-    ├── file_saver.hpp                    # Atomic safe file writer (write to temp file -> rename on success)
-    ├── guid_generator.hpp                # Standard OS UUID v4 generator
+    ├── guid_generator.hpp                # Standard OS RFC 4122 UUID v4 generator
     ├── logger.hpp                        # High-throughput logging macros (`LOG_INFO`, `LOG_WARN`, `LOG_ERROR`)
-    ├── package_marker.hpp                # `.fn` directory marker and package integrity validator
+    ├── physics_model.hpp                 # Kinematic physics calculations for canvas camera smoothing
     ├── printer_installer.hpp             # Windows "Print to FolioNote" virtual printer installer/uninstaller
-    ├── thread_pool.hpp                   # Generic task-stealing worker thread pool for async database writes
-    ├── uid_generator.hpp                 # Fast monotonic 32-bit unique ID generator for in-memory CanvasObjects
-    └── usage_tracker.hpp                 # Local privacy-preserving usage statistics tracker (drawing time, clicks)
+    ├── thread_pool.hpp                   # Work-stealing background worker thread pool for async I/O
+    └── uid_generator.hpp                 # Fast monotonic 32-bit unique ID generator for in-memory CanvasObjects
 ```
 
 ---
@@ -547,22 +630,32 @@ graph TD
 
 ## 9. Storage, Database & Persistence System
 
-FolioNote uses a hybrid container format (`.fn` packages) combining SQLite3 for relational metadata with optimized binary vector streams for page graphics payloads.
+FolioNote uses a hybrid container format (`.notebook` packages housed inside `.foliolib` library workspaces) combining SQLite3 for relational metadata with optimized binary vector streams for page graphics payloads.
 
 ### 9.1 Package Container Architecture
 
 ```
-Notebook Package Directory: "My Notebook.fn/"
-├── notebook.db          # Embedded SQLite database (schema, sections, page catalog, FTS5 index)
-├── notebook.db-wal      # SQLite Write-Ahead Log (high-concurrency writes)
-├── notebook.db-shm      # SQLite Shared-Memory Index
-└── pages/               # Binary graphics payloads
-    ├── 550e8400-e29b-41d4-a716-446655440000.ink       # Vector stroke binary payload
-    ├── 550e8400-e29b-41d4-a716-446655440000.ink.wal   # Instant action journal
-    └── 6ba7b810-9dad-11d1-80b4-00c04fd430c8.ink
+[LibraryName].foliolib/
+├── library.meta                     # Library identification, name, and version descriptor
+├── .trash/                          # Non-destructive recycle bin quarantine directory
+└── [NotebookName].notebook/         # Self-contained notebook package bundle
+    ├── desktop.ini                  # Windows Shell branding (custom icon & folder tooltip)
+    ├── structure.db                 # SQLite database (WAL mode: metadata, hierarchy, FTS5 search)
+    ├── structure.db-wal             # SQLite high-concurrency Write-Ahead Log journal
+    ├── structure.db-shm             # SQLite shared-memory index
+    ├── pages/                       # Isolated per-page binary vector stroke payloads
+    │   ├── {page-uuid-1}.ink        # Compressed vector graphics payload (magic 'FINK' header)
+    │   ├── {page-uuid-1}.ink.wal    # Uncommitted action journal for instant crash recovery
+    │   └── {page-uuid-2}.ink
+    └── imports/                     # Managed external asset attachments
+        ├── pdfs/                    # Imported reference PDF documents and backing files
+        │   └── {asset-uuid}.pdf
+        ├── images/                  # High-resolution raster images (PNG, JPEG, WebP)
+        │   └── {asset-uuid}.png
+        └── media/                   # Embedded video and audio assets for canvas playback
 ```
 
-### 9.2 Relational Database Schema (`notebook.db`)
+### 9.2 Relational Database Schema (`structure.db`)
 
 ```mermaid
 erDiagram
@@ -615,6 +708,7 @@ erDiagram
         string parent_page_guid FK
         int32 nesting_level
         int32 sort_order
+        bool is_collapsed
         int32 paper_style
         double grid_spacing_mm
         int32 page_size_format
@@ -623,6 +717,9 @@ erDiagram
         double page_height_mm
         bool show_page_border
         int32 infinity_mode
+        bool is_dedicated_pdf
+        string dedicated_pdf_path
+        bool is_dedicated_md
         int64 updated_at
         int64 deleted_at
     }

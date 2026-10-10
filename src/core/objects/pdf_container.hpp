@@ -21,7 +21,7 @@
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
 #include "core/pdf_engine/pdf_renderer.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 
 namespace Folio {
 

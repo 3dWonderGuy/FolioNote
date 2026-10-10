@@ -39,8 +39,7 @@
 #include "ui/framework/ui_animation_manager.hpp"
 #include "ui/framework/ui_overlay_host.hpp"
 #include "input/input_manager.hpp"
-#include "io/file_reader.hpp"
-#include "utils/usage_tracker.hpp"
+#include "io/storage/file_reader.hpp"
 #include "app/theme_manager.hpp"
 #include <lunasvg.h>
 #include <chrono>
@@ -348,7 +347,6 @@ public:
         FolioTheme::LoadModernFonts(io);
         themeManager.ApplyTheme(ThemePreset::FolioColor);
         themeManager.LoadFromJson("config/theme_custom.json");
-        ::Folio::UsageTracker::Instance().LoadFromJson("config/usage_stats.json");
         themeManager.UpdateOSWindowFrame(window);
         canvas.canvasBgColor = BLRgba32(0xFF, 0xFF, 0xFF);
         canvas.gridLineColor = BLRgba32(0xEB, 0xEE, 0xF2);
@@ -1010,19 +1008,6 @@ public:
             double frameDtSec = static_cast<double>(currentFrameNs - lastRenderTimeNs) / 1000000000.0;
             lastRenderTimeNs = currentFrameNs;
 
-            // Usage Telemetry Tracking
-            if (currentView == AppViewMode::NotebookHub) {
-                ::Folio::UsageTracker::Instance().RecordHubTime(frameDtSec);
-                if (hubView.activeMainCategory == HubMainCategory::Settings) {
-                    ::Folio::UsageTracker::Instance().RecordSettingsTime(frameDtSec);
-                }
-            } else {
-                ::Folio::UsageTracker::Instance().RecordCanvasTime(frameDtSec);
-                if (isActivelyDrawing) {
-                    ::Folio::UsageTracker::Instance().RecordDrawingTime(frameDtSec);
-                }
-            }
-
             // Periodically check the user Imports directory for documents from "Print to FolioNote"
             uint64_t currentTicksMs = SDL_GetTicks();
             if (currentTicksMs - lastImportScanTicksMs >= 2000) {
@@ -1042,10 +1027,6 @@ public:
 
             // Advance frame-rate independent UI animations, springs, and tweens
             Folio::UI::UIAnimationManager::Instance().Update(io.DeltaTime);
-
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                ::Folio::UsageTracker::Instance().RecordClick();
-            }
 
             // =========================================================
             // WORKSPACE LAYOUT GEOMETRY (LOGICAL WINDOW COORDINATES)
@@ -1475,7 +1456,6 @@ public:
     void Shutdown() {
         // Automatically save the currently open notebook to SQLite when closing the app
         session.workspace.FlushActiveNotebookAsync();
-        ::Folio::UsageTracker::Instance().SaveToJson("config/usage_stats.json");
 
         // Sync final UI and Ribbon state to SettingsManager before saving
         SettingsManager::Instance().drawWithTouch = ribbon.drawWithTouch;

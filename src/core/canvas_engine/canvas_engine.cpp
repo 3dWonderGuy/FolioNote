@@ -1,7 +1,6 @@
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/document/document_session.hpp"
-#include "utils/usage_tracker.hpp"
 #include "utils/logger.hpp"
 #include <algorithm>
 #include <cmath>
@@ -96,13 +95,11 @@ void CanvasEngine::Pan(double screenDx, double screenDy) noexcept {
     if (screenDx == 0.0 && screenDy == 0.0) return;
     transform.PanByScreenPixels(screenDx, screenDy);
     InvalidateLayer();
-    ::Folio::UsageTracker::Instance().RecordPanGesture();
 }
 
 void CanvasEngine::ZoomAt(double screenX, double screenY, double factor) noexcept {
     transform.ZoomAtScreenPoint(screenX, screenY, factor);
     InvalidateLayer();
-    ::Folio::UsageTracker::Instance().RecordZoomGesture();
 }
 
 Viewport CanvasEngine::GetViewport() const noexcept {
@@ -145,6 +142,9 @@ void CanvasEngine::HomeOrCenterPage() noexcept {
 }
 
 void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visibleBakedObjects, DocumentSession* session, double deltaTime) {
+    // Process asynchronous tasks dispatched from background platform threads (e.g. SDL dialog callbacks)
+    ProcessMainThreadTasks();
+
     if (viewportW <= 0 || viewportH <= 0) return;
 
     layerCompositor.GetBakedCanvasLayer().SetPaperTheme(canvasBgColor, gridLineColor, pageBorderColor);
@@ -245,4 +245,52 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
 #endif
 
     isDirty = false;
+}
+
+/**
+ * @brief Thread-safe dispatch of tasks to be executed on the main UI/rendering thread.
+ *
+ * Architecture & Working Process:
+ * 1. Background threads (e.g. SDL3 dialog callbacks running on Android JNI thread) invoke this method.
+ * 2. Acquires m_mainThreadTasksMutex and pushes the task functor into m_mainThreadTasks.
+ * 3. Calls InvalidateLayer() to wake the render loop and schedule the next frame.
+ *
+ * @param task The lambda or std::function to execute on the main thread.
+ */
+void CanvasEngine::EnqueueMainThreadTask(std::function<void()> task) {
+    if (!task) return;
+    {
+        std::lock_guard<std::mutex> lock(m_mainThreadTasksMutex);
+        m_mainThreadTasks.push_back(std::move(task));
+    }
+    InvalidateLayer();
+}
+
+/**
+ * @brief Flushes and executes all pending main-thread tasks in FIFO order.
+ *
+ * Working Process:
+ * 1. Quickly swaps the queued task list under m_mainThreadTasksMutex to minimize lock contention.
+ * 2. Sequentially executes each task on the current calling thread (main render thread).
+ * 3. Catches and logs any unexpected exceptions to guarantee application resilience.
+ */
+void CanvasEngine::ProcessMainThreadTasks() {
+    std::vector<std::function<void()>> tasks;
+    {
+        std::lock_guard<std::mutex> lock(m_mainThreadTasksMutex);
+        if (m_mainThreadTasks.empty()) return;
+        tasks.swap(m_mainThreadTasks);
+    }
+
+    for (auto& task : tasks) {
+        if (task) {
+            try {
+                task();
+            } catch (const std::exception& e) {
+                LOG_ERROR(CanvasEngine, std::string("Exception in MainThreadTask: ") + e.what());
+            } catch (...) {
+                LOG_ERROR(CanvasEngine, "Unknown exception in MainThreadTask");
+            }
+        }
+    }
 }

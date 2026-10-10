@@ -13,7 +13,7 @@
 
 #include "core/document/document_session.hpp"
 #include "app/settings_manager.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include <algorithm>
 
 // -----------------------------------------------------------------------------

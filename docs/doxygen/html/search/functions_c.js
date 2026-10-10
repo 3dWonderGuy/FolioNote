@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['nameactivepagerevision_0',['NameActivePageRevision',['../class_document_session.html#adc7c888cb7805f2590980b02cc62406f',1,'DocumentSession']]],
+  ['nativepathtoutf8_1',['NativePathToUtf8',['../class_folio_1_1_path_utils.html#a4a41dfb5a97b1fd34e8214bec0406284',1,'Folio::PathUtils']]],
+  ['naturalfrequency_2',['NaturalFrequency',['../struct_folio_1_1_physics_1_1_spring_config.html#af38416c308620a7b549423620bffdbc6',1,'Folio::Physics::SpringConfig']]],
+  ['navigate_3',['Navigate',['../class_folio_1_1_link_object.html#a8853532b05f7aa7b1203b079b51602a3',1,'Folio::LinkObject::Navigate()'],['../class_folio_1_1_web_overlay.html#ad4847a22b944481ae3c346d872ad5e3f',1,'Folio::WebOverlay::Navigate()']]],
+  ['navigatetocanvaslocation_4',['NavigateToCanvasLocation',['../class_document_session.html#ac807438a6f5708b66100f7efc9becfa5',1,'DocumentSession']]],
+  ['navigatetodeeplink_5',['NavigateToDeepLink',['../class_document_session.html#ac88e3147d507a942f1f1bf930fe53c2b',1,'DocumentSession']]],
+  ['navigatetoobject_6',['NavigateToObject',['../class_document_session.html#afc366de49af49fe2a2a5e71734216ce0',1,'DocumentSession']]],
+  ['navigatetopage_7',['NavigateToPage',['../class_document_session.html#a85e464991acdba957a892b756e57e508',1,'DocumentSession']]],
+  ['navigatetosection_8',['NavigateToSection',['../class_document_session.html#ad0ea9844d8dabb2cd8d229524f26aeb6',1,'DocumentSession']]],
+  ['navigatetouri_9',['NavigateToUri',['../class_document_session.html#ac98413b00d6bd8ab61ccc6ade5e66e23',1,'DocumentSession']]],
+  ['next_10',['Next',['../class_u_i_d_generator.html#ab1e172f8e15b0b3348bf1fee4906f746',1,'UIDGenerator']]],
+  ['nextpage_11',['NextPage',['../class_document_session.html#a5f5f1fec666f723a40256b71d092d391',1,'DocumentSession::NextPage()'],['../class_folio_1_1_pdf_viewer_page.html#aab82ad1754cd5cbd728c0f6d663e2fa2',1,'Folio::PdfViewerPage::NextPage()']]],
+  ['normalizeangledeg_12',['NormalizeAngleDeg',['../class_folio_1_1_ruler_tool.html#a5f6111da3bf374cd01e9459d3c82ccfe',1,'Folio::RulerTool']]],
+  ['normalizeseparators_13',['NormalizeSeparators',['../class_folio_1_1_file_manager.html#aa82133d6341d09e91f1016eeb1d92564',1,'Folio::FileManager::NormalizeSeparators()'],['../class_folio_1_1_path_utils.html#a820aa09b4d43231c7bb41cea2851d80f',1,'Folio::PathUtils::NormalizeSeparators()']]],
+  ['notebook_14',['Notebook',['../class_notebook.html#ac47284ef58ddd362b31589e2eec7fdb2',1,'Notebook']]],
+  ['notebookhubview_15',['NotebookHubView',['../struct_notebook_hub_view.html#a8a253fb233fcba16f75e4947fd2ff2b9',1,'NotebookHubView']]],
+  ['notifyactivenotebookchanged_16',['NotifyActiveNotebookChanged',['../class_document_session.html#aa885fa419d96ac844b1df22327b4fb2b',1,'DocumentSession']]],
+  ['notifyactivepagechanged_17',['NotifyActivePageChanged',['../class_document_session.html#a5857452fcc8f73e71f1473e993f4f72b',1,'DocumentSession']]],
+  ['notifyactivesectionchanged_18',['NotifyActiveSectionChanged',['../class_document_session.html#a917ee3340b163b7cd49e4ccdd070f240',1,'DocumentSession']]],
+  ['notifyhistorychanged_19',['NotifyHistoryChanged',['../class_document_session.html#adaf4b91e0b1217bee9f00af65f69f3b8',1,'DocumentSession']]],
+  ['notifypagecreated_20',['NotifyPageCreated',['../class_document_session.html#afd461ea7b48f9b09f0e0c6bcf32c5d55',1,'DocumentSession']]],
+  ['notifypagedeleted_21',['NotifyPageDeleted',['../class_document_session.html#aa082a419949eed0213ae65a83a6dcab7',1,'DocumentSession']]],
+  ['notifypagemodified_22',['NotifyPageModified',['../class_document_session.html#a1fb56a9b82b73f801866608a0ce640ef',1,'DocumentSession']]]
+];

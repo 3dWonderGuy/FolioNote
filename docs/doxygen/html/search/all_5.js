@@ -1,0 +1,25 @@
+var searchData=
+[
+  ['5_201_20design_20tokens_20elevation_20hierarchy_20tt_20ui_5ftokens_20hpp_20tt_0',['5.1 Design Tokens &amp; Elevation Hierarchy (&lt;tt&gt;ui_tokens.hpp&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md516',1,'']]],
+  ['5_201_20scenario_201_3a_20power_20loss_20kernel_20panic_20during_20save_1',['5.1 Scenario 1: Power Loss / Kernel Panic During Save',['../md_src_2io_2_w_o_r_k_f_l_o_w.html#autotoc_md440',1,'']]],
+  ['5_201_20state_20transition_20matrix_2',['5.1 State Transition Matrix',['../md_src_2_w_o_r_k_f_l_o_w.html#autotoc_md643',1,'']]],
+  ['5_201_20the_20win32_20tt_20max_5fpath_20tt_20challenge_3',['5.1 The Win32 &lt;tt&gt;MAX_PATH&lt;/tt&gt; Challenge',['../C:/SoftwareDevelopment/FolioNote/src/io/README.md#autotoc_md408',1,'']]],
+  ['5_202_20dynamic_20physics_20animation_20engine_20tt_20ui_5fanimation_5fmanager_20hpp_20tt_4',['5.2 Dynamic Physics Animation Engine (&lt;tt&gt;ui_animation_manager.hpp&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md521',1,'']]],
+  ['5_202_20extended_20path_20transformation_20tt_20tt_5',['5.2 Extended Path Transformation (&lt;tt&gt;\\\\?\\&lt;/tt&gt;)',['../C:/SoftwareDevelopment/FolioNote/src/io/README.md#autotoc_md409',1,'']]],
+  ['5_202_20interaction_20state_20summary_20table_6',['5.2 Interaction State Summary Table',['../md_src_2_w_o_r_k_f_l_o_w.html#autotoc_md644',1,'']]],
+  ['5_202_20scenario_202_3a_20antivirus_20or_20cloud_20storage_20onedrive_20dropbox_20lock_20contention_7',['5.2 Scenario 2: Antivirus or Cloud Storage (OneDrive / Dropbox) Lock Contention',['../md_src_2io_2_w_o_r_k_f_l_o_w.html#autotoc_md441',1,'']]],
+  ['5_203_20scenario_203_3a_20destination_20file_20marked_20tt_20file_5fattribute_5freadonly_20tt_8',['5.3 Scenario 3: Destination File Marked &lt;tt&gt;FILE_ATTRIBUTE_READONLY&lt;/tt&gt;',['../md_src_2io_2_w_o_r_k_f_l_o_w.html#autotoc_md442',1,'']]],
+  ['5_203_20surface_20primitives_20glassmorphic_20shapes_20tt_20ui_5fshape_5fmanager_20hpp_20tt_9',['5.3 Surface Primitives &amp; Glassmorphic Shapes (&lt;tt&gt;ui_shape_manager.hpp&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md523',1,'']]],
+  ['5_204_20fluent_20declarative_20widget_20builders_20tt_20ui_5fbuilder_20hpp_20tt_10',['5.4 Fluent Declarative Widget Builders (&lt;tt&gt;ui_builder.hpp&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md525',1,'']]],
+  ['5_204_20scenario_204_3a_20deep_20directory_20nesting_20exceeding_20260_20characters_11',['5.4 Scenario 4: Deep Directory Nesting Exceeding 260 Characters',['../md_src_2io_2_w_o_r_k_f_l_o_w.html#autotoc_md443',1,'']]],
+  ['5_205_20animated_20responsive_20sidebar_20rail_20tt_20ui_5fsidebar_20hpp_20tt_12',['5.5 Animated Responsive Sidebar Rail (&lt;tt&gt;ui_sidebar.hpp&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md527',1,'']]],
+  ['5_206_20global_20overlay_20modal_20toast_20host_20tt_20ui_5foverlay_5fhost_20hpp_20tt_13',['5.6 Global Overlay, Modal &amp; Toast Host (&lt;tt&gt;ui_overlay_host.hpp&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md529',1,'']]],
+  ['5_20animated_20responsive_20sidebar_20rail_20tt_20ui_5fsidebar_20hpp_20tt_14',['5.5 Animated Responsive Sidebar Rail (&lt;tt&gt;ui_sidebar.hpp&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md527',1,'']]],
+  ['5_20defensive_20uid_20spatial_20synchronization_15',['5. Defensive UID &amp; Spatial Synchronization',['../C:/SoftwareDevelopment/FolioNote/src/core/document/README.md#autotoc_md119',1,'']]],
+  ['5_20input_20state_20machine_20interaction_20states_16',['5. Input State Machine &amp; Interaction States',['../md_src_2_w_o_r_k_f_l_o_w.html#autotoc_md642',1,'']]],
+  ['5_20the_20framework_20engine_20tt_20src_20ui_20framework_20tt_17',['5. The Framework Engine (&lt;tt&gt;src/ui/framework/&lt;/tt&gt;)',['../md_src_2ui_2_w_o_r_k_f_l_o_w.html#autotoc_md515',1,'']]],
+  ['5_20threat_20modeling_20failure_20mode_20recovery_18',['5. Threat Modeling &amp; Failure Mode Recovery',['../md_src_2io_2_w_o_r_k_f_l_o_w.html#autotoc_md439',1,'']]],
+  ['5_20tt_20logger_20tt_20a_20href_20logger_20hpp_20tt_20logger_20hpp_20tt_20a_19',['3.5 &lt;tt&gt;Logger&lt;/tt&gt; (&lt;a href=&quot;logger.hpp&quot; &gt;&lt;tt&gt;logger.hpp&lt;/tt&gt;&lt;/a&gt;)',['../C:/SoftwareDevelopment/FolioNote/src/utils/README.md#autotoc_md617',1,'']]],
+  ['5_20unicode_20path_20engineering_20windows_20tt_20max_5fpath_20tt_20posix_20',['5. Unicode &amp; Path Engineering (Windows &lt;tt&gt;MAX_PATH&lt;/tt&gt; &amp; POSIX)',['../C:/SoftwareDevelopment/FolioNote/src/io/README.md#autotoc_md407',1,'']]],
+  ['5_20zero_20dynamic_20memory_20allocation_20in_20onupdate_20and_20onrenderoverlay_21',['5. Zero dynamic memory allocation in OnUpdate() and OnRenderOverlay().',['../mock__dummy__overlay_8hpp.html#autotoc_md328',1,'']]]
+];

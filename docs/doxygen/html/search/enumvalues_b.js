@@ -1,0 +1,23 @@
+var searchData=
+[
+  ['manual_0',['Manual',['../namespace_folio.html#af927d8ac15483f6c681e7130d84971beae1ba155a9f2e8c3be94020eef32a0301',1,'Folio']]],
+  ['markdown_1',['Markdown',['../class_canvas_page.html#a7dd407f106dba4448ac3b2d338aa0721a2182a74bab7188d959e795d9301e87ff',1,'CanvasPage']]],
+  ['markdowntext_2',['MarkdownText',['../namespace_folio.html#abeb2cdcdacdbe2aac5f8d014b6e1bee0a029ae37d094b6a64c49396076e3132dc',1,'Folio']]],
+  ['mathblock_3',['MathBlock',['../namespace_folio.html#ab5feaee751e56924866982ed1a813c82a6228b51b17b64a3bca5872800bd1bae4',1,'Folio']]],
+  ['mathformula_4',['MathFormula',['../namespace_folio.html#a23d43e499692d188ab3303656eb073e6afc24153ea1c6f08f3a85537e1379aa3a',1,'Folio']]],
+  ['mathinline_5',['MathInline',['../namespace_folio.html#ae55a5c0a1120c6d1becb7507e101817fa85dd1a646a7b7657d7aba66a41dc7138',1,'Folio']]],
+  ['mathlatex_6',['MathLaTeX',['../canvas__object_8hpp.html#ad77a2400b6233b221e23bc962da32b0da2fc6c66e88b0fae6516c616663c648b7',1,'canvas_object.hpp']]],
+  ['medium_7',['Medium',['../namespace_folio_u_i.html#af0ffba5e51f953e7d3abdc4e0367cba7a87f8a6ab85c9ced3702b4ea641ad4bb5',1,'FolioUI::Medium'],['../namespace_folio_1_1_u_i.html#a881e668f7200647f63b2508fcbf177a9a87f8a6ab85c9ced3702b4ea641ad4bb5',1,'Folio::UI::Medium']]],
+  ['menu_8',['Menu',['../namespace_folio_u_i.html#a457d83783a4fb821e4a8ed03c13f9efcab61541208db7fa7dba42c85224405911',1,'FolioUI']]],
+  ['minimized_9',['Minimized',['../window__state__manager_8hpp.html#a7688310f9a1664a9fc20b8989418de4aa074afcc50ae51f248cbae4950845549e',1,'window_state_manager.hpp']]],
+  ['minitoolbar_10',['MiniToolbar',['../ribbon__bar_8hpp.html#a839895b3642557819b65eff2f4276587ab595b3dcb783deb3e1d4e506a2addd6a',1,'ribbon_bar.hpp']]],
+  ['modifystyle_11',['ModifyStyle',['../namespace_folio.html#a159d7b54edbef13c79ab6eb5bd40f4efa7164267585a4e7cf4db628844138c063',1,'Folio']]],
+  ['modifytext_12',['ModifyText',['../namespace_folio.html#a159d7b54edbef13c79ab6eb5bd40f4efaf5d06602529c0b686f5785ab53050a41',1,'Folio']]],
+  ['modifyzorder_13',['ModifyZOrder',['../namespace_folio.html#a159d7b54edbef13c79ab6eb5bd40f4efafa9e060dc37ae5d71a5d8904ae649e54',1,'Folio']]],
+  ['monthly_14',['Monthly',['../namespace_folio.html#af927d8ac15483f6c681e7130d84971bea9030e39f00132d583da4122532e509e9',1,'Folio']]],
+  ['mouse_15',['Mouse',['../state_machine_2input__state__machine_8hpp.html#adbd7c4c417b1498b333bef443182ce51af2a47c6809d88e175dade0ef7b16aa13',1,'input_state_machine.hpp']]],
+  ['movebody_16',['MoveBody',['../class_folio_1_1_ruler_tool.html#a9325330c72aa5ff80c2f2ab057d8288da900d51de9f65df410c1c0c889654ed27',1,'Folio::RulerTool']]],
+  ['moveonly_17',['MoveOnly',['../gizmo__types_8hpp.html#a9631e57f8157d093a48c954af8295c3aa977b66c70c0ff16113422559bc7d8089',1,'gizmo_types.hpp']]],
+  ['moving_18',['Moving',['../window__state__manager_8hpp.html#a7688310f9a1664a9fc20b8989418de4aadefe967ad0373b2274fc298f19125ca7',1,'window_state_manager.hpp']]],
+  ['multiply_19',['Multiply',['../pen__palette_8hpp.html#a0a72f89222b06814e4def649e122acb1ae257376d913f3b53cbb4a9b19d770648',1,'pen_palette.hpp']]]
+];

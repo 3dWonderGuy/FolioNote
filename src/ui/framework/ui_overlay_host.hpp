@@ -22,6 +22,8 @@
 #include <vector>
 #include <functional>
 
+#include <mutex>
+
 namespace Folio::UI {
 
 /**
@@ -69,7 +71,7 @@ public:
     static UIOverlayHost& Instance();
 
     /**
-     * @brief Posts a non-intrusive toast notification.
+     * @brief Posts a non-intrusive toast notification. Thread-safe.
      *
      * @param type Semantic type (Success, Info, Warning, Error).
      * @param title Short heading text.
@@ -77,6 +79,11 @@ public:
      * @param durationSeconds Time before auto-dismiss (default 4.0s).
      */
     void ShowToast(UIToastType type, const std::string& title, const std::string& message, float durationSeconds = 4.0f);
+
+    /**
+     * @brief Convenience helper to post an error toast with high visibility.
+     */
+    void ShowErrorToast(const std::string& title, const std::string& message, float durationSeconds = 5.0f);
 
     /**
      * @brief Presents an animated modal dialog window.
@@ -87,6 +94,11 @@ public:
      * @param width Preferred width in pixels (default 480px).
      */
     void OpenModal(const std::string& id, const std::string& title, std::function<void()> renderFunc, float width = 480.0f);
+
+    /**
+     * @brief Presents a critical error modal dialog that requires explicit acknowledgment.
+     */
+    void ShowErrorModal(const std::string& title, const std::string& message);
 
     /**
      * @brief Closes the currently active modal dialog.
@@ -105,6 +117,7 @@ private:
     UIOverlayHost() = default;
     ~UIOverlayHost() = default;
 
+    std::mutex toastsMutex_;
     std::vector<ToastMessage> toasts_;
     ActiveModal currentModal_;
 };

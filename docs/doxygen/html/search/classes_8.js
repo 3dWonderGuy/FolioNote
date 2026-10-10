@@ -1,0 +1,26 @@
+var searchData=
+[
+  ['icanvasaction_0',['ICanvasAction',['../class_folio_1_1_i_canvas_action.html',1,'Folio']]],
+  ['icanvascommand_1',['ICanvasCommand',['../class_folio_1_1_i_canvas_command.html',1,'Folio']]],
+  ['iconmanager_2',['IconManager',['../class_icon_manager.html',1,'']]],
+  ['icontexture_3',['IconTexture',['../struct_icon_manager_1_1_icon_texture.html',1,'IconManager']]],
+  ['idocumentsessionobserver_4',['IDocumentSessionObserver',['../class_folio_1_1_i_document_session_observer.html',1,'Folio']]],
+  ['iembeddedapp_5',['IEmbeddedApp',['../class_folio_1_1_i_embedded_app.html',1,'Folio']]],
+  ['iinteractiveoverlay_6',['IInteractiveOverlay',['../class_folio_1_1_i_interactive_overlay.html',1,'Folio']]],
+  ['imagedecoder_7',['ImageDecoder',['../class_folio_1_1_image_decoder.html',1,'Folio']]],
+  ['imagefiledialogcontext_8',['ImageFileDialogContext',['../struct_canvas_engine_1_1_image_file_dialog_context.html',1,'CanvasEngine']]],
+  ['imageframe_9',['ImageFrame',['../struct_folio_1_1_image_frame.html',1,'Folio']]],
+  ['imageobject_10',['ImageObject',['../class_folio_1_1_image_object.html',1,'Folio']]],
+  ['importmanager_11',['ImportManager',['../class_folio_1_1_import_manager.html',1,'Folio']]],
+  ['inertialtracker1d_12',['InertialTracker1D',['../class_folio_1_1_physics_1_1_inertial_tracker1_d.html',1,'Folio::Physics']]],
+  ['inkcontainer_13',['InkContainer',['../class_ink_container.html',1,'']]],
+  ['inkengine_14',['InkEngine',['../class_folio_1_1_ink_engine.html',1,'Folio']]],
+  ['inkingtuningconfig_15',['InkingTuningConfig',['../struct_inking_tuning_config.html',1,'']]],
+  ['inkingtuningoverlay_16',['InkingTuningOverlay',['../class_inking_tuning_overlay.html',1,'']]],
+  ['inputconfiguration_17',['InputConfiguration',['../struct_folio_input_1_1_input_configuration.html',1,'FolioInput']]],
+  ['inputmanager_18',['InputManager',['../class_input_manager.html',1,'']]],
+  ['inputpoint_19',['InputPoint',['../struct_stroke_outline_builder_1_1_input_point.html',1,'StrokeOutlineBuilder']]],
+  ['inputstatemachine_20',['InputStateMachine',['../class_input_state_machine.html',1,'']]],
+  ['instantaction_21',['InstantAction',['../class_folio_1_1_instant_action.html',1,'Folio']]],
+  ['interactiveoverlayhost_22',['InteractiveOverlayHost',['../class_folio_1_1_interactive_overlay_host.html',1,'Folio']]]
+];

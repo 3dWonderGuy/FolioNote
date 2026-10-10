@@ -6,9 +6,9 @@
 #include <chrono>
 #include <algorithm>
 
-#include "io/file_reader.hpp"
+#include "io/storage/file_reader.hpp"
 #include "utils/logger.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "core/document/document_session.hpp"
 #include "core/pdf_engine/pdf_renderer.hpp"
 

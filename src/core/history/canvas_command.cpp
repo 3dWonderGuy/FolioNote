@@ -10,7 +10,7 @@
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/objects/attachment_container/attachment_container.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {

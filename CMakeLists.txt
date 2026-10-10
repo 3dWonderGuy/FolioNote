@@ -450,12 +450,12 @@ endif()
 
 
 set(FOLIO_IO_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/path_utils.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/app_directories.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/system_dialogs.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_writer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_reader.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/file_manager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/paths/path_utils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/paths/app_directories.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/platform/system_dialogs.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/storage/file_writer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/storage/file_reader.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/facade/file_manager.cpp"
 )
 
 # testing

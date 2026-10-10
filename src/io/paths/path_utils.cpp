@@ -1,4 +1,4 @@
-#include "io/path_utils.hpp"
+#include "io/paths/path_utils.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -169,7 +169,9 @@ std::string PathUtils::PathToFileUri(const std::string& path) {
 
     if (path.rfind("file://", 0) == 0 ||
         path.rfind("http://", 0) == 0 ||
-        path.rfind("https://", 0) == 0) {
+        path.rfind("https://", 0) == 0 ||
+        path.rfind("content://", 0) == 0 ||
+        path.rfind("mailto:", 0) == 0) {
         return path;
     }
 

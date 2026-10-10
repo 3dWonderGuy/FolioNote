@@ -2,7 +2,7 @@
 #include "core/document/document_session.hpp"
 #include "core/document/canvas_page.hpp"
 #include "utils/logger.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/thread_pool.hpp"
 
 #include <SDL3/SDL.h>

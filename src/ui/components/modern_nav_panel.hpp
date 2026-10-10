@@ -11,7 +11,6 @@
 #include "ui/imgui_theme.hpp"
 #include "ui/icon_manager.hpp"
 #include "app/app_view_mode.hpp"
-#include "utils/usage_tracker.hpp"
 
 // ============================================================================
 // 1. CONFIGURATION CONSTANTS & METRICS
@@ -103,7 +102,6 @@ public:
         strncpy(sectionSettingsPassword, sec->password.c_str(), sizeof(sectionSettingsPassword) - 1);
         sectionSettingsPassword[sizeof(sectionSettingsPassword) - 1] = '\0';
         openSectionSettingsModal = true;
-        ::Folio::UsageTracker::Instance().RecordDialogOpened();
     }
 
     void OpenPageSettings(const std::shared_ptr<CanvasPage>& page, CanvasEngine& canvas) {
@@ -114,7 +112,6 @@ public:
         pageSettingsNestingLevel = page->nestingLevel;
         pageSettingsPaperStyle = canvas.currentPaperStyle;
         openPageSettingsModal = true;
-        ::Folio::UsageTracker::Instance().RecordDialogOpened();
     }
 
     // Clipboard state
@@ -156,7 +153,6 @@ public:
         pendingDeleteName = name;
         pendingDeleteParentGuid = parentGuid;
         openDeleteConfirmModal = true;
-        ::Folio::UsageTracker::Instance().RecordDialogOpened();
     }
 
     // -----------------------------------------------------------------------
@@ -2169,7 +2165,6 @@ private:
                         if (activeSec->activePageIndex != p) {
                             activeSec->activePageIndex = p;
                             canvas.ClearSelection(&session);
-                            ::Folio::UsageTracker::Instance().RecordPageSwitch();
                             LOG_INFO(NavPanel, "Switched active page to: '" + page->title + "' (" + page->guid + ")");
                         }
                         canvas.needsFullRebake = true;

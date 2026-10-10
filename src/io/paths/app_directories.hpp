@@ -1,7 +1,7 @@
 #pragma once
 /**
  * =========================================================================================
- * @file io/app_directories.hpp
+ * @file io/paths/app_directories.hpp
  * @brief Platform-aware standard application directory and package root resolver
  * =========================================================================================
  */

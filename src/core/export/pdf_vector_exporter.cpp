@@ -25,7 +25,7 @@
 #include "core/document/canvas_page.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/text/text_box.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/logger.hpp"
 #include <fstream>
 #include <sstream>

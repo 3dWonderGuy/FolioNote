@@ -12,6 +12,7 @@
 #include "core/document/document_session.hpp"
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "ui/imgui_theme.hpp"
+#include "ui/framework/ui_overlay_host.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/logger.hpp"
@@ -65,6 +66,8 @@ public:
     void Open(const std::string& filePath, DocumentSession* session) {
         if (!PdfStorage::InspectPdf(filePath, currentDoc)) {
             LOG_ERROR(PdfStorage, "Cannot open import modal: file inspection failed for " + filePath);
+            Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                "PDF Open Failed", "Could not read or parse PDF file: " + filePath);
             return;
         }
 
@@ -513,6 +516,8 @@ private:
         PdfDocumentInfo docInfo;
         if (!PdfStorage::IngestPdf(currentDoc.originalPath, &session, importMode, docInfo)) {
             LOG_ERROR(PdfStorage, "CommitImport failed: ingestion failed for " + currentDoc.originalPath);
+            Folio::UI::UIOverlayHost::Instance().ShowErrorToast(
+                "PDF Ingest Failed", "Could not copy PDF file into notebook package: " + currentDoc.originalPath);
             return;
         }
 

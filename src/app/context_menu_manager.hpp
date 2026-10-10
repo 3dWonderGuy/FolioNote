@@ -53,7 +53,7 @@
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "ui/imgui_theme.hpp"
 #include "core/objects/object_action_registry.hpp"
-#include "io/file_manager.hpp"
+#include "io/facade/file_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace Folio {

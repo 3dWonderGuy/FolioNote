@@ -1,0 +1,28 @@
+var class_notebook =
+[
+    [ "Notebook", "class_notebook.html#ac47284ef58ddd362b31589e2eec7fdb2", null ],
+    [ "AddSection", "class_notebook.html#a297845c4749d994df77a6aa91a6a98b7", null ],
+    [ "AddSectionGroup", "class_notebook.html#a14d8a7666d1632868cd902564b75bbf8", null ],
+    [ "Clone", "class_notebook.html#aa8928ed5f6b129d737bd964c36a70942", null ],
+    [ "FindSectionByGuid", "class_notebook.html#a94fa7f9d83ad945e7327d977e7b5cd4e", null ],
+    [ "FindSectionGroupByGuid", "class_notebook.html#a97d7b33cece36e4bb8e71117d84d3bf3", null ],
+    [ "GetActivePage", "class_notebook.html#a30e584fe39960607635075e9219555c0", null ],
+    [ "GetActiveSection", "class_notebook.html#a05aa5dd3b4ae999f3937da9954546b51", null ],
+    [ "GetAllPages", "class_notebook.html#a87ef588f4deac878573e032db28bb0df", null ],
+    [ "MoveSection", "class_notebook.html#adfcc18f697dddd74895a8a4b3d1f00e4", null ],
+    [ "MoveSectionGroup", "class_notebook.html#a63959e06eeeb14c1e3654588ae853de5", null ],
+    [ "MoveSectionToGroup", "class_notebook.html#afb82b17562282799ef30c7598b930f63", null ],
+    [ "MoveSectionToRoot", "class_notebook.html#a7bf238745bf43c91aab3753c02a3b44a", null ],
+    [ "RemoveSection", "class_notebook.html#aa47498362e078410ab5d05bb91686a4e", null ],
+    [ "SetActiveSection", "class_notebook.html#a48dae690f4e022ba6caad3c5fcae563f", null ],
+    [ "activeSectionGuid", "class_notebook.html#a4ccca135abd82ba05ce4cd461c4a4936", null ],
+    [ "activeSectionIndex", "class_notebook.html#ab4f0422b92b4e3fac0e96f400ac7612e", null ],
+    [ "colorTag", "class_notebook.html#a3456928ece4dc17d8f4140a12f4cfd41", null ],
+    [ "filePath", "class_notebook.html#a75ae1d87ad4ae0f32195d10bbe624cd4", null ],
+    [ "guid", "class_notebook.html#a93732e47494e3363ae4e18c47c7b55b1", null ],
+    [ "iconFile", "class_notebook.html#ac05fc2007707e5a504b9605b1a50971d", null ],
+    [ "isOpen", "class_notebook.html#a81c5493fc8fb7800ab3b64f0ab378c20", null ],
+    [ "name", "class_notebook.html#a6ce6bb86785814b337d2354933ad75eb", null ],
+    [ "sectionGroups", "class_notebook.html#a0522761abda44968e0a2578ff281a96c", null ],
+    [ "sections", "class_notebook.html#abb929bbfd07d1b3f5985edf9fe254e70", null ]
+];

@@ -1,0 +1,25 @@
+var class_folio_input_1_1_pointer_icon_manager =
+[
+    [ "PointerIconManager", "class_folio_input_1_1_pointer_icon_manager.html#a51f1b80d222cb69f3687c2407c11f9a8", null ],
+    [ "~PointerIconManager", "class_folio_input_1_1_pointer_icon_manager.html#a9509f707820ff36d51bf5f4a3d7b921e", null ],
+    [ "PointerIconManager", "class_folio_input_1_1_pointer_icon_manager.html#a8ef4ef0a7d3f41ec910b147bfda51bc9", null ],
+    [ "Apply", "class_folio_input_1_1_pointer_icon_manager.html#a623b57af07c8b1e05c75216a4c3f4aa2", null ],
+    [ "GetCurrentLockReason", "class_folio_input_1_1_pointer_icon_manager.html#ad0702d423cc6081a23f9476396c20edf", null ],
+    [ "GetCurrentShape", "class_folio_input_1_1_pointer_icon_manager.html#a1306eb2e1750d351548fb2b7c5b3c6c2", null ],
+    [ "GetShapeForHandleRole", "class_folio_input_1_1_pointer_icon_manager.html#a5bf3081e59d0893739e8c7201691afa5", null ],
+    [ "Initialize", "class_folio_input_1_1_pointer_icon_manager.html#ab755854a161bcc172f41d855a36cbb80", null ],
+    [ "IsLocked", "class_folio_input_1_1_pointer_icon_manager.html#ab599cda1fc959fb84b11d56ffa3595bb", null ],
+    [ "Lock", "class_folio_input_1_1_pointer_icon_manager.html#a3ea9d493ab13c7769a3f83b215503138", null ],
+    [ "operator=", "class_folio_input_1_1_pointer_icon_manager.html#ae1c544f6af43230af1ae7e869834b508", null ],
+    [ "SetHoverForHandleRole", "class_folio_input_1_1_pointer_icon_manager.html#ab011cb8b78fdb56a257b5ed8233ff1e8", null ],
+    [ "SetHoverShape", "class_folio_input_1_1_pointer_icon_manager.html#a592b92c62a03295de61933794fec8763", null ],
+    [ "SetSdlCursor", "class_folio_input_1_1_pointer_icon_manager.html#a2b338b89d21ef4e04dc8a3c9bb48b361", null ],
+    [ "Shutdown", "class_folio_input_1_1_pointer_icon_manager.html#a55a11ada4efa51967eeec0c979bb849d", null ],
+    [ "Unlock", "class_folio_input_1_1_pointer_icon_manager.html#aea1c1a279c0bcdc6213216e31ee2c8b1", null ],
+    [ "currentLock", "class_folio_input_1_1_pointer_icon_manager.html#a390937953fb4cb7581a60239963a6cb5", null ],
+    [ "currentShape", "class_folio_input_1_1_pointer_icon_manager.html#ae4a8d55fbd60fdfa3af6b67a2ea7ad7d", null ],
+    [ "cursors", "class_folio_input_1_1_pointer_icon_manager.html#a16806f1565989bee1ce420012d4e1b3f", null ],
+    [ "hoverShape", "class_folio_input_1_1_pointer_icon_manager.html#ab5b3f76596a461bb0791d3dfc216afce", null ],
+    [ "isInitialized", "class_folio_input_1_1_pointer_icon_manager.html#ab3505d40468bc8a203fad03c3fc056dd", null ],
+    [ "lockedShape", "class_folio_input_1_1_pointer_icon_manager.html#a7412c029126f324e0a302c5ffd9c07a3", null ]
+];

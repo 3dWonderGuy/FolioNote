@@ -1,4 +1,4 @@
-﻿/**
+/**
  * =========================================================================================
  * @file test_file_saver.cpp
  * @brief Standalone Diagnostic Test Suite for Folio::FileSaver Facade
@@ -31,8 +31,8 @@
 #include <string>
 #include <chrono>
 
-#include "io/file_writer.hpp"
-#include "io/file_manager.hpp"
+#include "io/storage/file_writer.hpp"
+#include "io/facade/file_manager.hpp"
 
 #define TEST_ASSERT(cond, msg) \
     do { \

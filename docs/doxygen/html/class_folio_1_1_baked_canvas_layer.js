@@ -1,0 +1,28 @@
+var class_folio_1_1_baked_canvas_layer =
+[
+    [ "PaperTheme", "struct_folio_1_1_baked_canvas_layer_1_1_paper_theme.html", "struct_folio_1_1_baked_canvas_layer_1_1_paper_theme" ],
+    [ "BakedCanvasLayer", "class_folio_1_1_baked_canvas_layer.html#a4092d80505ed46bbbc6f0dded708abce", null ],
+    [ "~BakedCanvasLayer", "class_folio_1_1_baked_canvas_layer.html#a3283e4f68836872f9649fe5da94a53b4", null ],
+    [ "BakedCanvasLayer", "class_folio_1_1_baked_canvas_layer.html#afec5fbf924db655574fc2dfd92b1ba47", null ],
+    [ "BakedCanvasLayer", "class_folio_1_1_baked_canvas_layer.html#adbb338b70da8f9fae22b4eab5bf4829b", null ],
+    [ "DrawBackground", "class_folio_1_1_baked_canvas_layer.html#ad1a5d3a940af553495801fbb119b9434", null ],
+    [ "Flush", "class_folio_1_1_baked_canvas_layer.html#ad5735368f920da4ef5121d6ba5ea9a35", null ],
+    [ "GetPaperTheme", "class_folio_1_1_baked_canvas_layer.html#ae7fab213e802dc70c7cab7573da3d7a3", null ],
+    [ "GetSurface", "class_folio_1_1_baked_canvas_layer.html#a7bcc8939a73574c73119835519b434cb", null ],
+    [ "Invalidate", "class_folio_1_1_baked_canvas_layer.html#a863a71bd23229817b1f7948071a68694", null ],
+    [ "InvalidateRect", "class_folio_1_1_baked_canvas_layer.html#aa9ae9a8edb050bdb24391fac4c4f977e", null ],
+    [ "IsDirty", "class_folio_1_1_baked_canvas_layer.html#accbc65a379349b58a6879c00c119774f", null ],
+    [ "operator=", "class_folio_1_1_baked_canvas_layer.html#a4ea6d6ffb68747f82410492e6ec0a718", null ],
+    [ "operator=", "class_folio_1_1_baked_canvas_layer.html#a96114ed395efb85c3c90d3311d44d375", null ],
+    [ "Render", "class_folio_1_1_baked_canvas_layer.html#a23be8b255436c44bc700036c72fbcb19", null ],
+    [ "Resize", "class_folio_1_1_baked_canvas_layer.html#a8de4f9f19839e6a2c1fdc24ff2d9ec45", null ],
+    [ "SetPaperTheme", "class_folio_1_1_baked_canvas_layer.html#ae18cdfe8b510e60d143fbb042859a098", null ],
+    [ "m_bakedContext", "class_folio_1_1_baked_canvas_layer.html#abb990f7cddb22bb176c8680061c1a6c8", null ],
+    [ "m_bakedSurface", "class_folio_1_1_baked_canvas_layer.html#aca578404b308ac88b86541bb0ee8d309", null ],
+    [ "m_dirtyWorldRegion", "class_folio_1_1_baked_canvas_layer.html#a5049edc02c84ac53461e6cda85228f41", null ],
+    [ "m_isDirty", "class_folio_1_1_baked_canvas_layer.html#a4bfa90b760152b6864851fc508855a8d", null ],
+    [ "m_needsFullRebake", "class_folio_1_1_baked_canvas_layer.html#a766d4e0fdbe95c6c1abcf518da2d20da", null ],
+    [ "m_surfaceHeight", "class_folio_1_1_baked_canvas_layer.html#aeb29312b98f301434eec89396d7fa796", null ],
+    [ "m_surfaceWidth", "class_folio_1_1_baked_canvas_layer.html#ac0949f4955980e3b6b5d9487017d61b1", null ],
+    [ "m_theme", "class_folio_1_1_baked_canvas_layer.html#ab8ebd8c36819e4a1ea1944f73329ae16", null ]
+];

@@ -141,8 +141,7 @@ FolioNote/
 │   ├── fonts/                      # UI typography and icon fonts
 │   └── icons/                      # Scalable vector graphics (SVG) toolbar and navigation icons
 ├── config/                         # Application runtime configuration
-│   ├── settings.json               # Persistent user preferences, tool presets, and canvas options
-│   └── usage_stats.json            # Local privacy-preserving usage and telemetry metrics
+│   └── settings.json               # Persistent user preferences, tool presets, and canvas options
 ├── docs/                           # Technical documentation website source (MkDocs Material)
 ├── installer/                      # Windows installer manifests and deployment scripts
 ├── test/                           # CTest automated test suite
@@ -208,13 +207,10 @@ FolioNote/
     │   ├── preset_manager.hpp      # Tool presets (stroke thickness, opacity, smoothing factors)
     │   └── touch_gesture_recognizer.hpp # Multi-touch pinch-to-zoom, two-finger pan, and rotation
     ├── io/                         # Cross-platform filesystem abstraction and atomic persistence
-    │   ├── app_directories.cpp     # Resolution of document roots, config, cache, and log paths
-    │   ├── file_manager.cpp        # Facade for directory operations, copies, moves, and deletions
-    │   ├── file_reader.cpp         # Zero-copy memory-mapped file access (mmap) and hashing
-    │   ├── file_writer.cpp         # Two-phase atomic write staging (.tmp) and physical drive sync
-    │   ├── package_marker.hpp      # Windows Shell package branding (desktop.ini attributes & icons)
-    │   ├── path_utils.cpp          # UTF-8/UTF-16 Unicode conversion and long path (\\?\) handling
-    │   └── system_dialogs.cpp      # Native OS file dialogs (Win32, Linux, macOS)
+    │   ├── facade/                 # Master coordinator facade (file_manager.hpp / .cpp)
+    │   ├── paths/                  # Unicode path math, \\?\ long paths, and OS document roots
+    │   ├── storage/                # Crash-resilient atomic persistence (.tmp, fsync), mmap, and logging
+    │   └── platform/               # Native OS shell dialogs (Win32, Linux, macOS) & package branding
     ├── ui/                         # Dear ImGui presentation layer
     │   ├── components/             # Reusable UI widgets (color wheels, sliders, custom buttons)
     │   ├── framework/              # UI builder, sidebar layout, ribbon toolbar, docking chrome
@@ -227,8 +223,7 @@ FolioNote/
         ├── logger.hpp              # Thread-safe multi-sink console and file logger
         ├── physics_model.hpp       # Kinematic physics calculations for canvas camera smoothing
         ├── thread_pool.hpp         # Work-stealing background thread pool for async I/O and indexing
-        ├── uid_generator.hpp       # Monotonic atomic object UID allocator
-        └── usage_tracker.hpp       # Local opt-in performance telemetry and usage tracking
+        └── uid_generator.hpp       # Monotonic atomic object UID allocator
 ```
 
 
