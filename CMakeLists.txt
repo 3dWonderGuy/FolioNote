@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
+if(POLICY CMP0219)
+    cmake_policy(SET CMP0219 OLD)
+endif()
+set(CMAKE_POLICY_DEFAULT_CMP0219 OLD)
 project(FolioNote LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)

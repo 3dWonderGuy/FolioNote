@@ -89,6 +89,9 @@ Folio::ActionContext CanvasEngine::CreateActionContext(DocumentSession* session,
 void CanvasEngine::Update(double dt, DocumentSession* session) {
     auto ctx = CreateActionContext(session, 0.0);
     actionManager.Update(dt, ctx);
+    if (session && session->UpdateTemporaryObjects(dt, isCurrentlyInking)) {
+        InvalidateLayer();
+    }
 }
 
 void CanvasEngine::Pan(double screenDx, double screenDy) noexcept {

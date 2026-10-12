@@ -37,8 +37,7 @@
 #include <imgui.h>
 
 #include "core/objects/canvas_object.hpp"
-#include "core/ink_engine/stroke_smoother.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
 #include "core/objects/primitives/shape_types.hpp"
 #include "core/objects/primitives/wave_shapes.hpp"
 #include "core/objects/connectors/connector_types.hpp"
@@ -111,13 +110,13 @@ public:
      * Mathematical Working Process:
      * Discrete geometric vertices (3 for Triangle, 4 for Rectangle, N for RegularPolygon/Star)
      * or smoothly sampled boundary points (circles, ellipses, hearts, waves) are converted into
-     * ordered StrokeOutlineBuilder::InputPoint chords.
+     * ordered Point2D chords.
      * This avoids maintaining redundant dasher algorithms while keeping geometry minimal.
      *
      * @param outPoints Output vector receiving ordered perimeter vertices with effective stroke width.
      * @param effWidth Stroke thickness in world millimeters.
      */
-    void GetPerimeterPoints(std::vector<StrokeOutlineBuilder::InputPoint>& outPoints, double effWidth) const;
+    void GetPerimeterPoints(std::vector<Point2D>& outPoints, double effWidth) const;
 
     // =========================================================================
     // BOUNDS & SPATIAL (implemented in shape_container.cpp)

@@ -9,6 +9,7 @@
 #include <iostream>
 #include "imgui.h"
 #include "input/pen_palette.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "io/storage/file_reader.hpp"
 #include "io/storage/file_writer.hpp"
 #include "utils/logger.hpp"
@@ -66,6 +67,7 @@ public:
     bool isDynamicEraser = false;
     float eraserSizeMm = 6.0f;
     std::vector<PenPreset> inkingPresets;
+    Folio::InkingConfig inkingConfig;
 
     // ==========================================================================
     // DEFAULT DEVICE TOOL SETTINGS  (placeholder — UI not yet wired)
@@ -317,6 +319,40 @@ public:
                         inkingPresets.push_back(p);
                     }
                 }
+
+                // Inking Physics & Smoothing Tuning
+                if (jInking.contains("physics") && jInking["physics"].is_object()) {
+                    const auto& jp = jInking["physics"];
+                    if (jp.contains("springMassConstant")) inkingConfig.google_spring_mass_constant = jp["springMassConstant"].get<float>();
+                    if (jp.contains("dragConstant")) inkingConfig.google_drag_constant = jp["dragConstant"].get<float>();
+                    if (jp.contains("enablePrediction")) inkingConfig.google_enable_prediction = jp["enablePrediction"].get<bool>();
+                    if (jp.contains("useStrokeNormalProjection")) inkingConfig.google_use_stroke_normal_projection = jp["useStrokeNormalProjection"].get<bool>();
+                    if (jp.contains("minOutputRate")) inkingConfig.google_min_output_rate = jp["minOutputRate"].get<float>();
+                    if (jp.contains("endOfStrokeStoppingDistance")) inkingConfig.google_end_of_stroke_stopping_distance = jp["endOfStrokeStoppingDistance"].get<float>();
+                    if (jp.contains("endOfStrokeMaxIterations")) inkingConfig.google_end_of_stroke_max_iterations = jp["endOfStrokeMaxIterations"].get<int>();
+                    if (jp.contains("enableAngleUpsampling")) inkingConfig.google_enable_angle_upsampling = jp["enableAngleUpsampling"].get<bool>();
+                    if (jp.contains("maxEstimatedAngleRad")) inkingConfig.google_max_estimated_angle_rad = jp["maxEstimatedAngleRad"].get<float>();
+                    if (jp.contains("loopMitigationEnable")) inkingConfig.google_loop_mitigation_enable = jp["loopMitigationEnable"].get<bool>();
+                    if (jp.contains("loopSpeedLowerBound")) inkingConfig.google_loop_speed_lower_bound = jp["loopSpeedLowerBound"].get<float>();
+                    if (jp.contains("loopSpeedUpperBound")) inkingConfig.google_loop_speed_upper_bound = jp["loopSpeedUpperBound"].get<float>();
+                    if (jp.contains("loopStrengthAtLowerSpeed")) inkingConfig.google_loop_strength_at_lower_speed = jp["loopStrengthAtLowerSpeed"].get<float>();
+                    if (jp.contains("loopStrengthAtUpperSpeed")) inkingConfig.google_loop_strength_at_upper_speed = jp["loopStrengthAtUpperSpeed"].get<float>();
+                    if (jp.contains("loopMinSpeedWindow")) inkingConfig.google_loop_min_speed_window_s = jp["loopMinSpeedWindow"].get<float>();
+                    if (jp.contains("wobbleEnable")) inkingConfig.google_wobble_enable = jp["wobbleEnable"].get<bool>();
+                    if (jp.contains("wobbleTimeout")) inkingConfig.google_wobble_timeout_s = jp["wobbleTimeout"].get<float>();
+                    if (jp.contains("wobbleSpeedFloor")) inkingConfig.google_wobble_speed_floor = jp["wobbleSpeedFloor"].get<float>();
+                    if (jp.contains("wobbleSpeedCeiling")) inkingConfig.google_wobble_speed_ceiling = jp["wobbleSpeedCeiling"].get<float>();
+                    if (jp.contains("usePressure")) inkingConfig.google_use_pressure = jp["usePressure"].get<bool>();
+                    if (jp.contains("useVelocity")) inkingConfig.google_use_velocity = jp["useVelocity"].get<bool>();
+                    if (jp.contains("widthSmoothing")) inkingConfig.google_dynamic_width_smoothing = jp["widthSmoothing"].get<float>();
+                    if (jp.contains("minWidthMultiplier")) inkingConfig.google_min_width_multiplier = jp["minWidthMultiplier"].get<float>();
+                    if (jp.contains("maxWidthMultiplier")) inkingConfig.google_max_width_multiplier = jp["maxWidthMultiplier"].get<float>();
+                    if (jp.contains("velocityThinningMaxSpeed")) inkingConfig.google_velocity_thinning_max_speed = jp["velocityThinningMaxSpeed"].get<float>();
+                    if (jp.contains("enablePressureCurve")) inkingConfig.enablePressureCurve = jp["enablePressureCurve"].get<bool>();
+                    if (jp.contains("pressureGamma")) inkingConfig.pressureGamma = jp["pressureGamma"].get<float>();
+                    if (jp.contains("pressureDeadzoneMin")) inkingConfig.pressureDeadzoneMin = jp["pressureDeadzoneMin"].get<float>();
+                    if (jp.contains("pressureSaturationMax")) inkingConfig.pressureSaturationMax = jp["pressureSaturationMax"].get<float>();
+                }
             }
 
             if (inkingPresets.empty()) {
@@ -503,6 +539,38 @@ public:
                 });
             }
 
+            nlohmann::json jPhysics = {
+                { "springMassConstant", inkingConfig.google_spring_mass_constant },
+                { "dragConstant", inkingConfig.google_drag_constant },
+                { "enablePrediction", inkingConfig.google_enable_prediction },
+                { "useStrokeNormalProjection", inkingConfig.google_use_stroke_normal_projection },
+                { "minOutputRate", inkingConfig.google_min_output_rate },
+                { "endOfStrokeStoppingDistance", inkingConfig.google_end_of_stroke_stopping_distance },
+                { "endOfStrokeMaxIterations", inkingConfig.google_end_of_stroke_max_iterations },
+                { "enableAngleUpsampling", inkingConfig.google_enable_angle_upsampling },
+                { "maxEstimatedAngleRad", inkingConfig.google_max_estimated_angle_rad },
+                { "loopMitigationEnable", inkingConfig.google_loop_mitigation_enable },
+                { "loopSpeedLowerBound", inkingConfig.google_loop_speed_lower_bound },
+                { "loopSpeedUpperBound", inkingConfig.google_loop_speed_upper_bound },
+                { "loopStrengthAtLowerSpeed", inkingConfig.google_loop_strength_at_lower_speed },
+                { "loopStrengthAtUpperSpeed", inkingConfig.google_loop_strength_at_upper_speed },
+                { "loopMinSpeedWindow", inkingConfig.google_loop_min_speed_window_s },
+                { "wobbleEnable", inkingConfig.google_wobble_enable },
+                { "wobbleTimeout", inkingConfig.google_wobble_timeout_s },
+                { "wobbleSpeedFloor", inkingConfig.google_wobble_speed_floor },
+                { "wobbleSpeedCeiling", inkingConfig.google_wobble_speed_ceiling },
+                { "usePressure", inkingConfig.google_use_pressure },
+                { "useVelocity", inkingConfig.google_use_velocity },
+                { "widthSmoothing", inkingConfig.google_dynamic_width_smoothing },
+                { "minWidthMultiplier", inkingConfig.google_min_width_multiplier },
+                { "maxWidthMultiplier", inkingConfig.google_max_width_multiplier },
+                { "velocityThinningMaxSpeed", inkingConfig.google_velocity_thinning_max_speed },
+                { "enablePressureCurve", inkingConfig.enablePressureCurve },
+                { "pressureGamma", inkingConfig.pressureGamma },
+                { "pressureDeadzoneMin", inkingConfig.pressureDeadzoneMin },
+                { "pressureSaturationMax", inkingConfig.pressureSaturationMax }
+            };
+
             // Inking section
             j["inking"] = {
                 { "activePresetId", activePresetId },
@@ -516,7 +584,8 @@ public:
                 { "defaultStylusTool", defaultStylusTool },
                 { "defaultTouchTool",  defaultTouchTool  },
                 { "defaultMouseTool",  defaultMouseTool  },
-                { "presets", jPresets }
+                { "presets", jPresets },
+                { "physics", jPhysics }
             };
 
             // Ribbon section

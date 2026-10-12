@@ -11,7 +11,7 @@ The `InkEngine` subsystem powers low-latency, physics-based digital ink generati
 src/core/ink_engine/
 ├── ink_engine.hpp              # High-level coordinator managing live inking sessions and stroke lifecycles
 ├── ink_engine.cpp              # Implementation connecting smoothing, meshing, and layer commit
-├── stroke_smoother.hpp         # Hardware telemetry filtering, spring-damper physics, and spline generation
+├── ink_stroke_data.hpp         # Hardware telemetry filtering, spring-damper physics, and spline generation
 ├── stroke_outline_builder.hpp  # Variable-thickness 2D polygon contour tessellation
 └── stroke_collision.hpp        # Broadphase AABB & narrowphase geometric intersection testing
 ```

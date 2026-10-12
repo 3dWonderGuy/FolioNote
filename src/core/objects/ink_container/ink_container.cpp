@@ -51,7 +51,7 @@
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/object_registry.hpp"
 #include "core/ink_engine/stroke_collision.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -286,12 +286,12 @@ void InkContainer::BakeTransform() {
         stroke.baseWidthMm *= static_cast<float>(scaleFactor);
 
         if (!stroke.points.empty()) {
-            std::vector<StrokeOutlineBuilder::InputPoint> pts;
+            std::vector<Point2D> pts;
             pts.reserve(stroke.points.size());
             for (const auto& pt : stroke.points) {
                 pts.push_back({ pt.x, pt.y, pt.r * 2.0f });
             }
-            stroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, stroke.capType, stroke.strokePattern);
+            stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, stroke.capType, stroke.strokePattern);
         }
     }
 
@@ -321,17 +321,21 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
                               ? BL_COMP_OP_MULTIPLY
                               : stroke.GetBlend2DCompOp();
         ctx.set_comp_op(compOp);
-        ctx.set_fill_style(stroke.color);
+
+        BLRgba32 renderColor = stroke.color;
+        float combinedOpacity = std::clamp(opacity * stroke.opacity, 0.0f, 1.0f);
+        renderColor.setA(static_cast<uint32_t>(std::round(static_cast<float>(renderColor.a()) * combinedOpacity)));
+        ctx.set_fill_style(renderColor);
 
         if (!stroke.outlinePath.is_empty()) {
             ctx.fill_path(stroke.outlinePath);
         } else if (!stroke.points.empty()) {
-            std::vector<StrokeOutlineBuilder::InputPoint> pts;
+            std::vector<Point2D> pts;
             pts.reserve(stroke.points.size());
             for (const auto& pt : stroke.points) {
                 pts.push_back({ pt.x, pt.y, pt.r * 2.0f });
             }
-            BLPath fallbackOutline = StrokeOutlineBuilder::BuildOutline(pts, stroke.capType, stroke.strokePattern);
+            BLPath fallbackOutline = Folio::InkEngine::BuildStrokeOutline(pts, stroke.capType, stroke.strokePattern);
             ctx.fill_path(fallbackOutline);
         } else if (stroke.segments.size() == 1) {
             ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
@@ -411,7 +415,7 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                 newStroke.segments = std::move(subChain);
 
                 // Reconstruct points and polygon outline
-                std::vector<StrokeOutlineBuilder::InputPoint> pts;
+                std::vector<Point2D> pts;
                 pts.reserve(newStroke.segments.size() + 1);
                 pts.push_back({ newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width });
                 newStroke.points.push_back({ newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width * 0.5f });
@@ -421,7 +425,7 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                     newStroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
                 }
 
-                newStroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, newStroke.capType, newStroke.strokePattern);
+                newStroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, newStroke.capType, newStroke.strokePattern);
                 newStrokes.push_back(std::move(newStroke));
             }
         } else {

@@ -15,7 +15,7 @@
 #include "core/objects/media/images/image_container.hpp"
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text/text_box.hpp"
-#include "core/ink_engine/stroke_smoother.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
 #include "input/pen_palette.hpp"
 #include "core/history/canvas_command.hpp"
 #include "core/backup/page_version_manager.hpp"
@@ -97,12 +97,20 @@ public:
     };
 
     // -------------------------------------------------------------------------
-    // Observer Subsystem & Ephemeral Sink State
+    // Observer Subsystem & Temporary Object Tracker
     // -------------------------------------------------------------------------
     std::vector<Folio::IDocumentSessionObserver*> observers;              ///< Registered event listeners
     std::vector<std::shared_ptr<CanvasObject>> clipboardObjects;          ///< Transient session clipboard
-    std::function<void(BLPath, BLRgba32, uint32_t)> ephemeralStrokeSink; ///< Laser pointer presentation ink receiver
     std::unordered_set<std::string> sessionInteractedPages;               ///< Pages interacted with in this session (auto-versioning)
+
+    // Tracks temporary canvas objects (e.g., laser strokes) that fade and delete after inactivity
+    struct TemporaryObjectsState {
+        std::shared_ptr<CanvasPage> page;
+        std::vector<std::shared_ptr<CanvasObject>> objects;
+        double elapsedSec = 0.0;
+        double idleTimeoutSec = 2.0;
+        double fadeDurationSec = 0.5;
+    } tempObjects;
 
     // -------------------------------------------------------------------------
     // 1. Session Lifecycle & Restoration (session_lifecycle.cpp)
@@ -274,14 +282,11 @@ public:
     // 4. Canvas Operations: Inking, Selection, Clipboard, Grouping (session_canvas_ops.cpp)
     // -------------------------------------------------------------------------
 
-    /// @brief Registers a delegate receiver for ephemeral presentation strokes.
-    void SetEphemeralStrokeSink(std::function<void(BLPath, BLRgba32, uint32_t)> sink);
+    /// @brief Advances the temporary object inactivity timer; fades and deletes temporary objects when idle.
+    bool UpdateTemporaryObjects(double dtSec, bool isUserDrawing);
 
-    /// @brief Checks if a presentation sink is registered to accept laser pointer strokes.
-    [[nodiscard]] bool HasEphemeralStrokeSink() const noexcept { return static_cast<bool>(ephemeralStrokeSink); }
-
-    /// @brief Commits an ephemeral presentation stroke (Laser Pointer) with quadratic alpha fade.
-    void CommitEphemeralStroke(FinishedStrokeData&& data, const PenTool& tool, uint32_t fadeDurationMs = 2500);
+    /// @brief Immediately removes all temporary objects from their page.
+    void ClearTemporaryObjects();
 
     /// @brief Commits finished stroke data with pre-computed polygon outline geometry.
     void CommitStroke(FinishedStrokeData&& data, const PenTool& tool);

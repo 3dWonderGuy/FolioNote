@@ -35,7 +35,7 @@
 #include <vector>
 
 #include "core/objects/connectors/smart_arrow_container.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "core/objects/object_registry.hpp"
 
@@ -284,7 +284,7 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
     if (outlineType == ShapeOutlineType::Solid) {
         ctx.stroke_path(rawPath);
     } else {
-        std::vector<StrokeOutlineBuilder::InputPoint> arrowPts;
+        std::vector<Point2D> arrowPts;
         const float wF = static_cast<float>(effWidth);
         if (connectorStyle == ConnectorStyle::Straight) {
             arrowPts.push_back({ x1, y1, wF });
@@ -306,10 +306,10 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
             }
         }
         if (!arrowPts.empty()) {
-            BLPath dashedOutline = StrokeOutlineBuilder::BuildOutline(
+            BLPath dashedOutline = InkEngine::BuildStrokeOutline(
                 arrowPts,
                 CapType::Round,
-                StrokeOutlineBuilder::MapShapeOutlineType(outlineType),
+                InkEngine::MapShapeOutlineType(outlineType),
                 false // open stroke
             );
             ctx.set_fill_style(col);

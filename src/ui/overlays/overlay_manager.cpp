@@ -86,7 +86,7 @@ void OverlayManager::RenderModalsAndOverlays(
     // =========================================================================
     devTelemetry.Render(canvas, stateMachine, windowSM, session,
                         stateMachine.canvasOriginX, stateMachine.canvasOriginY, themeManager);
-    tuningStudio.Render(themeManager);
+    tuningStudio.Render(themeManager, &canvas.GetInkEngine());
     toolbarDemo.Render(themeManager);
 
     // =========================================================================

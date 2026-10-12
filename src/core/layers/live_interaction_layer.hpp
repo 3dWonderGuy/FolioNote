@@ -8,7 +8,7 @@
 
 #include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/ink_engine/stroke_smoother.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
 #include "core/ink_engine/ink_engine.hpp"
 
 class SelectionGizmo;
@@ -57,17 +57,6 @@ struct ActiveGizmoData {
     double   rotationAngleDeg       = 0.0;                    ///< Current rotation in degrees
 };
 
-/**
- * @struct ActiveLaserData
- * @brief Transient laser pointer trail with chronological decay fading.
- */
-struct ActiveLaserData {
-    std::span<const LivePoint> points;
-    BLRgba32                   color{ 0xFF, 0x17, 0x44, 0xFF }; ///< Vibrant laser red/glow
-    double                     radiusMm      = 1.8;             ///< Laser spot radius in world mm
-    uint64_t                   currentTimeMs = 0;               ///< Current engine frame clock (ms)
-    uint64_t                   trailDecayMs  = 600;             ///< Milliseconds before trail fades completely
-};
 
 /**
  * @struct ActiveTextEditorData
@@ -168,8 +157,6 @@ public:
         m_boundTransform = nullptr;
     }
 
-    void SetActiveLaser(const ActiveLaserData& laser) noexcept { m_activeLaser = laser; m_hasActiveLaser = true; }
-    void ClearActiveLaser() noexcept { m_hasActiveLaser = false; }
 
     void SetActiveTextEditor(const ActiveTextEditorData& editor) noexcept { m_activeText = editor; m_hasActiveText = true; }
     void ClearActiveTextEditor() noexcept { m_hasActiveText = false; }
@@ -326,7 +313,6 @@ public:
 
 private:
     void RenderInFlightInk(BLContext& ctx, const Viewport& viewport);
-    void RenderLaserPointer(BLContext& ctx, const Viewport& viewport);
     void RenderGizmo(BLContext& ctx, const Viewport& viewport);
     void RenderTextEditor(BLContext& ctx, const Viewport& viewport);
     void RenderMarquee(BLContext& ctx, const Viewport& viewport);
@@ -335,13 +321,11 @@ private:
     // Borrowed Tool Payloads
     ActiveStrokeData     m_borrowedStroke{};
     ActiveGizmoData      m_activeGizmo{};
-    ActiveLaserData      m_activeLaser{};
     ActiveTextEditorData m_activeText{};
     ActiveMarqueeData    m_activeMarquee{};
 
     bool m_hasBorrowedStroke = false;
     bool m_hasActiveGizmo    = false;
-    bool m_hasActiveLaser    = false;
     bool m_hasActiveText     = false;
     bool m_hasActiveMarquee  = false;
 

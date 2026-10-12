@@ -1,5 +1,6 @@
 #include "core/ink_engine/ink_engine.hpp"
-#include "ui/overlays/tuning_overlay.hpp"
+#include "core/ink_engine/stroke_width_evaluator.hpp"
+#include "core/ink_engine/stroke_outline_builder.hpp"
 
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <ink_stroke_modeler/params.h>
@@ -8,8 +9,43 @@
 
 namespace Folio {
 
+namespace sm = ink::stroke_model;
+
+namespace {
+
+// creates a segment using our struct
+Segment1D MakeSegment(const Point2D& p0, const Point2D& p1, float width) {
+    Segment1D seg;
+    seg.p0 = p0;
+    seg.p1 = p1;
+    seg.width = width;
+    return seg;
+}
+
+// translates our Point2D into Google Ink's Input packet
+sm::Input MakeGoogleInput(sm::Input::EventType type, const Point2D& pt) {
+    sm::Input input;                                                                   // empty google ink input packet
+    input.event_type = type;                                                           // pen state (kDown, kMove, or kUp)
+    input.position = { static_cast<float>(pt.x), static_cast<float>(pt.y) };           // convert double world mm to google float Vec2
+    input.time = sm::Time(pt.timeSeconds);                                             // wrap timestamp into google Time struct
+    input.pressure = pt.pressure;                                                      // stylus pressure [0.0, 1.0]
+    input.tilt = std::hypot(pt.tiltX, pt.tiltY);                                       // polar tilt magnitude (>= 0)
+    float angle = std::atan2(pt.tiltY, pt.tiltX);                                      // polar azimuth angle [-pi, pi]
+    input.orientation = angle < 0.0f ? angle + 2.0f * static_cast<float>(M_PI) : angle;// wrap orientation into [0, 2*pi)
+    return input;
+}
+
+} // namespace
+
 InkEngine::InkEngine() {
-    m_googleModeler = std::make_unique<ink::stroke_model::StrokeModeler>();
+    m_googleModeler = std::make_unique<sm::StrokeModeler>();
+
+    // pre-allocate buffers once to prevent mid-stroke std::vector reallocations
+    m_activeStrokePoints.reserve(4096);
+    m_liveModeledPoints.reserve(8192);
+    m_googleResultsBuffer.reserve(64);
+    m_googlePredictionsBuffer.reserve(64);
+    m_predictedPointsBuffer.reserve(64);
 }
 
 InkEngine::~InkEngine() = default;
@@ -23,147 +59,175 @@ InkEngine& InkEngine::operator=(InkEngine&&) noexcept = default;
 
 void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double timeSec,
                             const PenTool& tool, float zoomScale, float tiltX, float tiltY) {
+    // Reset transient stroke accumulation buffers
+    CancelStroke();
+
     m_isStrokeActive = true;
     m_activeTool = tool;
+    m_config.google_use_tilt = tool.isTiltEnabled;
     m_zoomScale = zoomScale > 0.001f ? zoomScale : 1.0f;
-    m_tiltX = tiltX;
-    m_tiltY = tiltY;
 
-    // Reset transient stroke accumulation buffers
-    m_activeStrokePoints.clear();
-    m_fullSmoothedSegments.clear();
-    m_liveModeledPoints.clear();
-    m_liveStrokeOutline.clear();
-    m_predictedStrokeOutline.clear();
-    m_googlePredictedSegments.clear();
-    m_hasPreviousGooglePoint = false;
-    m_smoothedWidth = -1.0f;
-
-    Point2D startPt{ worldX, worldY, pressure, timeSec, tiltX, tiltY };
+    Point2D startPt;
+    startPt.x = worldX;
+    startPt.y = worldY;
+    startPt.pressure = pressure;
+    startPt.timeSeconds = timeSec;
+    startPt.tiltX = tiltX;
+    startPt.tiltY = tiltY;
     m_activeStrokePoints.push_back(startPt);
 
     // Configure Google Ink Stroke Modeler physics parameters
-    ink::stroke_model::StrokeModelParams params;
-    params.position_modeler_params.spring_mass_constant = g_InkingConfig.google_spring_mass_constant;
-    params.position_modeler_params.drag_constant = g_InkingConfig.google_drag_constant;
-    params.wobble_smoother_params.is_enabled = g_InkingConfig.google_wobble_enable;
-    params.wobble_smoother_params.timeout = ink::stroke_model::Duration(g_InkingConfig.google_wobble_timeout_s);
-    params.wobble_smoother_params.speed_floor = g_InkingConfig.google_wobble_speed_floor;
-    params.wobble_smoother_params.speed_ceiling = g_InkingConfig.google_wobble_speed_ceiling;
-    params.sampling_params.min_output_rate = 120.0;
-    params.sampling_params.end_of_stroke_stopping_distance = 0.01f;
+    sm::StrokeModelParams params;                                                      // creates pipeline
+    params.position_modeler_params.spring_mass_constant = m_config.google_spring_mass_constant; // sets up spring/mass constant
+    params.position_modeler_params.drag_constant = m_config.google_drag_constant;      // friction constant
 
-    (void)m_googleModeler->Reset(params);
-
-    // Seed the first sample into the physics pipeline
-    ink::stroke_model::Input input;
-    input.event_type = ink::stroke_model::Input::EventType::kDown;
-    input.position = { static_cast<float>(worldX), static_cast<float>(worldY) };
-    input.time = ink::stroke_model::Time(timeSec);
-    input.pressure = pressure;
-
-    std::vector<ink::stroke_model::Result> results;
-    if (m_googleModeler->Update(input, results).ok()) {
-        ProcessGoogleResults(results);
+    // Speed-based loop contraction mitigation (prevents fast curves/loops from shrinking)
+    auto& loopParams = params.position_modeler_params.loop_contraction_mitigation_params;
+    loopParams.is_enabled = m_config.google_loop_mitigation_enable;
+    if (loopParams.is_enabled) {
+        float lowSpeed = std::max(0.0f, m_config.google_loop_speed_lower_bound);
+        float highSpeed = std::max(lowSpeed, m_config.google_loop_speed_upper_bound);
+        float lowStrength = std::clamp(m_config.google_loop_strength_at_lower_speed, 0.0f, 1.0f);
+        float highStrength = std::clamp(m_config.google_loop_strength_at_upper_speed, 0.0f, lowStrength);
+        loopParams.speed_lower_bound = lowSpeed;
+        loopParams.speed_upper_bound = highSpeed;
+        loopParams.interpolation_strength_at_speed_lower_bound = lowStrength;
+        loopParams.interpolation_strength_at_speed_upper_bound = highStrength;
+        loopParams.min_speed_sampling_window = sm::Duration(std::max(0.0f, m_config.google_loop_min_speed_window_s));
     }
 
-    if (g_InkingConfig.google_enable_prediction) {
-        UpdateGooglePrediction();
+    // Stylus normal projection (required when loop mitigation is enabled)
+    params.stylus_state_modeler_params.use_stroke_normal_projection =
+        m_config.google_use_stroke_normal_projection || m_config.google_loop_mitigation_enable;
+
+    // Wobble smoother (hand tremor filter)
+    params.wobble_smoother_params.is_enabled = m_config.google_wobble_enable;          // wobble compensation
+    params.wobble_smoother_params.timeout = sm::Duration(std::max(0.0f, m_config.google_wobble_timeout_s));
+    params.wobble_smoother_params.speed_floor = std::max(0.0f, m_config.google_wobble_speed_floor);
+    params.wobble_smoother_params.speed_ceiling =
+        std::max(params.wobble_smoother_params.speed_floor, m_config.google_wobble_speed_ceiling);
+
+    // Sampling & rotational velocity upsampling
+    params.sampling_params.min_output_rate = std::max(10.0, static_cast<double>(m_config.google_min_output_rate));
+    params.sampling_params.end_of_stroke_stopping_distance =
+        std::max(0.0001f, m_config.google_end_of_stroke_stopping_distance);
+    params.sampling_params.end_of_stroke_max_iterations =
+        std::clamp(m_config.google_end_of_stroke_max_iterations, 1, 1000);
+    params.sampling_params.max_estimated_angle_to_traverse_per_input =
+        m_config.google_enable_angle_upsampling
+            ? std::clamp(static_cast<double>(m_config.google_max_estimated_angle_rad), 0.005, 3.10)
+            : -1.0;
+
+    // physics engine reset (void) we don't want anything returned and guaranteed to succeed
+    (void)m_googleModeler->Reset(params);
+
+    // Seed the first sample into the physics pipeline (inside the google ink)
+    m_googleResultsBuffer.clear();
+    if (m_googleModeler->Update(MakeGoogleInput(sm::Input::EventType::kDown, startPt), m_googleResultsBuffer).ok()) {
+        ProcessGoogleResults(m_googleResultsBuffer);
+    }
+
+    // Seed live initial touch dot so user sees immediate visual feedback under pen tip
+    if (m_liveStrokeOutline.is_empty() && !m_activeStrokePoints.empty()) {
+        Point2D pt = m_activeStrokePoints.front();                                     // first touchdown point from digitizer
+        float baseW = static_cast<float>(m_activeTool.baseSize);                       // finds base width from active tool
+        pt.width = StrokeWidthEvaluator::CalculatePressureWidth(
+            baseW, pt.pressure, pt.tiltX, pt.tiltY, m_config);                         // pressure & tilt sized width
+
+        // delegate shape generation to StrokeOutlineBuilder (respects tool capType: round, square, chisel)
+        m_liveStrokeOutline = StrokeOutlineBuilder::FeedStrokeBatch(
+            { pt }, m_activeTool.capType, m_activeTool.strokePattern);
+    }
+
+    if (m_config.google_enable_prediction) {
+        UpdateGooglePrediction();                                                      // predicts next points to reduce latency
     }
 }
 
 void InkEngine::AppendPoint(double worldX, double worldY, float pressure, double timeSec,
                             float tiltX, float tiltY) {
+    // small check if the stroke is still even active
     if (!m_isStrokeActive) return;
 
-    m_tiltX = tiltX;
-    m_tiltY = tiltY;
+    // pen position tracker
+    Point2D pt;
+    pt.x = worldX;
+    pt.y = worldY;
+    pt.pressure = pressure;
+    pt.timeSeconds = timeSec;
+    pt.tiltX = tiltX;
+    pt.tiltY = tiltY;
+    m_activeStrokePoints.push_back(pt);                                                // track raw movement history
 
-    Point2D pt{ worldX, worldY, pressure, timeSec, tiltX, tiltY };
-    m_activeStrokePoints.push_back(pt);
-
-    ink::stroke_model::Input input;
-    input.event_type = ink::stroke_model::Input::EventType::kMove;
-    input.position = { static_cast<float>(worldX), static_cast<float>(worldY) };
-    input.time = ink::stroke_model::Time(timeSec);
-    input.pressure = pressure;
-
-    std::vector<ink::stroke_model::Result> results;
-    if (m_googleModeler->Update(input, results).ok()) {
-        ProcessGoogleResults(results);
+    // feed moving stylus event into physics solver
+    m_googleResultsBuffer.clear();
+    if (m_googleModeler->Update(MakeGoogleInput(sm::Input::EventType::kMove, pt), m_googleResultsBuffer).ok()) {
+        ProcessGoogleResults(m_googleResultsBuffer);                                   // convert physics outputs to renderable vector points
     }
 
-    if (g_InkingConfig.google_enable_prediction) {
-        UpdateGooglePrediction();
+    if (m_config.google_enable_prediction) {
+        UpdateGooglePrediction();                                                      // refresh forward Kalman projection
     }
 }
 
 FinishedStrokeData InkEngine::FinishStroke() {
+    // safety check if stroke was active
     if (!m_isStrokeActive) return {};
 
+    // safety check if there is data in the stroke
     if (!m_activeStrokePoints.empty()) {
-        // Stage 1: Pen-Up event to flush lingering spring inertia in physics modeler
-        ink::stroke_model::Input input;
-        input.event_type = ink::stroke_model::Input::EventType::kUp;
-        input.position = {
-            static_cast<float>(m_activeStrokePoints.back().x),
-            static_cast<float>(m_activeStrokePoints.back().y)
-        };
-        input.time = ink::stroke_model::Time(m_activeStrokePoints.back().timeSeconds);
-        input.pressure = m_activeStrokePoints.back().pressure;
 
-        std::vector<ink::stroke_model::Result> results;
-        if (m_googleModeler->Update(input, results).ok()) {
-            ProcessGoogleResults(results);
+        // Stage 1: Pen-Up event to flush lingering spring inertia in physics modeler
+        m_googleResultsBuffer.clear();
+        if (m_googleModeler->Update(MakeGoogleInput(sm::Input::EventType::kUp, m_activeStrokePoints.back()), m_googleResultsBuffer).ok()) {
+            ProcessGoogleResults(m_googleResultsBuffer);                               // let spring finish catching up to pen lift position
         }
 
         // Stage 2: Single-tap dot handling (user tapped without lateral dragging)
-        if (m_liveModeledPoints.empty() && m_hasPreviousGooglePoint) {
+        if (m_liveModeledPoints.empty()) {
+            Point2D pt = m_activeStrokePoints.front();                                 // tap origin
             float baseW = static_cast<float>(m_activeTool.baseSize);
-            m_liveModeledPoints.push_back({
-                static_cast<float>(m_previousGooglePos.x),
-                static_cast<float>(m_previousGooglePos.y),
-                baseW,
-                1.0f,
-                0.0f,
-                m_tiltX,
-                m_tiltY
-            });
+            pt.width = StrokeWidthEvaluator::CalculatePressureWidth(
+                baseW, pt.pressure, pt.tiltX, pt.tiltY, m_config);                     // evaluate tap pressure & tilt
 
-            Segment1D dot;
-            dot.p0 = Point2D{ m_previousGooglePos.x, m_previousGooglePos.y, 0, 0 };
-            dot.p1 = dot.p0;
-            dot.p1.x += 0.001; // Epsilon offset to establish valid vector direction
-            dot.width = baseW;
-            m_fullSmoothedSegments.push_back(dot);
+            m_liveModeledPoints.push_back(pt);
         }
     }
 
-    // Stage 3: Package final vector stroke data
+    // Stage 3: Build collision segments and final vector stroke data once at the end
     FinishedStrokeData data;
-    data.rawPoints = std::move(m_activeStrokePoints);
-    data.liveSegments = std::move(m_fullSmoothedSegments);
+    if (m_liveModeledPoints.size() == 1) {
+        Point2D p0 = m_liveModeledPoints[0];
+        Point2D p1 = p0;
+        p1.x += 0.001;                                                                 // tiny epsilon offset to give a valid segment for eraser/bounds
+        data.liveSegments.push_back(MakeSegment(p0, p1, p0.width));
+    } else if (m_liveModeledPoints.size() >= 2) {
+        data.liveSegments.reserve(m_liveModeledPoints.size() - 1);
+        for (size_t i = 1; i < m_liveModeledPoints.size(); ++i) {
+            data.liveSegments.push_back(
+                MakeSegment(m_liveModeledPoints[i - 1], m_liveModeledPoints[i], m_liveModeledPoints[i].width));
+        }
+    }
+
     data.modeledPoints = m_liveModeledPoints;
-    data.outlinePath = StrokeOutlineBuilder::BuildOutline(
-        m_liveModeledPoints, m_activeTool.capType, m_activeTool.strokePattern);
+    data.outlinePath = StrokeOutlineBuilder::FeedStrokeBatch(
+        m_liveModeledPoints, m_activeTool.capType, m_activeTool.strokePattern);        // builds closed polygon ribbon for blend2d
 
     // Stage 4: Reset live state
-    CancelStroke();
+    CancelStroke();                                                                    // wipe live inking buffers for next stroke
 
     return data;
 }
 
 void InkEngine::CancelStroke() {
     m_activeStrokePoints.clear();
-    m_fullSmoothedSegments.clear();
     m_liveModeledPoints.clear();
+    m_googleResultsBuffer.clear();
+    m_googlePredictionsBuffer.clear();
+    m_predictedPointsBuffer.clear();
     m_liveStrokeOutline.clear();
     m_predictedStrokeOutline.clear();
-    m_googlePredictedSegments.clear();
-    m_hasPreviousGooglePoint = false;
     m_smoothedWidth = -1.0f;
-    m_tiltX = 0.0f;
-    m_tiltY = 0.0f;
     m_isStrokeActive = false;
 }
 
@@ -171,223 +235,75 @@ void InkEngine::CancelStroke() {
 // 2. MATHEMATICAL THICKNESS & MODELING
 // -----------------------------------------------------------------------------
 
-float InkEngine::CalculateDynamicWidth(const ink::stroke_model::Result& res) const {
+float InkEngine::CalculateDynamicWidth(const Point2D& pt, float& smoothedWidth) const {
     float baseWidth = static_cast<float>(m_activeTool.baseSize);
-
-    // STAGE A: PRESSURE CEILING
-    float pressureWidth = baseWidth;
-    if (g_InkingConfig.google_use_pressure && res.pressure >= 0.0f) {
-        float pressureCurved = g_InkingConfig.EvaluatePressure(res.pressure);
-        float minFrac = g_InkingConfig.google_min_width_multiplier;
-        float maxFrac = g_InkingConfig.google_max_width_multiplier;
-        float widthMultiplier = minFrac + pressureCurved * (maxFrac - minFrac);
-        pressureWidth = baseWidth * std::clamp(widthMultiplier, minFrac, maxFrac);
-    }
-
-    // STAGE B: VELOCITY THINNING
-    float velocityThinFactor = 1.0f;
-    if (g_InkingConfig.google_use_velocity) {
-        float speed = std::hypot(res.velocity.x, res.velocity.y) * m_zoomScale;
-        float normalizedSpeed = std::clamp(
-            speed / g_InkingConfig.google_velocity_thinning_max_speed, 0.0f, 1.0f);
-
-        float minThin = g_InkingConfig.google_min_width_multiplier;
-        velocityThinFactor = 1.0f - normalizedSpeed * (1.0f - minThin);
-    }
-
-    return pressureWidth * velocityThinFactor;
+    float targetWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, pt.pressure, pt.speed, m_zoomScale, pt.tiltX, pt.tiltY, m_config);
+    smoothedWidth = StrokeWidthEvaluator::FilterEMA(
+        smoothedWidth, targetWidth, m_config.google_dynamic_width_smoothing);          // EMA smooth width transitions
+    return smoothedWidth;
 }
 
-void InkEngine::ProcessGoogleResults(const std::vector<ink::stroke_model::Result>& results) {
+// translates Google Ink's smoothed Result output back into our Point2D struct and evaluates width
+Point2D InkEngine::ToPoint2D(const sm::Result& res, float& smoothedWidth) const {
+    Point2D pt;
+    pt.x = res.position.x;                                                             // smoothed X from google physics
+    pt.y = res.position.y;                                                             // smoothed Y from google physics
+    pt.pressure = res.pressure;                                                        // smoothed stylus pressure
+    pt.timeSeconds = static_cast<double>(res.time.Value());                            // unwrap google Time back to double seconds
+    pt.speed = std::hypot(res.velocity.x, res.velocity.y);                             // 2D velocity vector -> scalar speed
+    pt.tiltX = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::cos(res.orientation) : 0.0f;
+    pt.tiltY = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::sin(res.orientation) : 0.0f;
+    pt.width = CalculateDynamicWidth(pt, smoothedWidth);                               // evaluate & EMA-smooth thickness
+    return pt;
+}
+
+void InkEngine::ProcessGoogleResults(const std::vector<sm::Result>& results) {
+
+    // convert incoming google batch into our Point2D (with smoothed thickness) and append to live stroke array
     for (const auto& res : results) {
-        float targetWidth = CalculateDynamicWidth(res);
 
-        // Exponential Moving Average (EMA) width filter: removes single-frame pop
-        if (m_smoothedWidth < 0.0f) {
-            m_smoothedWidth = targetWidth;
-        } else {
-            m_smoothedWidth = std::lerp(
-                m_smoothedWidth, targetWidth, g_InkingConfig.google_dynamic_width_smoothing);
-        }
-
-        // Build 1D line segments for collision and spatial testing
-        if (m_hasPreviousGooglePoint) {
-            Segment1D seg;
-            seg.p0 = Point2D{ m_previousGooglePos.x, m_previousGooglePos.y, 0, 0 };
-            seg.p1 = Point2D{ res.position.x, res.position.y, 0, 0 };
-            seg.width = m_smoothedWidth;
-            m_fullSmoothedSegments.push_back(seg);
-        }
-
-        float speed = std::hypot(res.velocity.x, res.velocity.y);
-        m_liveModeledPoints.push_back({
-            res.position.x,
-            res.position.y,
-            m_smoothedWidth,
-            res.pressure,
-            speed,
-            m_tiltX,
-            m_tiltY
-        });
-
-        m_previousGooglePos = Point2D{ res.position.x, res.position.y, 0, 0 };
-        m_hasPreviousGooglePoint = true;
+        m_liveModeledPoints.push_back(ToPoint2D(res, m_smoothedWidth));
     }
 
-    // Reconstruct the 2D polygon outline for live preview
+    // rebuild the live 2D outline polygon from the entire stroke's points with safety check
     if (!m_liveModeledPoints.empty()) {
-        m_liveStrokeOutline = StrokeOutlineBuilder::BuildOutline(
-            m_liveModeledPoints, m_activeTool.capType, m_activeTool.strokePattern);
+
+        m_liveStrokeOutline = StrokeOutlineBuilder::FeedStrokeBatch(m_liveModeledPoints, m_activeTool.capType, m_activeTool.strokePattern);
     }
 }
 
 void InkEngine::UpdateGooglePrediction() {
-    m_googlePredictedSegments.clear();
+    
     m_predictedStrokeOutline.clear();
-    if (!m_hasPreviousGooglePoint) return;
+    if (m_liveModeledPoints.empty()) return;                                           // need at least one confirmed point to predict from
 
-    std::vector<ink::stroke_model::Result> predictions;
-    if (m_googleModeler->Predict(predictions).ok() && !predictions.empty()) {
-        Point2D prev = m_previousGooglePos;
-        float predWidth = m_smoothedWidth;
+    m_googlePredictionsBuffer.clear();
+    if (!m_googleModeler->Predict(m_googlePredictionsBuffer).ok() || m_googlePredictionsBuffer.empty()) return;
 
-        std::vector<StrokeOutlineBuilder::InputPoint> predPoints;
-        if (!m_liveModeledPoints.empty()) {
-            predPoints.push_back(m_liveModeledPoints.back());
-        }
+    float predWidth = m_smoothedWidth;                                                 // local copy so prediction doesn't mutate real EMA state
 
-        for (const auto& res : predictions) {
-            float targetWidth = CalculateDynamicWidth(res);
-            if (predWidth < 0.0f) {
-                predWidth = targetWidth;
-            } else {
-                predWidth = std::lerp(
-                    predWidth, targetWidth, g_InkingConfig.google_dynamic_width_smoothing);
-            }
+    // start prediction polygon from last confirmed point to avoid gap
+    m_predictedPointsBuffer.clear();
+    m_predictedPointsBuffer.push_back(m_liveModeledPoints.back());
 
-            Segment1D seg;
-            seg.p0 = prev;
-            seg.p1 = Point2D{ res.position.x, res.position.y, 0, 0 };
-            seg.width = predWidth;
-            m_googlePredictedSegments.push_back(seg);
-            prev = seg.p1;
+    for (const auto& res : m_googlePredictionsBuffer) {
+        m_predictedPointsBuffer.push_back(ToPoint2D(res, predWidth));
+    }
 
-            float speed = std::hypot(res.velocity.x, res.velocity.y);
-            predPoints.push_back({
-                res.position.x,
-                res.position.y,
-                predWidth,
-                res.pressure,
-                speed,
-                m_tiltX,
-                m_tiltY
-            });
-        }
-
-        if (predPoints.size() >= 2) {
-            m_predictedStrokeOutline = StrokeOutlineBuilder::BuildOutline(
-                predPoints, m_activeTool.capType, m_activeTool.strokePattern);
-        }
+    // build predictive tip polygon (rendered ahead of stylus for zero latency feel)
+    if (m_predictedPointsBuffer.size() >= 2) {
+        m_predictedStrokeOutline = StrokeOutlineBuilder::FeedStrokeBatch(
+            m_predictedPointsBuffer, m_activeTool.capType, m_activeTool.strokePattern);
     }
 }
 
 // -----------------------------------------------------------------------------
-// 3. LAYER PRESENTATION & DATA QUERIES
+// 3. CONFIGURATION (Public Facade)
 // -----------------------------------------------------------------------------
 
-LiveInkSnapshot InkEngine::GetLiveSnapshot() const {
-    LiveInkSnapshot snapshot;
-    snapshot.isStrokeActive = m_isStrokeActive;
-    snapshot.confirmedOutline = m_liveStrokeOutline;
-    snapshot.predictedOutline = m_predictedStrokeOutline;
-    snapshot.strokeColor = BLRgba32(m_activeTool.color.value);
-
-    if (m_isStrokeActive) {
-        BLBox confirmedBox;
-        if (m_liveStrokeOutline.get_bounding_box(&confirmedBox) == BL_SUCCESS) {
-            snapshot.dirtyBounds = AABB(confirmedBox.x0, confirmedBox.y0, confirmedBox.x1, confirmedBox.y1);
-        }
-        BLBox predictedBox;
-        if (m_predictedStrokeOutline.get_bounding_box(&predictedBox) == BL_SUCCESS) {
-            AABB predAABB(predictedBox.x0, predictedBox.y0, predictedBox.x1, predictedBox.y1);
-            snapshot.dirtyBounds.minX = std::min(snapshot.dirtyBounds.minX, predAABB.minX);
-            snapshot.dirtyBounds.minY = std::min(snapshot.dirtyBounds.minY, predAABB.minY);
-            snapshot.dirtyBounds.maxX = std::max(snapshot.dirtyBounds.maxX, predAABB.maxX);
-            snapshot.dirtyBounds.maxY = std::max(snapshot.dirtyBounds.maxY, predAABB.maxY);
-        }
-    }
-
-    return snapshot;
-}
-
-void InkEngine::RenderLiveStroke(BLContext& ctx) const {
-    if (!m_isStrokeActive) return;
-
-    ctx.save();
-    ctx.set_fill_style(BLRgba32(m_activeTool.color.value));
-
-    // 1. Render confirmed live ribbon polygon
-    if (!m_liveStrokeOutline.is_empty()) {
-        ctx.fill_path(m_liveStrokeOutline);
-    }
-
-    // 2. Render low-latency forward-predicted tip extension
-    if (!m_predictedStrokeOutline.is_empty()) {
-        ctx.fill_path(m_predictedStrokeOutline);
-    }
-
-    ctx.restore();
-}
-
-// -----------------------------------------------------------------------------
-// 4. EPHEMERAL PRESENTATION INK (Laser Pointer)
-// -----------------------------------------------------------------------------
-
-void InkEngine::AddEphemeralStroke(BLPath path, BLRgba32 color, uint32_t durationMs) {
-    auto nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count());
-    m_ephemeralStrokes.push_back(EphemeralStroke{ std::move(path), color, nowMs, durationMs });
-}
-
-bool InkEngine::UpdateEphemeralStrokes(uint64_t currentTimeMs) {
-    if (m_ephemeralStrokes.empty()) return false;
-
-    size_t prevCount = m_ephemeralStrokes.size();
-    std::erase_if(m_ephemeralStrokes, [currentTimeMs](const EphemeralStroke& stroke) {
-        return (currentTimeMs - stroke.startTimeMs) >= stroke.durationMs;
-    });
-
-    // Redraw if any strokes are active (fading each frame) or any expired
-    return !m_ephemeralStrokes.empty() || (m_ephemeralStrokes.size() != prevCount);
-}
-
-void InkEngine::ClearEphemeralStrokes() {
-    m_ephemeralStrokes.clear();
-}
-
-void InkEngine::RenderEphemeralStrokes(BLContext& ctx, uint64_t currentTimeMs) const {
-    if (m_ephemeralStrokes.empty()) return;
-
-    for (const auto& stroke : m_ephemeralStrokes) {
-        if (stroke.outlinePath.is_empty()) continue;
-
-        uint64_t elapsed = (currentTimeMs >= stroke.startTimeMs) ? (currentTimeMs - stroke.startTimeMs) : 0;
-        if (elapsed >= stroke.durationMs) continue;
-
-        // Quadratic fade calculation: alpha = (1.0 - progress)^2
-        float progress = static_cast<float>(elapsed) / static_cast<float>(stroke.durationMs);
-        float alphaFactor = (1.0f - progress) * (1.0f - progress);
-
-        BLRgba32 decayedColor = stroke.baseColor;
-        uint32_t baseA = (decayedColor.value >> 24) & 0xFF;
-        uint32_t currentA = static_cast<uint32_t>(baseA * alphaFactor);
-        decayedColor.value = (decayedColor.value & 0x00FFFFFF) | (currentA << 24);
-
-        ctx.save();
-        ctx.set_fill_style(decayedColor);
-        ctx.fill_path(stroke.outlinePath);
-        ctx.restore();
-    }
+InkingConfig& InkEngine::GetConfig() noexcept {
+    return m_config;
 }
 
 } // namespace Folio

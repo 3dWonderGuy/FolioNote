@@ -166,6 +166,7 @@ bool DocumentSession::HasUnsavedChanges() const {
  * @brief Flushes the active CanvasPage asynchronously to disk via atomic .ink staging.
  */
 std::future<bool> DocumentSession::SaveActivePageAsync() {
+    ClearTemporaryObjects();
     auto activePage = GetActivePage();
     if (!activePage) {
         std::promise<bool> p;
@@ -186,6 +187,7 @@ std::future<bool> DocumentSession::SaveActivePageAsync() {
  * @brief Flushes all modified pages across the active notebook to disk asynchronously.
  */
 void DocumentSession::SaveAllModifiedPages() {
+    ClearTemporaryObjects();
     workspace.FlushActiveNotebookAsync();
 }
 

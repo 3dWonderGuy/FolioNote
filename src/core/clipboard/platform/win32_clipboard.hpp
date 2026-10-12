@@ -77,7 +77,7 @@
 #include "core/objects/media/videos/video_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "core/overlay/web_overlay.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "utils/logger.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/uid_generator.hpp"
@@ -554,12 +554,12 @@ inline std::shared_ptr<InkContainer> ParseIsfToInkContainer(const uint8_t* isfDa
                     }
 
                     // Build closed polygon outline contour (BLPath)
-                    std::vector<StrokeOutlineBuilder::InputPoint> pts;
+                    std::vector<Point2D> pts;
                     pts.reserve(s.points.size());
                     for (const auto& sp : s.points) {
-                        pts.push_back({ static_cast<float>(sp.x), static_cast<float>(sp.y), static_cast<float>(widthMm), 1.0f });
+                        pts.push_back({ sp.x, sp.y, static_cast<float>(widthMm), 1.0f });
                     }
-                    s.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, CapType::Round);
+                    s.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, CapType::Round);
 
                     inkContainer->AddStroke(s);
                 }

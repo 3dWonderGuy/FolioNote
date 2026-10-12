@@ -7,7 +7,7 @@
 #include <blend2d/blend2d.h>
 
 #include "core/spatial/aabb.hpp"
-#include "core/ink_engine/stroke_smoother.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
 
 namespace Folio {
 

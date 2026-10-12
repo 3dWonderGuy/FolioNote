@@ -366,9 +366,6 @@ public:
         if (displayScale <= 0.0f) displayScale = 1.0f;
         float displayDpi = 96.0f * displayScale;
         canvas.Init(initialW, initialH, displayDpi);
-        session.SetEphemeralStrokeSink([this](BLPath path, BLRgba32 color, uint32_t durationMs) {
-            canvas.AddEphemeralStroke(std::move(path), color, durationMs);
-        });
         // Pass the SDL window so WindowStateManager can toggle VSync during transitions
         windowSM.Init(initialW, initialH, window);
         inputManager.stateMachine.InitTiming();
@@ -441,6 +438,7 @@ public:
         inputManager.stateMachine.isDynamicEraser = SettingsManager::Instance().isDynamicEraser;
         inputManager.stateMachine.eraserRadiusMm = SettingsManager::Instance().eraserSizeMm * 0.5f;
         ribbon.isCanvasInverted = SettingsManager::Instance().isCanvasInverted;
+        canvas.GetInkEngine().GetConfig() = SettingsManager::Instance().inkingConfig;
 
         // Restore per-device default tools from settings.
         // (Placeholder — settings UI not yet built; values come from the JSON defaults.)

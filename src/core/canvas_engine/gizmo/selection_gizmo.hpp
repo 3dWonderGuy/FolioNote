@@ -14,7 +14,7 @@
 #endif
 
 #include "core/spatial/aabb.hpp"
-#include "core/ink_engine/stroke_smoother.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
 #include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "core/canvas_engine/gizmo/gizmo_types.hpp"
 #include "core/objects/canvas_object.hpp"

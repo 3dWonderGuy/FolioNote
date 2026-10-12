@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <blend2d/blend2d.h>
 
+#include "core/ink_engine/ink_stroke_data.hpp"
 #include "input/pen_palette.hpp"
 #include "core/objects/primitives/shape_types.hpp"
 
@@ -31,16 +32,6 @@
 
 class StrokeOutlineBuilder {
 public:
-    struct InputPoint {
-        double x = 0.0;
-        double y = 0.0;
-        float width = 1.0f; // Total thickness in mm
-        float pressure = 1.0f;
-        float speed = 0.0f;
-        float tiltX = 0.0f;
-        float tiltY = 0.0f;
-    };
-
     /**
      * @brief Maps Folio::ShapeOutlineType into internal StrokePattern.
      *
@@ -68,16 +59,16 @@ public:
      * @param pattern Stroke pattern (Solid, Dashed, Dotted, DashDot).
      * @param isClosed When true, closes the loop from the last point to the first point seamlessly.
      */
-    static BLPath BuildOutline(const std::vector<InputPoint>& rawPoints,
-                              CapType capType = CapType::Round,
-                              StrokePattern pattern = StrokePattern::Solid,
-                              bool isClosed = false) {
+    static BLPath FeedStrokeBatch(const std::vector<Point2D>& rawPoints,
+                                  CapType capType = CapType::Round,
+                                  StrokePattern pattern = StrokePattern::Solid,
+                                  bool isClosed = false) {
         BLPath path;
         if (rawPoints.empty()) return path;
 
         // If closed, ensure vertices form a complete loop by appending the origin if needed
-        std::vector<InputPoint> pointsCopy;
-        const std::vector<InputPoint>* ptsPtr = &rawPoints;
+        std::vector<Point2D> pointsCopy;
+        const std::vector<Point2D>* ptsPtr = &rawPoints;
         if (isClosed && rawPoints.size() >= 3) {
             double dx = rawPoints.back().x - rawPoints.front().x;
             double dy = rawPoints.back().y - rawPoints.front().y;
@@ -91,7 +82,11 @@ public:
 
         if (pts.size() == 1) {
             double r = std::max(0.05, (double)pts[0].width * 0.5);
-            path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
+            if (capType == CapType::Square) {
+                path.add_box(BLBox{pts[0].x - r, pts[0].y - r, pts[0].x + r, pts[0].y + r});
+            } else {
+                path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
+            }
             return path;
         }
 
@@ -149,7 +144,7 @@ public:
             double gapLen  = std::max(1.0, (double)avgWidth * 2.5);
             double cycle   = dashLen + gapLen;
 
-            auto samplePointAt = [&](double d) -> InputPoint {
+            auto samplePointAt = [&](double d) -> Point2D {
                 d = std::clamp(d, 0.0, totalLen);
                 auto it = std::lower_bound(cumDist.begin(), cumDist.end(), d);
                 if (it == cumDist.begin()) return pts.front();
@@ -162,7 +157,7 @@ public:
                 t = std::clamp(t, 0.0, 1.0);
                 const auto& p0 = pts[idx - 1];
                 const auto& p1 = pts[idx];
-                InputPoint res;
+                Point2D res;
                 res.x = p0.x + t * (p1.x - p0.x);
                 res.y = p0.y + t * (p1.y - p0.y);
                 res.width = p0.width + static_cast<float>(t) * (p1.width - p0.width);
@@ -174,7 +169,7 @@ public:
                 double s1 = std::min(totalLen, s0 + dashLen);
                 if (s1 <= s0) break;
 
-                std::vector<InputPoint> dashPts;
+                std::vector<Point2D> dashPts;
                 dashPts.push_back(samplePointAt(s0));
 
                 for (size_t i = 0; i < N; ++i) {
@@ -218,7 +213,7 @@ public:
             double gap2    = std::max(1.0, (double)avgWidth * 2.0);
             double cycle   = dashLen + gap1 + dotLen + gap2;
 
-            auto samplePointAt = [&](double d) -> InputPoint {
+            auto samplePointAt = [&](double d) -> Point2D {
                 d = std::clamp(d, 0.0, totalLen);
                 auto it = std::lower_bound(cumDist.begin(), cumDist.end(), d);
                 if (it == cumDist.begin()) return pts.front();
@@ -231,7 +226,7 @@ public:
                 t = std::clamp(t, 0.0, 1.0);
                 const auto& p0 = pts[idx - 1];
                 const auto& p1 = pts[idx];
-                InputPoint res;
+                Point2D res;
                 res.x = p0.x + t * (p1.x - p0.x);
                 res.y = p0.y + t * (p1.y - p0.y);
                 res.width = p0.width + static_cast<float>(t) * (p1.width - p0.width);
@@ -243,7 +238,7 @@ public:
                 // 1. Dash segment
                 double s1 = std::min(totalLen, s0 + dashLen);
                 if (s1 > s0) {
-                    std::vector<InputPoint> dashPts;
+                    std::vector<Point2D> dashPts;
                     dashPts.push_back(samplePointAt(s0));
                     for (size_t i = 0; i < N; ++i) {
                         if (cumDist[i] > s0 + 1e-5 && cumDist[i] < s1 - 1e-5) {
@@ -263,7 +258,7 @@ public:
                 // 2. Dot segment
                 double dotCenter = s0 + dashLen + gap1 + dotLen * 0.5;
                 if (dotCenter <= totalLen) {
-                    InputPoint dotPt = samplePointAt(dotCenter);
+                    Point2D dotPt = samplePointAt(dotCenter);
                     double r = std::max(0.05, (double)dotPt.width * 0.55);
                     path.add_circle(BLCircle{dotPt.x, dotPt.y, r});
                 }
@@ -277,7 +272,7 @@ public:
     /**
      * @brief Builds a continuous 2D closed ribbon polygon from an ordered list of points.
      */
-    static BLPath BuildSolidRibbon(const std::vector<InputPoint>& pts, CapType capType = CapType::Round) {
+    static BLPath BuildSolidRibbon(const std::vector<Point2D>& pts, CapType capType = CapType::Round) {
         BLPath path;
         if (pts.empty()) return path;
 

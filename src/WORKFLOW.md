@@ -225,7 +225,7 @@ src/
 │   │   ├── ink_engine.hpp / .cpp         # Stylus pipeline coordinator, stroke lifecycle, live ring buffer
 │   │   ├── stroke_collision.hpp          # Geometric collision math (Point-to-Stroke, Segment Slicing, Lasso)
 │   │   ├── stroke_outline_builder.hpp    # Polygonal stroke geometry generation from pressure centerline paths
-│   │   ├── stroke_smoother.hpp           # Google InkStrokeModeler integration, spring-damper physics, prediction
+│   │   ├── ink_stroke_data.hpp           # Google InkStrokeModeler integration, spring-damper physics, prediction
 │   │   └── README.md                     # Inking engine documentation
 │   │
 │   ├── layers/                           # Multi-tiered canvas layer composting

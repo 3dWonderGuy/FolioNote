@@ -35,11 +35,9 @@ LiveInteractionLayer::LiveInteractionLayer() {
 
 bool LiveInteractionLayer::HasActiveInteraction() const noexcept {
     return m_inkEngine.IsStrokeActive() ||
-           !m_inkEngine.GetEphemeralStrokes().empty() ||
            m_hasBorrowedStroke ||
            m_hasActiveGizmo    ||
            (m_boundGizmo && m_boundGizmo->HasSelection()) ||
-           m_hasActiveLaser    ||
            m_hasActiveText     ||
            m_hasActiveMarquee  ||
            m_hasActiveEraser   ||
@@ -56,18 +54,7 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
     // Pass 1: In-Flight Vector Ink Stroke (World Coordinates)
     RenderInFlightInk(ctx, viewport);
 
-    // Pass 2: Laser Pointer Glowing Trail (World Coordinates with chronological alpha fade)
-    RenderLaserPointer(ctx, viewport);
-    if (!m_inkEngine.GetEphemeralStrokes().empty()) {
-        ctx.save();
-        ctx.set_transform(viewport.worldToScreenMatrix);
-        uint64_t nowMs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
-        m_inkEngine.RenderEphemeralStrokes(ctx, nowMs);
-        ctx.restore();
-    }
-
-    // Pass 3: Selection / Transform Gizmo & Handles (Screen Coordinates for crisp fixed-size handles)
+    // Pass 2: Selection / Transform Gizmo & Handles (Screen Coordinates for crisp fixed-size handles)
     RenderGizmo(ctx, viewport);
 
     // Pass 4: Active Text Editor Caret & Selection Highlights (World Coordinates)
@@ -100,7 +87,18 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
     if (m_inkEngine.IsStrokeActive()) {
         ctx.save();
         ctx.set_transform(viewport.worldToScreenMatrix);
-        m_inkEngine.RenderLiveStroke(ctx);
+        ctx.set_fill_style(BLRgba32(m_inkEngine.GetActiveTool().color.value));
+
+        const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
+        if (!liveOutline.is_empty()) {
+            ctx.fill_path(liveOutline);
+        }
+
+        const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
+        if (!predOutline.is_empty()) {
+            ctx.fill_path(predOutline);
+        }
+
         ctx.restore();
         return;
     }
@@ -140,59 +138,7 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
     ctx.restore();
 }
 
-/**
- * @brief Renders transient laser pointer trail with chronological time-decay opacity.
- *
- * MATHEMATICAL FADE MODEL:
- * - For sample at timestamp t_i and current clock T:
- *     age = T - t_i
- *     decayFactor = clamp(1.0 - (age / trailDecayMs), 0.0, 1.0)
- *     alpha = originalAlpha * decayFactor
- * - Segments older than trailDecayMs are skipped.
- */
-void LiveInteractionLayer::RenderLaserPointer(BLContext& ctx, const Viewport& viewport) {
-    if (!m_hasActiveLaser || m_activeLaser.points.size() < 2) {
-        return;
-    }
 
-    const auto& pts = m_activeLaser.points;
-    const uint64_t now = m_activeLaser.currentTimeMs;
-    const uint64_t decayMs = m_activeLaser.trailDecayMs > 0 ? m_activeLaser.trailDecayMs : 600;
-    const BLRgba32 baseCol = m_activeLaser.color;
-
-    ctx.save();
-    ctx.set_transform(viewport.worldToScreenMatrix);
-    ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
-    ctx.set_stroke_join(BL_STROKE_JOIN_ROUND);
-
-    for (size_t i = 0; i + 1 < pts.size(); ++i) {
-        const auto& p0 = pts[i];
-        const auto& p1 = pts[i + 1];
-
-        uint64_t sampleTime = (p0.timestamp + p1.timestamp) / 2;
-        if (now < sampleTime) sampleTime = now;
-        uint64_t age = now - sampleTime;
-        if (age >= decayMs) continue;
-
-        double factor = 1.0 - (static_cast<double>(age) / static_cast<double>(decayMs));
-        factor = (std::clamp)(factor, 0.0, 1.0);
-
-        uint8_t alpha = static_cast<uint8_t>(baseCol.a() * factor);
-        if (alpha == 0) continue;
-
-        BLRgba32 segColor(baseCol.r(), baseCol.g(), baseCol.b(), alpha);
-        ctx.set_stroke_style(segColor);
-        ctx.set_stroke_width(m_activeLaser.radiusMm * 2.0 * factor);
-        ctx.stroke_line(p0.worldX, p0.worldY, p1.worldX, p1.worldY);
-    }
-
-    // Laser tip glow spot at head
-    const auto& head = pts.back();
-    ctx.set_fill_style(baseCol);
-    ctx.fill_circle(head.worldX, head.worldY, m_activeLaser.radiusMm);
-
-    ctx.restore();
-}
 
 /**
  * @brief Renders the selection and transform gizmo in crisp SCREEN coordinates.
@@ -543,7 +489,6 @@ void LiveInteractionLayer::Clear() noexcept {
     m_hasActiveGizmo    = false;
     m_boundGizmo        = nullptr;
     m_boundTransform    = nullptr;
-    m_hasActiveLaser    = false;
     m_hasActiveText     = false;
     m_hasActiveMarquee  = false;
     m_hasActiveEraser   = false;

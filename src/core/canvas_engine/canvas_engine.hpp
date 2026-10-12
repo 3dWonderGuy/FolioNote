@@ -96,14 +96,6 @@ public:
     BLRgba32 defaultTextHighlightColor{0x00, 0x00, 0x00, 0x00};
     uint8_t defaultTextAlignment = 0; // 0: Left, 1: Center, 2: Right
 
-    // Ephemeral Presentation Ink / Laser Pointer (delegated to LiveInteractionLayer's inkEngine)
-    using EphemeralStroke = Folio::EphemeralStroke;
-    [[nodiscard]] const std::vector<EphemeralStroke>& GetEphemeralStrokes() const noexcept {
-        return layerCompositor.GetLiveInteractionLayer().GetInkEngine().GetEphemeralStrokes();
-    }
-    void AddEphemeralStroke(BLPath path, BLRgba32 color, uint32_t durationMs = 2500);
-    void ClearEphemeralStrokes();
-
     // Tracking state
     Point2D lastInkingWorldMm{0.0, 0.0};
     bool isCurrentlyInking = false;

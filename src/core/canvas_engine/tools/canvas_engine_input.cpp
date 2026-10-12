@@ -1,17 +1,6 @@
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/document_session.hpp"
-#include <chrono>
 #include <cmath>
-
-void CanvasEngine::AddEphemeralStroke(BLPath path, BLRgba32 color, uint32_t durationMs) {
-    layerCompositor.GetLiveInteractionLayer().GetInkEngine().AddEphemeralStroke(std::move(path), color, durationMs);
-    isDirty = true;
-}
-
-void CanvasEngine::ClearEphemeralStrokes() {
-    layerCompositor.GetLiveInteractionLayer().GetInkEngine().ClearEphemeralStrokes();
-    isDirty = true;
-}
 
 void CanvasEngine::OnPointerDown(float screenX, float screenY, float pressure, double timeSec, const PenTool& tool, float tiltX, float tiltY) {
     Point2D worldMm = transform.ScreenToWorld(screenX, screenY);
@@ -64,15 +53,7 @@ void CanvasEngine::OnPointerUp(DocumentSession& session, const PenTool& tool) {
     isDirty = true;
 
     if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
-        if (tool.penType == PenType::LaserPointer) {
-            if (session.HasEphemeralStrokeSink()) {
-                session.CommitEphemeralStroke(std::move(data), tool, 2500);
-            } else {
-                AddEphemeralStroke(std::move(data.outlinePath), tool.color, 2500);
-            }
-        } else {
-            session.CommitStroke(std::move(data), tool);
-        }
+        session.CommitStroke(std::move(data), tool);
     }
 
     InvalidateLayer();

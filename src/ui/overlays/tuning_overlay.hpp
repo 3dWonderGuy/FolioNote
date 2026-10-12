@@ -2,87 +2,18 @@
 
 #include "imgui.h"
 #include "app/theme_manager.hpp"
+#include "core/ink_engine/ink_engine.hpp"
+#include "app/settings_manager.hpp"
 #include <algorithm>
 #include <cmath>
 
-enum class SplineMode {
-  QuadraticMidpoint,
-  CentripetalCatmullRom,
-  LinearPolylines
-};
-
-enum class StylusActionBinding {
-  EraserTool,
-  LassoTool,
-  PanCanvas,
-  UndoAction,
-  RedoAction,
-  None
-};
-
-struct InkingTuningConfig {
-  // -------------------------------------------------------------
-  // PRESSURE CONFIGURATION
-  // -------------------------------------------------------------
-  bool enablePressureCurve = true;
-  float pressureGamma = 1.0f;
-  float pressureDeadzoneMin = 0.02f;
-  float pressureSaturationMax = 0.95f;
-  float minRelativeThicknessFraction = 0.15f;
-
-  // -------------------------------------------------------------
-  // HARDWARE BINDINGS
-  // -------------------------------------------------------------
-  float manualOffsetXMm = 0.0f;
-  float manualOffsetYMm = 0.0f;
-
-  StylusActionBinding barrelButton1 = StylusActionBinding::EraserTool;
-  StylusActionBinding barrelButton2 = StylusActionBinding::LassoTool;
-  StylusActionBinding tailEraserTip = StylusActionBinding::EraserTool;
-
-  // -------------------------------------------------------------
-  // GOOGLE INK STROKE MODELER PARAMS
-  // -------------------------------------------------------------
-  float google_spring_mass_constant = 11.0f / 32400.0f; // ~0.000339
-  float google_drag_constant = 72.0f;
-  bool google_wobble_enable = true;
-  float google_wobble_timeout_s = 0.04f;
-  float google_wobble_speed_floor = 1.31f;
-  float google_wobble_speed_ceiling = 1.44f;
-  bool google_enable_prediction = true;
-
-  // Google Dynamic Width Params
-  bool google_use_pressure = true;
-  bool google_use_velocity = false;
-  float google_min_width_multiplier = 0.2f;
-  float google_max_width_multiplier = 1.5f;
-  float google_velocity_thinning_max_speed = 1500.0f; // mm/s
-  float google_dynamic_width_smoothing = 0.6f;      // EMA factor (0.0 to 1.0)
-
-  float EvaluatePressure(float rawPressure) const {
-    if (!enablePressureCurve)
-      return 1.0f;
-    if (rawPressure <= pressureDeadzoneMin)
-      return minRelativeThicknessFraction;
-    if (rawPressure >= pressureSaturationMax)
-      return 1.0f;
-
-    float norm = (rawPressure - pressureDeadzoneMin) /
-                 (pressureSaturationMax - pressureDeadzoneMin);
-    float curved = std::pow(norm, pressureGamma);
-    return minRelativeThicknessFraction +
-           (1.0f - minRelativeThicknessFraction) *
-               std::clamp(curved, 0.0f, 1.0f);
-  }
-};
-
-inline InkingTuningConfig g_InkingConfig;
+#define g_InkingConfig (SettingsManager::Instance().inkingConfig)
 
 class InkingTuningOverlay {
 public:
   bool isVisible = false;
 
-  void Render(const ThemeManager& theme) {
+  void Render(const ThemeManager& theme, Folio::InkEngine* inkEngine = nullptr) {
     if (!isVisible)
       return;
 
@@ -110,9 +41,46 @@ public:
                            "%.1f");
 
         ImGui::Separator();
-        ImGui::SeparatorText("Stroke Prediction");
+        ImGui::SeparatorText("Adaptive Sampling & Rotational Velocity");
+        ImGui::SliderFloat("Baseline Output Rate",
+                           &g_InkingConfig.google_min_output_rate, 60.0f,
+                           600.0f, "%.0f Hz");
+        ImGui::Checkbox("Enable Rotational Angle Upsampling",
+                        &g_InkingConfig.google_enable_angle_upsampling);
+        ImGui::BeginDisabled(!g_InkingConfig.google_enable_angle_upsampling);
+        ImGui::SliderFloat("Max Turn Angle / Step",
+                           &g_InkingConfig.google_max_estimated_angle_rad,
+                           0.01f, 0.30f, "%.3f rad");
+        ImGui::EndDisabled();
+
+        ImGui::Separator();
+        ImGui::SeparatorText("Loop Contraction Mitigation (Speed Curve Accuracy)");
+        ImGui::Checkbox("Enable Loop Contraction Mitigation",
+                        &g_InkingConfig.google_loop_mitigation_enable);
+        ImGui::BeginDisabled(!g_InkingConfig.google_loop_mitigation_enable);
+        ImGui::SliderFloat("Slow Speed Bound",
+                           &g_InkingConfig.google_loop_speed_lower_bound, 0.0f,
+                           200.0f, "%.1f mm/s");
+        ImGui::SliderFloat("Fast Speed Bound",
+                           &g_InkingConfig.google_loop_speed_upper_bound, 50.0f,
+                           1500.0f, "%.1f mm/s");
+        ImGui::SliderFloat("Spring Weight @ Slow",
+                           &g_InkingConfig.google_loop_strength_at_lower_speed,
+                           0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Spring Weight @ Fast",
+                           &g_InkingConfig.google_loop_strength_at_upper_speed,
+                           0.0f, 1.0f, "%.2f (Lower = Hugs Input)");
+        ImGui::SliderFloat("Speed Window",
+                           &g_InkingConfig.google_loop_min_speed_window_s,
+                           0.005f, 0.20f, "%.3f s");
+        ImGui::EndDisabled();
+
+        ImGui::Separator();
+        ImGui::SeparatorText("Stroke Prediction & Projection");
         ImGui::Checkbox("Enable Google Modeler Prediction",
                         &g_InkingConfig.google_enable_prediction);
+        ImGui::Checkbox("Use Stroke Normal Projection",
+                        &g_InkingConfig.google_use_stroke_normal_projection);
 
         ImGui::Separator();
         ImGui::SeparatorText("Wobble Smoother (Noise Filter)");
@@ -187,6 +155,11 @@ public:
 
       ImGui::EndTabBar();
     }
+
+    if (inkEngine) {
+      inkEngine->GetConfig() = g_InkingConfig;
+    }
+
     ImGui::End();
   }
 };

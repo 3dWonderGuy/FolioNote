@@ -28,7 +28,7 @@
 #include <algorithm>
 
 #include "core/objects/primitives/shape_container.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "core/canvas_engine/transform/canvas_transform.hpp"  // for Viewport
 #include "core/objects/object_registry.hpp"
 
@@ -274,7 +274,7 @@ void ShapeObject::BuildPath(BLPath& path) const {
  * @brief Extracts minimal canonical perimeter vertices to route through the unified pen/stroke generator.
  *
  * Mathematical Algorithm & Working Process:
- * Closed vector geometry is converted into a sequence of ordered StrokeOutlineBuilder::InputPoint
+ * Closed vector geometry is converted into a sequence of ordered Point2D
  * chords with uniform effective stroke width:
  * - Triangles: Exactly 4 vertices (3 corners + wrap-around start).
  * - Rectangles: Exactly 5 vertices (4 corners + wrap-around start).
@@ -288,7 +288,7 @@ void ShapeObject::BuildPath(BLPath& path) const {
  * @param outPoints Output vector receiving ordered perimeter vertices.
  * @param effWidth Scaled stroke thickness in world millimeters.
  */
-void ShapeObject::GetPerimeterPoints(std::vector<StrokeOutlineBuilder::InputPoint>& outPoints, double effWidth) const {
+void ShapeObject::GetPerimeterPoints(std::vector<Point2D>& outPoints, double effWidth) const {
     outPoints.clear();
     const double x = worldX;
     const double y = worldY;
@@ -828,13 +828,13 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
         if (outlineType == ShapeOutlineType::Solid) {
             ctx.stroke_path(path);
         } else {
-            std::vector<StrokeOutlineBuilder::InputPoint> perimPts;
+            std::vector<Point2D> perimPts;
             GetPerimeterPoints(perimPts, effWidth);
             if (!perimPts.empty()) {
-                BLPath patternOutline = StrokeOutlineBuilder::BuildOutline(
+                BLPath patternOutline = InkEngine::BuildStrokeOutline(
                     perimPts,
                     CapType::Round,
-                    StrokeOutlineBuilder::MapShapeOutlineType(outlineType),
+                    InkEngine::MapShapeOutlineType(outlineType),
                     true // isClosed
                 );
                 ctx.set_fill_style(solidStroke);

@@ -23,8 +23,7 @@
 #include <algorithm>
 
 #include "core/spatial/aabb.hpp"
-#include "core/ink_engine/stroke_smoother.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

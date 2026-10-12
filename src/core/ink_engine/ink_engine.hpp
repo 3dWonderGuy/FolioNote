@@ -6,28 +6,27 @@
  *
  * ARCHITECTURAL DESIGN:
  * ---------------------
- * InkEngine is a centralized, modular data and execution engine responsible for all
- * handwriting, dynamic width evaluation, predictive stroke modeling, and presentation
- * laser trails.
+ * InkEngine is the single public facade for all handwriting, dynamic width evaluation,
+ * predictive stroke modeling, and outline generation.
  *
- * Decoupling Contract:
- *  - CanvasEngine, PdfEngine, or MarkdownEditor ingest pointer events and route them into InkEngine.
- *  - The Layer Compositor (e.g. LiveInteractionLayer) interacts with InkEngine to query live stroke
- *    geometry, render predictive nib tips, or execute dirty-rect redraws.
- *  - On pen lift (PointerUp), InkEngine finalizes the stroke and hands an immutable FinishedStrokeData
- *    payload to the consumer layer / document session for database and spatial index persistence.
+ * INTERNAL PIPELINE & HELPERS (ink_engine.cpp):
+ * - MakeGoogleInput()       : Translates our Point2D into Google Ink's Input packet (kDown/kMove/kUp).
+ * - ToPoint2D()             : Translates Google Ink's smoothed Result back into our Point2D with evaluated width.
+ * - CalculateDynamicWidth() : Delegates pressure, velocity thinning, and tilt width math to StrokeWidthEvaluator.
+ * - ProcessGoogleResults()  : Converts smoothed Google results into 1D collision segments and live 2D outline polygon.
+ * - UpdateGooglePrediction(): Projects Kalman-predicted points ahead of the pen tip to hide display latency.
  */
 
 #include <vector>
 #include <memory>
 #include <cstdint>
-#include <chrono>
 #include <blend2d/blend2d.h>
 
 #include "input/pen_palette.hpp"
-#include "core/spatial/aabb.hpp"
-#include "core/ink_engine/stroke_smoother.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
+#include "core/ink_engine/ink_config.hpp"
 #include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/objects/primitives/shape_types.hpp"
 
 // Forward declarations for Google Ink Stroke Modeler
 namespace ink::stroke_model {
@@ -36,39 +35,6 @@ namespace ink::stroke_model {
 }
 
 namespace Folio {
-
-/**
- * @struct EphemeralStroke
- * @brief Transient presentation stroke (e.g. Laser Pointer trail) with temporal quadratic fade.
- *
- * Mathematical Decay Model:
- * -------------------------
- * Given stroke start timestamp t0 (ms) and total lifetime duration T (ms),
- * at current time t:
- *   elapsed = clamp(t - t0, 0, T)
- *   progress = elapsed / T           ∈ [0.0, 1.0]
- *   alphaFactor = (1.0 - progress)^2  (Quadratic ease-out fade)
- *
- * The stroke is automatically pruned once elapsed >= T.
- */
-struct EphemeralStroke {
-    BLPath outlinePath;
-    BLRgba32 baseColor;
-    uint64_t startTimeMs = 0;
-    uint32_t durationMs = 2500;
-};
-
-/**
- * @struct LiveInkSnapshot
- * @brief Read-only snapshot of current in-flight inking state for presentation layers.
- */
-struct LiveInkSnapshot {
-    bool isStrokeActive = false;
-    BLPath confirmedOutline;          ///< Closed 2D polygon ribbon up to latest confirmed physics step
-    BLPath predictedOutline;          ///< Low-latency forward-extrapolated tip polygon
-    BLRgba32 strokeColor;             ///< Active tool pigment
-    AABB dirtyBounds;                 ///< Combined bounding envelope in physical world millimeters
-};
 
 /**
  * @class InkEngine
@@ -157,64 +123,34 @@ public:
      * @brief Queries whether an inking gesture is currently in progress.
      */
     [[nodiscard]] bool IsStrokeActive() const noexcept { return m_isStrokeActive; }
-
-    /**
-     * @brief Retrieves the active pen tool configuration for the current stroke.
-     */
+    [[nodiscard]] const BLPath& GetLiveOutlinePath() const noexcept { return m_liveStrokeOutline; }
+    [[nodiscard]] const BLPath& GetPredictedOutlinePath() const noexcept { return m_predictedStrokeOutline; }
     [[nodiscard]] const PenTool& GetActiveTool() const noexcept { return m_activeTool; }
 
-    /**
-     * @brief Generates an immutable snapshot of the active stroke geometry.
-     * Used by layer classes for compositing and calculating dirty invalidate rectangles.
-     */
-    [[nodiscard]] LiveInkSnapshot GetLiveSnapshot() const;
-
-    /**
-     * @brief Renders the confirmed live stroke and the predictive tip onto a Blend2D context.
-     *
-     * @param ctx Target Blend2D drawing context.
-     */
-    void RenderLiveStroke(BLContext& ctx) const;
-
     // -------------------------------------------------------------------------
-    // 3. EPHEMERAL PRESENTATION INK (Laser Pointer)
+    // 3. CONFIGURATION & OUTLINE COMPUTATION AUTHORITY
     // -------------------------------------------------------------------------
 
     /**
-     * @brief Registers a transient laser stroke that decays over time.
-     *
-     * @param path Outline geometry of the stroke.
-     * @param color Pigment color.
-     * @param durationMs Lifetime in milliseconds (default: 2500ms).
+     * @brief Returns a reference to the active inking configuration for reading or modifying settings.
      */
-    void AddEphemeralStroke(BLPath path, BLRgba32 color, uint32_t durationMs = 2500);
+    [[nodiscard]] InkingConfig& GetConfig() noexcept;
 
     /**
-     * @brief Advances quadratic decay on all ephemeral presentation strokes.
-     *
-     * @param currentTimeMs Current monotonic timestamp in milliseconds.
-     * @return bool True if any stroke is still active or changed opacity (requires frame redraw).
+     * @brief Centralized stroke outline computing authority.
      */
-    bool UpdateEphemeralStrokes(uint64_t currentTimeMs);
+    static BLPath BuildStrokeOutline(const std::vector<Point2D>& points,
+                                     CapType capType = CapType::Round,
+                                     StrokePattern pattern = StrokePattern::Solid,
+                                     bool isClosed = false) {
+        return StrokeOutlineBuilder::FeedStrokeBatch(points, capType, pattern, isClosed);
+    }
 
     /**
-     * @brief Instantly clears all ephemeral laser strokes.
+     * @brief Maps ShapeOutlineType into StrokePattern for unified shape/connector outline generation.
      */
-    void ClearEphemeralStrokes();
-
-    /**
-     * @brief Renders all active laser strokes onto a Blend2D context with quadratic opacity decay.
-     *
-     * @param ctx Target Blend2D drawing context.
-     * @param currentTimeMs Current monotonic timestamp in milliseconds.
-     */
-    void RenderEphemeralStrokes(BLContext& ctx, uint64_t currentTimeMs) const;
-
-    /**
-     * @brief Returns read-only access to all active ephemeral strokes.
-     */
-    [[nodiscard]] const std::vector<EphemeralStroke>& GetEphemeralStrokes() const noexcept {
-        return m_ephemeralStrokes;
+    static StrokePattern MapShapeOutlineType(ShapeOutlineType outlineType) noexcept {
+        return StrokeOutlineBuilder::MapShapeOutlineType(outlineType);
     }
 
 private:
@@ -235,35 +171,36 @@ private:
      * 3. Result:
      *    width = w_pressure * thin_factor
      */
-    float CalculateDynamicWidth(const ink::stroke_model::Result& res) const;
+    float CalculateDynamicWidth(const Point2D& pt, float& smoothedWidth) const;
 
+    // Converts Google Ink smoothed output (Result) back into our unified Point2D struct (with EMA width evaluation)
+    Point2D ToPoint2D(const ink::stroke_model::Result& res, float& smoothedWidth) const;
+
+    // Processes confirmed Google Ink results into 1D segments and 2D live outline
     void ProcessGoogleResults(const std::vector<ink::stroke_model::Result>& results);
+
+    // Builds temporary forward-predicted tip outline to reduce perceived latency
     void UpdateGooglePrediction();
 
     // Internal Inking State
     bool m_isStrokeActive = false;
     PenTool m_activeTool;
+    InkingConfig m_config;
     float m_zoomScale = 1.0f;
-    float m_tiltX = 0.0f;
-    float m_tiltY = 0.0f;
     float m_smoothedWidth = -1.0f;
 
     // Point and Vector Geometry Buffers
     std::vector<Point2D> m_activeStrokePoints;
-    std::vector<Segment1D> m_fullSmoothedSegments;
-    std::vector<StrokeOutlineBuilder::InputPoint> m_liveModeledPoints;
-    std::vector<Segment1D> m_googlePredictedSegments;
+    std::vector<Point2D> m_liveModeledPoints;
+    std::vector<ink::stroke_model::Result> m_googleResultsBuffer;
+    std::vector<ink::stroke_model::Result> m_googlePredictionsBuffer;
+    std::vector<Point2D> m_predictedPointsBuffer;
 
     BLPath m_liveStrokeOutline;
     BLPath m_predictedStrokeOutline;
 
-    // Ephemeral Laser Trails
-    std::vector<EphemeralStroke> m_ephemeralStrokes;
-
     // Google Ink Modeler Bridge
     std::unique_ptr<ink::stroke_model::StrokeModeler> m_googleModeler;
-    bool m_hasPreviousGooglePoint = false;
-    Point2D m_previousGooglePos{0.0, 0.0};
 };
 
 } // namespace Folio

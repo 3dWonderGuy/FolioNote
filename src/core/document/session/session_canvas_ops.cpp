@@ -15,6 +15,7 @@
  */
 
 #include "core/document/document_session.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"
 #include "utils/logger.hpp"
@@ -22,33 +23,61 @@
 #include <unordered_set>
 
 // -----------------------------------------------------------------------------
-// Ephemeral Presentation Ink / Laser Pointer
+// Temporary Object Time Tracker (e.g. Laser Pointer Strokes)
 // -----------------------------------------------------------------------------
 
-/**
- * @brief Registers a delegate receiver for ephemeral presentation strokes.
- * @param sink Delegate callback accepting (outlinePath, color, durationMs).
- */
-void DocumentSession::SetEphemeralStrokeSink(std::function<void(BLPath, BLRgba32, uint32_t)> sink) {
-    ephemeralStrokeSink = std::move(sink);
+void DocumentSession::ClearTemporaryObjects() {
+    if (tempObjects.page && !tempObjects.objects.empty()) {
+        for (const auto& obj : tempObjects.objects) {
+            if (obj) {
+                tempObjects.page->RemoveObject(obj);
+            }
+        }
+    }
+    tempObjects.objects.clear();
+    tempObjects.page.reset();
+    tempObjects.elapsedSec = 0.0;
 }
 
-/**
- * @brief Commits an ephemeral presentation stroke (e.g. Laser Pointer).
- *
- * MATHEMATICAL PROCESS:
- * - Bypasses SQLite page storage and CommandHistory (zero footprint).
- * - Routes geometry directly to visual presentation sink where it fades smoothly:
- *     α(t) = α_0 * (1 - t/T)^2
- *
- * @param data Finished stroke geometry from LiveLayerPipeline.
- * @param tool Active pen settings containing stroke color.
- * @param fadeDurationMs Total visibility duration in milliseconds (default: 2500ms).
- */
-void DocumentSession::CommitEphemeralStroke(FinishedStrokeData&& data, const PenTool& tool, uint32_t fadeDurationMs) {
-    if (!data.outlinePath.is_empty() && ephemeralStrokeSink) {
-        ephemeralStrokeSink(std::move(data.outlinePath), tool.color, fadeDurationMs);
+bool DocumentSession::UpdateTemporaryObjects(double dtSec, bool isUserDrawing) {
+    if (tempObjects.objects.empty() || !tempObjects.page) {
+        return false;
     }
+
+    // If user is actively drawing, reset the inactivity timer and keep objects fully visible
+    if (isUserDrawing) {
+        bool neededRestore = (tempObjects.elapsedSec >= tempObjects.idleTimeoutSec);
+        tempObjects.elapsedSec = 0.0;
+        if (neededRestore) {
+            for (const auto& obj : tempObjects.objects) {
+                if (obj) {
+                    obj->opacity = 1.0f;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    tempObjects.elapsedSec += dtSec;
+    if (tempObjects.elapsedSec < tempObjects.idleTimeoutSec) {
+        return false;
+    }
+
+    double fadeElapsed = tempObjects.elapsedSec - tempObjects.idleTimeoutSec;
+    if (fadeElapsed >= tempObjects.fadeDurationSec) {
+        ClearTemporaryObjects();
+        return true;
+    }
+
+    float progress = static_cast<float>(fadeElapsed / tempObjects.fadeDurationSec);
+    float alpha = (1.0f - progress) * (1.0f - progress);
+    for (const auto& obj : tempObjects.objects) {
+        if (obj) {
+            obj->opacity = alpha;
+        }
+    }
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -61,12 +90,15 @@ void DocumentSession::CommitEphemeralStroke(FinishedStrokeData&& data, const Pen
  * @param tool Active pen tool settings (color, base size, highlighter mode).
  */
 void DocumentSession::CommitStroke(FinishedStrokeData&& data, const PenTool& tool) {
+
     auto activePage = GetActivePage();
+    
     if (!activePage) {
         LOG_WARN_CODE(DocumentSession, FolioErrorCode::InputTargetPageNull,
                       "CommitStroke rejected: No active CanvasPage available to receive stroke data.");
         return;
     }
+    
     if (data.outlinePath.is_empty() && data.liveSegments.empty()) return;
 
     auto container = std::make_shared<InkContainer>();
@@ -93,6 +125,24 @@ void DocumentSession::CommitStroke(FinishedStrokeData&& data, const PenTool& too
     stroke.outlinePath = std::move(data.outlinePath);
     stroke.segments = std::move(data.liveSegments);
     container->AddStroke(stroke);
+
+    if (tool.penType == PenType::LaserPointer) {
+        container->isSelectable = false;
+        container->isLocked = true;
+        if (tempObjects.page != activePage) {
+            ClearTemporaryObjects();
+            tempObjects.page = activePage;
+        }
+        tempObjects.elapsedSec = 0.0;
+        for (const auto& obj : tempObjects.objects) {
+            if (obj) {
+                obj->opacity = 1.0f;
+            }
+        }
+        activePage->AddObject(container);
+        tempObjects.objects.push_back(container);
+        return;
+    }
 
     activePage->AddObject(container);
     RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(container));
@@ -127,7 +177,7 @@ void DocumentSession::CommitStroke(std::vector<Segment1D>&& segments, const PenT
     stroke.penType = tool.penType;
     stroke.opacity = tool.opacity;
 
-    std::vector<StrokeOutlineBuilder::InputPoint> pts;
+    std::vector<Point2D> pts;
     pts.reserve(segments.size() + 1);
     stroke.points.reserve(segments.size() + 1);
 
@@ -139,9 +189,27 @@ void DocumentSession::CommitStroke(std::vector<Segment1D>&& segments, const PenT
         stroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
     }
 
-    stroke.outlinePath = StrokeOutlineBuilder::BuildOutline(pts, tool.capType, tool.strokePattern);
+    stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, tool.capType, tool.strokePattern);
     stroke.segments = std::move(segments);
     container->AddStroke(stroke);
+
+    if (tool.penType == PenType::LaserPointer) {
+        container->isSelectable = false;
+        container->isLocked = true;
+        if (tempObjects.page != activePage) {
+            ClearTemporaryObjects();
+            tempObjects.page = activePage;
+        }
+        tempObjects.elapsedSec = 0.0;
+        for (const auto& obj : tempObjects.objects) {
+            if (obj) {
+                obj->opacity = 1.0f;
+            }
+        }
+        activePage->AddObject(container);
+        tempObjects.objects.push_back(container);
+        return;
+    }
 
     activePage->AddObject(container);
     RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(container));
