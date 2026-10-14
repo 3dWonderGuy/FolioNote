@@ -210,7 +210,10 @@ std::shared_ptr<Notebook> DocumentSession::CreateNotebook(const std::string& nam
     defaultSec->AddPage(defaultPage);
     newNb->AddSection(defaultSec);
 
-    // Persist structure to disk
+    // 1. Open the package FIRST so package directory, pages/, and structure.db exist
+    workspace.repository.OpenNotebookPackage(newNb->filePath);
+
+    // 2. Persist structure to disk now that dbManager is connected to newNb->filePath
     workspace.repository.SaveNotebookAsync(newNb);
 
     workspace.notebooks.push_back(newNb);

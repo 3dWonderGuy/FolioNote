@@ -46,10 +46,26 @@ std::string AppDirectories::GetAppRootDirectory(const std::string& overridePath)
     }
 
 #if defined(__ANDROID__)
-    // CRITICAL: On Android, SDL_GetPrefPath() uses JNI (context.getFilesDir()).
-    // Calling it before SDL is initialized (SDL_WasInit) or during static initialization
-    // causes a fatal SIGSEGV in ART JNI because the JVM environment is unattached.
-    // Guard with SDL_WasInit to ensure JNI is initialized before querying.
+    std::error_code ec;
+    if (std::filesystem::exists("/storage/emulated/0", ec)) {
+        std::string res = PathUtils::NormalizeSeparators("/storage/emulated/0/FolioNote");
+        std::lock_guard<std::mutex> lock(s_appRootMutex);
+        s_activeAppRoot = res;
+        return res;
+    }
+    if (std::filesystem::exists("/sdcard", ec)) {
+        std::string res = PathUtils::NormalizeSeparators("/sdcard/FolioNote");
+        std::lock_guard<std::mutex> lock(s_appRootMutex);
+        s_activeAppRoot = res;
+        return res;
+    }
+    const char* ext = SDL_GetAndroidExternalStoragePath();
+    if (ext && ext[0] != '\0') {
+        std::string res = PathUtils::NormalizeSeparators(PathUtils::JoinPath(ext, "FolioNote"));
+        std::lock_guard<std::mutex> lock(s_appRootMutex);
+        s_activeAppRoot = res;
+        return res;
+    }
     if (SDL_WasInit(0) != 0) {
         char* pref = SDL_GetPrefPath("UniversalFramework", "FolioNote");
         if (pref && pref[0] != '\0') {

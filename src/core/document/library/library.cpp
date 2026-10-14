@@ -378,7 +378,11 @@ std::shared_ptr<Notebook> LibraryManager::CreateNewNotebook(
     auto nb = std::make_shared<Notebook>(safeName, color, icon);
     nb->filePath = pkgPath;
     if (nb->sections.empty()) {
-        nb->sections.push_back(std::make_shared<Section>("New Section"));
+        auto sec = std::make_shared<Section>("New Section");
+        sec->notebookGuid = nb->guid;
+        auto page = std::make_shared<CanvasPage>("New Untitled Page");
+        sec->AddPage(page);
+        nb->sections.push_back(sec);
     }
     nb->activeSectionIndex = 0;
 

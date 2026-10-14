@@ -200,6 +200,12 @@ public:
             auto demoNb = std::make_shared<Notebook>("DemoBook", ImVec4(0.20f, 0.48f, 0.92f, 1.0f));
             demoNb->filePath = demoPath;
 
+            auto demoSec = std::make_shared<Section>("General");
+            demoSec->notebookGuid = demoNb->guid;
+            auto demoPage = std::make_shared<CanvasPage>("Welcome to FolioNote");
+            demoSec->AddPage(demoPage);
+            demoNb->AddSection(demoSec);
+
             if (repository.OpenNotebookPackage(demoPath)) {
                 repository.SaveNotebookAsync(demoNb);
             }

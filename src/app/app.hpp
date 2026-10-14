@@ -114,6 +114,7 @@ public:
      * Throttled to execute once every 1.5 - 2.0 seconds to minimize I/O overhead.
      */
     uint64_t lastImportScanTicksMs = 0;
+    uint64_t lastAutoSaveTicksMs = 0;
 
     /**
      * @brief Pre-indexes and ensures existence of the dedicated user Imports directory.
@@ -377,15 +378,51 @@ public:
         // ANDROID: SDL_GetUserFolder() is not available on Android — it requires
         // platform-specific APIs (like MediaStore) that SDL3 does not abstract.
         // SDL_GetPrefPath() returns a guaranteed writable private app directory:
-        //   e.g. /data/user/0/org.libsdl.app/files/
-        // This directory is sandboxed to our app and persists across launches.
-        char* prefPath = SDL_GetPrefPath("UniversalFramework", "FolioNote");
+        // ANDROID: Store user notebooks in user-visible internal storage (/storage/emulated/0/FolioNote)
+        // so notebooks appear in the tablet's File Manager alongside Bluetooth/Downloads/Documents.
+        // Backups remain safely isolated in the internal sandbox via GetLocalDataDirectory().
         std::filesystem::path folioPath;
-        if (prefPath) {
-            folioPath = std::filesystem::path(prefPath);
-            SDL_free(prefPath);
+        std::error_code ec;
+
+        if (std::filesystem::exists("/storage/emulated/0", ec)) {
+            folioPath = "/storage/emulated/0/FolioNote";
+        } else if (std::filesystem::exists("/sdcard", ec)) {
+            folioPath = "/sdcard/FolioNote";
         } else {
-            folioPath = std::filesystem::path(".") / "FolioNote";
+            const char* extPath = SDL_GetAndroidExternalStoragePath();
+            if (extPath && extPath[0] != '\0') {
+                folioPath = std::filesystem::path(extPath) / "FolioNote";
+            } else {
+                char* prefPath = SDL_GetPrefPath("UniversalFramework", "FolioNote");
+                if (prefPath) {
+                    folioPath = std::filesystem::path(prefPath);
+                    SDL_free(prefPath);
+                } else {
+                    folioPath = std::filesystem::path(".") / "FolioNote";
+                }
+            }
+        }
+
+        if (!std::filesystem::exists(folioPath, ec)) {
+            std::filesystem::create_directories(folioPath, ec);
+        }
+        // Fallback if shared storage creation failed due to restrictive permissions
+        if (ec) {
+            const char* extPath = SDL_GetAndroidExternalStoragePath();
+            if (extPath && extPath[0] != '\0') {
+                folioPath = std::filesystem::path(extPath) / "FolioNote";
+                std::filesystem::create_directories(folioPath, ec);
+            }
+            if (ec) {
+                char* prefPath = SDL_GetPrefPath("UniversalFramework", "FolioNote");
+                if (prefPath) {
+                    folioPath = std::filesystem::path(prefPath);
+                    SDL_free(prefPath);
+                } else {
+                    folioPath = std::filesystem::path(".") / "FolioNote";
+                }
+                std::filesystem::create_directories(folioPath, ec);
+            }
         }
 #else
         // Ask SDL3 for the user's OS-specific Documents folder path
@@ -399,11 +436,7 @@ public:
             // Fallback if OS denies access (creates folder next to the .exe)
             folioPath = std::filesystem::path(".") / "FolioNote"; 
         }
-#endif
 
-#if !defined(__ANDROID__)
-        // ANDROID: SDL_GetPrefPath already creates the directory on Android.
-        // On desktop we must create it ourselves if it doesn't exist yet.
         std::error_code ec;
         if (!std::filesystem::exists(folioPath, ec)) {
             std::filesystem::create_directories(folioPath, ec);
@@ -1046,6 +1079,15 @@ public:
             if (currentTicksMs - lastImportScanTicksMs >= 2000) {
                 lastImportScanTicksMs = currentTicksMs;
                 CheckImportFolder();
+            }
+
+            // Periodically auto-save dirty active page every 3 seconds to prevent data loss
+            if (currentTicksMs - lastAutoSaveTicksMs >= 3000) {
+                lastAutoSaveTicksMs = currentTicksMs;
+                auto activePage = session.GetActivePage();
+                if (activePage && activePage->isModified) {
+                    session.SaveActivePageAsync();
+                }
             }
 
             windowSM.Update();
