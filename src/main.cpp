@@ -173,19 +173,36 @@ int main(int argc, char* argv[])
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 #endif
 
-    Application app;
-    if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
+    int exitCode = 0;
+    try {
+        Application app;
+        if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
 #if defined(_WIN32)
-        if (hSingleInstanceMutex) {
-            CloseHandle(hSingleInstanceMutex);
-        }
-        CoUninitialize();
+            if (hSingleInstanceMutex) {
+                CloseHandle(hSingleInstanceMutex);
+            }
+            CoUninitialize();
 #endif
-        return -1;
-    }
+            return -1;
+        }
 
-    app.Run();
-    app.Shutdown();
+        app.Run();
+        app.Shutdown();
+    } catch (const std::exception& e) {
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "Fatal unhandled exception: %s", e.what());
+#else
+        std::cerr << "[FolioNote] Fatal unhandled exception: " << e.what() << std::endl;
+#endif
+        exitCode = -1;
+    } catch (...) {
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "Fatal unhandled unknown exception!");
+#else
+        std::cerr << "[FolioNote] Fatal unhandled unknown exception!" << std::endl;
+#endif
+        exitCode = -1;
+    }
 
 #if defined(_WIN32)
     CoUninitialize();
@@ -193,5 +210,5 @@ int main(int argc, char* argv[])
         CloseHandle(hSingleInstanceMutex);
     }
 #endif
-    return 0;
+    return exitCode;
 }

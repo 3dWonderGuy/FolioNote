@@ -15,6 +15,7 @@
 #include <cmath>
 #include <algorithm>
 #include "core/ink_engine/ink_config.hpp"
+#include "core/ink_engine/ink_stroke_data.hpp"
 
 namespace Folio {
 
@@ -124,6 +125,25 @@ public:
         float velocityFactor = CalculateVelocityThinFactor(speedMmPerSec, zoomScale, config);
         float tiltFactor = CalculateTiltWidthFactor(tiltX, tiltY, config);
         return pressureWidth * velocityFactor * tiltFactor;
+    }
+
+    /**
+     * @brief Evaluates complete dynamic stroke thickness from Point2D telemetry and applies EMA smoothing.
+     * @param baseWidth Chosen tool base size in millimeters.
+     * @param pt Incoming stylus point containing pressure, speed, and tilt.
+     * @param previousWidth Smoothed width from preceding point (-1.0f if starting a stroke).
+     * @param zoomScale Current canvas zoom factor.
+     * @param config Active inking configuration.
+     * @return Final smoothed stroke thickness in millimeters.
+     */
+    [[nodiscard]] static float CalculateDynamicWidth(float baseWidth, const Point2D& pt,
+                                                     float previousWidth, float zoomScale,
+                                                     const InkingConfig& config) noexcept {
+        float pressureWidth = CalculatePressureWidth(baseWidth, pt.pressure, config);
+        float velocityFactor = CalculateVelocityThinFactor(pt.speed, zoomScale, config);
+        float tiltFactor = CalculateTiltWidthFactor(pt.tiltX, pt.tiltY, config);
+        float targetWidth = pressureWidth * velocityFactor * tiltFactor;
+        return FilterEMA(previousWidth, targetWidth, config.google_dynamic_width_smoothing);
     }
 
     /**

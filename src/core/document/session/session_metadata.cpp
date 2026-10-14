@@ -245,8 +245,13 @@ void DocumentSession::NotifyActiveSectionChanged(const std::shared_ptr<Section>&
  */
 void DocumentSession::NotifyActiveNotebookChanged(const std::shared_ptr<Notebook>& newNb,
                                                  const std::shared_ptr<Notebook>& oldNb) {
-    // Synchronize the active notebook package root with FileManager for relative asset resolution
-    Folio::FileManager::SetActivePackageRoot(newNb ? newNb->filePath : "");
+    // Synchronize the active notebook package root with FileManager and repository
+    if (newNb && !newNb->filePath.empty()) {
+        workspace.repository.OpenNotebookPackage(newNb->filePath);
+        Folio::FileManager::SetActivePackageRoot(newNb->filePath);
+    } else {
+        Folio::FileManager::SetActivePackageRoot("");
+    }
 
     auto snapshot = observers;
     for (auto* obs : snapshot) {

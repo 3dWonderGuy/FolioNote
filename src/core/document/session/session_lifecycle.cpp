@@ -119,6 +119,8 @@ bool DocumentSession::OpenNotebook(const std::string& guidOrPath) {
     if (guidOrPath.empty()) return false;
     auto oldNb = GetActiveNotebook();
     if (oldNb && (oldNb->guid == guidOrPath || oldNb->filePath == guidOrPath)) {
+        workspace.repository.OpenNotebookPackage(oldNb->filePath);
+        Folio::FileManager::SetActivePackageRoot(oldNb->filePath);
         return true; // Already active
     }
 

@@ -11,8 +11,7 @@
  *
  * INTERNAL PIPELINE & HELPERS (ink_engine.cpp):
  * - MakeGoogleInput()       : Translates our Point2D into Google Ink's Input packet (kDown/kMove/kUp).
- * - ToPoint2D()             : Translates Google Ink's smoothed Result back into our Point2D with evaluated width.
- * - CalculateDynamicWidth() : Delegates pressure, velocity thinning, and tilt width math to StrokeWidthEvaluator.
+ * - ToPoint2D()             : Translates Google Ink's smoothed Result into Point2D and computes dynamic thickness.
  * - ProcessGoogleResults()  : Converts smoothed Google results into 1D collision segments and live 2D outline polygon.
  * - UpdateGooglePrediction(): Projects Kalman-predicted points ahead of the pen tip to hide display latency.
  */
@@ -171,10 +170,8 @@ private:
      * 3. Result:
      *    width = w_pressure * thin_factor
      */
-    float CalculateDynamicWidth(const Point2D& pt, float& smoothedWidth) const;
-
-    // Converts Google Ink smoothed output (Result) back into our unified Point2D struct (with EMA width evaluation)
-    Point2D ToPoint2D(const ink::stroke_model::Result& res, float& smoothedWidth) const;
+    // Converts Google Ink smoothed output (Result) into a complete Point2D with dynamic thickness evaluated
+    Point2D ToPoint2D(const ink::stroke_model::Result& res, float previousWidth = -1.0f) const;
 
     // Processes confirmed Google Ink results into 1D segments and 2D live outline
     void ProcessGoogleResults(const std::vector<ink::stroke_model::Result>& results);

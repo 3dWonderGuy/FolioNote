@@ -418,13 +418,42 @@ public:
         session.Init(folioPath.string());
 
         // Load persistent JSON settings
-        SettingsManager::Instance().Load();
+        try {
+            SettingsManager::Instance().Load();
+        } catch (const std::exception& e) {
+            devTelemetry.LogEvent(std::string("Exception loading settings: ") + e.what(), LogCategory::System);
+        } catch (...) {
+            devTelemetry.LogEvent("Unknown exception loading settings.", LogCategory::System);
+        }
 
         // Restore last session position (Notebook, Section, Page)
         const auto& sm = SettingsManager::Instance();
         if (!sm.lastActiveNotebookGuid.empty() || !sm.lastActivePageGuid.empty()) {
-            session.RestoreLastSession(sm.lastActiveNotebookGuid, sm.lastActiveSectionGuid, sm.lastActivePageGuid);
+            try {
+                session.RestoreLastSession(sm.lastActiveNotebookGuid, sm.lastActiveSectionGuid, sm.lastActivePageGuid);
+            } catch (const std::exception& e) {
+                devTelemetry.LogEvent(std::string("Exception restoring last session: ") + e.what(), LogCategory::System);
+            } catch (...) {
+                devTelemetry.LogEvent("Unknown exception restoring last session.", LogCategory::System);
+            }
         }
+
+        // Fallback: If session restore didn't establish a valid active page, ensure we activate a valid notebook & page
+        if (!session.GetActivePage()) {
+            if (!session.workspace.notebooks.empty()) {
+                auto firstNb = session.workspace.notebooks.front();
+                session.OpenNotebook(firstNb->guid);
+                auto activeSec = firstNb->GetActiveSection();
+                if (!activeSec && !firstNb->sections.empty()) {
+                    firstNb->SetActiveSection(firstNb->sections.front());
+                    activeSec = firstNb->GetActiveSection();
+                }
+                if (activeSec && !activeSec->pages.empty()) {
+                    session.NavigateToPage(activeSec->pages.front()->guid);
+                }
+            }
+        }
+
 
         // Sync loaded settings to RibbonBar and InputStateMachine
         ribbon.drawWithTouch = SettingsManager::Instance().drawWithTouch;
@@ -927,8 +956,11 @@ public:
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
-                if (event.type == SDL_EVENT_QUIT) {
+                if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_TERMINATING) {
                     running = false;
+                }
+                else if (event.type == SDL_EVENT_WILL_ENTER_BACKGROUND || event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+                    SaveSessionSettings();
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
                     HandleGlobalShortcut(event);
@@ -981,8 +1013,11 @@ public:
                 if (waitTimeoutMs > 0) {
                     if (SDL_WaitEventTimeout(&event, waitTimeoutMs)) {
                         ImGui_ImplSDL3_ProcessEvent(&event);
-                        if (event.type == SDL_EVENT_QUIT) {
+                        if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_TERMINATING) {
                             running = false;
+                        }
+                        else if (event.type == SDL_EVENT_WILL_ENTER_BACKGROUND || event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+                            SaveSessionSettings();
                         }
                         else if (event.type == SDL_EVENT_KEY_DOWN) {
                             HandleGlobalShortcut(event);
@@ -1451,8 +1486,9 @@ public:
 #endif
     }
 
-    void Shutdown() {
-        // Automatically save the currently open notebook to SQLite when closing the app
+    void SaveSessionSettings() {
+        // Automatically save the currently open notebook to SQLite
+        session.SaveActivePageAsync();
         session.workspace.FlushActiveNotebookAsync();
 
         // Sync final UI and Ribbon state to SettingsManager before saving
@@ -1499,6 +1535,14 @@ public:
         }
 
         SettingsManager::Instance().Save();
+    }
+
+    void Shutdown() {
+        SaveSessionSettings();
+
+        if (session.workspace.repository.dbManager) {
+            session.workspace.repository.dbManager->Close();
+        }
 
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplSDL3_Shutdown();

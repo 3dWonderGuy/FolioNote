@@ -38,10 +38,15 @@ public:
     }
 
     /**
-     * @brief Loads preset configuration from settings (noop placeholder for interface symmetry).
+     * @brief Loads preset configuration from SettingsManager.
      * @return Always true.
      */
     bool LoadFromSettings() {
+        presets = SettingsManager::Instance().inkingPresets;
+        if (presets.empty()) {
+            presets = SettingsManager::GetDefaultPenPresets();
+        }
+        activePresetId = SettingsManager::Instance().activePresetId;
         return true;
     }
 
