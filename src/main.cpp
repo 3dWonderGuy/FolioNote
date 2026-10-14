@@ -177,6 +177,7 @@ int main(int argc, char* argv[])
     try {
         Application app;
         if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
+            std::cerr << "[FolioNote] Initialization failed: " << SDL_GetError() << std::endl;
 #if defined(_WIN32)
             if (hSingleInstanceMutex) {
                 CloseHandle(hSingleInstanceMutex);

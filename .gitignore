@@ -40,7 +40,10 @@ imgui.ini
 *.ilk
 
 # Editor & Language Server Metadata
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/settings.json
 .clangd/
 .vs/
 

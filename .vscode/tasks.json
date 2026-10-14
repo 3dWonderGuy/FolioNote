@@ -40,7 +40,7 @@
         {
             "label": "Run FolioNote",
             "type": "shell",
-            "command": "./build/bin/FolioNote",
+            "command": "./scripts/run.sh",
             "windows": {
                 "command": ".\\build\\bin\\Debug\\FolioNote.exe"
             },

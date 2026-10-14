@@ -12,8 +12,9 @@
  * INTERNAL PIPELINE & HELPERS (ink_engine.cpp):
  * - MakeGoogleInput()       : Translates our Point2D into Google Ink's Input packet (kDown/kMove/kUp).
  * - ToPoint2D()             : Translates Google Ink's smoothed Result into Point2D and computes dynamic thickness.
- * - ProcessGoogleResults()  : Converts smoothed Google results into 1D collision segments and live 2D outline polygon.
+ * - ProcessGoogleResults()  : Converts smoothed Google results into modeled points and updates live 2D outline.
  * - UpdateGooglePrediction(): Projects Kalman-predicted points ahead of the pen tip to hide display latency.
+ * - UpdatePhysicsParams()   : Pushes active m_config physics parameters into Google StrokeModeler.
  */
 
 #include <vector>
@@ -58,9 +59,10 @@ public:
      * @brief Initiates a new live vector stroke gesture.
      *
      * Working Process:
-     * 1. Resets Google Ink modeler and transient point accumulation buffers.
-     * 2. Configures spring-mass, damping drag, and wobble suppression parameters from active configuration.
-     * 3. Seeds the first sample point and establishes the initial nominal stroke thickness.
+     * 1. Resets Google Ink modeler state and transient point accumulation buffers.
+     * 2. Seeds the touchdown input sample (kDown) into the Google Modeler physics pipeline.
+     * 3. Renders an immediate visual fallback dot if the tremor filter buffers initial movement.
+     * 4. Updates forward predictive tip outline if enabled.
      *
      * @param worldX Initial stylus X position in physical millimeters.
      * @param worldY Initial stylus Y position in physical millimeters.
@@ -131,9 +133,22 @@ public:
     // -------------------------------------------------------------------------
 
     /**
-     * @brief Returns a reference to the active inking configuration for reading or modifying settings.
+     * @brief Returns a reference to the active inking configuration.
+     * Note: If modifying Google physics settings directly, call UpdatePhysicsParams() to apply them.
      */
     [[nodiscard]] InkingConfig& GetConfig() noexcept;
+
+    /**
+     * @brief Sets configuration and pushes physics parameters to Google Modeler immediately.
+     * @param config Complete inking configuration settings.
+     */
+    void SetConfig(const InkingConfig& config);
+
+    /**
+     * @brief Updates Google Modeler parameters from current m_config settings.
+     * Pushes spring-mass constant, drag, loop mitigation, wobble filters, and angle upsampling.
+     */
+    void UpdatePhysicsParams();
 
     /**
      * @brief Centralized stroke outline computing authority.
@@ -154,26 +169,17 @@ public:
 
 private:
     /**
-     * @brief Evaluates target stroke thickness combining pressure response and velocity thinning.
+     * @brief Converts a confirmed Google Ink smoothed Result into a complete Point2D.
+     * Evaluates dynamic thickness via StrokeWidthEvaluator combining pressure curve,
+     * velocity thinning, tilt factor, and internal EMA smoothing.
      *
-     * Mathematical Working Process:
-     * 1. Stage A (Pressure Ceiling):
-     *    p_norm = clamp((pressure - deadzone) / (saturation - deadzone), 0, 1)
-     *    p_curve = p_norm^gamma
-     *    w_pressure = baseSize * (min_mult + p_curve * (max_mult - min_mult))
-     *
-     * 2. Stage B (Velocity Thinning):
-     *    speed = sqrt(vx^2 + vy^2) * zoomScale
-     *    v_norm = clamp(speed / max_speed, 0, 1)
-     *    thin_factor = 1.0 - v_norm * (1.0 - min_mult)
-     *
-     * 3. Result:
-     *    width = w_pressure * thin_factor
+     * @param res Confirmed smoothed result from Google Stroke Modeler.
+     * @param previousWidth Smoothed width from preceding point (-1.0f if starting a stroke).
+     * @return Point2D Point with world coordinates, pressure, speed, tilt, and dynamic thickness.
      */
-    // Converts Google Ink smoothed output (Result) into a complete Point2D with dynamic thickness evaluated
     Point2D ToPoint2D(const ink::stroke_model::Result& res, float previousWidth = -1.0f) const;
 
-    // Processes confirmed Google Ink results into 1D segments and 2D live outline
+    // Processes confirmed Google Ink results into live modeled points and updates 2D live outline
     void ProcessGoogleResults(const std::vector<ink::stroke_model::Result>& results);
 
     // Builds temporary forward-predicted tip outline to reduce perceived latency

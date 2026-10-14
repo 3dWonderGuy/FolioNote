@@ -342,12 +342,12 @@ public:
                     if (jp.contains("wobbleTimeout")) inkingConfig.google_wobble_timeout_s = jp["wobbleTimeout"].get<float>();
                     if (jp.contains("wobbleSpeedFloor")) inkingConfig.google_wobble_speed_floor = jp["wobbleSpeedFloor"].get<float>();
                     if (jp.contains("wobbleSpeedCeiling")) inkingConfig.google_wobble_speed_ceiling = jp["wobbleSpeedCeiling"].get<float>();
-                    if (jp.contains("usePressure")) inkingConfig.google_use_pressure = jp["usePressure"].get<bool>();
-                    if (jp.contains("useVelocity")) inkingConfig.google_use_velocity = jp["useVelocity"].get<bool>();
-                    if (jp.contains("widthSmoothing")) inkingConfig.google_dynamic_width_smoothing = jp["widthSmoothing"].get<float>();
-                    if (jp.contains("minWidthMultiplier")) inkingConfig.google_min_width_multiplier = jp["minWidthMultiplier"].get<float>();
-                    if (jp.contains("maxWidthMultiplier")) inkingConfig.google_max_width_multiplier = jp["maxWidthMultiplier"].get<float>();
-                    if (jp.contains("velocityThinningMaxSpeed")) inkingConfig.google_velocity_thinning_max_speed = jp["velocityThinningMaxSpeed"].get<float>();
+                    if (jp.contains("usePressure")) inkingConfig.usePressure = jp["usePressure"].get<bool>();
+                    if (jp.contains("useVelocity")) inkingConfig.useVelocity = jp["useVelocity"].get<bool>();
+                    if (jp.contains("widthSmoothing")) inkingConfig.dynamicWidthSmoothing = jp["widthSmoothing"].get<float>();
+                    if (jp.contains("minWidthMultiplier")) inkingConfig.minWidthMultiplier = jp["minWidthMultiplier"].get<float>();
+                    if (jp.contains("maxWidthMultiplier")) inkingConfig.maxWidthMultiplier = jp["maxWidthMultiplier"].get<float>();
+                    if (jp.contains("velocityThinningMaxSpeed")) inkingConfig.velocityThinningMaxSpeed = jp["velocityThinningMaxSpeed"].get<float>();
                     if (jp.contains("enablePressureCurve")) inkingConfig.enablePressureCurve = jp["enablePressureCurve"].get<bool>();
                     if (jp.contains("pressureGamma")) inkingConfig.pressureGamma = jp["pressureGamma"].get<float>();
                     if (jp.contains("pressureDeadzoneMin")) inkingConfig.pressureDeadzoneMin = jp["pressureDeadzoneMin"].get<float>();
@@ -559,12 +559,12 @@ public:
                 { "wobbleTimeout", inkingConfig.google_wobble_timeout_s },
                 { "wobbleSpeedFloor", inkingConfig.google_wobble_speed_floor },
                 { "wobbleSpeedCeiling", inkingConfig.google_wobble_speed_ceiling },
-                { "usePressure", inkingConfig.google_use_pressure },
-                { "useVelocity", inkingConfig.google_use_velocity },
-                { "widthSmoothing", inkingConfig.google_dynamic_width_smoothing },
-                { "minWidthMultiplier", inkingConfig.google_min_width_multiplier },
-                { "maxWidthMultiplier", inkingConfig.google_max_width_multiplier },
-                { "velocityThinningMaxSpeed", inkingConfig.google_velocity_thinning_max_speed },
+                { "usePressure", inkingConfig.usePressure },
+                { "useVelocity", inkingConfig.useVelocity },
+                { "widthSmoothing", inkingConfig.dynamicWidthSmoothing },
+                { "minWidthMultiplier", inkingConfig.minWidthMultiplier },
+                { "maxWidthMultiplier", inkingConfig.maxWidthMultiplier },
+                { "velocityThinningMaxSpeed", inkingConfig.velocityThinningMaxSpeed },
                 { "enablePressureCurve", inkingConfig.enablePressureCurve },
                 { "pressureGamma", inkingConfig.pressureGamma },
                 { "pressureDeadzoneMin", inkingConfig.pressureDeadzoneMin },

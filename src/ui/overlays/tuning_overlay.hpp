@@ -97,26 +97,44 @@ public:
                            10.0f, "%.2f mm/s");
         ImGui::EndDisabled();
 
+        ImGui::SeparatorText("Pressure Curve & Calibration");
+        ImGui::Checkbox("Enable Pressure Curve",
+                        &g_InkingConfig.enablePressureCurve);
+        ImGui::BeginDisabled(!g_InkingConfig.enablePressureCurve);
+        ImGui::SliderFloat("Pressure Feel (Gamma)",
+                           &g_InkingConfig.pressureGamma, 0.3f, 3.0f,
+                           "%.2f (1.0=Linear, <1=Firm, >1=Soft)");
+        ImGui::SliderFloat("Pressure Deadzone",
+                           &g_InkingConfig.pressureDeadzoneMin, 0.0f, 0.20f,
+                           "%.3f");
+        ImGui::SliderFloat("Pressure Saturation",
+                           &g_InkingConfig.pressureSaturationMax, 0.50f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Min Contact Floor",
+                           &g_InkingConfig.minRelativeThicknessFraction, 0.01f, 0.50f,
+                           "%.2f");
+        ImGui::EndDisabled();
+
         ImGui::SeparatorText("Dynamic Width Mapping");
         ImGui::Checkbox("Map Pressure to Width",
-                        &g_InkingConfig.google_use_pressure);
+                        &g_InkingConfig.usePressure);
         ImGui::Checkbox("Map Velocity to Width (Fountain Pen)",
-                        &g_InkingConfig.google_use_velocity);
-        ImGui::BeginDisabled(!g_InkingConfig.google_use_pressure &&
-                             !g_InkingConfig.google_use_velocity);
+                        &g_InkingConfig.useVelocity);
+        ImGui::BeginDisabled(!g_InkingConfig.usePressure &&
+                             !g_InkingConfig.useVelocity);
         ImGui::SliderFloat("Width Smoothing",
-                           &g_InkingConfig.google_dynamic_width_smoothing,
+                           &g_InkingConfig.dynamicWidthSmoothing,
                            0.01f, 1.0f, "%.2f (Lower = Smoother)");
         ImGui::SliderFloat("Min Width %",
-                           &g_InkingConfig.google_min_width_multiplier, 0.05f,
+                           &g_InkingConfig.minWidthMultiplier, 0.05f,
                            1.0f, "%.2fx");
         ImGui::SliderFloat("Max Width %",
-                           &g_InkingConfig.google_max_width_multiplier, 1.0f,
+                           &g_InkingConfig.maxWidthMultiplier, 1.0f,
                            4.0f, "%.2fx");
         ImGui::EndDisabled();
-        ImGui::BeginDisabled(!g_InkingConfig.google_use_velocity);
+        ImGui::BeginDisabled(!g_InkingConfig.useVelocity);
         ImGui::SliderFloat("Max Velocity Thinning",
-                           &g_InkingConfig.google_velocity_thinning_max_speed,
+                           &g_InkingConfig.velocityThinningMaxSpeed,
                            10.0f, 2000.0f, "%.1f mm/s");
         ImGui::EndDisabled();
         ImGui::Separator();

@@ -253,7 +253,10 @@ public:
     uint64_t lastLruCheckMs = 0;
 
     bool Init(const char* title = "FolioNote", int initialW = 1920, int initialH = 1080, const std::string& initialImportPath = "") {
-        if (!SDL_Init(SDL_INIT_VIDEO)) return false;
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
+            std::cerr << "[FolioNote] SDL_Init(SDL_INIT_VIDEO) failed: " << SDL_GetError() << std::endl;
+            return false;
+        }
 
 #if defined(__ANDROID__)
         // ANDROID: Android devices do not support desktop OpenGL Core profile.
@@ -274,6 +277,7 @@ public:
 
         window = SDL_CreateWindow(title, initialW, initialH, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS | SDL_WINDOW_HIGH_PIXEL_DENSITY);
         if (!window) {
+            std::cerr << "[FolioNote] SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
             SDL_Quit();
             return false;
         }
@@ -333,6 +337,7 @@ public:
 
         glContext = SDL_GL_CreateContext(window);
         if (!glContext) {
+            std::cerr << "[FolioNote] SDL_GL_CreateContext failed: " << SDL_GetError() << std::endl;
             SDL_DestroyWindow(window);
             SDL_Quit();
             return false;

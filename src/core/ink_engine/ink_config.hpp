@@ -89,13 +89,13 @@ struct InkingConfig {
     // -------------------------------------------------------------
     // 7. DYNAMIC WIDTH MAPPING
     // -------------------------------------------------------------
-    bool google_use_pressure = true;
-    bool google_use_velocity = false;
-    bool google_use_tilt = false;
-    float google_min_width_multiplier = 0.2f;
-    float google_max_width_multiplier = 1.5f;
-    float google_velocity_thinning_max_speed = 1500.0f; // mm/s
-    float google_dynamic_width_smoothing = 0.6f;        // EMA factor (0.0 to 1.0)
+    bool usePressure = true;
+    bool useVelocity = false;
+    bool useTilt = false;
+    float minWidthMultiplier = 0.2f;
+    float maxWidthMultiplier = 1.5f;
+    float velocityThinningMaxSpeed = 1500.0f; // mm/s
+    float dynamicWidthSmoothing = 0.6f;        // EMA factor (0.0 to 1.0)
 };
 
 using InkingTuningConfig = InkingConfig;

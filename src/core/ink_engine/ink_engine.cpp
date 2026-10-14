@@ -13,17 +13,9 @@ namespace sm = ink::stroke_model;
 
 namespace {
 
-// creates a segment using our struct
-Segment1D MakeSegment(const Point2D& p0, const Point2D& p1, float width) {
-    Segment1D seg;
-    seg.p0 = p0;
-    seg.p1 = p1;
-    seg.width = width;
-    return seg;
-}
-
 // translates our Point2D into Google Ink's Input packet
 sm::Input MakeGoogleInput(sm::Input::EventType type, const Point2D& pt) {
+    
     sm::Input input;                                                                   // empty google ink input packet
     input.event_type = type;                                                           // pen state (kDown, kMove, or kUp)
     input.position = { static_cast<float>(pt.x), static_cast<float>(pt.y) };           // convert double world mm to google float Vec2
@@ -46,6 +38,8 @@ InkEngine::InkEngine() {
     m_googleResultsBuffer.reserve(64);
     m_googlePredictionsBuffer.reserve(64);
     m_predictedPointsBuffer.reserve(64);
+
+    UpdatePhysicsParams();
 }
 
 InkEngine::~InkEngine() = default;
@@ -64,7 +58,7 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
 
     m_isStrokeActive = true;
     m_activeTool = tool;
-    m_config.google_use_tilt = tool.isTiltEnabled;
+    m_config.useTilt = tool.isTiltEnabled;
     m_zoomScale = zoomScale > 0.001f ? zoomScale : 1.0f;
 
     Point2D startPt;
@@ -76,50 +70,8 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
     startPt.tiltY = tiltY;
     m_activeStrokePoints.push_back(startPt);
 
-    // Configure Google Ink Stroke Modeler physics parameters
-    sm::StrokeModelParams params;                                                      // creates pipeline
-    params.position_modeler_params.spring_mass_constant = m_config.google_spring_mass_constant; // sets up spring/mass constant
-    params.position_modeler_params.drag_constant = m_config.google_drag_constant;      // friction constant
-
-    // Speed-based loop contraction mitigation (prevents fast curves/loops from shrinking)
-    auto& loopParams = params.position_modeler_params.loop_contraction_mitigation_params;
-    loopParams.is_enabled = m_config.google_loop_mitigation_enable;
-    if (loopParams.is_enabled) {
-        float lowSpeed = std::max(0.0f, m_config.google_loop_speed_lower_bound);
-        float highSpeed = std::max(lowSpeed, m_config.google_loop_speed_upper_bound);
-        float lowStrength = std::clamp(m_config.google_loop_strength_at_lower_speed, 0.0f, 1.0f);
-        float highStrength = std::clamp(m_config.google_loop_strength_at_upper_speed, 0.0f, lowStrength);
-        loopParams.speed_lower_bound = lowSpeed;
-        loopParams.speed_upper_bound = highSpeed;
-        loopParams.interpolation_strength_at_speed_lower_bound = lowStrength;
-        loopParams.interpolation_strength_at_speed_upper_bound = highStrength;
-        loopParams.min_speed_sampling_window = sm::Duration(std::max(0.0f, m_config.google_loop_min_speed_window_s));
-    }
-
-    // Stylus normal projection (required when loop mitigation is enabled)
-    params.stylus_state_modeler_params.use_stroke_normal_projection =
-        m_config.google_use_stroke_normal_projection || m_config.google_loop_mitigation_enable;
-
-    // Wobble smoother (hand tremor filter)
-    params.wobble_smoother_params.is_enabled = m_config.google_wobble_enable;          // wobble compensation
-    params.wobble_smoother_params.timeout = sm::Duration(std::max(0.0f, m_config.google_wobble_timeout_s));
-    params.wobble_smoother_params.speed_floor = std::max(0.0f, m_config.google_wobble_speed_floor);
-    params.wobble_smoother_params.speed_ceiling =
-        std::max(params.wobble_smoother_params.speed_floor, m_config.google_wobble_speed_ceiling);
-
-    // Sampling & rotational velocity upsampling
-    params.sampling_params.min_output_rate = std::max(10.0, static_cast<double>(m_config.google_min_output_rate));
-    params.sampling_params.end_of_stroke_stopping_distance =
-        std::max(0.0001f, m_config.google_end_of_stroke_stopping_distance);
-    params.sampling_params.end_of_stroke_max_iterations =
-        std::clamp(m_config.google_end_of_stroke_max_iterations, 1, 1000);
-    params.sampling_params.max_estimated_angle_to_traverse_per_input =
-        m_config.google_enable_angle_upsampling
-            ? std::clamp(static_cast<double>(m_config.google_max_estimated_angle_rad), 0.005, 3.10)
-            : -1.0;
-
-    // physics engine reset (void) we don't want anything returned and guaranteed to succeed
-    (void)m_googleModeler->Reset(params);
+    // Reset physics engine state for the new stroke (preserves configured physics parameters)
+    (void)m_googleModeler->Reset();
 
     // Seed the first sample into the physics pipeline (inside the google ink)
     m_googleResultsBuffer.clear();
@@ -127,16 +79,15 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
         ProcessGoogleResults(m_googleResultsBuffer);
     }
 
-    // Seed live initial touch dot so user sees immediate visual feedback under pen tip
-    if (m_liveStrokeOutline.is_empty() && !m_activeStrokePoints.empty()) {
-        Point2D pt = m_activeStrokePoints.front();                                     // first touchdown point from digitizer
-        float baseW = static_cast<float>(m_activeTool.baseSize);                       // finds base width from active tool
-        pt.width = StrokeWidthEvaluator::CalculatePressureWidth(
-            baseW, pt.pressure, pt.tiltX, pt.tiltY, m_config);                         // pressure & tilt sized width
+    // If Google's tremor filter buffered the initial touch, render an immediate visual dot
+    // so the user sees instant feedback under the pen tip with zero display lag (SPECIAL CASE FOR ONEPOINT SITUATION)
+    if (m_liveStrokeOutline.is_empty()) {
+        Point2D dotPt = startPt;
+        dotPt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
+            static_cast<float>(m_activeTool.baseSize), dotPt, -1.0f, m_zoomScale, m_config);
 
-        // delegate shape generation to StrokeOutlineBuilder (respects tool capType: round, square, chisel)
         m_liveStrokeOutline = StrokeOutlineBuilder::FeedStrokeBatch(
-            { pt }, m_activeTool.capType, m_activeTool.strokePattern);
+            { dotPt }, m_activeTool.capType, m_activeTool.strokePattern);
     }
 
     if (m_config.google_enable_prediction) {
@@ -180,38 +131,45 @@ FinishedStrokeData InkEngine::FinishStroke() {
 
         // Stage 1: Pen-Up event to flush lingering spring inertia in physics modeler
         m_googleResultsBuffer.clear();
+        // we explicitly tell google that we lifted the pen so it can finish the stroke
         if (m_googleModeler->Update(MakeGoogleInput(sm::Input::EventType::kUp, m_activeStrokePoints.back()), m_googleResultsBuffer).ok()) {
             ProcessGoogleResults(m_googleResultsBuffer);                               // let spring finish catching up to pen lift position
         }
 
-        // Stage 2: Single-tap dot handling (user tapped without lateral dragging)
+        // Stage 2: (SPECIAL CASE) Single-tap dot handling (user tapped without lateral dragging)
         if (m_liveModeledPoints.empty()) {
-
             Point2D pt = m_activeStrokePoints.front();                                 // tap origin
-            float baseW = static_cast<float>(m_activeTool.baseSize);
-
-            pt.width = StrokeWidthEvaluator::CalculatePressureWidth(
-                baseW, pt.pressure, pt.tiltX, pt.tiltY, m_config);                     // evaluate tap pressure & tilt
-
+            pt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
+                static_cast<float>(m_activeTool.baseSize), pt, -1.0f, m_zoomScale, m_config);
             m_liveModeledPoints.push_back(pt);
         }
     }
 
-    // Stage 3: Build collision segments and final vector stroke data once at the end
+    // Stage 3: Build collision segments and final vector stroke data once at the end (used for lasso math and eraser detection)
     FinishedStrokeData data;
     if (m_liveModeledPoints.size() == 1) {
 
+        // Single-point tap: create a micro-segment because zero-length lines have undefined normals and fail collision checks
         Point2D p0 = m_liveModeledPoints[0];
         Point2D p1 = p0;
-        p1.x += 0.001;                                                                 // tiny epsilon offset to give a valid segment for eraser/bounds
-        data.liveSegments.push_back(MakeSegment(p0, p1, p0.width));
+        p1.x += 0.001;                                                                 // tiny 1-micron offset gives a valid bounding box and direction for R-Tree & eraser
+
+        Segment1D seg;
+        seg.p0 = p0;
+        seg.p1 = p1;
+        seg.width = p0.width;
+        data.liveSegments.push_back(seg);
 
     } else if (m_liveModeledPoints.size() >= 2) {
 
-        data.liveSegments.reserve(m_liveModeledPoints.size() - 1);
+        // Multi-point stroke: link each consecutive pair of modeled points into a linear collision capsule
+        data.liveSegments.reserve(m_liveModeledPoints.size() - 1);                     // pre-allocate exact capacity (N points produce N-1 segments)
         for (size_t i = 1; i < m_liveModeledPoints.size(); ++i) {
-            data.liveSegments.push_back(
-                MakeSegment(m_liveModeledPoints[i - 1], m_liveModeledPoints[i], m_liveModeledPoints[i].width));
+            Segment1D seg;
+            seg.p0 = m_liveModeledPoints[i - 1];
+            seg.p1 = m_liveModeledPoints[i];
+            seg.width = m_liveModeledPoints[i].width;
+            data.liveSegments.push_back(seg);
         }
     }
 
@@ -311,6 +269,62 @@ void InkEngine::UpdateGooglePrediction() {
 
 InkingConfig& InkEngine::GetConfig() noexcept {
     return m_config;
+}
+
+void InkEngine::SetConfig(const InkingConfig& config) {
+    m_config = config;
+    UpdatePhysicsParams();
+}
+
+void InkEngine::UpdatePhysicsParams() {
+    if (!m_googleModeler) {
+        return;
+    }
+
+    // Configure Google Ink Stroke Modeler physics parameters
+    sm::StrokeModelParams params;
+    params.position_modeler_params.spring_mass_constant = m_config.google_spring_mass_constant;
+    params.position_modeler_params.drag_constant = m_config.google_drag_constant;
+
+    // Speed-based loop contraction mitigation (prevents fast curves/loops from shrinking)
+    auto& loopParams = params.position_modeler_params.loop_contraction_mitigation_params;
+    loopParams.is_enabled = m_config.google_loop_mitigation_enable;
+    if (loopParams.is_enabled) {
+        float lowSpeed = std::max(0.0f, m_config.google_loop_speed_lower_bound);
+        float highSpeed = std::max(lowSpeed, m_config.google_loop_speed_upper_bound);
+        float lowStrength = std::clamp(m_config.google_loop_strength_at_lower_speed, 0.0f, 1.0f);
+        float highStrength = std::clamp(m_config.google_loop_strength_at_upper_speed, 0.0f, lowStrength);
+        loopParams.speed_lower_bound = lowSpeed;
+        loopParams.speed_upper_bound = highSpeed;
+        loopParams.interpolation_strength_at_speed_lower_bound = lowStrength;
+        loopParams.interpolation_strength_at_speed_upper_bound = highStrength;
+        loopParams.min_speed_sampling_window = sm::Duration(std::max(0.0f, m_config.google_loop_min_speed_window_s));
+    }
+
+    // Stylus normal projection (required when loop mitigation is enabled)
+    params.stylus_state_modeler_params.use_stroke_normal_projection =
+        m_config.google_use_stroke_normal_projection || m_config.google_loop_mitigation_enable;
+
+    // Wobble smoother (hand tremor filter)
+    params.wobble_smoother_params.is_enabled = m_config.google_wobble_enable;
+    params.wobble_smoother_params.timeout = sm::Duration(std::max(0.0f, m_config.google_wobble_timeout_s));
+    params.wobble_smoother_params.speed_floor = std::max(0.0f, m_config.google_wobble_speed_floor);
+    params.wobble_smoother_params.speed_ceiling =
+        std::max(params.wobble_smoother_params.speed_floor, m_config.google_wobble_speed_ceiling);
+
+    // Sampling & rotational velocity upsampling
+    params.sampling_params.min_output_rate = std::max(10.0, static_cast<double>(m_config.google_min_output_rate));
+    params.sampling_params.end_of_stroke_stopping_distance =
+        std::max(0.0001f, m_config.google_end_of_stroke_stopping_distance);
+    params.sampling_params.end_of_stroke_max_iterations =
+        std::clamp(m_config.google_end_of_stroke_max_iterations, 1, 1000);
+    params.sampling_params.max_estimated_angle_to_traverse_per_input =
+        m_config.google_enable_angle_upsampling
+            ? std::clamp(static_cast<double>(m_config.google_max_estimated_angle_rad), 0.005, 3.10)
+            : -1.0;
+
+    // Initialize/re-initialize physics parameters
+    (void)m_googleModeler->Reset(params);
 }
 
 } // namespace Folio

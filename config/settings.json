@@ -16,7 +16,12 @@
     "dailyBackupsRetention": 7,
     "maxPageVersionsToKeep": 15,
     "monthlyBackupsRetention": 12,
+    "primaryBackupDirectory": "",
+    "secondaryBackupDirectory": "",
     "weeklyBackupsRetention": 4
+  },
+  "diagnostics": {
+    "verboseLogging": false
   },
   "inking": {
     "activePresetId": "pen_black",
@@ -26,7 +31,39 @@
     "defaultTouchTool": "Panning",
     "drawWithTouch": false,
     "eraserSizeMm": 6.0,
+    "isDynamicEraser": false,
     "isStrokeEraser": true,
+    "physics": {
+      "dragConstant": 72.0,
+      "enableAngleUpsampling": true,
+      "enablePrediction": true,
+      "enablePressureCurve": true,
+      "endOfStrokeMaxIterations": 20,
+      "endOfStrokeStoppingDistance": 0.009999999776482582,
+      "loopMinSpeedWindow": 0.03999999910593033,
+      "loopMitigationEnable": true,
+      "loopSpeedLowerBound": 20.0,
+      "loopSpeedUpperBound": 400.0,
+      "loopStrengthAtLowerSpeed": 1.0,
+      "loopStrengthAtUpperSpeed": 0.5,
+      "maxEstimatedAngleRad": 0.05999999865889549,
+      "maxWidthMultiplier": 1.5,
+      "minOutputRate": 180.0,
+      "minWidthMultiplier": 0.20000000298023224,
+      "pressureDeadzoneMin": 0.019999999552965164,
+      "pressureGamma": 1.0,
+      "pressureSaturationMax": 0.949999988079071,
+      "springMassConstant": 0.0003395061648916453,
+      "usePressure": true,
+      "useStrokeNormalProjection": true,
+      "useVelocity": false,
+      "velocityThinningMaxSpeed": 1500.0,
+      "widthSmoothing": 0.6000000238418579,
+      "wobbleEnable": true,
+      "wobbleSpeedCeiling": 1.440000057220459,
+      "wobbleSpeedFloor": 1.309999942779541,
+      "wobbleTimeout": 0.03999999910593033
+    },
     "presets": [
       {
         "color": [
@@ -190,7 +227,7 @@
     "spoolFolderPath": ""
   },
   "ribbon": {
-    "activeTab": "Insert",
+    "activeTab": "Draw",
     "displayMode": "FullRibbon",
     "sections": [
       {
@@ -273,9 +310,9 @@
     ]
   },
   "session": {
-    "lastNotebookGuid": "7282560b-573d-4396-a031-08f7a41c4c61",
-    "lastPageGuid": "325dae62-22da-4c6d-ab0f-5008988c8c09",
-    "lastSectionGuid": "e2344bf2-f48a-403d-a596-62d01d4e68c0"
+    "lastNotebookGuid": "29a3d5f7-6a5e-4cae-b7d6-0ab84349cc13",
+    "lastPageGuid": "0d3219dd-d95e-4322-8620-873ed180958d",
+    "lastSectionGuid": "e4bbc03e-23ba-4e4b-ab13-16404f1716dc"
   },
   "version": 1
 }
