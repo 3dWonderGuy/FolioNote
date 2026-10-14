@@ -111,8 +111,15 @@ jobs:
 
       - name: Install Android NDK & CMake
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager --install "ndk;27.2.12479018" "cmake;3.30.3"
+          ANDROID_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER=$(find "$ANDROID_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          echo "$(dirname "$SDKMANAGER")" >> $GITHUB_PATH
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "ndk;27.2.12479018" "cmake;3.30.3"
 
 
       - name: Build Android APK
