@@ -32,7 +32,7 @@
  *        scaleFactor = sqrt(|m00*m11 - m01*m10|)
  *    - All segment endpoints and centerline vertices are mapped through M, and thickness is
  *      scaled by scaleFactor.
- *    - StrokeOutlineBuilder rebuilds fresh, artifact-free 2D closed polygon contours (BLPath),
+ *    - InkGenerator rebuilds fresh, artifact-free 2D closed polygon contours (BLPath),
  *      and the transform matrix is reset to identity M = I.
  *
  * 4. Eraser Slicing (SliceStrokeAt):

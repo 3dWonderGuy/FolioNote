@@ -436,7 +436,7 @@ inline bool SerializeStrokesToIsf(const std::vector<std::shared_ptr<CanvasObject
  *          py = coords[p * 2 + 1] * 0.01
  *      - Extracts COLORREF and converts 0x00BBGGRR to FolioColor(R, G, B, 255).
  *      - Extracts stroke width in HIMETRIC and converts to millimeters: widthMm = winWidth * 0.01.
- *      - Builds discrete segments and calls StrokeOutlineBuilder::BuildOutline to produce the BLPath.
+ *      - Builds discrete segments and calls InkGenerator::BuildOutline to produce the BLPath.
  *   3. Centers the resulting InkContainer at (targetWorldX, targetWorldY) and bakes the transform.
  *
  * @param isfData Pointer to raw ISF bytes.

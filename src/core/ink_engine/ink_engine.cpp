@@ -1,6 +1,6 @@
 #include "core/ink_engine/ink_engine.hpp"
 #include "core/ink_engine/stroke_width_evaluator.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
+#include "core/ink_engine/ink_generator.hpp"
 
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <ink_stroke_modeler/params.h>
@@ -52,13 +52,12 @@ InkEngine& InkEngine::operator=(InkEngine&&) noexcept = default;
 // -----------------------------------------------------------------------------
 
 void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double timeSec,
-                            const PenTool& tool, float zoomScale, float tiltX, float tiltY) {
+                            const StrokeStyle& style, float zoomScale, float tiltX, float tiltY) {
     // Reset transient stroke accumulation buffers
     CancelStroke();
 
     m_isStrokeActive = true;
-    m_activeTool = tool;
-    m_config.useTilt = tool.isTiltEnabled;
+    m_activeStyle = style;
     m_zoomScale = zoomScale > 0.001f ? zoomScale : 1.0f;
 
     Point2D startPt;
@@ -84,10 +83,10 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
     if (m_liveStrokeOutline.is_empty()) {
         Point2D dotPt = startPt;
         dotPt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
-            static_cast<float>(m_activeTool.baseSize), dotPt, -1.0f, m_zoomScale, m_config);
+            m_activeStyle.baseWidth, dotPt, -1.0f, m_zoomScale, m_config);
 
-        m_liveStrokeOutline = StrokeOutlineBuilder::FeedStrokeBatch(
-            { dotPt }, m_activeTool.capType, m_activeTool.strokePattern);
+        m_liveStrokeOutline = InkGenerator::GenerateStroke(
+            { dotPt }, m_activeStyle.capType, m_activeStyle.pattern);
     }
 
     if (m_config.google_enable_prediction) {
@@ -140,7 +139,7 @@ FinishedStrokeData InkEngine::FinishStroke() {
         if (m_liveModeledPoints.empty()) {
             Point2D pt = m_activeStrokePoints.front();                                 // tap origin
             pt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
-                static_cast<float>(m_activeTool.baseSize), pt, -1.0f, m_zoomScale, m_config);
+                m_activeStyle.baseWidth, pt, -1.0f, m_zoomScale, m_config);
             m_liveModeledPoints.push_back(pt);
         }
     }
@@ -174,8 +173,8 @@ FinishedStrokeData InkEngine::FinishStroke() {
     }
 
     data.modeledPoints = m_liveModeledPoints;
-    data.outlinePath = StrokeOutlineBuilder::FeedStrokeBatch(
-        m_liveModeledPoints, m_activeTool.capType, m_activeTool.strokePattern);        // builds closed polygon ribbon for blend2d
+    data.outlinePath = InkGenerator::GenerateStroke(
+        m_liveModeledPoints, m_activeStyle.capType, m_activeStyle.pattern);        // builds closed polygon ribbon for blend2d
 
     // Stage 4: Reset live state
     CancelStroke();                                                                    // wipe live inking buffers for next stroke
@@ -213,7 +212,7 @@ Point2D InkEngine::ToPoint2D(const sm::Result& res, float previousWidth) const {
 
     // calculate dynamic thickness with physics and internal EMA smoothing
     pt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
-        static_cast<float>(m_activeTool.baseSize), pt, previousWidth, m_zoomScale, m_config);
+        m_activeStyle.baseWidth, pt, previousWidth, m_zoomScale, m_config);
 
     return pt;
 }
@@ -229,7 +228,7 @@ void InkEngine::ProcessGoogleResults(const std::vector<sm::Result>& results) {
 
     // rebuild the live 2D outline polygon from the entire stroke's points with safety check
     if (!m_liveModeledPoints.empty()) {
-        m_liveStrokeOutline = StrokeOutlineBuilder::FeedStrokeBatch(m_liveModeledPoints, m_activeTool.capType, m_activeTool.strokePattern);
+        m_liveStrokeOutline = InkGenerator::GenerateStroke(m_liveModeledPoints, m_activeStyle.capType, m_activeStyle.pattern);
     }
 }
 
@@ -258,8 +257,8 @@ void InkEngine::UpdateGooglePrediction() {
 
     // build predictive tip polygon (rendered ahead of stylus for zero latency feel)
     if (m_predictedPointsBuffer.size() >= 2) {
-        m_predictedStrokeOutline = StrokeOutlineBuilder::FeedStrokeBatch(
-            m_predictedPointsBuffer, m_activeTool.capType, m_activeTool.strokePattern);
+        m_predictedStrokeOutline = InkGenerator::GenerateStroke(
+            m_predictedPointsBuffer, m_activeStyle.capType, m_activeStyle.pattern);
     }
 }
 

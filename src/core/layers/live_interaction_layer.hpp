@@ -10,6 +10,7 @@
 #include "core/spatial/aabb.hpp"
 #include "core/ink_engine/ink_stroke_data.hpp"
 #include "core/ink_engine/ink_engine.hpp"
+#include "input/pen_palette.hpp"
 
 class SelectionGizmo;
 

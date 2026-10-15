@@ -23,7 +23,6 @@
 #include <blend2d/blend2d.h>
 
 #include "core/ink_engine/ink_stroke_data.hpp"
-#include "input/pen_palette.hpp"
 
 namespace Folio {
 
@@ -104,13 +103,13 @@ public:
     /**
      * @brief Primary post-processing entry point.
      * @param stroke Finished stroke data.
-     * @param tool Active pen tool settings.
+     * @param style Active stroke style.
      * @return Post-processed stroke data.
      */
     [[nodiscard]] static FinishedStrokeData Process(
         FinishedStrokeData stroke,
-        const PenTool& tool) {
-        (void)tool;
+        const StrokeStyle& style = StrokeStyle{}) {
+        (void)style;
 
         // Stub: pass-through unmodified for now
         return stroke;

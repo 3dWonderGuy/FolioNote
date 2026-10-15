@@ -5,25 +5,12 @@
 #include <algorithm>
 #include <blend2d/blend2d.h>
 
+#include "core/ink_engine/ink_stroke_data.hpp"
+
 enum class BlendMode : uint8_t {
     Normal = 0,
     Multiply,
     Additive
-};
-
-enum class CapType : uint8_t {
-    Round = 0,
-    Flat,
-    Chisel,
-    Square
-};
-
-enum class StrokePattern : uint8_t {
-    Solid = 0,
-    Dashed,
-    Dotted,
-    DashDot,        ///< Alternating dash and dot stroke pattern
-    TexturedPencil
 };
 
 enum class PenType : uint8_t {
@@ -53,6 +40,15 @@ struct PenTool {
     bool          isPressureEnabled = true;
     bool          isTiltEnabled     = true;
     bool          isFlowSimEnabled  = false;
+
+    /// Seamless conversion allowing PenTool to be passed directly to InkEngine APIs
+    operator StrokeStyle() const noexcept {
+        return StrokeStyle{ baseSize, capType, strokePattern, color };
+    }
+
+    [[nodiscard]] StrokeStyle ToStrokeStyle() const noexcept {
+        return StrokeStyle{ baseSize, capType, strokePattern, color };
+    }
 };
 
 class PenPalette {

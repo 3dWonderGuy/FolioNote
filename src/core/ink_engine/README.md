@@ -14,7 +14,7 @@ src/core/ink_engine/
 ├── ink_engine.cpp              # Implementation connecting smoothing, meshing, and layer commit
 ├── ink_stroke_data.hpp         # Core geometric structures: Point2D, Segment1D, FinishedStrokeData
 ├── stroke_width_evaluator.hpp  # Non-linear pressure curves, hydrodynamic velocity thinning, EMA smoothing
-├── stroke_outline_builder.hpp  # Variable-thickness 2D polygon contour tessellation (round/square/chisel)
+├── ink_generator.hpp  # Variable-thickness 2D polygon contour tessellation (round/square/chisel)
 └── stroke_collision.hpp        # Segment-to-point and segment-to-circle distance & collision tests
 ```
 
@@ -27,7 +27,7 @@ graph TD
     A["Raw Stylus Input Event (x, y, pressure, time, tilt)"] --> B["Google Stroke Modeler (Spring-Mass Physics & Wobble Filter)"]
     B --> C["Smoothed Position, Pressure, Velocity Vector"]
     C --> D["StrokeWidthEvaluator (Pressure Gamma, Velocity Thinning, EMA Filter)"]
-    D --> E["StrokeOutlineBuilder (Ribbon Normal Expansion & Cap Tessellation)"]
+    D --> E["InkGenerator (Ribbon Normal Expansion & Cap Tessellation)"]
     E --> F["Closed 2D Polygon Vector Contour (BLPath)"]
     F --> G["LiveInteractionLayer (Hardware-Accelerated 120 FPS Preview)"]
     G -->|"Stylus UP (Pen Released)"| H["FinishedStrokeData (Segments, Centerline, BLPath) -> InkContainer Commit"]
@@ -69,7 +69,7 @@ Stroke thickness is evaluated through a multi-stage hydrodynamic physical model:
    $$W_{\text{target}} = W_{\text{pressure}} \cdot f_{\text{thin}} \cdot f_{\text{tilt}}$$
    $$W_t = \text{EMA}(W_{t-1}, W_{\text{target}}, \alpha)$$
 
-### 3. Variable-Width Contour Meshing (`StrokeOutlineBuilder`)
+### 3. Variable-Width Contour Meshing (`InkGenerator`)
 Given center-line tangent $\vec{T} = \frac{d P(u)}{du}$, the unit normal vector is:
 
 $$\hat{N} = \frac{(-T_y, T_x)}{\sqrt{T_x^2 + T_y^2}}$$

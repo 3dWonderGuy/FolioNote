@@ -59,7 +59,7 @@ struct StrokePoint {
  * - Database & Serialization: ONLY the Canonical Centerline Vector Model and style attributes
  *   are serialized to disk or SQLite. Polygons and segment trees are NEVER stored permanently.
  * - Runtime Acceleration: `segments`, `outlinePath`, and `bounds` are transient caches generated
- *   in memory via StrokeOutlineBuilder::GenerateRibbon() and StrokeCollision::BuildSegments()
+ *   in memory via InkGenerator::GenerateRibbon() and StrokeCollision::BuildSegments()
  *   upon document loading or when points are modified.
  */
 struct Stroke {

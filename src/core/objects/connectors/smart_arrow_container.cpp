@@ -280,7 +280,7 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
         startAngle = std::atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
     }
 
-    // Render line stroke (solid or dashed via unified StrokeOutlineBuilder)
+    // Render line stroke (solid or dashed via unified InkGenerator)
     if (outlineType == ShapeOutlineType::Solid) {
         ctx.stroke_path(rawPath);
     } else {
@@ -309,7 +309,7 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
             BLPath dashedOutline = InkEngine::BuildStrokeOutline(
                 arrowPts,
                 CapType::Round,
-                InkEngine::MapShapeOutlineType(outlineType),
+                ToStrokePattern(outlineType),
                 false // open stroke
             );
             ctx.set_fill_style(col);

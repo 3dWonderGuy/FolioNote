@@ -654,6 +654,13 @@ if(NOT ANDROID)
 
     add_test(NAME test_layer_order COMMAND test_layer_order)
 
+    set(INK_GENERATOR_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_polygon.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_stroke.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_patterns.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_infill.cpp"
+    )
+
     # 16. Standalone Local Test Executable: Storage & Serialization Subsystem
     add_executable(test_storage
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_storage.cpp"
@@ -666,6 +673,7 @@ if(NOT ANDROID)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/object_registry.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/history/command_history.cpp"
+        ${INK_GENERATOR_SOURCES}
         ${FOLIO_IO_SOURCES}
     )
 

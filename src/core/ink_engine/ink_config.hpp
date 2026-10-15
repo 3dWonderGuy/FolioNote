@@ -23,15 +23,6 @@ enum class SplineMode {
     LinearPolylines
 };
 
-enum class StylusActionBinding {
-    EraserTool,
-    LassoTool,
-    PanCanvas,
-    UndoAction,
-    RedoAction,
-    None
-};
-
 struct InkingConfig {
     // -------------------------------------------------------------
     // 1. PRESSURE CALIBRATION
@@ -43,16 +34,7 @@ struct InkingConfig {
     float minRelativeThicknessFraction = 0.15f;
 
     // -------------------------------------------------------------
-    // 2. HARDWARE BINDINGS & OFFSET
-    // -------------------------------------------------------------
-    float manualOffsetXMm = 0.0f;
-    float manualOffsetYMm = 0.0f;
-    StylusActionBinding barrelButton1 = StylusActionBinding::EraserTool;
-    StylusActionBinding barrelButton2 = StylusActionBinding::LassoTool;
-    StylusActionBinding tailEraserTip = StylusActionBinding::EraserTool;
-
-    // -------------------------------------------------------------
-    // 3. GOOGLE INK STROKE MODELER PARAMS (Spring Physics)
+    // 2. GOOGLE INK STROKE MODELER PARAMS (Spring Physics)
     // -------------------------------------------------------------
     float google_spring_mass_constant = 11.0f / 32400.0f; // ~0.000339
     float google_drag_constant = 72.0f;
@@ -60,7 +42,7 @@ struct InkingConfig {
     bool google_use_stroke_normal_projection = true;
 
     // -------------------------------------------------------------
-    // 4. ADAPTIVE SAMPLING & ROTATIONAL VELOCITY
+    // 3. ADAPTIVE SAMPLING & ROTATIONAL VELOCITY
     // -------------------------------------------------------------
     float google_min_output_rate = 180.0f;                // Baseline output rate (Hz)
     float google_end_of_stroke_stopping_distance = 0.01f; // End-of-stroke stopping distance (mm)
@@ -69,7 +51,7 @@ struct InkingConfig {
     float google_max_estimated_angle_rad = 0.06f;         // Max turn angle per step in radians (~3.4 deg)
 
     // -------------------------------------------------------------
-    // 5. LOOP CONTRACTION MITIGATION (Speed-Based Curve Accuracy)
+    // 4. LOOP CONTRACTION MITIGATION (Speed-Based Curve Accuracy)
     // -------------------------------------------------------------
     bool google_loop_mitigation_enable = true;
     float google_loop_speed_lower_bound = 20.0f;          // Slow speed threshold (mm/s)
@@ -79,7 +61,7 @@ struct InkingConfig {
     float google_loop_min_speed_window_s = 0.04f;         // Moving average window for speed (s)
 
     // -------------------------------------------------------------
-    // 6. WOBBLE SMOOTHER (Tremor / Noise Filter)
+    // 5. WOBBLE SMOOTHER (Tremor / Noise Filter)
     // -------------------------------------------------------------
     bool google_wobble_enable = true;
     float google_wobble_timeout_s = 0.04f;
@@ -87,7 +69,7 @@ struct InkingConfig {
     float google_wobble_speed_ceiling = 1.44f;
 
     // -------------------------------------------------------------
-    // 7. DYNAMIC WIDTH MAPPING
+    // 6. DYNAMIC WIDTH MAPPING
     // -------------------------------------------------------------
     bool usePressure = true;
     bool useVelocity = false;
@@ -106,5 +88,5 @@ using InkingTuningConfig = InkingConfig;
 using InkingConfig = Folio::InkingConfig;
 using InkingTuningConfig = Folio::InkingTuningConfig;
 using SplineMode = Folio::SplineMode;
-using StylusActionBinding = Folio::StylusActionBinding;
+
 

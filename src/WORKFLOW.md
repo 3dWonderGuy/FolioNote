@@ -224,7 +224,7 @@ src/
 │   ├── ink_engine/                       # High-speed stroke processing, physics, and spline generation
 │   │   ├── ink_engine.hpp / .cpp         # Stylus pipeline coordinator, stroke lifecycle, live ring buffer
 │   │   ├── stroke_collision.hpp          # Geometric collision math (Point-to-Stroke, Segment Slicing, Lasso)
-│   │   ├── stroke_outline_builder.hpp    # Polygonal stroke geometry generation from pressure centerline paths
+│   │   ├── ink_generator.hpp    # Polygonal stroke geometry generation from pressure centerline paths
 │   │   ├── ink_stroke_data.hpp           # Google InkStrokeModeler integration, spring-damper physics, prediction
 │   │   └── README.md                     # Inking engine documentation
 │   │
@@ -538,7 +538,7 @@ graph TD
     ModelOutput --> Smoother["StrokeSmoother: Catmull-Rom & Cubic Bézier Fit"]
     
     Smoother --> LiveBuffer["LiveLayerPipeline: Zero-Allocation Ring Buffer"]
-    LiveBuffer --> OutlineBuilder["StrokeOutlineBuilder: Normal Vectors & Pressure Contours"]
+    LiveBuffer --> OutlineBuilder["InkGenerator: Normal Vectors & Pressure Contours"]
     
     OutlineBuilder --> CPU_Raster["Blend2D Vector Rasterizer (CPU SIMD)"]
     CPU_Raster --> SharedTexture["OpenGL Texture (glTexture Quad)"]

@@ -174,7 +174,7 @@ public:
      *
      * Supports:
      * - Straight, Curved (Bézier), and Elbow routing styles
-     * - Solid, Dashed, Dotted, and DashDot outline patterns via unified StrokeOutlineBuilder
+     * - Solid, Dashed, Dotted, and DashDot outline patterns via unified InkGenerator
      * - Triangle, Stealth, Open, and Circle arrowheads
      * - Apex tangent offset push to prevent stroke round cap poke-through
      *

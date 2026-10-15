@@ -10,7 +10,7 @@
  *    case in shape_container.cpp and a new ShapeType enum value.
  *  - Line/Arrow types have been promoted to SmartArrowObject
  *    (connectors/smart_arrow_container.hpp) which provides 2-point endpoint handles.
- *  - Heavy implementations (BuildPath, Render, CreateHatchPattern, DrawArrowHead)
+ *  - Heavy implementations (BuildPath, Render, DrawArrowHead)
  *    live in shape_container.cpp to keep compile times short. DrawShapeIconImGui
  *    stays header-only because it has an ImGui draw-list dependency that the .cpp
  *    must not carry (avoids linking ImGui into non-UI translation units).
@@ -57,7 +57,7 @@ namespace Folio {
  * transparent shapes with visible outlines work correctly at all alpha values.
  *
  * Drafting hatch patterns (diagonal, cross-hatch, horizontal lines, etc.) are
- * generated as seamlessly tiling BLPatterns via CreateHatchPattern().
+ * generated as seamlessly tiling BLPatterns via InkGenerator::FillInfill().
  */
 class ShapeObject : public CanvasObject {
 public:
@@ -417,32 +417,6 @@ public:
             }
         }
     }
-
-    /**
-     * @brief Creates a seamlessly tiling Blend2D hatch pattern for drafting fills.
-     *
-     * Generates a 32×32 pixel tile image with the requested hatch geometry, then
-     * wraps it in a BLPattern with BL_EXTEND_MODE_REPEAT and a scale transform
-     * so the visible line spacing is spacingMm world millimeters.
-     *
-     * Infill Math & Geometry Rules:
-     * - Line Thickness: Exactly half (1/2) of the outline strokeWidth.
-     * - Pitch & Gap: Doubled line spacing:
-     *     gap = pitch - infillWorldWidth >= 5.0 * infillWorldWidth  =>  pitch >= 6.0 * infillWorldWidth.
-     * - For 45-degree diagonal lines: d_perp = spacingMm / (2 * sqrt(2)) => spacingMm >= pitch * 2 * sqrt(2).
-     * - For horizontal/vertical lines: pitch = spacingMm.
-     * - For dots: axis spacing = 0.5 * spacingMm => spacingMm >= pitch * 2.
-     *
-     * @param type        Hatch variant (HatchDiagonal, HatchCross, etc.)
-     * @param color       Line/dot color for the pattern.
-     * @param strokeWidth Outline stroke thickness in world mm (infill width will be strokeWidth * 0.5).
-     * @param spacingMm   Nominal world-space spacing between lines in millimeters (default 6.0mm).
-     * @return Fully configured BLPattern ready to use as a fill style.
-     */
-    static BLPattern CreateHatchPattern(ShapeFillType type,
-                                        const BLRgba32& color,
-                                        double strokeWidth,
-                                        double spacingMm = 6.0);
 
     /**
      * @brief Draws a directional arrowhead at a line endpoint.

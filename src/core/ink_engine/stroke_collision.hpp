@@ -22,7 +22,6 @@
 #include <cmath>
 #include <algorithm>
 
-#include "core/spatial/aabb.hpp"
 #include "core/ink_engine/ink_stroke_data.hpp"
 
 #ifndef M_PI
@@ -38,6 +37,72 @@ public:
         double distSq = 0.0;
     };
 
+    /**
+     * @brief Evaluates whether a query circle intersects any segment of a stroke.
+     */
+    [[nodiscard]] static SegmentHit HitTestStroke(
+        const std::vector<Segment1D>& segments,
+        double qx, double qy, double queryRadius) noexcept
+    {
+        SegmentHit bestHit;
+        bestHit.distSq = 1e30;
+
+        for (size_t i = 0; i < segments.size(); ++i) {
+            const auto& seg = segments[i];
+            float t = 0.0f;
+            double distSq = 0.0;
+            if (HitTestSegment(seg.p0, seg.p1, seg.width, qx, qy, queryRadius, t, distSq)) {
+                if (distSq < bestHit.distSq) {
+                    bestHit.hit = true;
+                    bestHit.segmentIndex = i;
+                    bestHit.t = t;
+                    bestHit.distSq = distSq;
+                }
+            }
+        }
+
+        return bestHit;
+    }
+
+    /**
+     * @brief Point hit test for single-point strokes (e.g. period / tap dots).
+     */
+    [[nodiscard]] static inline bool HitTestPoint(
+        const Point2D& p, float width,
+        double qx, double qy, double queryRadius) noexcept
+    {
+        const double maxR = std::max(0.2, static_cast<double>(width) * 0.5 + queryRadius);
+        const double dx = p.x - qx;
+        const double dy = p.y - qy;
+        return (dx * dx + dy * dy) <= (maxR * maxR);
+    }
+
+    /**
+     * @brief Continuous swept-capsule collision test against all segments of a stroke.
+     * Detects hits regardless of mouse movement speed (zero tunneling/skipping).
+     */
+    [[nodiscard]] static inline bool HitTestStrokeSwept(
+        const std::vector<Segment1D>& segments,
+        const Point2D& w0, const Point2D& w1, double queryRadius) noexcept
+    {
+        for (const auto& seg : segments) {
+            const double maxR = queryRadius + static_cast<double>(seg.width) * 0.5;
+            const double minX = std::min({ seg.p0.x, seg.p1.x, w0.x, w1.x }) - maxR;
+            const double maxX = std::max({ seg.p0.x, seg.p1.x, w0.x, w1.x }) + maxR;
+            const double minY = std::min({ seg.p0.y, seg.p1.y, w0.y, w1.y }) - maxR;
+            const double maxY = std::max({ seg.p0.y, seg.p1.y, w0.y, w1.y }) + maxR;
+
+            if (minX > maxX || minY > maxY) continue;
+
+            const double distSq = SegmentSegmentDistanceSq(seg.p0, seg.p1, w0, w1);
+            if (distSq <= maxR * maxR) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+private:
     /**
      * @brief Computes point-to-line-segment distance with transient register-only mini-AABB rejection.
      */
@@ -87,46 +152,6 @@ public:
         }
 
         return false;
-    }
-
-    /**
-     * @brief Evaluates whether a query circle intersects any segment of a stroke.
-     */
-    [[nodiscard]] static SegmentHit HitTestStroke(
-        const std::vector<Segment1D>& segments,
-        double qx, double qy, double queryRadius) noexcept
-    {
-        SegmentHit bestHit;
-        bestHit.distSq = 1e30;
-
-        for (size_t i = 0; i < segments.size(); ++i) {
-            const auto& seg = segments[i];
-            float t = 0.0f;
-            double distSq = 0.0;
-            if (HitTestSegment(seg.p0, seg.p1, seg.width, qx, qy, queryRadius, t, distSq)) {
-                if (distSq < bestHit.distSq) {
-                    bestHit.hit = true;
-                    bestHit.segmentIndex = i;
-                    bestHit.t = t;
-                    bestHit.distSq = distSq;
-                }
-            }
-        }
-
-        return bestHit;
-    }
-
-    /**
-     * @brief Point hit test for single-point strokes (e.g. period / tap dots).
-     */
-    [[nodiscard]] static inline bool HitTestPoint(
-        const Point2D& p, float width,
-        double qx, double qy, double queryRadius) noexcept
-    {
-        const double maxR = std::max(0.2, static_cast<double>(width) * 0.5 + queryRadius);
-        const double dx = p.x - qx;
-        const double dy = p.y - qy;
-        return (dx * dx + dy * dy) <= (maxR * maxR);
     }
 
     /**
@@ -198,31 +223,6 @@ public:
         const double dpy = wy + (sc * uy) - (tc * vy);
         return dpx * dpx + dpy * dpy;
     }
-
-    /**
-     * @brief Continuous swept-capsule collision test against all segments of a stroke.
-     * Detects hits regardless of mouse movement speed (zero tunneling/skipping).
-     */
-    [[nodiscard]] static inline bool HitTestStrokeSwept(
-        const std::vector<Segment1D>& segments,
-        const Point2D& w0, const Point2D& w1, double queryRadius) noexcept
-    {
-        for (const auto& seg : segments) {
-            const double maxR = queryRadius + static_cast<double>(seg.width) * 0.5;
-            const double minX = std::min({ seg.p0.x, seg.p1.x, w0.x, w1.x }) - maxR;
-            const double maxX = std::max({ seg.p0.x, seg.p1.x, w0.x, w1.x }) + maxR;
-            const double minY = std::min({ seg.p0.y, seg.p1.y, w0.y, w1.y }) - maxR;
-            const double maxY = std::max({ seg.p0.y, seg.p1.y, w0.y, w1.y }) + maxR;
-
-            if (minX > maxX || minY > maxY) continue;
-
-            const double distSq = SegmentSegmentDistanceSq(seg.p0, seg.p1, w0, w1);
-            if (distSq <= maxR * maxR) {
-                return true;
-            }
-        }
-        return false;
-    }
 };
 
 /**
@@ -230,20 +230,6 @@ public:
  */
 class StrokeSlicer {
 public:
-    /**
-     * @brief Linearly interpolates two centerline points.
-     */
-    [[nodiscard]] static inline Point2D LerpPoint(const Point2D& p0, const Point2D& p1, double t) noexcept {
-        Point2D p;
-        p.x = p0.x + t * (p1.x - p0.x);
-        p.y = p0.y + t * (p1.y - p0.y);
-        p.pressure = p0.pressure + static_cast<float>(t) * (p1.pressure - p0.pressure);
-        p.timeSeconds = p0.timeSeconds + t * (p1.timeSeconds - p0.timeSeconds);
-        p.tiltX = p0.tiltX + static_cast<float>(t) * (p1.tiltX - p0.tiltX);
-        p.tiltY = p0.tiltY + static_cast<float>(t) * (p1.tiltY - p0.tiltY);
-        return p;
-    }
-
     /**
      * @brief Slices a chain of segments against a circular eraser kernel.
      * @param segments Original stroke segments.
@@ -355,5 +341,20 @@ public:
 
         PushChainIfValid();
         return modified;
+    }
+
+private:
+    /**
+     * @brief Linearly interpolates two centerline points.
+     */
+    [[nodiscard]] static inline Point2D LerpPoint(const Point2D& p0, const Point2D& p1, double t) noexcept {
+        Point2D p;
+        p.x = p0.x + t * (p1.x - p0.x);
+        p.y = p0.y + t * (p1.y - p0.y);
+        p.pressure = p0.pressure + static_cast<float>(t) * (p1.pressure - p0.pressure);
+        p.timeSeconds = p0.timeSeconds + t * (p1.timeSeconds - p0.timeSeconds);
+        p.tiltX = p0.tiltX + static_cast<float>(t) * (p1.tiltX - p0.tiltX);
+        p.tiltY = p0.tiltY + static_cast<float>(t) * (p1.tiltY - p0.tiltY);
+        return p;
     }
 };

@@ -87,7 +87,7 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
     if (m_inkEngine.IsStrokeActive()) {
         ctx.save();
         ctx.set_transform(viewport.worldToScreenMatrix);
-        ctx.set_fill_style(BLRgba32(m_inkEngine.GetActiveTool().color.value));
+        ctx.set_fill_style(BLRgba32(m_inkEngine.GetActiveStyle().color.value));
 
         const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
         if (!liveOutline.is_empty()) {

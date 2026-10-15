@@ -114,7 +114,7 @@ Right-click menus are built cooperatively via ObjectActionRegistry:
     - 4096px RAM protection clamp and DPI-based physical millimeter mapping.
 [-] InkContainer (ink_container/)
     - Vector ink stroke collection and centerline spline pipeline.
-    - Active focus: ribbon polygon extrusion (StrokeOutlineBuilder).
+    - Active focus: ribbon polygon extrusion (InkGenerator).
 [ ] TableObject (table_container.hpp)
     - Stubbed interface placeholder for Phase 2 structured grids.
 6. DYNAMIC OBJECT REGISTRY & FACTORY (object_registry.hpp/.cpp)

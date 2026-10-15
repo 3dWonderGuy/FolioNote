@@ -22,11 +22,9 @@
 #include <cstdint>
 #include <blend2d/blend2d.h>
 
-#include "input/pen_palette.hpp"
 #include "core/ink_engine/ink_stroke_data.hpp"
 #include "core/ink_engine/ink_config.hpp"
-#include "core/ink_engine/stroke_outline_builder.hpp"
-#include "core/objects/primitives/shape_types.hpp"
+#include "core/ink_engine/ink_generator.hpp"
 
 // Forward declarations for Google Ink Stroke Modeler
 namespace ink::stroke_model {
@@ -68,13 +66,13 @@ public:
      * @param worldY Initial stylus Y position in physical millimeters.
      * @param pressure Initial contact pressure [0.0, 1.0].
      * @param timeSec Monotonic event timestamp in seconds.
-     * @param tool Active pen styling, nib dimensions, cap geometry, and pigment.
+     * @param style Active stroke style, nib dimensions, cap geometry, pattern, and pigment.
      * @param zoomScale Current viewport zoom factor (normalizes velocity thinning to screen speed).
      * @param tiltX Stylus tilt angle along X axis in radians/degrees.
      * @param tiltY Stylus tilt angle along Y axis in radians/degrees.
      */
     void BeginStroke(double worldX, double worldY, float pressure, double timeSec,
-                     const PenTool& tool, float zoomScale = 1.0f,
+                     const StrokeStyle& style, float zoomScale = 1.0f,
                      float tiltX = 0.0f, float tiltY = 0.0f);
 
     /**
@@ -84,7 +82,7 @@ public:
      * 1. Submits raw input sample (pos, time, pressure) to Google Ink's position and wobble filters.
      * 2. Solves dynamic line width via pressure gamma mapping and velocity thinning equations.
      * 3. Applies Exponential Moving Average (EMA) smoothing to eliminate single-frame thickness jitter.
-     * 4. Reconstructs confirmed 2D outline path via StrokeOutlineBuilder.
+     * 4. Reconstructs confirmed 2D outline path via InkGenerator.
      * 5. Solves predictive continuation frames to minimize perceived display latency at the pen tip.
      *
      * @param worldX Current stylus X position in millimeters.
@@ -126,7 +124,7 @@ public:
     [[nodiscard]] bool IsStrokeActive() const noexcept { return m_isStrokeActive; }
     [[nodiscard]] const BLPath& GetLiveOutlinePath() const noexcept { return m_liveStrokeOutline; }
     [[nodiscard]] const BLPath& GetPredictedOutlinePath() const noexcept { return m_predictedStrokeOutline; }
-    [[nodiscard]] const PenTool& GetActiveTool() const noexcept { return m_activeTool; }
+    [[nodiscard]] const StrokeStyle& GetActiveStyle() const noexcept { return m_activeStyle; }
 
     // -------------------------------------------------------------------------
     // 3. CONFIGURATION & OUTLINE COMPUTATION AUTHORITY
@@ -156,15 +154,8 @@ public:
     static BLPath BuildStrokeOutline(const std::vector<Point2D>& points,
                                      CapType capType = CapType::Round,
                                      StrokePattern pattern = StrokePattern::Solid,
-                                     bool isClosed = false) {
-        return StrokeOutlineBuilder::FeedStrokeBatch(points, capType, pattern, isClosed);
-    }
-
-    /**
-     * @brief Maps ShapeOutlineType into StrokePattern for unified shape/connector outline generation.
-     */
-    static StrokePattern MapShapeOutlineType(ShapeOutlineType outlineType) noexcept {
-        return StrokeOutlineBuilder::MapShapeOutlineType(outlineType);
+                                     bool isStandardShape = false) {
+        return InkGenerator::GenerateStroke(points, capType, pattern, isStandardShape);
     }
 
 private:
@@ -187,7 +178,7 @@ private:
 
     // Internal Inking State
     bool m_isStrokeActive = false;
-    PenTool m_activeTool;
+    StrokeStyle m_activeStyle;
     InkingConfig m_config;
     float m_zoomScale = 1.0f;
     float m_smoothedWidth = -1.0f;

@@ -74,7 +74,7 @@ STATUS TAGS:
 --------------------------------------------------------------------------------
 [ ] shape_types.hpp
     - Geometry enum definitions (Rectangle, Ellipse, Triangle, Star, Polygon)
-[X] path_dasher.hpp (RETIRED: Replaced by unified StrokeOutlineBuilder)
+[X] path_dasher.hpp (RETIRED: Replaced by unified InkGenerator)
     - Dash pattern and stroke gap calculation routed through pen engine
 [ ] shape_container.hpp / .cpp
     - World geometry generation and coordinate updates

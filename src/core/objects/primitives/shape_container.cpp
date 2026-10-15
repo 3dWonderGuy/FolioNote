@@ -2,7 +2,7 @@
  * @file shape_container.cpp
  * @brief Implementation of ShapeObject — closed 2D geometric vector shape.
  *
- * All heavy Blend2D rendering, path construction, hatch pattern generation,
+ * All heavy Blend2D rendering, path construction,
  * hit-testing, and bounds calculation lives here. DrawShapeIconImGui is the
  * sole function that stays in shape_container.hpp because it has an ImGui
  * draw-list dependency that must not enter non-UI translation units.
@@ -14,7 +14,7 @@
  *   4. HitTest         — point-in-shape and proximity tests
  *   5. BakeTransform   — commits accumulated matrix to intrinsic coords
  *   6. Render          — two-pass BLContext draw (infill, outline)
- *   7. CreateHatchPattern — tiled drafting texture factory
+ *   7. (Infill + hatch factory moved to InkGenerator)
  *   8. DrawArrowHead   — directional arrowhead geometry
  *   9. DistSqPointToSegment — geometry helper
  *  10. DrawShapeIconImGui   — ImGui icon renderer (header-only, defined here
@@ -281,7 +281,7 @@ void ShapeObject::BuildPath(BLPath& path) const {
  * - Regular Polygons / Stars: N corners with radial trigonometric offsets.
  * - Rounded Rectangles / Ellipses: Smoothly sampled angular chords.
  *
- * Routing these through StrokeOutlineBuilder guarantees identical dash cadence,
+ * Routing these through InkGenerator guarantees identical dash cadence,
  * dot spacing, and antialiased round caps between shapes and freehand pen strokes
  * without redundant dasher utilities.
  *
@@ -720,88 +720,23 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
     ctx.save();
     ctx.apply_transform(transform);
 
-    // ----- Pass 1: Infill -----
+    // ----- Pass 1: Infill (delegated to InkGenerator) -----
     if (fillType != ShapeFillType::None) {
         ctx.save();
 
-        if (fillType == ShapeFillType::Solid) {
-            BLRgba32 col = fillColor;
-            col.setA(255);
-            ctx.set_fill_style(col);
-            ctx.fill_path(path);
+        // Stroke width invariance: compensate for active scale transform
+        double det         = std::abs(transform.m00 * transform.m11
+                                     - transform.m01 * transform.m10);
+        double scaleFactor = (det > 1e-6) ? std::sqrt(det) : 1.0;
 
-        } else if (fillType == ShapeFillType::SemiTransparent) {
-            BLRgba32 col = fillColor;
-            if (col.a() > 180 || col.a() == 0) col.setA(90);
-            ctx.set_fill_style(col);
-            ctx.fill_path(path);
+        InfillStyle infill;
+        infill.type           = ToInfillType(fillType);
+        infill.primaryColor   = fillColor;
+        infill.secondaryColor = secondaryFillColor;
+        infill.outlineWidthMm = strokeWidth / scaleFactor;
+        infill.bounds         = BLBox(worldX, worldY, worldX + worldWidth, worldY + worldHeight);
 
-        } else if (fillType == ShapeFillType::LinearGradient) {
-            // Left-to-right two-stop gradient
-            BLLinearGradientValues vals{ worldX, worldY,
-                                         worldX + worldWidth, worldY + worldHeight };
-            BLGradient grad(vals, BL_EXTEND_MODE_PAD);
-            grad.add_stop(0.0, fillColor);
-            grad.add_stop(1.0, secondaryFillColor);
-            ctx.set_fill_style(grad);
-            ctx.fill_path(path);
-
-        } else if (fillType == ShapeFillType::RadialGradient) {
-            // Center-outward two-stop gradient
-            BLRadialGradientValues vals{
-                worldX + worldWidth  * 0.5,
-                worldY + worldHeight * 0.5,
-                0.0, 0.0,
-                (std::max)(worldWidth, worldHeight) * 0.5
-            };
-            BLGradient grad(vals, BL_EXTEND_MODE_PAD);
-            grad.add_stop(0.0, fillColor);
-            grad.add_stop(1.0, secondaryFillColor);
-            ctx.set_fill_style(grad);
-            ctx.fill_path(path);
-
-        } else if (fillType >= ShapeFillType::HatchDiagonal &&
-                   fillType <= ShapeFillType::HatchDots) {
-            // Stroke width invariance: compensate for active scale transform
-            double det         = std::abs(transform.m00 * transform.m11
-                                         - transform.m01 * transform.m10);
-            double scaleFactor = (det > 1e-6) ? std::sqrt(det) : 1.0;
-            double effWidth    = strokeWidth / scaleFactor;
-
-            // Infill lines are half (1/2) of the outline thickness
-            double infillWorldWidth = (std::max)(0.15, effWidth * 0.5);
-
-            // Doubled spacing requirement:
-            // Clear gap between lines: gap = pitch - infillWorldWidth >= 5.0 * infillWorldWidth.
-            // Therefore, minimum perpendicular pitch: pitch >= 6.0 * infillWorldWidth.
-            double minPitch = 6.0 * infillWorldWidth;
-            double basePitch = (std::max)(5.0, minPitch);
-
-            // Dynamic scale: increase pitch if shape is very small to avoid dense bleeding
-            double minDim = std::min(worldWidth, worldHeight);
-            if (minDim > 0 && minDim < 20.0) {
-                basePitch *= (20.0 / minDim);
-            }
-
-            // Convert desired perpendicular line pitch to BLPattern tile spacingMm:
-            // For 45-degree diagonal lines: d_perp = spacingMm / (2 * sqrt(2)) => spacingMm = pitch * 2 * sqrt(2).
-            // For horizontal/vertical lines: pitch = spacingMm.
-            // For dots: axis spacing = 0.5 * spacingMm => spacingMm = pitch * 2.
-            double dynamicSpacing = basePitch;
-            if (fillType == ShapeFillType::HatchDiagonal || fillType == ShapeFillType::HatchCross) {
-                dynamicSpacing = basePitch * (2.0 * 1.414213562373);
-            } else if (fillType == ShapeFillType::HatchDots) {
-                dynamicSpacing = basePitch * 2.0;
-            }
-
-            // Alpha enforcement: textured infill is ALWAYS 100% solid, fully opaque (never translucent)
-            BLRgba32 solidFillColor = fillColor;
-            solidFillColor.setA(255);
-
-            BLPattern hatch = CreateHatchPattern(fillType, solidFillColor, effWidth, dynamicSpacing);
-            ctx.set_fill_style(hatch);
-            ctx.fill_path(path);
-        }
+        InkGenerator::FillInfill(ctx, path, infill);
 
         ctx.restore();
     }
@@ -834,8 +769,8 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
                 BLPath patternOutline = InkEngine::BuildStrokeOutline(
                     perimPts,
                     CapType::Round,
-                    InkEngine::MapShapeOutlineType(outlineType),
-                    true // isClosed
+                    ToStrokePattern(outlineType),
+                    true // isStandardShape
                 );
                 ctx.set_fill_style(solidStroke);
                 ctx.fill_path(patternOutline);
@@ -846,111 +781,6 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
     }
 
     ctx.restore();
-}
-
-// =============================================================================
-// 7. HATCH PATTERN FACTORY
-// =============================================================================
-
-/**
- * @brief Creates a seamlessly tiling drafting hatch BLPattern.
- *
- * Draws one 32×32 pixel tile using Blend2D into a BLImage, then wraps it
- * in a BLPattern with BL_EXTEND_MODE_REPEAT. A scale transform maps pixel
- * tile coordinates to world-space: scale = spacingMm / tileSize.
- *
- * Hatch types:
- *   HatchDiagonal  — three diagonal lines at 45°, wrapping seamlessly:
- *                    (0,0)→(sz,sz), (0,sz/2)→(sz/2,sz), (sz/2,0)→(sz,sz/2)
- *   HatchCross     — same as Diagonal plus the perpendicular set
- *   HatchHorizontal— single horizontal line at y = sz/2
- *   HatchVertical  — single vertical line at x = sz/2
- *   HatchDots      — two offset dots at (sz/4, sz/4) and (sz*3/4, sz*3/4)
- */
-BLPattern ShapeObject::CreateHatchPattern(ShapeFillType type,
-                                           const BLRgba32& color,
-                                           double strokeWidth,
-                                           double spacingMm) {
-    // Use high-resolution 256×256 tile to eliminate pixelation and bilinear magnification blur
-    constexpr int sz = 256;
-    BLImage   img(sz, sz, BL_FORMAT_PRGB32);
-    BLContext ictx(img);
-    ictx.clear_all();
-
-    // Alpha enforcement: infill patterns are ALWAYS 100% solid, fully opaque (never translucent)
-    BLRgba32 strokeCol = color;
-    strokeCol.setA(255);
-    ictx.set_stroke_style(strokeCol);
-
-    // Infill lines are specified to be exactly half (0.5) of the outline thickness.
-    // The 256×256 image tile is scaled by scale = effectiveSpacingMm / sz in world space.
-    // Therefore, a desired world line width W_world = strokeWidth * 0.5 requires a
-    // pixel stroke width on the tile of: W_px = W_world / scale = (strokeWidth * 0.5) * (sz / effectiveSpacingMm).
-    double infillWorldWidth = (std::max)(0.15, strokeWidth * 0.5);
-
-    // Enforce doubled spacing requirement:
-    // Pitch between lines must satisfy: pitch = gap + infillWorldWidth >= 6.0 * infillWorldWidth.
-    double minPitch = 6.0 * infillWorldWidth;
-    double effectiveSpacingMm = spacingMm;
-
-    if (type == ShapeFillType::HatchDiagonal || type == ShapeFillType::HatchCross) {
-        // Perpendicular line distance for 45° lines is d_perp = spacingMm / (2 * sqrt(2)).
-        // Enforcing d_perp >= minPitch yields spacingMm >= minPitch * 2 * sqrt(2).
-        double minSpacing = minPitch * (2.0 * 1.414213562373);
-        effectiveSpacingMm = (std::max)(effectiveSpacingMm, minSpacing);
-    } else if (type == ShapeFillType::HatchDots) {
-        // Dot spacing along grid axes is 0.5 * spacingMm => spacingMm >= minPitch * 2.
-        double minSpacing = minPitch * 2.0;
-        effectiveSpacingMm = (std::max)(effectiveSpacingMm, minSpacing);
-    } else {
-        // HatchHorizontal, HatchVertical: pitch = spacingMm.
-        effectiveSpacingMm = (std::max)(effectiveSpacingMm, minPitch);
-    }
-
-    double scale = effectiveSpacingMm / static_cast<double>(sz);
-    double infillPixelWidth = (std::max)(1.0, infillWorldWidth / scale);
-
-    ictx.set_stroke_width(infillPixelWidth);
-    ictx.set_stroke_caps(BL_STROKE_CAP_SQUARE);
-    ictx.set_stroke_join(BL_STROKE_JOIN_MITER_BEVEL);
-
-    // Continuous boundary wrapping:
-    // When stroking lines across a tiling box, lines that touch the borders must extend
-    // beyond the [0, sz] boundary by at least 1 tile period. This guarantees that stroke
-    // width is not truncated at tile boundaries, eliminating blurred or faded seam artifacts.
-    const double d = sz * 0.5;
-
-    if (type == ShapeFillType::HatchDiagonal || type == ShapeFillType::HatchCross) {
-        // 45-degree diagonal lines: y = x + k * d (for k = -2, -1, 0, 1, 2)
-        // All lines are stroked from x = -sz to x = 2*sz so ends wrap seamlessly across boundaries.
-        for (int k = -2; k <= 2; ++k) {
-            double offset = k * d;
-            ictx.stroke_line(-sz, -sz + offset, sz * 2.0, sz * 2.0 + offset);
-        }
-    }
-    if (type == ShapeFillType::HatchCross) {
-        // Perpendicular 45-degree diagonal lines: y = -x + c (for c = 0, d, 2d, 3d, 4d)
-        for (int k = 0; k <= 4; ++k) {
-            double c = k * d;
-            ictx.stroke_line(-sz, sz + c, sz * 2.0, -2.0 * sz + c);
-        }
-    }
-    if (type == ShapeFillType::HatchHorizontal) {
-        ictx.stroke_line(-sz, d, sz * 2.0, d);
-    }
-    if (type == ShapeFillType::HatchVertical) {
-        ictx.stroke_line(d, -sz, d, sz * 2.0);
-    }
-    if (type == ShapeFillType::HatchDots) {
-        ictx.set_fill_style(strokeCol);
-        double dotRadiusPx = (std::max)(1.5, infillPixelWidth * 0.5);
-        ictx.fill_circle(sz * 0.25, sz * 0.25, dotRadiusPx);
-        ictx.fill_circle(sz * 0.75, sz * 0.75, dotRadiusPx);
-    }
-    ictx.end();
-
-    return BLPattern(img, BL_EXTEND_MODE_REPEAT,
-                     BLMatrix2D::make_scaling(scale, scale));
 }
 
 // =============================================================================

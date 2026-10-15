@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "core/ink_engine/ink_stroke_data.hpp"
 
 /**
  * @file shape_types.hpp
@@ -102,5 +103,37 @@ enum class ShapeOutlineType : uint8_t {
     Dotted  = 3,  ///< Crisp circular dots along the path
     DashDot = 4,  ///< Alternating long dash and circular dot
 };
+
+/**
+ * @brief Maps ShapeOutlineType to core StrokePattern for ribbon outline generation.
+ */
+[[nodiscard]] constexpr StrokePattern ToStrokePattern(ShapeOutlineType outlineType) noexcept {
+    switch (outlineType) {
+        case ShapeOutlineType::Dashed:  return StrokePattern::Dashed;
+        case ShapeOutlineType::Dotted:  return StrokePattern::Dotted;
+        case ShapeOutlineType::DashDot: return StrokePattern::DashDot;
+        case ShapeOutlineType::Solid:
+        default:                        return StrokePattern::Solid;
+    }
+}
+
+/**
+ * @brief Maps object-layer ShapeFillType onto the ink engine's InfillType.
+ */
+[[nodiscard]] constexpr InfillType ToInfillType(ShapeFillType fillType) noexcept {
+    switch (fillType) {
+        case ShapeFillType::Solid:           return InfillType::Solid;
+        case ShapeFillType::SemiTransparent: return InfillType::SemiTransparent;
+        case ShapeFillType::LinearGradient:  return InfillType::LinearGradient;
+        case ShapeFillType::RadialGradient:  return InfillType::RadialGradient;
+        case ShapeFillType::HatchDiagonal:   return InfillType::HatchDiagonal;
+        case ShapeFillType::HatchCross:      return InfillType::HatchCross;
+        case ShapeFillType::HatchHorizontal: return InfillType::HatchHorizontal;
+        case ShapeFillType::HatchVertical:   return InfillType::HatchVertical;
+        case ShapeFillType::HatchDots:       return InfillType::HatchDots;
+        case ShapeFillType::None:
+        default:                             return InfillType::None;
+    }
+}
 
 } // namespace Folio
