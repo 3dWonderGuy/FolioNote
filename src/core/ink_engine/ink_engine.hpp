@@ -151,7 +151,10 @@ public:
     /**
      * @brief Centralized stroke outline computing authority.
      */
-    static BLPath BuildStrokeOutline(const std::vector<Point2D>& points,
+    /**
+     * @brief Centralized stroke outline computing authority.
+     */
+    static BLPath BuildStrokeOutline(const std::vector<StrokePoint>& points,
                                      CapType capType = CapType::Round,
                                      StrokePattern pattern = StrokePattern::Solid,
                                      bool isStandardShape = false) {
@@ -160,15 +163,15 @@ public:
 
 private:
     /**
-     * @brief Converts a confirmed Google Ink smoothed Result into a complete Point2D.
+     * @brief Converts a confirmed Google Ink smoothed Result into a StrokePoint with resolved radius (r).
      * Evaluates dynamic thickness via StrokeWidthEvaluator combining pressure curve,
      * velocity thinning, tilt factor, and internal EMA smoothing.
      *
      * @param res Confirmed smoothed result from Google Stroke Modeler.
      * @param previousWidth Smoothed width from preceding point (-1.0f if starting a stroke).
-     * @return Point2D Point with world coordinates, pressure, speed, tilt, and dynamic thickness.
+     * @return StrokePoint Point with world coordinates and pre-resolved radius (r).
      */
-    Point2D ToPoint2D(const ink::stroke_model::Result& res, float previousWidth = -1.0f) const;
+    StrokePoint ToStrokePoint(const ink::stroke_model::Result& res, float previousWidth = -1.0f) const;
 
     // Processes confirmed Google Ink results into live modeled points and updates 2D live outline
     void ProcessGoogleResults(const std::vector<ink::stroke_model::Result>& results);
@@ -184,11 +187,11 @@ private:
     float m_smoothedWidth = -1.0f;
 
     // Point and Vector Geometry Buffers
-    std::vector<Point2D> m_activeStrokePoints;
-    std::vector<Point2D> m_liveModeledPoints;
+    std::vector<StylusInputPoint> m_activeStrokePoints;
+    std::vector<StrokePoint> m_liveModeledPoints;
     std::vector<ink::stroke_model::Result> m_googleResultsBuffer;
     std::vector<ink::stroke_model::Result> m_googlePredictionsBuffer;
-    std::vector<Point2D> m_predictedPointsBuffer;
+    std::vector<StrokePoint> m_predictedPointsBuffer;
 
     BLPath m_liveStrokeOutline;
     BLPath m_predictedStrokeOutline;

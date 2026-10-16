@@ -74,8 +74,8 @@ public:
      * @param toleranceMm Distance tolerance in millimeters (e.g. Ramer-Douglas-Peucker epsilon).
      * @return Decimated vertex vector.
      */
-    [[nodiscard]] static std::vector<Point2D> Simplify(
-        const std::vector<Point2D>& points,
+    [[nodiscard]] static std::vector<StrokePoint> Simplify(
+        const std::vector<StrokePoint>& points,
         float toleranceMm = 0.05f) {
         (void)toleranceMm;
 
@@ -90,7 +90,7 @@ public:
      * @return True if stroke forms a closed loop.
      */
     [[nodiscard]] static bool DetectClosedLoop(
-        const std::vector<Point2D>& points,
+        const std::vector<StrokePoint>& points,
         float maxClosureRadiusMm = 2.0f) noexcept {
         if (points.size() < 3) return false;
 

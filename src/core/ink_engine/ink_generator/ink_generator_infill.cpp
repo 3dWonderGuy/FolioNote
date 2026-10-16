@@ -20,6 +20,18 @@ BLPath InkGenerator::BuildInfill(const std::vector<Point2D>& vertices) {
     return path;
 }
 
+BLPath InkGenerator::BuildInfill(const std::vector<StrokePoint>& vertices) {
+    BLPath path;
+    if (vertices.size() < 3) return path;
+
+    path.move_to(vertices[0].x, vertices[0].y);
+    for (size_t i = 1; i < vertices.size(); ++i) {
+        path.line_to(vertices[i].x, vertices[i].y);
+    }
+    path.close();
+    return path;
+}
+
 // =============================================================================
 // 2. INFILL PAINTER (Solid, Translucent, Gradient, Hatch)
 // =============================================================================

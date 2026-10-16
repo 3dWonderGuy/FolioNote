@@ -288,16 +288,16 @@ void ShapeObject::BuildPath(BLPath& path) const {
  * @param outPoints Output vector receiving ordered perimeter vertices.
  * @param effWidth Scaled stroke thickness in world millimeters.
  */
-void ShapeObject::GetPerimeterPoints(std::vector<Point2D>& outPoints, double effWidth) const {
+void ShapeObject::GetPerimeterPoints(std::vector<StrokePoint>& outPoints, double effWidth) const {
     outPoints.clear();
     const double x = worldX;
     const double y = worldY;
     const double w = (std::max)(worldWidth,  0.01);
     const double h = (std::max)(worldHeight, 0.01);
-    const float wF = static_cast<float>(effWidth);
+    const float rF = static_cast<float>(effWidth * 0.5);
 
     auto addPt = [&](double px, double py) {
-        outPoints.push_back({ px, py, wF });
+        outPoints.push_back({ px, py, rF });
     };
 
     switch (shapeType) {
@@ -763,7 +763,7 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
         if (outlineType == ShapeOutlineType::Solid) {
             ctx.stroke_path(path);
         } else {
-            std::vector<Point2D> perimPts;
+            std::vector<StrokePoint> perimPts;
             GetPerimeterPoints(perimPts, effWidth);
             if (!perimPts.empty()) {
                 BLPath patternOutline = InkEngine::BuildStrokeOutline(

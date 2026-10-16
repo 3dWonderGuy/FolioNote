@@ -284,15 +284,15 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
     if (outlineType == ShapeOutlineType::Solid) {
         ctx.stroke_path(rawPath);
     } else {
-        std::vector<Point2D> arrowPts;
-        const float wF = static_cast<float>(effWidth);
+        std::vector<StrokePoint> arrowPts;
+        const float rF = static_cast<float>(effWidth * 0.5);
         if (connectorStyle == ConnectorStyle::Straight) {
-            arrowPts.push_back({ x1, y1, wF });
-            arrowPts.push_back({ x2, y2, wF });
+            arrowPts.push_back({ x1, y1, rF });
+            arrowPts.push_back({ x2, y2, rF });
         } else if (connectorStyle == ConnectorStyle::Elbow) {
             Point2D epts[4];
             GetElbowWaypoints(epts);
-            for (int i = 0; i < 4; ++i) arrowPts.push_back({ epts[i].x, epts[i].y, wF });
+            for (int i = 0; i < 4; ++i) arrowPts.push_back({ epts[i].x, epts[i].y, rF });
         } else if (connectorStyle == ConnectorStyle::Curved) {
             Point2D c1, c2;
             GetCurvedControlPoints(c1, c2);
@@ -302,7 +302,7 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
                 double u = 1.0 - t;
                 double px = u*u*u*x1 + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*x2;
                 double py = u*u*u*y1 + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*y2;
-                arrowPts.push_back({ px, py, wF });
+                arrowPts.push_back({ px, py, rF });
             }
         }
         if (!arrowPts.empty()) {

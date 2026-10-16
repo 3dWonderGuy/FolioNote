@@ -145,7 +145,7 @@ public:
             break;
 
         case PenType::Highlighter:
-            activePen.capType = CapType::Chisel;
+            activePen.capType = CapType::Square;
             activePen.blendMode = BlendMode::Multiply;
             activePen.isPressureEnabled = false;
             activePen.isTiltEnabled = false;

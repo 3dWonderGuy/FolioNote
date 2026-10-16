@@ -18,7 +18,7 @@
  *       precision distance-based hit testing, proximity selection, and point eraser slicing.
  *  2. Rich Pen Semantics:
  *     - Per-stroke BlendMode (Normal/SrcOver, Multiply for Highlighters, Additive for Glow/Neon).
- *     - Configurable CapType (Round, Flat, Chisel, Square) and StrokePattern (Solid, Dashed, Dotted, DashDot).
+ *     - Configurable CapType (Round, Chisel, Square) and StrokePattern (Solid, Dashed, Dotted, DashDot).
  *  3. Affine Geometry Transformations:
  *     - Real-time interactive transformation via 2D affine matrix (BLMatrix2D).
  *     - Geometric transform baking committing scaling, translation, and rotation directly into
@@ -39,17 +39,6 @@
 #include "core/ink_engine/ink_stroke_data.hpp"
 #include "input/pen_palette.hpp"
 
-/**
- * @struct StrokePoint
- * @brief Discrete centerline vertex holding spatial coordinates and pre-resolved stroke radius.
- *
- * Coordinates are in physical world millimeters (mm).
- */
-struct StrokePoint {
-    double x = 0.0;     ///< Centerline X position in world millimeters (mm)
-    double y = 0.0;     ///< Centerline Y position in world millimeters (mm)
-    float  r = 0.25f;   ///< Pre-calculated stroke radius (half-thickness) in world millimeters (mm)
-};
 
 /**
  * @struct Stroke
@@ -69,7 +58,7 @@ struct Stroke {
     std::vector<StrokePoint> points;       ///< Smoothed centerline vertices with precomputed radius (world mm)
 
     PenType       penType       = PenType::Pen;           ///< Pen preset category (Ballpoint, Fountain, Calligraphy, Highlighter)
-    CapType       capType       = CapType::Round;         ///< Stroke endcap style (Round, Flat)
+    CapType       capType       = CapType::Round;         ///< Stroke endcap style (Round, Chisel, Square)
     StrokePattern strokePattern = StrokePattern::Solid;   ///< Line pattern (Solid, Dashed, Dotted, DashDot)
     BlendMode     blendMode     = BlendMode::Normal;      ///< Layer blend mode (Normal, Multiply, Additive)
 

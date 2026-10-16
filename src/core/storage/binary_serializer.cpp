@@ -601,23 +601,15 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
                     stroke.segments.push_back(seg);
                 }
 
-                std::vector<Point2D> pts;
-                pts.reserve(stroke.segments.size() + 1);
                 stroke.points.reserve(stroke.segments.size() + 1);
                 {
                     const auto& s0 = stroke.segments[0];
-                    Point2D p0;
-                    p0.x = s0.p0.x; p0.y = s0.p0.y; p0.width = s0.width;
-                    pts.push_back(p0);
                     stroke.points.push_back({ s0.p0.x, s0.p0.y, s0.width * 0.5f });
                 }
                 for (const auto& segItem : stroke.segments) {
-                    Point2D p;
-                    p.x = segItem.p1.x; p.y = segItem.p1.y; p.width = segItem.width;
-                    pts.push_back(p);
                     stroke.points.push_back({ segItem.p1.x, segItem.p1.y, segItem.width * 0.5f });
                 }
-                stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, CapType::Round);
+                stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(stroke.points, CapType::Round);
             }
             ink->strokes.push_back(std::move(stroke));
         }

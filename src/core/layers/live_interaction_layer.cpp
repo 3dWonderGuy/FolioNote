@@ -461,14 +461,14 @@ void LiveInteractionLayer::SetPenStyle(uint32_t argbColor, double widthMm) noexc
 
 void LiveInteractionLayer::BeginLasso(double worldXMm, double worldYMm) {
     m_internalLassoPoints.clear();
-    m_internalLassoPoints.push_back(Point2D{ worldXMm, worldYMm, 1.0f, 0.0 });
+    m_internalLassoPoints.push_back(Point2D{ worldXMm, worldYMm });
     m_isLassoing = true;
 }
 
 void LiveInteractionLayer::AddLassoPoint(double worldXMm, double worldYMm) {
     if (!m_isLassoing || m_internalLassoPoints.empty()) return;
 
-    Point2D pt{ worldXMm, worldYMm, 1.0f, 0.0 };
+    Point2D pt{ worldXMm, worldYMm };
     // Filter micro-movements (< 0.5 mm) to bound polygon complexity
     if (std::hypot(pt.x - m_internalLassoPoints.back().x, pt.y - m_internalLassoPoints.back().y) < 0.5) {
         return;

@@ -286,12 +286,7 @@ void InkContainer::BakeTransform() {
         stroke.baseWidthMm *= static_cast<float>(scaleFactor);
 
         if (!stroke.points.empty()) {
-            std::vector<Point2D> pts;
-            pts.reserve(stroke.points.size());
-            for (const auto& pt : stroke.points) {
-                pts.push_back({ pt.x, pt.y, pt.r * 2.0f });
-            }
-            stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, stroke.capType, stroke.strokePattern);
+            stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
         }
     }
 
@@ -330,12 +325,7 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
         if (!stroke.outlinePath.is_empty()) {
             ctx.fill_path(stroke.outlinePath);
         } else if (!stroke.points.empty()) {
-            std::vector<Point2D> pts;
-            pts.reserve(stroke.points.size());
-            for (const auto& pt : stroke.points) {
-                pts.push_back({ pt.x, pt.y, pt.r * 2.0f });
-            }
-            BLPath fallbackOutline = Folio::InkEngine::BuildStrokeOutline(pts, stroke.capType, stroke.strokePattern);
+            BLPath fallbackOutline = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
             ctx.fill_path(fallbackOutline);
         } else if (stroke.segments.size() == 1) {
             ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
@@ -415,17 +405,14 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                 newStroke.segments = std::move(subChain);
 
                 // Reconstruct points and polygon outline
-                std::vector<Point2D> pts;
-                pts.reserve(newStroke.segments.size() + 1);
-                pts.push_back({ newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width });
+                newStroke.points.reserve(newStroke.segments.size() + 1);
                 newStroke.points.push_back({ newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width * 0.5f });
 
                 for (const auto& s : newStroke.segments) {
-                    pts.push_back({ s.p1.x, s.p1.y, s.width });
                     newStroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
                 }
 
-                newStroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, newStroke.capType, newStroke.strokePattern);
+                newStroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(newStroke.points, newStroke.capType, newStroke.strokePattern);
                 newStrokes.push_back(std::move(newStroke));
             }
         } else {

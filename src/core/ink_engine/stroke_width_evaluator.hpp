@@ -31,21 +31,28 @@ public:
      * 4. Multiplies factors to establish instantaneous target thickness.
      * 5. ApplySmoothingEMA(): Dampens transitions against previous point to eliminate jitter.
      *
-     * @param baseWidth Chosen tool base size in millimeters.
-     * @param pt Incoming stylus point containing pressure, speed, and tilt.
-     * @param previousWidth Smoothed width from preceding point (-1.0f if starting a stroke).
-     * @param zoomScale Current canvas zoom factor.
-     * @param config Active inking configuration.
-     * @return Final smoothed stroke thickness in millimeters.
+    /**
+     * @brief Computes dynamic stroke width from explicit telemetry values.
      */
-    [[nodiscard]] static float CalculateDynamicWidth(float baseWidth, const Point2D& pt,
+    [[nodiscard]] static float CalculateDynamicWidth(float baseWidth, float pressure,
+                                                     float speed, float tiltX, float tiltY,
                                                      float previousWidth, float zoomScale,
                                                      const InkingConfig& config) noexcept {
-        float pressureWidth = ScaleWidthByPressure(baseWidth, pt.pressure, config);
-        float velocityFactor = ComputeVelocityThinning(pt.speed, zoomScale, config);
-        float tiltFactor = ComputeTiltModulation(pt.tiltX, pt.tiltY, config);
+        float pressureWidth = ScaleWidthByPressure(baseWidth, pressure, config);
+        float velocityFactor = ComputeVelocityThinning(speed, zoomScale, config);
+        float tiltFactor = ComputeTiltModulation(tiltX, tiltY, config);
         float targetWidth = pressureWidth * velocityFactor * tiltFactor;
         return ApplySmoothingEMA(previousWidth, targetWidth, config.dynamicWidthSmoothing);
+    }
+
+    /**
+     * @brief Computes dynamic stroke width from StylusInputPoint telemetry.
+     */
+    [[nodiscard]] static float CalculateDynamicWidth(float baseWidth, const StylusInputPoint& pt,
+                                                     float previousWidth, float zoomScale,
+                                                     const InkingConfig& config) noexcept {
+        return CalculateDynamicWidth(baseWidth, pt.pressure, pt.speed, pt.tiltX, pt.tiltY,
+                                     previousWidth, zoomScale, config);
     }
 
 private:

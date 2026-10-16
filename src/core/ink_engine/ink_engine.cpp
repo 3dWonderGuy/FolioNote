@@ -13,8 +13,8 @@ namespace sm = ink::stroke_model;
 
 namespace {
 
-// translates our Point2D into Google Ink's Input packet
-sm::Input MakeGoogleInput(sm::Input::EventType type, const Point2D& pt) {
+// translates our StylusInputPoint into Google Ink's Input packet
+sm::Input MakeGoogleInput(sm::Input::EventType type, const StylusInputPoint& pt) {
     
     sm::Input input;                                                                   // empty google ink input packet
     input.event_type = type;                                                           // pen state (kDown, kMove, or kUp)
@@ -60,14 +60,17 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
     m_activeStyle = style;
     m_zoomScale = zoomScale > 0.001f ? zoomScale : 1.0f;
 
-    Point2D startPt;
-    startPt.x = worldX;
-    startPt.y = worldY;
-    startPt.pressure = pressure;
-    startPt.timeSeconds = timeSec;
-    startPt.tiltX = tiltX;
-    startPt.tiltY = tiltY;
+    StylusInputPoint startPt(worldX, worldY, pressure, timeSec, 0.0f, tiltX, tiltY);
     m_activeStrokePoints.push_back(startPt);
+
+    // Initial touch-down preview delegated to the stroke/ribbon builder (which runs BuildPointCap for single points)
+    float dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+        m_activeStyle.baseWidth, startPt, -1.0f, m_zoomScale, m_config);
+    m_smoothedWidth = dynamicWidth;
+    StrokePoint dotPt(startPt.x, startPt.y, dynamicWidth * 0.5f);
+
+    m_liveStrokeOutline = InkGenerator::GenerateStroke(
+        { dotPt }, m_activeStyle.capType, m_activeStyle.pattern);
 
     // Reset physics engine state for the new stroke (preserves configured physics parameters)
     (void)m_googleModeler->Reset();
@@ -76,17 +79,6 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
     m_googleResultsBuffer.clear();
     if (m_googleModeler->Update(MakeGoogleInput(sm::Input::EventType::kDown, startPt), m_googleResultsBuffer).ok()) {
         ProcessGoogleResults(m_googleResultsBuffer);
-    }
-
-    // If Google's tremor filter buffered the initial touch, render an immediate visual dot
-    // so the user sees instant feedback under the pen tip with zero display lag (SPECIAL CASE FOR ONEPOINT SITUATION)
-    if (m_liveStrokeOutline.is_empty()) {
-        Point2D dotPt = startPt;
-        dotPt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
-            m_activeStyle.baseWidth, dotPt, -1.0f, m_zoomScale, m_config);
-
-        m_liveStrokeOutline = InkGenerator::GenerateStroke(
-            { dotPt }, m_activeStyle.capType, m_activeStyle.pattern);
     }
 
     if (m_config.google_enable_prediction) {
@@ -100,13 +92,7 @@ void InkEngine::AppendPoint(double worldX, double worldY, float pressure, double
     if (!m_isStrokeActive) return;
 
     // pen position tracker
-    Point2D pt;
-    pt.x = worldX;
-    pt.y = worldY;
-    pt.pressure = pressure;
-    pt.timeSeconds = timeSec;
-    pt.tiltX = tiltX;
-    pt.tiltY = tiltY;
+    StylusInputPoint pt(worldX, worldY, pressure, timeSec, 0.0f, tiltX, tiltY);
     m_activeStrokePoints.push_back(pt);                                                // track raw movement history
 
     // feed moving stylus event into physics solver
@@ -136,11 +122,20 @@ FinishedStrokeData InkEngine::FinishStroke() {
         }
 
         // Stage 2: (SPECIAL CASE) Single-tap dot handling (user tapped without lateral dragging)
+        double strokeLen = 0.0;
+        for (size_t i = 1; i < m_liveModeledPoints.size(); ++i) {
+            strokeLen += std::hypot(m_liveModeledPoints[i].x - m_liveModeledPoints[i - 1].x,
+                                    m_liveModeledPoints[i].y - m_liveModeledPoints[i - 1].y);
+        }
+
         if (m_liveModeledPoints.empty()) {
-            Point2D pt = m_activeStrokePoints.front();                                 // tap origin
-            pt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
+            StylusInputPoint pt = m_activeStrokePoints.front();                        // tap origin
+            float dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
                 m_activeStyle.baseWidth, pt, -1.0f, m_zoomScale, m_config);
-            m_liveModeledPoints.push_back(pt);
+            m_liveModeledPoints.push_back(StrokePoint(pt.x, pt.y, dynamicWidth * 0.5f));
+        } else if (strokeLen < 1e-4) {
+            // Google modeler flushed multiple coincident points for a stationary tap; collapse to single point
+            m_liveModeledPoints.resize(1);
         }
     }
 
@@ -149,14 +144,13 @@ FinishedStrokeData InkEngine::FinishStroke() {
     if (m_liveModeledPoints.size() == 1) {
 
         // Single-point tap: create a micro-segment because zero-length lines have undefined normals and fail collision checks
-        Point2D p0 = m_liveModeledPoints[0];
-        Point2D p1 = p0;
-        p1.x += 0.001;                                                                 // tiny 1-micron offset gives a valid bounding box and direction for R-Tree & eraser
+        StrokePoint p0 = m_liveModeledPoints[0];
+        Point2D pt1(p0.x + 0.001, p0.y);                                               // tiny 1-micron offset gives a valid bounding box and direction for R-Tree & eraser
 
         Segment1D seg;
         seg.p0 = p0;
-        seg.p1 = p1;
-        seg.width = p0.width;
+        seg.p1 = pt1;
+        seg.width = p0.r * 2.0f;
         data.liveSegments.push_back(seg);
 
     } else if (m_liveModeledPoints.size() >= 2) {
@@ -167,7 +161,7 @@ FinishedStrokeData InkEngine::FinishStroke() {
             Segment1D seg;
             seg.p0 = m_liveModeledPoints[i - 1];
             seg.p1 = m_liveModeledPoints[i];
-            seg.width = m_liveModeledPoints[i].width;
+            seg.width = m_liveModeledPoints[i].r * 2.0f;
             data.liveSegments.push_back(seg);
         }
     }
@@ -198,31 +192,26 @@ void InkEngine::CancelStroke() {
 // 2. MATHEMATICAL THICKNESS & MODELING
 // -----------------------------------------------------------------------------
 
-// translates Google Ink's smoothed Result output back into our Point2D struct with dynamic thickness
-Point2D InkEngine::ToPoint2D(const sm::Result& res, float previousWidth) const {
-
-    Point2D pt;
-    pt.x = res.position.x;                                                             // smoothed X from google physics
-    pt.y = res.position.y;                                                             // smoothed Y from google physics
-    pt.pressure = res.pressure;                                                        // smoothed stylus pressure
-    pt.timeSeconds = static_cast<double>(res.time.Value());                            // unwrap google Time back to double seconds
-    pt.speed = std::hypot(res.velocity.x, res.velocity.y);                             // 2D velocity vector -> scalar speed
-    pt.tiltX = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::cos(res.orientation) : 0.0f;
-    pt.tiltY = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::sin(res.orientation) : 0.0f;
+// translates Google Ink's smoothed Result output back into our StrokePoint struct with pre-resolved radius
+StrokePoint InkEngine::ToStrokePoint(const sm::Result& res, float previousWidth) const {
+    float speed = std::hypot(res.velocity.x, res.velocity.y);
+    float tiltX = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::cos(res.orientation) : 0.0f;
+    float tiltY = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::sin(res.orientation) : 0.0f;
 
     // calculate dynamic thickness with physics and internal EMA smoothing
-    pt.width = StrokeWidthEvaluator::CalculateDynamicWidth(
-        m_activeStyle.baseWidth, pt, previousWidth, m_zoomScale, m_config);
+    float dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+        m_activeStyle.baseWidth, res.pressure, speed, tiltX, tiltY,
+        previousWidth, m_zoomScale, m_config);
 
-    return pt;
+    return StrokePoint(res.position.x, res.position.y, dynamicWidth * 0.5f);
 }
 
 void InkEngine::ProcessGoogleResults(const std::vector<sm::Result>& results) {
 
-    // convert incoming google batch directly into complete Point2Ds and append to live stroke array
+    // convert incoming google batch directly into complete StrokePoints and append to live stroke array
     for (const auto& res : results) {
-        Point2D pt = ToPoint2D(res, m_smoothedWidth);
-        m_smoothedWidth = pt.width;
+        StrokePoint pt = ToStrokePoint(res, m_smoothedWidth);
+        m_smoothedWidth = pt.r * 2.0f;
         m_liveModeledPoints.push_back(pt);
     }
 
@@ -248,10 +237,10 @@ void InkEngine::UpdateGooglePrediction() {
     m_predictedPointsBuffer.clear();
     m_predictedPointsBuffer.push_back(m_liveModeledPoints.back());
 
-    // converts google predicted points directly into complete Point2Ds with thickness
+    // converts google predicted points directly into complete StrokePoints with radius
     for (const auto& res : m_googlePredictionsBuffer) {
-        Point2D pt = ToPoint2D(res, predWidth);
-        predWidth = pt.width;
+        StrokePoint pt = ToStrokePoint(res, predWidth);
+        predWidth = pt.r * 2.0f;
         m_predictedPointsBuffer.push_back(pt);
     }
 

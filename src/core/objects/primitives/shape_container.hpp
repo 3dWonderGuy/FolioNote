@@ -116,7 +116,7 @@ public:
      * @param outPoints Output vector receiving ordered perimeter vertices with effective stroke width.
      * @param effWidth Stroke thickness in world millimeters.
      */
-    void GetPerimeterPoints(std::vector<Point2D>& outPoints, double effWidth) const;
+    void GetPerimeterPoints(std::vector<StrokePoint>& outPoints, double effWidth) const;
 
     // =========================================================================
     // BOUNDS & SPATIAL (implemented in shape_container.cpp)

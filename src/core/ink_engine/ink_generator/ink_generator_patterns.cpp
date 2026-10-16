@@ -8,19 +8,18 @@
 // DISCONTINUOUS PATTERN DISPATCHER
 // =============================================================================
 
-BLPath InkGenerator::ApplyDiscontinuousPattern(const std::vector<Point2D>& pts,
-                                               CapType capType,
+BLPath InkGenerator::ApplyDiscontinuousPattern(const std::vector<StrokePoint>& pts,
                                                StrokePattern pattern) {
     switch (pattern) {
         case StrokePattern::Dotted:
             return BuildDottedPattern(pts);
         case StrokePattern::Dashed:
-            return BuildDashedPattern(pts, capType);
+            return BuildDashedPattern(pts);
         case StrokePattern::DashDot:
-            return BuildDashDotPattern(pts, capType);
+            return BuildDashDotPattern(pts);
         case StrokePattern::Solid:
         default:
-            return BuildSolidRibbon(pts, capType);
+            return BuildSolidRibbon(pts);
     }
 }
 
@@ -28,7 +27,7 @@ BLPath InkGenerator::ApplyDiscontinuousPattern(const std::vector<Point2D>& pts,
 // 1. DOTTED PATTERN
 // =============================================================================
 
-BLPath InkGenerator::BuildDottedPattern(const std::vector<Point2D>& pts) {
+BLPath InkGenerator::BuildDottedPattern(const std::vector<StrokePoint>& pts) {
     BLPath path;
     double nextDotDist = 0.0;
     double distAccum = 0.0;
@@ -46,17 +45,17 @@ BLPath InkGenerator::BuildDottedPattern(const std::vector<Point2D>& pts) {
             t = std::clamp(t, 0.0, 1.0);
             double dotX = p0.x + t * dx;
             double dotY = p0.y + t * dy;
-            float dotW = p0.width + static_cast<float>(t) * (p1.width - p0.width);
-            double r = std::max(0.05, (double)dotW * 0.5);
+            float dotR = p0.r + static_cast<float>(t) * (p1.r - p0.r);
+            double r = dotR;
             path.add_circle(BLCircle{dotX, dotY, r});
 
-            double spacing = std::max(0.6, (double)dotW * 2.2);
+            double spacing = std::max(0.6, (double)dotR * 4.4);
             nextDotDist += spacing;
         }
         distAccum += segLen;
     }
     if (path.is_empty() && !pts.empty()) {
-        double r = std::max(0.05, (double)pts[0].width * 0.5);
+        double r = pts[0].r;
         path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
     }
     return path;
@@ -66,7 +65,7 @@ BLPath InkGenerator::BuildDottedPattern(const std::vector<Point2D>& pts) {
 // 2. DASHED PATTERN
 // =============================================================================
 
-BLPath InkGenerator::BuildDashedPattern(const std::vector<Point2D>& pts, CapType capType) {
+BLPath InkGenerator::BuildDashedPattern(const std::vector<StrokePoint>& pts) {
     BLPath path;
     const size_t N = pts.size();
     std::vector<double> cumDist(N, 0.0);
@@ -75,20 +74,20 @@ BLPath InkGenerator::BuildDashedPattern(const std::vector<Point2D>& pts, CapType
     }
     double totalLen = cumDist.back();
     if (totalLen < 1e-5) {
-        double r = std::max(0.05, (double)pts[0].width * 0.5);
+        double r = pts[0].r;
         path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
         return path;
     }
 
-    float avgWidth = 0.0f;
-    for (const auto& pt : pts) avgWidth += pt.width;
-    avgWidth /= static_cast<float>(N);
+    float avgR = 0.0f;
+    for (const auto& pt : pts) avgR += pt.r;
+    avgR /= static_cast<float>(N);
 
-    double dashLen = std::max(1.8, (double)avgWidth * 4.0);
-    double gapLen  = std::max(1.0, (double)avgWidth * 2.5);
+    double dashLen = std::max(1.8, (double)avgR * 8.0);
+    double gapLen  = std::max(1.0, (double)avgR * 5.0);
     double cycle   = dashLen + gapLen;
 
-    auto samplePointAt = [&](double d) -> Point2D {
+    auto samplePointAt = [&](double d) -> StrokePoint {
         d = std::clamp(d, 0.0, totalLen);
         auto it = std::lower_bound(cumDist.begin(), cumDist.end(), d);
         if (it == cumDist.begin()) return pts.front();
@@ -101,11 +100,10 @@ BLPath InkGenerator::BuildDashedPattern(const std::vector<Point2D>& pts, CapType
         t = std::clamp(t, 0.0, 1.0);
         const auto& p0 = pts[idx - 1];
         const auto& p1 = pts[idx];
-        Point2D res;
+        StrokePoint res;
         res.x = p0.x + t * (p1.x - p0.x);
         res.y = p0.y + t * (p1.y - p0.y);
-        res.width = p0.width + static_cast<float>(t) * (p1.width - p0.width);
-        res.pressure = p0.pressure + static_cast<float>(t) * (p1.pressure - p0.pressure);
+        res.r = p0.r + static_cast<float>(t) * (p1.r - p0.r);
         return res;
     };
 
@@ -113,7 +111,7 @@ BLPath InkGenerator::BuildDashedPattern(const std::vector<Point2D>& pts, CapType
         double s1 = std::min(totalLen, s0 + dashLen);
         if (s1 <= s0) break;
 
-        std::vector<Point2D> dashPts;
+        std::vector<StrokePoint> dashPts;
         dashPts.push_back(samplePointAt(s0));
 
         for (size_t i = 0; i < N; ++i) {
@@ -124,10 +122,10 @@ BLPath InkGenerator::BuildDashedPattern(const std::vector<Point2D>& pts, CapType
         dashPts.push_back(samplePointAt(s1));
 
         if (dashPts.size() <= 1 || std::hypot(dashPts.front().x - dashPts.back().x, dashPts.front().y - dashPts.back().y) < 1e-5) {
-            double r = std::max(0.05, (double)dashPts[0].width * 0.5);
+            double r = dashPts[0].r;
             path.add_circle(BLCircle{dashPts[0].x, dashPts[0].y, r});
         } else {
-            BLPath subRibbon = BuildSolidRibbon(dashPts, capType);
+            BLPath subRibbon = BuildSolidRibbon(dashPts);
             path.add_path(subRibbon);
         }
     }
@@ -138,7 +136,7 @@ BLPath InkGenerator::BuildDashedPattern(const std::vector<Point2D>& pts, CapType
 // 3. DASH-DOT PATTERN
 // =============================================================================
 
-BLPath InkGenerator::BuildDashDotPattern(const std::vector<Point2D>& pts, CapType capType) {
+BLPath InkGenerator::BuildDashDotPattern(const std::vector<StrokePoint>& pts) {
     BLPath path;
     const size_t N = pts.size();
     std::vector<double> cumDist(N, 0.0);
@@ -147,22 +145,22 @@ BLPath InkGenerator::BuildDashDotPattern(const std::vector<Point2D>& pts, CapTyp
     }
     double totalLen = cumDist.back();
     if (totalLen < 1e-5) {
-        double r = std::max(0.05, (double)pts[0].width * 0.5);
+        double r = pts[0].r;
         path.add_circle(BLCircle{pts[0].x, pts[0].y, r});
         return path;
     }
 
-    float avgWidth = 0.0f;
-    for (const auto& pt : pts) avgWidth += pt.width;
-    avgWidth /= static_cast<float>(N);
+    float avgR = 0.0f;
+    for (const auto& pt : pts) avgR += pt.r;
+    avgR /= static_cast<float>(N);
 
-    double dashLen = std::max(2.0, (double)avgWidth * 4.2);
-    double gap1    = std::max(1.0, (double)avgWidth * 2.0);
-    double dotLen  = std::max(0.5, (double)avgWidth * 1.0);
-    double gap2    = std::max(1.0, (double)avgWidth * 2.0);
+    double dashLen = std::max(2.0, (double)avgR * 8.4);
+    double gap1    = std::max(1.0, (double)avgR * 4.0);
+    double dotLen  = std::max(0.5, (double)avgR * 2.0);
+    double gap2    = std::max(1.0, (double)avgR * 4.0);
     double cycle   = dashLen + gap1 + dotLen + gap2;
 
-    auto samplePointAt = [&](double d) -> Point2D {
+    auto samplePointAt = [&](double d) -> StrokePoint {
         d = std::clamp(d, 0.0, totalLen);
         auto it = std::lower_bound(cumDist.begin(), cumDist.end(), d);
         if (it == cumDist.begin()) return pts.front();
@@ -175,11 +173,10 @@ BLPath InkGenerator::BuildDashDotPattern(const std::vector<Point2D>& pts, CapTyp
         t = std::clamp(t, 0.0, 1.0);
         const auto& p0 = pts[idx - 1];
         const auto& p1 = pts[idx];
-        Point2D res;
+        StrokePoint res;
         res.x = p0.x + t * (p1.x - p0.x);
         res.y = p0.y + t * (p1.y - p0.y);
-        res.width = p0.width + static_cast<float>(t) * (p1.width - p0.width);
-        res.pressure = p0.pressure + static_cast<float>(t) * (p1.pressure - p0.pressure);
+        res.r = p0.r + static_cast<float>(t) * (p1.r - p0.r);
         return res;
     };
 
@@ -187,7 +184,7 @@ BLPath InkGenerator::BuildDashDotPattern(const std::vector<Point2D>& pts, CapTyp
         // 1. Dash segment
         double s1 = std::min(totalLen, s0 + dashLen);
         if (s1 > s0) {
-            std::vector<Point2D> dashPts;
+            std::vector<StrokePoint> dashPts;
             dashPts.push_back(samplePointAt(s0));
             for (size_t i = 0; i < N; ++i) {
                 if (cumDist[i] > s0 + 1e-5 && cumDist[i] < s1 - 1e-5) {
@@ -196,10 +193,10 @@ BLPath InkGenerator::BuildDashDotPattern(const std::vector<Point2D>& pts, CapTyp
             }
             dashPts.push_back(samplePointAt(s1));
             if (dashPts.size() <= 1 || std::hypot(dashPts.front().x - dashPts.back().x, dashPts.front().y - dashPts.back().y) < 1e-5) {
-                double r = std::max(0.05, (double)dashPts[0].width * 0.5);
+                double r = dashPts[0].r;
                 path.add_circle(BLCircle{dashPts[0].x, dashPts[0].y, r});
             } else {
-                BLPath subRibbon = BuildSolidRibbon(dashPts, capType);
+                BLPath subRibbon = BuildSolidRibbon(dashPts);
                 path.add_path(subRibbon);
             }
         }
@@ -207,8 +204,8 @@ BLPath InkGenerator::BuildDashDotPattern(const std::vector<Point2D>& pts, CapTyp
         // 2. Dot segment
         double dotCenter = s0 + dashLen + gap1 + dotLen * 0.5;
         if (dotCenter <= totalLen) {
-            Point2D dotPt = samplePointAt(dotCenter);
-            double r = std::max(0.05, (double)dotPt.width * 0.55);
+            StrokePoint dotPt = samplePointAt(dotCenter);
+            double r = dotPt.r * 1.1;
             path.add_circle(BLCircle{dotPt.x, dotPt.y, r});
         }
     }

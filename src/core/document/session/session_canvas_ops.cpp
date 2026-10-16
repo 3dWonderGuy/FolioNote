@@ -114,7 +114,9 @@ void DocumentSession::CommitStroke(FinishedStrokeData&& data, const PenTool& too
     stroke.penType = tool.penType;
     stroke.opacity = tool.opacity;
 
-    if (!data.liveSegments.empty()) {
+    if (!data.modeledPoints.empty()) {
+        stroke.points = std::move(data.modeledPoints);
+    } else if (!data.liveSegments.empty()) {
         stroke.points.reserve(data.liveSegments.size() + 1);
         stroke.points.push_back({ data.liveSegments[0].p0.x, data.liveSegments[0].p0.y, data.liveSegments[0].width * 0.5f });
         for (const auto& s : data.liveSegments) {
@@ -177,19 +179,14 @@ void DocumentSession::CommitStroke(std::vector<Segment1D>&& segments, const PenT
     stroke.penType = tool.penType;
     stroke.opacity = tool.opacity;
 
-    std::vector<Point2D> pts;
-    pts.reserve(segments.size() + 1);
     stroke.points.reserve(segments.size() + 1);
-
-    pts.push_back({ segments[0].p0.x, segments[0].p0.y, segments[0].width });
     stroke.points.push_back({ segments[0].p0.x, segments[0].p0.y, segments[0].width * 0.5f });
 
     for (const auto& s : segments) {
-        pts.push_back({ s.p1.x, s.p1.y, s.width });
         stroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
     }
 
-    stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, tool.capType, tool.strokePattern);
+    stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(stroke.points, tool.capType, tool.strokePattern);
     stroke.segments = std::move(segments);
     container->AddStroke(stroke);
 

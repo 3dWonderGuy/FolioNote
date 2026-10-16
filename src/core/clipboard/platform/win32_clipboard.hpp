@@ -554,12 +554,7 @@ inline std::shared_ptr<InkContainer> ParseIsfToInkContainer(const uint8_t* isfDa
                     }
 
                     // Build closed polygon outline contour (BLPath)
-                    std::vector<Point2D> pts;
-                    pts.reserve(s.points.size());
-                    for (const auto& sp : s.points) {
-                        pts.push_back({ sp.x, sp.y, static_cast<float>(widthMm), 1.0f });
-                    }
-                    s.outlinePath = Folio::InkEngine::BuildStrokeOutline(pts, CapType::Round);
+                    s.outlinePath = Folio::InkEngine::BuildStrokeOutline(s.points, CapType::Round);
 
                     inkContainer->AddStroke(s);
                 }

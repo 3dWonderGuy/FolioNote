@@ -23,7 +23,6 @@
  */
 enum class CapType : uint8_t {
     Round = 0,
-    Flat,
     Chisel,
     Square
 };
@@ -82,24 +81,44 @@ struct InfillStyle {
 
 /**
  * @struct Point2D
- * @brief 2D coordinate on the infinite canvas with stylus dynamics telemetry.
- *
- * All spatial coordinates (x, y) are represented in physical world millimeters (mm).
+ * @brief Universal 2D coordinate on the infinite canvas in physical world millimeters (mm).
  */
 struct Point2D {
-    double x = 0.0;            ///< X position in world millimeters (mm)
-    double y = 0.0;            ///< Y position in world millimeters (mm)
-    float  width = 1.0f;       ///< Total stroke thickness in millimeters (mm)
+    double x = 0.0;
+    double y = 0.0;
+};
+
+/**
+ * @struct StrokePoint
+ * @brief Discrete centerline vertex with pre-resolved stroke radius (r).
+ */
+struct StrokePoint {
+    double x = 0.0;
+    double y = 0.0;
+    float  r = 0.25f;   ///< Pre-calculated stroke radius (half-thickness) in world millimeters (mm)
+
+    operator Point2D() const noexcept { return {x, y}; }
+};
+
+/**
+ * @struct StylusInputPoint
+ * @brief Raw hardware digitizer telemetry before physics modeling.
+ */
+struct StylusInputPoint {
+    double x = 0.0;
+    double y = 0.0;
     float  pressure = 1.0f;    ///< Stylus tip pressure [0.0, 1.0]
     double timeSeconds = 0.0;  ///< Sampling timestamp in seconds
     float  speed = 0.0f;       ///< Stylus velocity in mm/s
     float  tiltX = 0.0f;       ///< Stylus tilt angle along X axis in radians
     float  tiltY = 0.0f;       ///< Stylus tilt angle along Y axis in radians
+
+    operator Point2D() const noexcept { return {x, y}; }
 };
 
 /**
  * @struct Segment1D
- * @brief Linear segment between two points with physical thickness.
+ * @brief Linear segment between two points with physical thickness (used for collision/eraser capsules).
  */
 struct Segment1D {
     Point2D p0;               ///< Starting point of the segment
@@ -109,10 +128,10 @@ struct Segment1D {
 
 /**
  * @struct FinishedStrokeData
- * @brief Completed inking stroke container encapsulating 1D segments, modeled centerline, and outline polygon.
+ * @brief Completed inking stroke container encapsulating collision segments, modeled centerline, and outline polygon.
  */
 struct FinishedStrokeData {
     std::vector<Segment1D> liveSegments;
-    std::vector<Point2D> modeledPoints;
+    std::vector<StrokePoint> modeledPoints;
     BLPath outlinePath;
 };

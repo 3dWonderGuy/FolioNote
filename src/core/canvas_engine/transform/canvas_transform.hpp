@@ -66,11 +66,9 @@ struct Viewport {
 
     [[nodiscard]] Point2D WorldToScreen(double worldXMm, double worldYMm) const noexcept {
         const double scale = GetEffectiveScale();
-        return {
+        return Point2D{
             (worldXMm + cameraX) * scale,
-            (worldYMm + cameraY) * scale,
-            1.0f,
-            0.0
+            (worldYMm + cameraY) * scale
         };
     }
 
@@ -145,21 +143,17 @@ public:
 
     [[nodiscard]] Point2D ScreenToWorld(double screenX, double screenY) const noexcept {
         const double scale = GetEffectiveScale();
-        return {
+        return Point2D{
             (screenX / scale) - panXMm,
-            (screenY / scale) - panYMm,
-            1.0f,
-            0.0
+            (screenY / scale) - panYMm
         };
     }
 
     [[nodiscard]] Point2D WorldToScreen(double worldXMm, double worldYMm) const noexcept {
         const double scale = GetEffectiveScale();
-        return {
+        return Point2D{
             (worldXMm + panXMm) * scale,
-            (worldYMm + panYMm) * scale,
-            1.0f,
-            0.0
+            (worldYMm + panYMm) * scale
         };
     }
 
@@ -179,7 +173,7 @@ public:
     // Convert pixel vectors (e.g., mouse delta) into world millimeter vectors
     [[nodiscard]] Point2D ScreenDeltaToWorldDelta(double screenDx, double screenDy) const noexcept {
         const double scale = GetEffectiveScale();
-        return { screenDx / scale, screenDy / scale, 1.0f, 0.0 };
+        return Point2D{ screenDx / scale, screenDy / scale };
     }
 
     // --- Navigation & Viewport Control ---

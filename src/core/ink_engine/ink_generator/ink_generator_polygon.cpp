@@ -7,7 +7,7 @@
 // 1. TOP-LEVEL DISPATCHER
 // =============================================================================
 
-BLPath InkGenerator::GenerateStroke(const std::vector<Point2D>& centerline,
+BLPath InkGenerator::GenerateStroke(const std::vector<StrokePoint>& centerline,
                                     CapType capType,
                                     StrokePattern pattern,
                                     bool isStandardShape) {
@@ -24,12 +24,12 @@ BLPath InkGenerator::GenerateStroke(const std::vector<Point2D>& centerline,
 // 2. CLOSED POLYGON OUTLINE BUILDER
 // =============================================================================
 
-BLPath InkGenerator::BuildPolygon(const std::vector<Point2D>& centerline,
+BLPath InkGenerator::BuildPolygon(const std::vector<StrokePoint>& centerline,
                                   StrokePattern pattern) {
     if (centerline.empty()) return BLPath{};
 
-    const std::vector<Point2D>* ptsPtr = &centerline;
-    std::vector<Point2D> closed;
+    const std::vector<StrokePoint>* ptsPtr = &centerline;
+    std::vector<StrokePoint> closed;
     double dx = centerline.back().x - centerline.front().x;
     double dy = centerline.back().y - centerline.front().y;
 
@@ -40,7 +40,7 @@ BLPath InkGenerator::BuildPolygon(const std::vector<Point2D>& centerline,
     }
 
     const auto& pts = *ptsPtr;
-    if (pts.size() == 1) return BuildSinglePointCap(pts[0], CapType::Round);
+    if (pts.size() == 1) return TraceCap(pts[0], CapType::Round);
 
     // Continuous line: fast-path directly to ribbon (polygons always Round joins/caps)
     if (pattern == StrokePattern::Solid) {
@@ -48,5 +48,5 @@ BLPath InkGenerator::BuildPolygon(const std::vector<Point2D>& centerline,
     }
 
     // Discontinuous patterns: only executed when pattern is non-solid
-    return ApplyDiscontinuousPattern(pts, CapType::Round, pattern);
+    return ApplyDiscontinuousPattern(pts, pattern);
 }

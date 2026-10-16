@@ -348,13 +348,9 @@ private:
      * @brief Linearly interpolates two centerline points.
      */
     [[nodiscard]] static inline Point2D LerpPoint(const Point2D& p0, const Point2D& p1, double t) noexcept {
-        Point2D p;
-        p.x = p0.x + t * (p1.x - p0.x);
-        p.y = p0.y + t * (p1.y - p0.y);
-        p.pressure = p0.pressure + static_cast<float>(t) * (p1.pressure - p0.pressure);
-        p.timeSeconds = p0.timeSeconds + t * (p1.timeSeconds - p0.timeSeconds);
-        p.tiltX = p0.tiltX + static_cast<float>(t) * (p1.tiltX - p0.tiltX);
-        p.tiltY = p0.tiltY + static_cast<float>(t) * (p1.tiltY - p0.tiltY);
-        return p;
+        return Point2D{
+            p0.x + t * (p1.x - p0.x),
+            p0.y + t * (p1.y - p0.y)
+        };
     }
 };

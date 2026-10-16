@@ -35,12 +35,12 @@ public:
     /**
      * @brief Builds a 2D closed ribbon polygon or patterned outline (solid, dashed, dotted) from an ordered list of points.
      *
-     * @param centerline Input centerline vertices with thickness.
+     * @param centerline Input centerline vertices with radius (r).
      * @param capType Endcap style for terminal segments (ink strokes only; polygons are always Round).
      * @param pattern Stroke pattern (Solid, Dashed, Dotted, DashDot).
      * @param isStandardShape When true (standard vector shape), closes the loop from the last point to the first point seamlessly.
      */
-    static BLPath GenerateStroke(const std::vector<Point2D>& centerline,
+    static BLPath GenerateStroke(const std::vector<StrokePoint>& centerline,
                                  CapType capType = CapType::Round,
                                  StrokePattern pattern = StrokePattern::Solid,
                                  bool isStandardShape = false);
@@ -55,6 +55,7 @@ public:
      * @return Closed BLPath of the enclosed area, ready for solid / gradient / hatch fill.
      */
     static BLPath BuildInfill(const std::vector<Point2D>& vertices);
+    static BLPath BuildInfill(const std::vector<StrokePoint>& vertices);
 
     /**
      * @brief Paints a polygon interior (solid, translucent, gradient, or drafting hatch).
@@ -65,21 +66,44 @@ public:
      */
     static void FillInfill(BLContext& ctx, const BLPath& region, const InfillStyle& style);
 
+    /**
+     * @brief Universal cap tracer: generates a full closed cap polygon for a single-point tap.
+     *
+     * @param pt Centerline point with radius (r).
+     * @param capType Cap style (Round, Chisel, Square).
+     */
+    static BLPath TraceCap(const StrokePoint& pt,
+                           CapType capType = CapType::Round);
+
+    /**
+     * @brief Universal endcap tracer: connects ribbon edges across the terminal cap.
+     *
+     * @param path Target BLPath being extruded.
+     * @param center Terminal point with radius (r).
+     * @param leftPt Left edge coordinate of ribbon.
+     * @param rightPt Right edge coordinate of ribbon.
+     * @param capType Cap style (Round, Chisel, Square).
+     * @param isTail True for tail cap (sweeps forward left -> right), false for head cap (sweeps backward right -> left).
+     */
+    static void TraceCap(BLPath& path,
+                         const StrokePoint& center,
+                         const Point2D& leftPt,
+                         const Point2D& rightPt,
+                         CapType capType = CapType::Round,
+                         bool isTail = true);
+
 private:
     // =========================================================================
     // STEP 1: GENERATION TYPE (Polygon vs Stroke)
     // =========================================================================
 
-    // Builds an isolated endcap for a single-point stroke (tap / dot)
-    static BLPath BuildSinglePointCap(const Point2D& pt, CapType capType);
-
     // Builds an open ink stroke. Continuous lines route directly to ribbon generation
-    static BLPath BuildStroke(const std::vector<Point2D>& centerline,
+    static BLPath BuildStroke(const std::vector<StrokePoint>& centerline,
                               CapType capType = CapType::Round,
                               StrokePattern pattern = StrokePattern::Solid);
 
     // Builds a polygon from vertices, ensuring the loop is closed seamlessly
-    static BLPath BuildPolygon(const std::vector<Point2D>& centerline,
+    static BLPath BuildPolygon(const std::vector<StrokePoint>& centerline,
                                StrokePattern pattern = StrokePattern::Solid);
 
     // =========================================================================
@@ -87,21 +111,21 @@ private:
     // =========================================================================
 
     // Builds a continuous 2D closed ribbon polygon from an ordered list of points
-    static BLPath BuildSolidRibbon(const std::vector<Point2D>& pts, CapType capType = CapType::Round);
+    static BLPath BuildSolidRibbon(const std::vector<StrokePoint>& pts,
+                                   CapType capType = CapType::Round);
 
     // Dispatches non-solid discontinuous patterns (Dotted, Dashed, DashDot)
-    static BLPath ApplyDiscontinuousPattern(const std::vector<Point2D>& pts,
-                                            CapType capType,
+    static BLPath ApplyDiscontinuousPattern(const std::vector<StrokePoint>& pts,
                                             StrokePattern pattern);
 
     // Generates a dotted stroke contour spaced proportionally to stroke thickness
-    static BLPath BuildDottedPattern(const std::vector<Point2D>& pts);
+    static BLPath BuildDottedPattern(const std::vector<StrokePoint>& pts);
 
     // Generates an arc-length parameterized dashed stroke contour
-    static BLPath BuildDashedPattern(const std::vector<Point2D>& pts, CapType capType);
+    static BLPath BuildDashedPattern(const std::vector<StrokePoint>& pts);
 
     // Generates an arc-length parameterized dash-dot sequence contour
-    static BLPath BuildDashDotPattern(const std::vector<Point2D>& pts, CapType capType);
+    static BLPath BuildDashDotPattern(const std::vector<StrokePoint>& pts);
 
     // =========================================================================
     // STEP 3: INFILL HATCH PATTERN FACTORY
