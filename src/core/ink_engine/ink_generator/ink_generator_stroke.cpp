@@ -48,8 +48,8 @@ static std::vector<Point2D> GetNibVertices(CapType capType, double r) {
             constexpr double angle = M_PI * -0.25; // Fixed 45-degree fountain pen slant
             double dx = std::cos(angle) * r * 1.3; // Major axis half-length
             double dy = std::sin(angle) * r * 1.3;
-            double nx = -dy * 0.4;                 // Minor axis half-thickness (40% of length)
-            double ny =  dx * 0.4;
+            double nx = -dy * 0.1;                 // Minor axis half-thickness (40% of length)
+            double ny =  dx * 0.1;
             verts = {
                 { -dx - nx, -dy - ny }, // Rear blade tip
                 { +dx - nx, +dy - ny }, // Right blade corner
@@ -369,40 +369,75 @@ BLPath InkGenerator::BuildSolidRibbon(const std::vector<StrokePoint>& pts, CapTy
             left.push_back({ cleanPts[i].x + offL.x,  cleanPts[i].y + offL.y });
             right.push_back({ cleanPts[i].x + offR.x, cleanPts[i].y + offR.y });
         } else {
-            // SHARP TURN (> 45° up to 180° hairpin): Subdivide into small angular steps (<= 30° each)
-            // Wraps smoothly around joint point i without normal cancellation or self-intersection
-            constexpr double kSubStepAngle = M_PI / 6.0; // 30 degrees per step
+            // SHARP TURN (> 45° up to 180° hairpin reversal):
+            // 1. Compute exact uncorrupted incoming and outgoing normal offsets directly at joint cleanPts[i].
+            //    (Avoids bisector sum cancellation (-uyIn - uyOut) which vanishes to (0,0) at 180° and normalizes noise).
+            double nxIn  = -uyIn;
+            double nyIn  =  uxIn;
+            double nxOut = -uyOut;
+            double nyOut =  uxOut;
+
+            Point2D inL, inR, outL, outR;
+            GetRibbonOffsets(capType, cleanPts[i].r, nxIn,  nyIn,  inL,  inR);
+            GetRibbonOffsets(capType, cleanPts[i].r, nxOut, nyOut, outL, outR);
+
+            // 2. Only sweep the OUTSIDE (convex) wall in small angular steps (<= 22.5° each).
+            //    The INSIDE (concave) wall cleanly connects incoming edge to outgoing edge directly at joint i.
+            //    This guarantees boundaries never cut through the stroke tube, preventing winding cancellation.
+            constexpr double kSubStepAngle = M_PI / 8.0; // 22.5 degrees per step
             int steps = std::max(2, static_cast<int>(std::ceil(turnAngle / kSubStepAngle)));
             double turnSign = (cross >= 0.0) ? 1.0 : -1.0;
             double aIn = std::atan2(uyIn, uxIn);
 
-            for (int s = 0; s <= steps; ++s) {
-                double t = static_cast<double>(s) / steps;
-                double heading = aIn + turnSign * t * turnAngle;
-                double nx = -std::sin(heading);
-                double ny =  std::cos(heading);
+            if (cross >= 0.0) {
+                // Turn is LEFT:
+                // Inside is Left: connects incoming inL to outgoing outL across the joint
+                left.push_back({ cleanPts[i].x + inL.x,  cleanPts[i].y + inL.y });
+                left.push_back({ cleanPts[i].x + outL.x, cleanPts[i].y + outL.y });
 
-                Point2D offL, offR;
-                GetRibbonOffsets(capType, cleanPts[i].r, nx, ny, offL, offR);
-                left.push_back({ cleanPts[i].x + offL.x,  cleanPts[i].y + offL.y });
-                right.push_back({ cleanPts[i].x + offR.x, cleanPts[i].y + offR.y });
+                // Outside is Right: sweeps arc from inR to outR
+                for (int s = 0; s <= steps; ++s) {
+                    double t = static_cast<double>(s) / steps;
+                    double heading = aIn + turnSign * t * turnAngle;
+                    double nx = -std::sin(heading);
+                    double ny =  std::cos(heading);
+
+                    Point2D offL, offR;
+                    GetRibbonOffsets(capType, cleanPts[i].r, nx, ny, offL, offR);
+                    right.push_back({ cleanPts[i].x + offR.x, cleanPts[i].y + offR.y });
+                }
+            } else {
+                // Turn is RIGHT:
+                // Inside is Right: connects incoming inR to outgoing outR across the joint
+                right.push_back({ cleanPts[i].x + inR.x,  cleanPts[i].y + inR.y });
+                right.push_back({ cleanPts[i].x + outR.x, cleanPts[i].y + outR.y });
+
+                // Outside is Left: sweeps arc from inL to outL
+                for (int s = 0; s <= steps; ++s) {
+                    double t = static_cast<double>(s) / steps;
+                    double heading = aIn + turnSign * t * turnAngle;
+                    double nx = -std::sin(heading);
+                    double ny =  std::cos(heading);
+
+                    Point2D offL, offR;
+                    GetRibbonOffsets(capType, cleanPts[i].r, nx, ny, offL, offR);
+                    left.push_back({ cleanPts[i].x + offL.x, cleanPts[i].y + offL.y });
+                }
             }
         }
     }
 
-    const size_t M = left.size();
-
     // Step 2: Extrude continuous closed ribbon
     path.move_to(left[0].x, left[0].y);
 
-    for (size_t i = 1; i < M; ++i) {
+    for (size_t i = 1; i < left.size(); ++i) {
         path.line_to(left[i].x, left[i].y);
     }
 
     // Tail Cap (left -> right around the front)
     TraceCap(path, cleanPts.back(), left.back(), right.back(), capType, /*isTail=*/true);
 
-    for (size_t i = M - 1; i > 0; --i) {
+    for (size_t i = right.size() - 1; i > 0; --i) {
         path.line_to(right[i - 1].x, right[i - 1].y);
     }
 
