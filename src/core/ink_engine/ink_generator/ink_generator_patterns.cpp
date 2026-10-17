@@ -259,7 +259,6 @@ struct PencilTextureSet {
     BLImage  midGrainImg;    ///< Original intermediate paper tooth grain (darkened 2B pencil)
     BLImage  denseCoreImg;   ///< Original dense graphite core
     BLPattern patSparse0;    ///< Pre-scaled repeating pattern for full contact patch (Band 0)
-    BLPattern patSparse1;    ///< Pre-scaled repeating pattern offset by (37, 53) (Band 1)
     BLPattern patMid;        ///< Pre-scaled repeating pattern for intermediate concentration (Band 2)
     BLPattern patDense;      ///< Pre-scaled repeating pattern for dense graphite core (Band 3)
 };
@@ -307,15 +306,23 @@ const PencilTextureSet& GetOrCreatePencilTextures(BLRgba32 baseColor) {
             float coarse = SmoothNoise128(x * 0.25f, y * 0.25f, 303);
             float tooth  = 0.45f * fine + 0.35f * med + 0.20f * coarse;
 
+            // Shifted tooth sample (synthesizes multi-frequency tooth directly into grain texture)
+            int ox = (x + 37) & 127;
+            int oy = (y + 53) & 127;
+            float fine2   = HashLattice128(ox, oy, 101);
+            float med2    = SmoothNoise128(ox * 0.5f,  oy * 0.5f,  202);
+            float coarse2 = SmoothNoise128(ox * 0.25f, oy * 0.25f, 303);
+            float tooth2  = 0.45f * fine2 + 0.35f * med2 + 0.20f * coarse2;
+
             // Graphite mineral color/luminance noise (-14% to +14%)
             float colorNoise = (HashLattice128(x, y, 404) - 0.5f) * 2.0f;
 
-            // 1. SPARSE GRAIN (Light pressure / Outer Tilt Shading):
-            float sparseAlpha = 0.0f;
-            if (tooth > 0.34f) {
-                float norm = (tooth - 0.34f) / 0.66f;
-                sparseAlpha = std::clamp(std::pow(norm, 1.10f) * 0.72f, 0.0f, 1.0f) * baseA;
-            }
+            // 1. SPARSE GRAIN (Authentic Composite Paper Tooth Contact):
+            // Directly composites primary tooth and shifted tooth distributions into a single
+            // rich paper tooth texture, eliminating the need for a secondary full-stroke ribbon pass.
+            float a1 = (tooth > 0.34f) ? std::pow((tooth - 0.34f) / 0.66f, 1.10f) * 0.72f : 0.0f;
+            float a2 = (tooth2 > 0.38f) ? std::pow((tooth2 - 0.38f) / 0.62f, 1.20f) * 0.40f : 0.0f;
+            float sparseAlpha = std::clamp(a1 + a2 * (1.0f - a1), 0.0f, 1.0f) * baseA;
             int sR = std::clamp(static_cast<int>(baseR * (1.10f + 0.14f * colorNoise)), 0, 255);
             int sG = std::clamp(static_cast<int>(baseG * (1.10f + 0.14f * colorNoise)), 0, 255);
             int sB = std::clamp(static_cast<int>(baseB * (1.10f + 0.15f * colorNoise)), 0, 255);
@@ -352,11 +359,6 @@ const PencilTextureSet& GetOrCreatePencilTextures(BLRgba32 baseColor) {
     constexpr double kGrainScaleMm = 0.045;
     slot.patSparse0.create(slot.sparseGrainImg, BL_EXTEND_MODE_REPEAT);
     slot.patSparse0.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
-
-    BLMatrix2D m1 = BLMatrix2D::make_scaling(kGrainScaleMm);
-    m1.translate(37.0, 53.0);
-    slot.patSparse1.create(slot.sparseGrainImg, BL_EXTEND_MODE_REPEAT);
-    slot.patSparse1.set_transform(m1);
 
     slot.patMid.create(slot.midGrainImg, BL_EXTEND_MODE_REPEAT);
     slot.patMid.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
@@ -421,16 +423,38 @@ void InkGenerator::RenderPencilStroke(BLContext& ctx,
     const auto& tex = GetOrCreatePencilTextures(color);
     const size_t N = pts.size();
 
-    // Zero-allocation thread-local scratch vectors for the 4 concentric bands
-    thread_local std::vector<StrokePoint> s_band0, s_band1, s_band2, s_band3;
-    s_band0.clear(); s_band0.resize(N);
-    s_band1.clear(); s_band1.resize(N);
-    s_band2.clear(); s_band2.resize(N);
-    s_band3.clear(); s_band3.resize(N);
+    // Zero-allocation thread-local scratch vectors for the concentric bands
+    thread_local std::vector<StrokePoint> s_band0, s_band2, s_band3;
+    s_band0.clear(); s_band0.reserve(N);
+    s_band2.clear(); s_band2.reserve(N);
+    s_band3.clear(); s_band3.reserve(N);
 
     float nominalTipR = (baseWidthMm > 0.01f) ? (baseWidthMm * 0.5f) : pts[0].r;
     float maxP = 0.0f;
     bool hasTilt = false;
+
+    auto pushBandPoint = [](std::vector<StrokePoint>& band, const StrokePoint& pt, double minSpacingMm) {
+        if (band.empty()) {
+            band.push_back(pt);
+            return;
+        }
+        const auto& prev = band.back();
+        double dx = pt.x - prev.x;
+        double dy = pt.y - prev.y;
+        double distSq = dx * dx + dy * dy;
+
+        // Skip consecutive zero-radius points (no visible mark)
+        if (pt.r <= 0.002f && prev.r <= 0.002f && distSq < 1.0) {
+            return;
+        }
+
+        // Adaptive spatial spacing threshold for diffuse inner graphite core
+        if (distSq >= (minSpacingMm * minSpacingMm) || std::abs(pt.r - prev.r) > 0.02f) {
+            band.push_back(pt);
+        } else {
+            band.back() = pt;
+        }
+    };
 
     for (size_t i = 0; i < N; ++i) {
         const auto& pt = pts[i];
@@ -445,27 +469,21 @@ void InkGenerator::RenderPencilStroke(BLContext& ctx,
         float rTip = std::min(pt.r, nominalTipR * (0.90f + 0.12f * p));
         float rTiltExtra = std::max(0.0f, pt.r - rTip);
 
-        // Band 0: Full contact patch (tip + 100% tilt spread)
+        // Band 0: Full contact patch (tip + 100% tilt spread) with composite paper tooth
         float r0 = rTip + rTiltExtra;
-        s_band0[i] = StrokePoint(pt.x + ux * rTiltExtra, pt.y + uy * rTiltExtra, r0);
-
-        // Band 1: Active for p > 0.08 -> covers 96% of tip + 72% of tilt spread
-        float p1 = std::clamp((p - 0.08f) / 0.60f, 0.0f, 1.0f);
-        float r1 = (rTip * 0.96f + rTiltExtra * 0.72f) * std::pow(p1, 0.40f);
-        double shift1 = std::max(0.0f, r1 - rTip * 0.96f);
-        s_band1[i] = StrokePoint(pt.x + ux * shift1, pt.y + uy * shift1, r1);
+        s_band0.push_back(StrokePoint(pt.x + ux * rTiltExtra, pt.y + uy * rTiltExtra, r0));
 
         // Band 2: Active for p > 0.22 -> covers 88% of tip + 45% of tilt spread
         float p2 = std::clamp((p - 0.22f) / 0.60f, 0.0f, 1.0f);
         float r2 = (rTip * 0.88f + rTiltExtra * 0.45f) * std::pow(p2, 0.50f);
         double shift2 = std::max(0.0f, r2 - rTip * 0.88f);
-        s_band2[i] = StrokePoint(pt.x + ux * shift2, pt.y + uy * shift2, r2);
+        pushBandPoint(s_band2, StrokePoint(pt.x + ux * shift2, pt.y + uy * shift2, r2), 0.14);
 
         // Band 3: Active for p > 0.38 -> covers 76% of tip + 22% of tilt spread
         float p3 = std::clamp((p - 0.38f) / 0.55f, 0.0f, 1.0f);
         float r3 = (rTip * 0.76f + rTiltExtra * 0.22f) * std::pow(p3, 0.60f);
         double shift3 = std::max(0.0f, r3 - rTip * 0.76f);
-        s_band3[i] = StrokePoint(pt.x + ux * shift3, pt.y + uy * shift3, r3);
+        pushBandPoint(s_band3, StrokePoint(pt.x + ux * shift3, pt.y + uy * shift3, r3), 0.18);
     }
 
     // Band 0: Reuse prebuilt outline when upright and valid, otherwise build ribbon
@@ -483,15 +501,7 @@ void InkGenerator::RenderPencilStroke(BLContext& ctx,
         ctx.fill_path(*path0Ptr);
     }
 
-    if (maxP > 0.08f) {
-        BLPath path1 = BuildSolidRibbon(s_band1, CapType::Round);
-        if (!path1.is_empty()) {
-            ctx.set_fill_style(tex.patSparse1);
-            ctx.fill_path(path1);
-        }
-    }
-
-    if (maxP > 0.22f) {
+    if (maxP > 0.22f && s_band2.size() >= 2) {
         BLPath path2 = BuildSolidRibbon(s_band2, CapType::Round);
         if (!path2.is_empty()) {
             ctx.set_fill_style(tex.patMid);
@@ -499,7 +509,7 @@ void InkGenerator::RenderPencilStroke(BLContext& ctx,
         }
     }
 
-    if (maxP > 0.38f) {
+    if (maxP > 0.38f && s_band3.size() >= 2) {
         BLPath path3 = BuildSolidRibbon(s_band3, CapType::Round);
         if (!path3.is_empty()) {
             ctx.set_fill_style(tex.patDense);

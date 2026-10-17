@@ -94,6 +94,7 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
 
     m_liveStrokeOutline = InkGenerator::GenerateStroke(
         { dotPt }, m_activeStyle.capType, m_activeStyle.pattern);
+    m_outlineDirty = false;
 
     // Reset physics engine state for the new stroke (preserves configured physics parameters)
     (void)m_googleModeler->Reset();
@@ -105,7 +106,7 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
     }
 
     if (m_config.google_enable_prediction) {
-        UpdateGooglePrediction();                                                      // predicts next points to reduce latency
+        m_predictionDirty = true;
     }
 }
 
@@ -125,7 +126,7 @@ void InkEngine::AppendPoint(double worldX, double worldY, float pressure, double
     }
 
     if (m_config.google_enable_prediction) {
-        UpdateGooglePrediction();                                                      // refresh forward Kalman projection
+        m_predictionDirty = true;
     }
 }
 
@@ -227,8 +228,73 @@ void InkEngine::CancelStroke() {
     m_predictedPointsBuffer.clear();
     m_liveStrokeOutline.clear();
     m_predictedStrokeOutline.clear();
+    m_outlineDirty = false;
+    m_predictionDirty = false;
     m_smoothedWidth = -1.0f;
     m_isStrokeActive = false;
+}
+
+const BLPath& InkEngine::GetLiveOutlinePath() const noexcept {
+    if (m_outlineDirty) {
+        EnsureLiveOutline();
+    }
+    return m_liveStrokeOutline;
+}
+
+const BLPath& InkEngine::GetPredictedOutlinePath() const noexcept {
+    if (m_predictionDirty) {
+        EnsurePrediction();
+    }
+    return m_predictedStrokeOutline;
+}
+
+const std::vector<StrokePoint>& InkEngine::GetPredictedPoints() const noexcept {
+    if (m_predictionDirty) {
+        EnsurePrediction();
+    }
+    return m_predictedPointsBuffer;
+}
+
+void InkEngine::EnsureLiveOutline() const {
+    if (!m_outlineDirty) return;
+    m_outlineDirty = false;
+    if (m_liveModeledPoints.empty()) {
+        m_liveStrokeOutline.clear();
+        return;
+    }
+    m_liveStrokeOutline = InkGenerator::GenerateStroke(
+        m_liveModeledPoints, m_activeStyle.capType, m_activeStyle.pattern);
+}
+
+void InkEngine::EnsurePrediction() const {
+    if (!m_predictionDirty) return;
+    m_predictionDirty = false;
+    m_predictedStrokeOutline.clear();
+    m_predictedPointsBuffer.clear();
+
+    if (!m_config.google_enable_prediction || m_liveModeledPoints.empty() || !m_googleModeler) {
+        return;
+    }
+
+    m_googlePredictionsBuffer.clear();
+    if (!m_googleModeler->Predict(m_googlePredictionsBuffer).ok() || m_googlePredictionsBuffer.empty()) {
+        return;
+    }
+
+    float predWidth = m_smoothedWidth;
+    m_predictedPointsBuffer.reserve(m_googlePredictionsBuffer.size() + 1);
+    m_predictedPointsBuffer.push_back(m_liveModeledPoints.back());
+
+    for (const auto& res : m_googlePredictionsBuffer) {
+        StrokePoint pt = ToStrokePoint(res, predWidth);
+        predWidth = pt.r * 2.0f;
+        m_predictedPointsBuffer.push_back(pt);
+    }
+
+    if (m_predictedPointsBuffer.size() >= 2) {
+        m_predictedStrokeOutline = InkGenerator::GenerateStroke(
+            m_predictedPointsBuffer, m_activeStyle.capType, m_activeStyle.pattern);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -272,8 +338,6 @@ StrokePoint InkEngine::ToStrokePoint(const sm::Result& res, float previousWidth)
 void InkEngine::ProcessGoogleResults(const std::vector<sm::Result>& results) {
     if (results.empty()) return;
 
-    const size_t prevSize = m_liveModeledPoints.size();
-
     // Convert incoming Google batch into StrokePoints, filtering out stationary duplicates (< 1e-4 mm)
     for (const auto& res : results) {
         StrokePoint pt = ToStrokePoint(res, m_smoothedWidth);
@@ -287,42 +351,8 @@ void InkEngine::ProcessGoogleResults(const std::vector<sm::Result>& results) {
         }
     }
 
-    const size_t newSize = m_liveModeledPoints.size();
-    if (newSize == 0) return;
-
-    // Generate clean, non-overlapping Miter-Clipped Single Contour (0.26 ms CPU, 0.69 ms raster)
-    // Eliminates multi-quad polygon overdraw and prevents frame drops from 120 FPS to 30 FPS.
-    m_liveStrokeOutline = InkGenerator::GenerateStroke(
-        m_liveModeledPoints, m_activeStyle.capType, m_activeStyle.pattern);
-}
-
-void InkEngine::UpdateGooglePrediction() {
-    
-    // make sure it is cleary and valid (old prediction mustbe cleared)
-    m_predictedStrokeOutline.clear();
-    if (m_liveModeledPoints.empty()) return;                                           // need at least one confirmed point to predict from
-
-    // reset google buffer another precheck
-    m_googlePredictionsBuffer.clear();
-    if (!m_googleModeler->Predict(m_googlePredictionsBuffer).ok() || m_googlePredictionsBuffer.empty()) return;
-
-    float predWidth = m_smoothedWidth;                                                 // local copy so prediction doesn't mutate real EMA state
-
-    // start prediction polygon from last confirmed point to avoid gap
-    m_predictedPointsBuffer.clear();
-    m_predictedPointsBuffer.push_back(m_liveModeledPoints.back());
-
-    // converts google predicted points directly into complete StrokePoints with radius
-    for (const auto& res : m_googlePredictionsBuffer) {
-        StrokePoint pt = ToStrokePoint(res, predWidth);
-        predWidth = pt.r * 2.0f;
-        m_predictedPointsBuffer.push_back(pt);
-    }
-
-    // build predictive tip polygon (rendered ahead of stylus for zero latency feel)
-    if (m_predictedPointsBuffer.size() >= 2) {
-        m_predictedStrokeOutline = InkGenerator::GenerateStroke(
-            m_predictedPointsBuffer, m_activeStyle.capType, m_activeStyle.pattern);
+    if (!m_liveModeledPoints.empty()) {
+        m_outlineDirty = true;
     }
 }
 

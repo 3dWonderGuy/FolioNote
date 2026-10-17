@@ -122,10 +122,10 @@ public:
      * @brief Queries whether an inking gesture is currently in progress.
      */
     [[nodiscard]] bool IsStrokeActive() const noexcept { return m_isStrokeActive; }
-    [[nodiscard]] const BLPath& GetLiveOutlinePath() const noexcept { return m_liveStrokeOutline; }
-    [[nodiscard]] const BLPath& GetPredictedOutlinePath() const noexcept { return m_predictedStrokeOutline; }
+    [[nodiscard]] const BLPath& GetLiveOutlinePath() const noexcept;
+    [[nodiscard]] const BLPath& GetPredictedOutlinePath() const noexcept;
     [[nodiscard]] const std::vector<StrokePoint>& GetLiveModeledPoints() const noexcept { return m_liveModeledPoints; }
-    [[nodiscard]] const std::vector<StrokePoint>& GetPredictedPoints() const noexcept { return m_predictedPointsBuffer; }
+    [[nodiscard]] const std::vector<StrokePoint>& GetPredictedPoints() const noexcept;
     [[nodiscard]] const StrokeStyle& GetActiveStyle() const noexcept { return m_activeStyle; }
 
     // -------------------------------------------------------------------------
@@ -179,7 +179,8 @@ private:
     void ProcessGoogleResults(const std::vector<ink::stroke_model::Result>& results);
 
     // Builds temporary forward-predicted tip outline to reduce perceived latency
-    void UpdateGooglePrediction();
+    void EnsureLiveOutline() const;
+    void EnsurePrediction() const;
 
     // Recomputes cached evaluation config flags from active style & config
     void UpdateEvalConfig() noexcept;
@@ -196,11 +197,13 @@ private:
     std::vector<StylusInputPoint> m_activeStrokePoints;
     std::vector<StrokePoint> m_liveModeledPoints;
     std::vector<ink::stroke_model::Result> m_googleResultsBuffer;
-    std::vector<ink::stroke_model::Result> m_googlePredictionsBuffer;
-    std::vector<StrokePoint> m_predictedPointsBuffer;
+    mutable std::vector<ink::stroke_model::Result> m_googlePredictionsBuffer;
+    mutable std::vector<StrokePoint> m_predictedPointsBuffer;
 
-    BLPath m_liveStrokeOutline;
-    BLPath m_predictedStrokeOutline;
+    mutable BLPath m_liveStrokeOutline;
+    mutable BLPath m_predictedStrokeOutline;
+    mutable bool m_outlineDirty = false;
+    mutable bool m_predictionDirty = false;
 
     // Google Ink Modeler Bridge
     std::unique_ptr<ink::stroke_model::StrokeModeler> m_googleModeler;

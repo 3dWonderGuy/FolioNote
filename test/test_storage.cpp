@@ -455,12 +455,46 @@ void TestStrokeTessellationAndRasterPerformance() {
     }
     auto t9 = std::chrono::high_resolution_clock::now();
     double pencilSingleContourMs = std::chrono::duration<double, std::milli>(t9 - t8).count() / 10.0;
-    std::cout << "  -> Frame rasterization time (pencil with Single Contour): " << pencilSingleContourMs << " ms per frame" << std::endl;
+    std::cout << "  -> Frame rasterization time (pencil with Single Contour 1000 pts): " << pencilSingleContourMs << " ms per frame" << std::endl;
+
+    // 10-second stroke benchmark (2500 points at 240Hz)
+    std::vector<StrokePoint> points2500;
+    points2500.reserve(2500);
+    for (int i = 0; i < 2500; ++i) {
+        double t = i * 0.02;
+        double x = 400.0 + 300.0 * std::cos(t * 0.5) + t * 5.0;
+        double y = 400.0 + 300.0 * std::sin(t * 0.5);
+        points2500.emplace_back(x, y, 0.4f + 0.1f * std::sin(t * 2.0));
+    }
+    auto tGen2500_0 = std::chrono::high_resolution_clock::now();
+    BLPath singleContour2500 = InkGenerator::GenerateStroke(points2500, CapType::Round, StrokePattern::Solid);
+    auto tGen2500_1 = std::chrono::high_resolution_clock::now();
+    double gen2500Ms = std::chrono::duration<double, std::milli>(tGen2500_1 - tGen2500_0).count();
+    std::cout << "  -> CPU generation time (Single Contour 2500 pts / 10 sec): " << gen2500Ms << " ms" << std::endl;
+
+    auto tRast2500_0 = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame < 10; ++frame) {
+        ctx.clear_all();
+        ctx.set_fill_style(BLRgba32(0xFF000000));
+        ctx.fill_path(singleContour2500);
+    }
+    auto tRast2500_1 = std::chrono::high_resolution_clock::now();
+    double solidRast2500Ms = std::chrono::duration<double, std::milli>(tRast2500_1 - tRast2500_0).count() / 10.0;
+    std::cout << "  -> Frame rasterization time (solid 2500 pts / 10 sec): " << solidRast2500Ms << " ms per frame" << std::endl;
+
+    auto tPencil2500_0 = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame < 10; ++frame) {
+        ctx.clear_all();
+        InkGenerator::RenderPencilStroke(ctx, points2500, 0.8f, BLRgba32(0xFF202020), &singleContour2500);
+    }
+    auto tPencil2500_1 = std::chrono::high_resolution_clock::now();
+    double pencil2500Ms = std::chrono::duration<double, std::milli>(tPencil2500_1 - tPencil2500_0).count() / 10.0;
+    std::cout << "  -> Frame rasterization time (pencil 2500 pts / 10 sec): " << pencil2500Ms << " ms per frame" << std::endl;
 
     // Assert that incremental stroke assembly and frame rendering meet real-time 120 FPS latency bounds
-    assert(appendMs < 10.0); // 1000 incremental points append should be sub-millisecond to few ms
-    assert(rasterMs < 8.33); // Solid rasterization must fit comfortably inside 120 FPS (8.33 ms)
-    assert(pencilMs < 10.0); // Textured pencil rasterization must remain fast and fluid
+    assert(appendMs < 10.0);
+    assert(rasterMs < 8.33);
+    assert(pencilMs < 10.0);
 }
 
 int main() {
