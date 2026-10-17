@@ -144,40 +144,49 @@ BLPath InkGenerator::TraceCap(const StrokePoint& pt, CapType capType) {
 }
 
 // Sub-tracer for Round circular endcap arc (Start and End)
+// Sub-tracer for smooth rounded endcap arcs
 static void TraceRoundCap(BLPath& path,
                           const StrokePoint& center,
                           const Point2D& startPt,
                           const Point2D& endPt,
-                          double vLen) {
+                          double ux, double uy) {
 
-    double r = center.r;
-
-    // 1. Calculate the angular sweep spanned by chord vLen on a circle of radius r:
-    //    Geometry: chord L = 2 * r * sin(sweep / 2)  ==>  sweep = 2 * asin(L / (2 * r))
-    //    For a full 180° endcap across diameter (vLen = 2r), halfRatio = 1.0 ==> sweep = PI.
-    double halfRatio = std::clamp(vLen / (2.0 * r), 0.0, 1.0);
-    double sweep = 2.0 * std::asin(halfRatio);
-
-    // Flat edge or degenerate angle: connect straight to endPt without generating arc points
-    if (sweep < 1e-4) {
+    double rStart = std::hypot(startPt.x - center.x, startPt.y - center.y);
+    double rEnd   = std::hypot(endPt.x - center.x, endPt.y - center.y);
+    if (rStart < 1e-6 && rEnd < 1e-6) {
         path.line_to(endPt.x, endPt.y);
         return;
     }
 
-    // 2. Start angle: exact angle where the ribbon wall arrived at startPt
     double aStart = std::atan2(startPt.y - center.y, startPt.x - center.x);
+    double aEnd   = std::atan2(endPt.y - center.y, endPt.x - center.x);
 
-    // 3. Scale vertex count dynamically with angle (12 steps for full 180° cap, fewer for tight corners)
-    const int arcSteps = std::max(2, static_cast<int>(std::ceil(12.0 * (sweep / M_PI))));
+    // Compute clockwise angular distance from aStart to aEnd in (0, 2*PI]
+    double sweepCW = aStart - aEnd;
+    while (sweepCW <= 0.0) sweepCW += 2.0 * M_PI;
+    while (sweepCW > 2.0 * M_PI) sweepCW -= 2.0 * M_PI;
 
-    // 4. Sample intermediate vertices sweeping outward from startPt towards endPt
+    // Check if clockwise arc midpoint bows in outward direction (ux, uy)
+    double midCW = aStart - 0.5 * sweepCW;
+    double dotCW = std::cos(midCW) * ux + std::sin(midCW) * uy;
+
+    double sweep = (dotCW >= 0.0) ? -sweepCW : (2.0 * M_PI - sweepCW);
+    double absSweep = std::abs(sweep);
+
+    if (absSweep < 1e-4) {
+        path.line_to(endPt.x, endPt.y);
+        return;
+    }
+
+    const int arcSteps = std::clamp(static_cast<int>(std::ceil(12.0 * (absSweep / M_PI))), 2, 12);
     for (int i = 1; i < arcSteps; ++i) {
         double t = static_cast<double>(i) / arcSteps;
-        double a = aStart - t * sweep;
+        double a = aStart + t * sweep;
+        double r = rStart + t * (rEnd - rStart);
         path.line_to(center.x + std::cos(a) * r, center.y + std::sin(a) * r);
     }
 
-    // 5. Seal arc to the exact destination point
+    // Seal arc to the exact destination point
     path.line_to(endPt.x, endPt.y);
 }
 
@@ -244,7 +253,7 @@ void InkGenerator::TraceCap(BLPath& path,
     if (capType == CapType::Square || capType == CapType::Chisel) {
         TracePolygonCap(path, center, startPt, endPt, ux, uy, vx, vy, capType);
     } else {
-        TraceRoundCap(path, center, startPt, endPt, vLen);
+        TraceRoundCap(path, center, startPt, endPt, ux, uy);
     }
 }
 
@@ -266,6 +275,7 @@ BLPath InkGenerator::BuildStroke(const std::vector<StrokePoint>& centerline,
     return ApplyDiscontinuousPattern(centerline, pattern);
 }
 
+// =============================================================================
 // =============================================================================
 // 4. CONTINUOUS SOLID RIBBON TESSELLATION
 // =============================================================================
@@ -290,50 +300,172 @@ BLPath InkGenerator::BuildSolidRibbon(const std::vector<StrokePoint>& pts, CapTy
 
     const size_t N = cleanPts.size();
 
-    // 2. Add joint caps at every vertex (oriented CW to match connecting quads)
-    if (capType == CapType::Round) {
-        for (size_t i = 0; i < N; ++i) {
-            if (cleanPts[i].r <= 0.002f) continue;
-            path.add_circle(BLCircle(cleanPts[i].x, cleanPts[i].y, cleanPts[i].r), BL_GEOMETRY_DIRECTION_CW);
-        }
-    } else {
-        // Oriented polygon cap for Square / Chisel nibs
-        for (size_t i = 0; i < N; ++i) {
-            if (cleanPts[i].r <= 0.002f) continue;
-            auto nibVerts = GetNibVertices(capType, cleanPts[i].r);
-            if (!nibVerts.empty()) {
-                path.move_to(cleanPts[i].x + nibVerts[0].x, cleanPts[i].y + nibVerts[0].y);
-                for (size_t k = 1; k < nibVerts.size(); ++k) {
-                    path.line_to(cleanPts[i].x + nibVerts[k].x, cleanPts[i].y + nibVerts[k].y);
-                }
-                path.close();
+    // 2. Precompute segment unit tangents and normals
+    struct SegmentInfo {
+        double len = 0.0;
+        double ux = 1.0;
+        double uy = 0.0;
+        double nx = 0.0;
+        double ny = 1.0;
+    };
+
+    std::vector<SegmentInfo> segs(N - 1);
+    for (size_t i = 0; i < N - 1; ++i) {
+        double dx = cleanPts[i + 1].x - cleanPts[i].x;
+        double dy = cleanPts[i + 1].y - cleanPts[i].y;
+        double len = std::hypot(dx, dy);
+        segs[i].len = len;
+        if (len > 1e-7) {
+            segs[i].ux = dx / len;
+            segs[i].uy = dy / len;
+            segs[i].nx = -segs[i].uy;
+            segs[i].ny =  segs[i].ux;
+        } else {
+            if (i > 0) {
+                segs[i] = segs[i - 1];
+            } else {
+                segs[i].ux = 1.0;
+                segs[i].uy = 0.0;
+                segs[i].nx = 0.0;
+                segs[i].ny = 1.0;
             }
         }
     }
 
-    // 3. Add connecting quads between consecutive points (CW winding: L0 -> R0 -> R1 -> L1 -> Close)
-    for (size_t i = 0; i < N - 1; ++i) {
-        if (cleanPts[i].r <= 0.002f && cleanPts[i + 1].r <= 0.002f) continue;
-        double dx = cleanPts[i + 1].x - cleanPts[i].x;
-        double dy = cleanPts[i + 1].y - cleanPts[i].y;
-        double len = std::hypot(dx, dy);
-        if (len < 1e-6) continue;
+    std::vector<Point2D> leftPts;
+    std::vector<Point2D> rightPts;
+    leftPts.reserve(N * 2);
+    rightPts.reserve(N * 2);
 
-        double nx = -dy / len;
-        double ny =  dx / len;
-
-        Point2D offL0, offR0, offL1, offR1;
-        GetRibbonOffsets(capType, std::max(0.0f, cleanPts[i].r),     nx, ny, offL0, offR0);
-        GetRibbonOffsets(capType, std::max(0.0f, cleanPts[i + 1].r), nx, ny, offL1, offR1);
-
-        // CW Quad: L0 -> R0 -> R1 -> L1 -> Close
-        path.move_to(cleanPts[i].x     + offL0.x, cleanPts[i].y     + offL0.y);
-        path.line_to(cleanPts[i].x     + offR0.x, cleanPts[i].y     + offR0.y);
-        path.line_to(cleanPts[i + 1].x + offR1.x, cleanPts[i + 1].y + offR1.y);
-        path.line_to(cleanPts[i + 1].x + offL1.x, cleanPts[i + 1].y + offL1.y);
-        path.close();
+    // 3. Start point P0
+    {
+        Point2D offL0, offR0;
+        GetRibbonOffsets(capType, std::max(0.0f, cleanPts[0].r), segs[0].nx, segs[0].ny, offL0, offR0);
+        leftPts.push_back({ cleanPts[0].x + offL0.x, cleanPts[0].y + offL0.y });
+        rightPts.push_back({ cleanPts[0].x + offR0.x, cleanPts[0].y + offR0.y });
     }
 
+    // 4. Interior vertices Pi (i = 1 .. N - 2): Exact closed-form angle bisector for inner corner & outer miter/arc
+    for (size_t i = 1; i < N - 1; ++i) {
+        const auto& sIn = segs[i - 1];
+        const auto& sOut = segs[i];
+        const auto& Pi = cleanPts[i];
+        double r = std::max(0.0f, Pi.r);
+
+        Point2D offL_in, offR_in, offL_out, offR_out;
+        GetRibbonOffsets(capType, r, sIn.nx, sIn.ny, offL_in, offR_in);
+        GetRibbonOffsets(capType, r, sOut.nx, sOut.ny, offL_out, offR_out);
+
+        double cross = sIn.ux * sOut.uy - sIn.uy * sOut.ux;
+        double dot   = sIn.ux * sOut.ux + sIn.uy * sOut.uy;
+        double turnAngle = std::atan2(std::abs(cross), dot);
+
+        if (std::abs(cross) < 1e-4 && dot > 0.0) {
+            // Collinear: smooth continuous offset
+            leftPts.push_back({ Pi.x + offL_in.x, Pi.y + offL_in.y });
+            rightPts.push_back({ Pi.x + offR_in.x, Pi.y + offR_in.y });
+            continue;
+        }
+
+        // Determine inner vs outer offsets based on turn direction:
+        // cross > 0: Left turn (CCW) -> Left is inner, Right is outer
+        // cross < 0: Right turn (CW) -> Right is inner, Left is outer
+        const Point2D& offIn_inner  = (cross > 0.0) ? offL_in  : offR_in;
+        const Point2D& offOut_inner = (cross > 0.0) ? offL_out : offR_out;
+        const Point2D& offIn_outer  = (cross > 0.0) ? offR_in  : offL_in;
+        const Point2D& offOut_outer = (cross > 0.0) ? offR_out : offL_out;
+
+        // 1. INNER CORNER: Closed-form bisector intersection (eliminates notches, spikes, and division bugs)
+        Point2D innerCorner;
+        double sumInX = offIn_inner.x + offOut_inner.x;
+        double sumInY = offIn_inner.y + offOut_inner.y;
+        double bInLen = std::hypot(sumInX, sumInY);
+        if (bInLen > 1e-6) {
+            double bInX = sumInX / bInLen;
+            double bInY = sumInY / bInLen;
+            double cosHalf = std::sqrt(std::max(0.0, (1.0 + dot) * 0.5));
+            double miterRatio = (cosHalf > 1e-4) ? (1.0 / cosHalf) : 2.0;
+            double maxAllowedMiter = (0.85 * std::min(sIn.len, sOut.len)) / std::max(0.01, r);
+            double clampedMiter = std::clamp(miterRatio, 1.0, std::max(1.0, std::min(1.5, maxAllowedMiter)));
+            innerCorner = { Pi.x + bInX * (r * clampedMiter), Pi.y + bInY * (r * clampedMiter) };
+        } else {
+            innerCorner = { Pi.x + (offIn_inner.x + offOut_inner.x) * 0.5,
+                            Pi.y + (offIn_inner.y + offOut_inner.y) * 0.5 };
+        }
+
+        // 2. OUTER CORNER: Miter bisector for gentle curves (<= 45 deg) or smooth arc/bevel for sharper elbows
+        auto emitOuter = [&](std::vector<Point2D>& outPts) {
+            if (turnAngle <= M_PI * 0.25) {
+                // Gentle turn: single miter corner along outer bisector
+                double sumOutX = offIn_outer.x + offOut_outer.x;
+                double sumOutY = offIn_outer.y + offOut_outer.y;
+                double bOutLen = std::hypot(sumOutX, sumOutY);
+                if (bOutLen > 1e-6) {
+                    double bOutX = sumOutX / bOutLen;
+                    double bOutY = sumOutY / bOutLen;
+                    double cosHalf = std::sqrt(std::max(0.0, (1.0 + dot) * 0.5));
+                    double miterRatio = std::min(1.414, 1.0 / std::max(0.707, cosHalf));
+                    outPts.push_back({ Pi.x + bOutX * (r * miterRatio), Pi.y + bOutY * (r * miterRatio) });
+                } else {
+                    outPts.push_back({ Pi.x + offIn_outer.x, Pi.y + offIn_outer.y });
+                    outPts.push_back({ Pi.x + offOut_outer.x, Pi.y + offOut_outer.y });
+                }
+            } else if (capType == CapType::Round) {
+                // Sharper turn: round arc around outer elbow
+                int steps = std::clamp(static_cast<int>(std::ceil(turnAngle / (M_PI / 6.0))), 2, 5);
+                double aStart = std::atan2(offIn_outer.y, offIn_outer.x);
+                double aEnd   = std::atan2(offOut_outer.y, offOut_outer.x);
+                double aDiff  = aEnd - aStart;
+                while (aDiff < -M_PI) aDiff += 2.0 * M_PI;
+                while (aDiff >  M_PI) aDiff -= 2.0 * M_PI;
+                for (int s = 0; s <= steps; ++s) {
+                    double t = static_cast<double>(s) / steps;
+                    double a = aStart + t * aDiff;
+                    outPts.push_back({ Pi.x + std::cos(a) * r, Pi.y + std::sin(a) * r });
+                }
+            } else {
+                // Bevel join for square/chisel nibs
+                outPts.push_back({ Pi.x + offIn_outer.x, Pi.y + offIn_outer.y });
+                outPts.push_back({ Pi.x + offOut_outer.x, Pi.y + offOut_outer.y });
+            }
+        };
+
+        if (cross > 0.0) {
+            leftPts.push_back(innerCorner);
+            emitOuter(rightPts);
+        } else {
+            emitOuter(leftPts);
+            rightPts.push_back(innerCorner);
+        }
+    }
+
+    // 5. End point P_{N-1}
+    {
+        const auto& lastSeg = segs.back();
+        Point2D offL_end, offR_end;
+        GetRibbonOffsets(capType, std::max(0.0f, cleanPts.back().r), lastSeg.nx, lastSeg.ny, offL_end, offR_end);
+        leftPts.push_back({ cleanPts.back().x + offL_end.x, cleanPts.back().y + offL_end.y });
+        rightPts.push_back({ cleanPts.back().x + offR_end.x, cleanPts.back().y + offR_end.y });
+    }
+
+    // 6. Extrude single continuous closed contour with head/tail endcaps
+    path.move_to(leftPts[0].x, leftPts[0].y);
+
+    for (size_t i = 1; i < leftPts.size(); ++i) {
+        path.line_to(leftPts[i].x, leftPts[i].y);
+    }
+
+    // Tail Cap: leftPts.back() -> rightPts.back() around cleanPts.back()
+    TraceCap(path, cleanPts.back(), leftPts.back(), rightPts.back(), capType, /*isTail=*/true);
+
+    for (size_t i = rightPts.size(); i > 0; --i) {
+        path.line_to(rightPts[i - 1].x, rightPts[i - 1].y);
+    }
+
+    // Head Cap: rightPts[0] -> leftPts[0] around cleanPts.front()
+    TraceCap(path, cleanPts.front(), leftPts[0], rightPts[0], capType, /*isTail=*/false);
+
+    path.close();
     return path;
 }
 
@@ -412,4 +544,5 @@ void InkGenerator::AppendRibbonSegments(BLPath& path,
         path.close();
     }
 }
+
 

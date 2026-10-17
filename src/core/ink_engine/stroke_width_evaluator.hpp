@@ -32,17 +32,29 @@ public:
      * 5. ApplySmoothingEMA(): Dampens transitions against previous point to eliminate jitter.
      *
     /**
+     * @brief Computes dynamic stroke width from explicit telemetry values with pre-resolved tilt radius.
+     */
+    [[nodiscard]] static float CalculateDynamicWidthWithTiltRad(float baseWidth, float pressure,
+                                                                float speed, float tiltRad,
+                                                                float previousWidth, float zoomScale,
+                                                                const InkingConfig& config) noexcept {
+        float pressureWidth = ScaleWidthByPressure(baseWidth, pressure, config);
+        float velocityFactor = ComputeVelocityThinning(speed, zoomScale, config);
+        float tiltFactor = ComputeTiltModulation(tiltRad, config);
+        float targetWidth = pressureWidth * velocityFactor * tiltFactor;
+        return ApplySmoothingEMA(previousWidth, targetWidth, config.dynamicWidthSmoothing);
+    }
+
+    /**
      * @brief Computes dynamic stroke width from explicit telemetry values.
      */
     [[nodiscard]] static float CalculateDynamicWidth(float baseWidth, float pressure,
                                                      float speed, float tiltX, float tiltY,
                                                      float previousWidth, float zoomScale,
                                                      const InkingConfig& config) noexcept {
-        float pressureWidth = ScaleWidthByPressure(baseWidth, pressure, config);
-        float velocityFactor = ComputeVelocityThinning(speed, zoomScale, config);
-        float tiltFactor = ComputeTiltModulation(tiltX, tiltY, config);
-        float targetWidth = pressureWidth * velocityFactor * tiltFactor;
-        return ApplySmoothingEMA(previousWidth, targetWidth, config.dynamicWidthSmoothing);
+        float tiltRad = (config.useTilt && (tiltX != 0.0f || tiltY != 0.0f)) ? std::hypot(tiltX, tiltY) : 0.0f;
+        return CalculateDynamicWidthWithTiltRad(baseWidth, pressure, speed, tiltRad,
+                                                previousWidth, zoomScale, config);
     }
 
     /**
@@ -75,7 +87,7 @@ private:
 
         float norm = (rawPressure - config.pressureDeadzoneMin) /
                      (config.pressureSaturationMax - config.pressureDeadzoneMin);
-        float curved = std::pow(norm, config.pressureGamma);
+        float curved = (config.pressureGamma == 1.0f) ? norm : std::pow(norm, config.pressureGamma);
         return config.minRelativeThicknessFraction +
                (1.0f - config.minRelativeThicknessFraction) *
                    std::clamp(curved, 0.0f, 1.0f);
@@ -122,20 +134,14 @@ private:
     }
 
     /**
-     * @brief Computes tilt modulation factor (e.g. pencil shading / chisel flat angle).
-     * @param tiltX Stylus tilt angle along X axis in radians.
-     * @param tiltY Stylus tilt angle along Y axis in radians.
+     * @brief Computes tilt modulation factor from pre-resolved tilt radius.
+     * @param tiltRad Stylus tilt magnitude in radians from normal.
      * @param config Active inking configuration.
      * @return Multiplier factor for stroke width (1.0 = no tilt alteration).
      */
-    [[nodiscard]] static float ComputeTiltModulation(float tiltX, float tiltY,
+    [[nodiscard]] static float ComputeTiltModulation(float tiltRad,
                                                      const InkingConfig& config) noexcept {
-        if (!config.useTilt) {
-            return 1.0f;
-        }
-
-        float tiltRad = std::hypot(tiltX, tiltY);
-        if (tiltRad <= config.tiltDeadzoneRad) {
+        if (!config.useTilt || tiltRad <= config.tiltDeadzoneRad) {
             return 1.0f;
         }
         if (tiltRad >= config.tiltMaxAngleRad) {
@@ -151,6 +157,21 @@ private:
         // Smoothstep interpolation (Hermite polynomial) for natural shading onset
         float smoothT = t * t * (3.0f - 2.0f * t);
         return 1.0f + smoothT * (config.maxTiltWidthMultiplier - 1.0f);
+    }
+
+    /**
+     * @brief Computes tilt modulation factor (e.g. pencil shading / chisel flat angle).
+     * @param tiltX Stylus tilt angle along X axis in radians.
+     * @param tiltY Stylus tilt angle along Y axis in radians.
+     * @param config Active inking configuration.
+     * @return Multiplier factor for stroke width (1.0 = no tilt alteration).
+     */
+    [[nodiscard]] static float ComputeTiltModulation(float tiltX, float tiltY,
+                                                     const InkingConfig& config) noexcept {
+        if (!config.useTilt || (tiltX == 0.0f && tiltY == 0.0f)) {
+            return 1.0f;
+        }
+        return ComputeTiltModulation(std::hypot(tiltX, tiltY), config);
     }
 
     /**

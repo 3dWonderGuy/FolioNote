@@ -220,29 +220,33 @@ BLPath InkGenerator::BuildDashDotPattern(const std::vector<StrokePoint>& pts) {
 
 namespace {
 
-// Fast deterministic integer hash on a 256x256 periodic lattice (returns [0.0, 1.0])
-inline float HashLattice256(int x, int y, uint32_t seed) noexcept {
-    uint32_t ux = static_cast<uint32_t>(x & 255);
-    uint32_t uy = static_cast<uint32_t>(y & 255);
-    uint32_t h = seed ^ (ux * 374761393U) ^ (uy * 668265263U);
-    h = (h ^ (h >> 13)) * 1274126177U;
-    h ^= (h >> 16);
+// Fast deterministic integer hash on a 128x128 periodic lattice (returns [0.0, 1.0])
+inline float HashLattice128(int x, int y, uint32_t seed) noexcept {
+    uint32_t h = static_cast<uint32_t>((x & 127) | ((y & 127) << 7)) ^ seed;
+    h ^= h >> 16;
+    h *= 0x45d9f3b;
+    h ^= h >> 16;
+    h *= 0x45d9f3b;
+    h ^= h >> 16;
     return static_cast<float>(h & 0xFFFF) / 65535.0f;
 }
 
-// Smooth bilinearly interpolated value noise on a seamless 256x256 torus
-inline float SmoothNoise256(float x, float y, uint32_t seed) noexcept {
-    int x0 = static_cast<int>(std::floor(x));
-    int y0 = static_cast<int>(std::floor(y));
-    float fx = x - static_cast<float>(x0);
-    float fy = y - static_cast<float>(y0);
+// Smooth bilinearly interpolated value noise on a seamless 128x128 torus
+inline float SmoothNoise128(float x, float y, uint32_t seed) noexcept {
+    int xi = static_cast<int>(std::floor(x));
+    int yi = static_cast<int>(std::floor(y));
+    float fx = x - static_cast<float>(xi);
+    float fy = y - static_cast<float>(yi);
+
+    int x0 = xi & 127;
+    int y0 = yi & 127;
     float u = fx * fx * (3.0f - 2.0f * fx);
     float v = fy * fy * (3.0f - 2.0f * fy);
 
-    float n00 = HashLattice256(x0,     y0,     seed);
-    float n10 = HashLattice256(x0 + 1, y0,     seed);
-    float n01 = HashLattice256(x0,     y0 + 1, seed);
-    float n11 = HashLattice256(x0 + 1, y0 + 1, seed);
+    float n00 = HashLattice128(x0,     y0,     seed);
+    float n10 = HashLattice128(x0 + 1, y0,     seed);
+    float n01 = HashLattice128(x0,     y0 + 1, seed);
+    float n11 = HashLattice128(x0 + 1, y0 + 1, seed);
 
     float nx0 = n00 + u * (n10 - n00);
     float nx1 = n01 + u * (n11 - n01);
@@ -251,9 +255,13 @@ inline float SmoothNoise256(float x, float y, uint32_t seed) noexcept {
 
 struct PencilTextureSet {
     uint32_t rgbaKey = 0;
-    BLImage  tiltShadeImg; ///< Soft grating grain for wide tilted side-shading envelope
-    BLImage  baseGrainImg; ///< Dark, crisp 2B graphite micro-grain for initial & normal strokes
-    BLImage  darkCoreImg;  ///< Concentrated deep graphite layer that fills micro-pores under firm pressure
+    BLImage  sparseGrainImg; ///< Original sparse paper tooth grain (tilted side-shading)
+    BLImage  midGrainImg;    ///< Original intermediate paper tooth grain (darkened 2B pencil)
+    BLImage  denseCoreImg;   ///< Original dense graphite core
+    BLPattern patSparse0;    ///< Pre-scaled repeating pattern for full contact patch (Band 0)
+    BLPattern patSparse1;    ///< Pre-scaled repeating pattern offset by (37, 53) (Band 1)
+    BLPattern patMid;        ///< Pre-scaled repeating pattern for intermediate concentration (Band 2)
+    BLPattern patDense;      ///< Pre-scaled repeating pattern for dense graphite core (Band 3)
 };
 
 const PencilTextureSet& GetOrCreatePencilTextures(BLRgba32 baseColor) {
@@ -263,7 +271,7 @@ const PencilTextureSet& GetOrCreatePencilTextures(BLRgba32 baseColor) {
 
     uint32_t key = baseColor.value;
     for (size_t i = 0; i < kCacheCapacity; ++i) {
-        if (s_cache[i].rgbaKey == key && !s_cache[i].baseGrainImg.is_empty()) {
+        if (s_cache[i].rgbaKey == key && !s_cache[i].denseCoreImg.is_empty()) {
             return s_cache[i];
         }
     }
@@ -272,15 +280,15 @@ const PencilTextureSet& GetOrCreatePencilTextures(BLRgba32 baseColor) {
     s_nextSlot = (s_nextSlot + 1) % kCacheCapacity;
     slot.rgbaKey = key;
 
-    constexpr int kSize = 256;
-    slot.tiltShadeImg.create(kSize, kSize, BL_FORMAT_PRGB32);
-    slot.baseGrainImg.create(kSize, kSize, BL_FORMAT_PRGB32);
-    slot.darkCoreImg.create(kSize, kSize, BL_FORMAT_PRGB32);
+    constexpr int kSize = 128;
+    slot.sparseGrainImg.create(kSize, kSize, BL_FORMAT_PRGB32);
+    slot.midGrainImg.create(kSize, kSize, BL_FORMAT_PRGB32);
+    slot.denseCoreImg.create(kSize, kSize, BL_FORMAT_PRGB32);
 
-    BLImageData shadeData{}, baseData{}, darkData{};
-    slot.tiltShadeImg.make_mutable(&shadeData);
-    slot.baseGrainImg.make_mutable(&baseData);
-    slot.darkCoreImg.make_mutable(&darkData);
+    BLImageData sparseData{}, midData{}, denseData{};
+    slot.sparseGrainImg.make_mutable(&sparseData);
+    slot.midGrainImg.make_mutable(&midData);
+    slot.denseCoreImg.make_mutable(&denseData);
 
     int baseR = baseColor.r();
     int baseG = baseColor.g();
@@ -288,58 +296,73 @@ const PencilTextureSet& GetOrCreatePencilTextures(BLRgba32 baseColor) {
     float baseA = static_cast<float>(baseColor.a()) / 255.0f;
 
     for (int y = 0; y < kSize; ++y) {
-        auto* rowShade = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(shadeData.pixel_data) + y * shadeData.stride);
-        auto* rowBase  = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(baseData.pixel_data)  + y * baseData.stride);
-        auto* rowDark  = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(darkData.pixel_data)  + y * darkData.stride);
+        auto* rowSparse = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(sparseData.pixel_data) + y * sparseData.stride);
+        auto* rowMid    = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(midData.pixel_data)    + y * midData.stride);
+        auto* rowDense  = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(denseData.pixel_data)  + y * denseData.stride);
 
         for (int x = 0; x < kSize; ++x) {
-            // High-frequency micro-crystalline paper tooth heightfield (256x256 seamless)
-            float fine  = HashLattice256(x, y, 101);
-            float micro = SmoothNoise256(x * 0.75f, y * 0.75f, 202);
-            float tooth = 0.72f * fine + 0.28f * micro;
+            // Multi-scale paper tooth heightfield (seamless 128x128)
+            float fine   = HashLattice128(x, y, 101);
+            float med    = SmoothNoise128(x * 0.5f,  y * 0.5f,  202);
+            float coarse = SmoothNoise128(x * 0.25f, y * 0.25f, 303);
+            float tooth  = 0.45f * fine + 0.35f * med + 0.20f * coarse;
 
-            // Subtle graphite mineral luminance sheen (-10% to +10%)
-            float colorNoise = (HashLattice256(x, y, 404) - 0.5f) * 2.0f;
+            // Graphite mineral color/luminance noise (-14% to +14%)
+            float colorNoise = (HashLattice128(x, y, 404) - 0.5f) * 2.0f;
 
-            // 1. TILT SHADING GRAIN (Grating gradient when stylus is tilted on its side):
-            float shadeAlpha = 0.0f;
-            if (tooth > 0.26f) {
-                float norm = (tooth - 0.26f) / 0.74f;
-                shadeAlpha = std::clamp(0.25f + norm * 0.58f, 0.0f, 1.0f) * baseA;
+            // 1. SPARSE GRAIN (Light pressure / Outer Tilt Shading):
+            float sparseAlpha = 0.0f;
+            if (tooth > 0.34f) {
+                float norm = (tooth - 0.34f) / 0.66f;
+                sparseAlpha = std::clamp(std::pow(norm, 1.10f) * 0.72f, 0.0f, 1.0f) * baseA;
             }
-            int shR = std::clamp(static_cast<int>(baseR * (0.85f + 0.12f * colorNoise)), 0, 255);
-            int shG = std::clamp(static_cast<int>(baseG * (0.85f + 0.12f * colorNoise)), 0, 255);
-            int shB = std::clamp(static_cast<int>(baseB * (0.85f + 0.13f * colorNoise)), 0, 255);
-            uint32_t shA = static_cast<uint32_t>(std::round(shadeAlpha * 255.0f));
-            rowShade[x] = (shA << 24) | (((shR * shA) / 255) << 16) | (((shG * shA) / 255) << 8) | ((shB * shA) / 255);
+            int sR = std::clamp(static_cast<int>(baseR * (1.10f + 0.14f * colorNoise)), 0, 255);
+            int sG = std::clamp(static_cast<int>(baseG * (1.10f + 0.14f * colorNoise)), 0, 255);
+            int sB = std::clamp(static_cast<int>(baseB * (1.10f + 0.15f * colorNoise)), 0, 255);
+            uint32_t sA = static_cast<uint32_t>(std::round(sparseAlpha * 255.0f));
+            rowSparse[x] = (sA << 24) | (((sR * sA) / 255) << 16) | (((sG * sA) / 255) << 8) | ((sB * sA) / 255);
 
-            // 2. BASE 2B GRAPHITE GRAIN (Dark, crisp initial lines with fine micro-tooth translucency):
-            //    88% of texels form dense dark graphite ridges ([0.78..0.98] alpha);
-            //    12% form tiny translucent paper-tooth micro-pores ([0.42..0.78] alpha).
-            float baseAlpha = 0.0f;
-            if (tooth > 0.18f) {
-                float norm = (tooth - 0.18f) / 0.82f;
-                baseAlpha = std::clamp(0.78f + norm * 0.20f, 0.0f, 1.0f) * baseA;
-            } else {
-                float pore = tooth / 0.18f;
-                baseAlpha = std::clamp(0.42f + pore * 0.36f, 0.0f, 1.0f) * baseA;
+            // 2. MID GRAIN (Intermediate concentration band — stacks over Sparse):
+            float midTooth = 0.45f * HashLattice128(x, y, 505) +
+                             0.35f * SmoothNoise128(x * 0.5f + 17.0f, y * 0.5f + 31.0f, 606) +
+                             0.20f * coarse;
+            float midAlpha = 0.0f;
+            if (midTooth > 0.24f) {
+                float norm = (midTooth - 0.24f) / 0.76f;
+                midAlpha = std::clamp(0.18f + norm * 0.52f, 0.0f, 1.0f) * baseA;
             }
-            int bR = std::clamp(static_cast<int>(baseR * (0.72f + 0.10f * colorNoise)), 0, 255);
-            int bG = std::clamp(static_cast<int>(baseG * (0.72f + 0.10f * colorNoise)), 0, 255);
-            int bB = std::clamp(static_cast<int>(baseB * (0.72f + 0.11f * colorNoise)), 0, 255);
-            uint32_t bA = static_cast<uint32_t>(std::round(baseAlpha * 255.0f));
-            rowBase[x] = (bA << 24) | (((bR * bA) / 255) << 16) | (((bG * bA) / 255) << 8) | ((bB * bA) / 255);
+            int mR = std::clamp(static_cast<int>(baseR * (0.90f + 0.10f * colorNoise)), 0, 255);
+            int mG = std::clamp(static_cast<int>(baseG * (0.90f + 0.10f * colorNoise)), 0, 255);
+            int mB = std::clamp(static_cast<int>(baseB * (0.90f + 0.11f * colorNoise)), 0, 255);
+            uint32_t mA = static_cast<uint32_t>(std::round(midAlpha * 255.0f));
+            rowMid[x] = (mA << 24) | (((mR * mA) / 255) << 16) | (((mG * mA) / 255) << 8) | ((mB * mA) / 255);
 
-            // 3. CONCENTRATED DARK GRAPHITE CORE (Fills micro-pores and deepens graphite under firm pressure):
-            float denseNoise = HashLattice256(x, y, 707);
-            float darkAlpha = std::clamp(0.62f + 0.34f * denseNoise, 0.0f, 1.0f) * baseA;
-            int dR = std::clamp(static_cast<int>(baseR * (0.48f + 0.05f * colorNoise)), 0, 255);
-            int dG = std::clamp(static_cast<int>(baseG * (0.48f + 0.05f * colorNoise)), 0, 255);
-            int dB = std::clamp(static_cast<int>(baseB * (0.48f + 0.06f * colorNoise)), 0, 255);
-            uint32_t dA = static_cast<uint32_t>(std::round(darkAlpha * 255.0f));
-            rowDark[x] = (dA << 24) | (((dR * dA) / 255) << 16) | (((dG * dA) / 255) << 8) | ((dB * dA) / 255);
+            // 3. DENSE CONCENTRATED CORE (Stacks over Sparse + Mid to suppress noise & darken):
+            float denseNoise = HashLattice128(x, y, 707);
+            float denseAlpha = std::clamp(0.45f + 0.35f * denseNoise, 0.0f, 1.0f) * baseA;
+            int dR = std::clamp(static_cast<int>(baseR * (0.68f + 0.06f * colorNoise)), 0, 255);
+            int dG = std::clamp(static_cast<int>(baseG * (0.68f + 0.06f * colorNoise)), 0, 255);
+            int dB = std::clamp(static_cast<int>(baseB * (0.68f + 0.07f * colorNoise)), 0, 255);
+            uint32_t dA = static_cast<uint32_t>(std::round(denseAlpha * 255.0f));
+            rowDense[x] = (dA << 24) | (((dR * dA) / 255) << 16) | (((dG * dA) / 255) << 8) | ((dB * dA) / 255);
         }
     }
+
+    // Pre-configure patterns and world-space scaling once per color (1 grain texel = 0.045 mm)
+    constexpr double kGrainScaleMm = 0.045;
+    slot.patSparse0.create(slot.sparseGrainImg, BL_EXTEND_MODE_REPEAT);
+    slot.patSparse0.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
+
+    BLMatrix2D m1 = BLMatrix2D::make_scaling(kGrainScaleMm);
+    m1.translate(37.0, 53.0);
+    slot.patSparse1.create(slot.sparseGrainImg, BL_EXTEND_MODE_REPEAT);
+    slot.patSparse1.set_transform(m1);
+
+    slot.patMid.create(slot.midGrainImg, BL_EXTEND_MODE_REPEAT);
+    slot.patMid.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
+
+    slot.patDense.create(slot.denseCoreImg, BL_EXTEND_MODE_REPEAT);
+    slot.patDense.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
 
     return slot;
 }
@@ -349,19 +372,35 @@ const PencilTextureSet& GetOrCreatePencilTextures(BLRgba32 baseColor) {
 BLPath InkGenerator::BuildTexturedPencilPattern(const std::vector<StrokePoint>& pts) {
     if (pts.empty()) return BLPath{};
 
+    // Check if tilt is active anywhere; if no tilt across stroke, bypass outerPts allocation
+    bool hasTilt = false;
+    for (const auto& pt : pts) {
+        if (pt.tiltX != 0.0f || pt.tiltY != 0.0f) {
+            hasTilt = true;
+            break;
+        }
+    }
+    if (!hasTilt) {
+        return BuildSolidRibbon(pts, CapType::Round);
+    }
+
     // Build the clean outer envelope contour (including directional tilt offset if tilted)
     std::vector<StrokePoint> outerPts(pts.size());
     for (size_t i = 0; i < pts.size(); ++i) {
         const auto& pt = pts[i];
+        if (pt.tiltX == 0.0f && pt.tiltY == 0.0f) {
+            outerPts[i] = pt;
+            continue;
+        }
         float tiltMag = std::hypot(pt.tiltX, pt.tiltY);
         double ux = (tiltMag > 1e-4f) ? (pt.tiltX / tiltMag) : 0.0;
         double uy = (tiltMag > 1e-4f) ? (pt.tiltY / tiltMag) : 0.0;
 
         float tiltFactor = 1.0f;
-        if (tiltMag > 0.22f) {
-            float t = std::clamp((tiltMag - 0.22f) / (1.05f - 0.22f), 0.0f, 1.0f);
+        if (tiltMag > 0.20f) {
+            float t = std::clamp((tiltMag - 0.20f) / (1.10f - 0.20f), 0.0f, 1.0f);
             float smoothT = t * t * (3.0f - 2.0f * t);
-            tiltFactor = 1.0f + smoothT * 1.8f;
+            tiltFactor = 1.0f + smoothT * 1.5f;
         }
         float rTip = pt.r / tiltFactor;
         float rTiltExtra = std::max(0.0f, pt.r - rTip);
@@ -380,87 +419,92 @@ void InkGenerator::RenderPencilStroke(BLContext& ctx,
     if (pts.empty() || color.a() == 0) return;
 
     const auto& tex = GetOrCreatePencilTextures(color);
-
-    // 1 grain texel = 0.022 mm in world coordinates (~1150 DPI micro-grain resolution)
-    constexpr double kGrainScaleMm = 0.022;
-
-    BLPattern patShade(tex.tiltShadeImg, BL_EXTEND_MODE_REPEAT);
-    patShade.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
-
-    BLPattern patBase(tex.baseGrainImg, BL_EXTEND_MODE_REPEAT);
-    patBase.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
-
-    BLPattern patDark(tex.darkCoreImg, BL_EXTEND_MODE_REPEAT);
-    patDark.set_transform(BLMatrix2D::make_scaling(kGrainScaleMm));
-
-    // Reuse pre-built stroke outline when available (O(1) zero-allocation fast path!)
-    BLPath localOutline;
-    const BLPath* envelopePath = prebuiltOutline;
-    if (!envelopePath || envelopePath->is_empty()) {
-        localOutline = BuildTexturedPencilPattern(pts);
-        envelopePath = &localOutline;
-    }
-    if (envelopePath->is_empty()) return;
-
-    // Sample average pressure and check whether stylus tilt shading is active
     const size_t N = pts.size();
-    float nominalTipR = (baseWidthMm > 0.01f) ? (baseWidthMm * 0.5f) : pts[0].r;
-    float sumPressure = 0.0f;
-    float maxTiltExtra = 0.0f;
 
-    // Sample up to 64 evenly-spaced points so stats remain O(1) even on 10,000-point strokes
-    const size_t step = std::max<size_t>(1, N / 64);
-    size_t count = 0;
-    for (size_t i = 0; i < N; i += step) {
+    // Zero-allocation thread-local scratch vectors for the 4 concentric bands
+    thread_local std::vector<StrokePoint> s_band0, s_band1, s_band2, s_band3;
+    s_band0.clear(); s_band0.resize(N);
+    s_band1.clear(); s_band1.resize(N);
+    s_band2.clear(); s_band2.resize(N);
+    s_band3.clear(); s_band3.resize(N);
+
+    float nominalTipR = (baseWidthMm > 0.01f) ? (baseWidthMm * 0.5f) : pts[0].r;
+    float maxP = 0.0f;
+    bool hasTilt = false;
+
+    for (size_t i = 0; i < N; ++i) {
         const auto& pt = pts[i];
         float p = std::clamp(pt.pressure, 0.0f, 1.0f);
-        sumPressure += p;
+        maxP = std::max(maxP, p);
+
+        float tiltMag = std::hypot(pt.tiltX, pt.tiltY);
+        if (tiltMag > 0.01f) hasTilt = true;
+        double ux = (tiltMag > 1e-4f) ? (pt.tiltX / tiltMag) : 0.0;
+        double uy = (tiltMag > 1e-4f) ? (pt.tiltY / tiltMag) : 0.0;
+
         float rTip = std::min(pt.r, nominalTipR * (0.90f + 0.12f * p));
-        maxTiltExtra = std::max(maxTiltExtra, pt.r - rTip);
-        ++count;
+        float rTiltExtra = std::max(0.0f, pt.r - rTip);
+
+        // Band 0: Full contact patch (tip + 100% tilt spread)
+        float r0 = rTip + rTiltExtra;
+        s_band0[i] = StrokePoint(pt.x + ux * rTiltExtra, pt.y + uy * rTiltExtra, r0);
+
+        // Band 1: Active for p > 0.08 -> covers 96% of tip + 72% of tilt spread
+        float p1 = std::clamp((p - 0.08f) / 0.60f, 0.0f, 1.0f);
+        float r1 = (rTip * 0.96f + rTiltExtra * 0.72f) * std::pow(p1, 0.40f);
+        double shift1 = std::max(0.0f, r1 - rTip * 0.96f);
+        s_band1[i] = StrokePoint(pt.x + ux * shift1, pt.y + uy * shift1, r1);
+
+        // Band 2: Active for p > 0.22 -> covers 88% of tip + 45% of tilt spread
+        float p2 = std::clamp((p - 0.22f) / 0.60f, 0.0f, 1.0f);
+        float r2 = (rTip * 0.88f + rTiltExtra * 0.45f) * std::pow(p2, 0.50f);
+        double shift2 = std::max(0.0f, r2 - rTip * 0.88f);
+        s_band2[i] = StrokePoint(pt.x + ux * shift2, pt.y + uy * shift2, r2);
+
+        // Band 3: Active for p > 0.38 -> covers 76% of tip + 22% of tilt spread
+        float p3 = std::clamp((p - 0.38f) / 0.55f, 0.0f, 1.0f);
+        float r3 = (rTip * 0.76f + rTiltExtra * 0.22f) * std::pow(p3, 0.60f);
+        double shift3 = std::max(0.0f, r3 - rTip * 0.76f);
+        s_band3[i] = StrokePoint(pt.x + ux * shift3, pt.y + uy * shift3, r3);
     }
-    float avgPressure = (count > 0) ? (sumPressure / static_cast<float>(count)) : 0.65f;
 
-    if (maxTiltExtra > 0.025f) {
-        // TILTED SIDE-SHADING MODE:
-        // 1. Wide tilted envelope gets the grating shading pattern
-        ctx.set_fill_style(patShade);
-        ctx.fill_path(*envelopePath);
-
-        // 2. If pressing harder while tilted, darken the shading envelope proportionally
-        if (avgPressure > 0.25f) {
-            ctx.save();
-            ctx.set_fill_alpha(std::clamp((avgPressure - 0.25f) * 0.85f, 0.0f, 0.75f));
-            ctx.set_fill_style(patBase);
-            ctx.fill_path(*envelopePath);
-            ctx.restore();
-        }
-
-        // 3. Crisp dark leading tip along the un-shifted stylus contact line
-        std::vector<StrokePoint> tipPts(N);
-        for (size_t i = 0; i < N; ++i) {
-            float p = std::clamp(pts[i].pressure, 0.0f, 1.0f);
-            float rTip = std::min(pts[i].r, nominalTipR * (0.90f + 0.12f * p));
-            tipPts[i] = StrokePoint(pts[i].x, pts[i].y, rTip);
-        }
-        BLPath tipPath = BuildSolidRibbon(tipPts, CapType::Round);
-        if (!tipPath.is_empty()) {
-            ctx.set_fill_style(patBase);
-            ctx.fill_path(tipPath);
-        }
+    // Band 0: Reuse prebuilt outline when upright and valid, otherwise build ribbon
+    BLPath localPath0;
+    const BLPath* path0Ptr = nullptr;
+    if (!hasTilt && prebuiltOutline && !prebuiltOutline->is_empty()) {
+        path0Ptr = prebuiltOutline;
     } else {
-        // STANDARD UPRIGHT PENCIL MODE (Zero concentric bands, zero geometry rebuilds):
-        // 1. Rich dark 2B micro-grain across the entire smooth stroke contour
-        ctx.set_fill_style(patBase);
-        ctx.fill_path(*envelopePath);
+        localPath0 = BuildSolidRibbon(s_band0, CapType::Round);
+        path0Ptr = &localPath0;
+    }
 
-        // 2. Pressure concentration pass over the exact same contour (no inner step rings!)
-        float darkBoost = std::clamp((avgPressure - 0.15f) / 0.70f, 0.15f, 0.92f);
-        ctx.save();
-        ctx.set_fill_alpha(darkBoost);
-        ctx.set_fill_style(patDark);
-        ctx.fill_path(*envelopePath);
-        ctx.restore();
+    if (path0Ptr && !path0Ptr->is_empty()) {
+        ctx.set_fill_style(tex.patSparse0);
+        ctx.fill_path(*path0Ptr);
+    }
+
+    if (maxP > 0.08f) {
+        BLPath path1 = BuildSolidRibbon(s_band1, CapType::Round);
+        if (!path1.is_empty()) {
+            ctx.set_fill_style(tex.patSparse1);
+            ctx.fill_path(path1);
+        }
+    }
+
+    if (maxP > 0.22f) {
+        BLPath path2 = BuildSolidRibbon(s_band2, CapType::Round);
+        if (!path2.is_empty()) {
+            ctx.set_fill_style(tex.patMid);
+            ctx.fill_path(path2);
+        }
+    }
+
+    if (maxP > 0.38f) {
+        BLPath path3 = BuildSolidRibbon(s_band3, CapType::Round);
+        if (!path3.is_empty()) {
+            ctx.set_fill_style(tex.patDense);
+            ctx.fill_path(path3);
+        }
     }
 }
 

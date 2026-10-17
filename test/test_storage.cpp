@@ -25,6 +25,7 @@
 #include "core/storage/db_manager.hpp"
 #include "core/storage/page_repository.hpp"
 #include "core/document/canvas_page.hpp"
+#include "core/ink_engine/ink_generator.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "io/facade/file_manager.hpp"
@@ -379,6 +380,89 @@ Point2D TextEditorState::GetCursorWorldPos() const { return {}; }
 double TextEditorState::GetCaretHeight() const { return 0.0; }
 }
 
+void TestStrokeTessellationAndRasterPerformance() {
+    std::cout << "[Test 7/7] Running 5-Second Stroke (1000 pts) Rasterization Performance..." << std::endl;
+
+    std::vector<StrokePoint> points;
+    points.reserve(1000);
+    for (int i = 0; i < 1000; ++i) {
+        double t = i * 0.02;
+        double x = 400.0 + 300.0 * std::cos(t * 0.5) + t * 5.0;
+        double y = 400.0 + 300.0 * std::sin(t * 0.5);
+        points.emplace_back(x, y, 0.4f + 0.1f * std::sin(t * 2.0));
+    }
+
+    // Benchmark incremental AppendRibbonSegments as points arrive from digitizer
+    BLPath outline;
+    std::vector<StrokePoint> streamPts;
+    streamPts.reserve(1000);
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < points.size(); ++i) {
+        size_t prevSize = streamPts.size();
+        streamPts.push_back(points[i]);
+        InkGenerator::AppendRibbonSegments(outline, streamPts, prevSize, CapType::Round, StrokePattern::Solid);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double appendMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    std::cout << "  -> Incremental append 1000 points: " << appendMs << " ms" << std::endl;
+
+    // Benchmark fill_path rasterization in 1920x1080 surface
+    BLImage img(1920, 1080, BL_FORMAT_PRGB32);
+    BLContext ctx(img);
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame < 10; ++frame) {
+        ctx.clear_all();
+        ctx.set_fill_style(BLRgba32(0xFF000000));
+        ctx.fill_path(outline);
+    }
+    auto t3 = std::chrono::high_resolution_clock::now();
+    double rasterMs = std::chrono::duration<double, std::milli>(t3 - t2).count() / 10.0;
+    std::cout << "  -> Frame rasterization time (solid): " << rasterMs << " ms per frame" << std::endl;
+
+    // Benchmark pencil pattern rasterization
+    auto t4 = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame < 10; ++frame) {
+        ctx.clear_all();
+        InkGenerator::RenderPencilStroke(ctx, points, 0.8f, BLRgba32(0xFF202020), &outline);
+    }
+    auto t5 = std::chrono::high_resolution_clock::now();
+    double pencilMs = std::chrono::duration<double, std::milli>(t5 - t4).count() / 10.0;
+    std::cout << "  -> Frame rasterization time (pencil): " << pencilMs << " ms per frame" << std::endl;
+
+    // Benchmark Miter-Clipped Single Contour generation (CPU) and rasterization
+    auto tGen0 = std::chrono::high_resolution_clock::now();
+    BLPath singleContour = InkGenerator::GenerateStroke(points, CapType::Round, StrokePattern::Solid);
+    auto tGen1 = std::chrono::high_resolution_clock::now();
+    double genMs = std::chrono::duration<double, std::milli>(tGen1 - tGen0).count();
+    std::cout << "  -> CPU generation time (Miter-Clipped Single Contour 1000 pts): " << genMs << " ms" << std::endl;
+
+    auto t6 = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame < 10; ++frame) {
+        ctx.clear_all();
+        ctx.set_fill_style(BLRgba32(0xFF000000));
+        ctx.fill_path(singleContour);
+    }
+    auto t7 = std::chrono::high_resolution_clock::now();
+    double singleContourRasterMs = std::chrono::duration<double, std::milli>(t7 - t6).count() / 10.0;
+    std::cout << "  -> Frame rasterization time (Miter-Clipped Single Contour): " << singleContourRasterMs << " ms per frame" << std::endl;
+
+    // Benchmark pencil pattern with Miter-Clipped Single Contour!
+    auto t8 = std::chrono::high_resolution_clock::now();
+    for (int frame = 0; frame < 10; ++frame) {
+        ctx.clear_all();
+        InkGenerator::RenderPencilStroke(ctx, points, 0.8f, BLRgba32(0xFF202020), &singleContour);
+    }
+    auto t9 = std::chrono::high_resolution_clock::now();
+    double pencilSingleContourMs = std::chrono::duration<double, std::milli>(t9 - t8).count() / 10.0;
+    std::cout << "  -> Frame rasterization time (pencil with Single Contour): " << pencilSingleContourMs << " ms per frame" << std::endl;
+
+    // Assert that incremental stroke assembly and frame rendering meet real-time 120 FPS latency bounds
+    assert(appendMs < 10.0); // 1000 incremental points append should be sub-millisecond to few ms
+    assert(rasterMs < 8.33); // Solid rasterization must fit comfortably inside 120 FPS (8.33 ms)
+    assert(pencilMs < 10.0); // Textured pencil rasterization must remain fast and fluid
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "Starting FolioNote Storage Test Suite" << std::endl;
@@ -390,9 +474,11 @@ int main() {
     TestCorruptionAndFailSafeDetection();
     TestSQLiteDBManagerOperations();
     TestPageRepositorySafety();
+    TestStrokeTessellationAndRasterPerformance();
 
     std::cout << "========================================" << std::endl;
-    std::cout << "All 6 Storage Tests Passed Successfully!" << std::endl;
+    std::cout << "All Storage & Performance Tests Passed!" << std::endl;
     std::cout << "========================================" << std::endl;
     return 0;
 }
+

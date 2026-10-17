@@ -181,10 +181,14 @@ private:
     // Builds temporary forward-predicted tip outline to reduce perceived latency
     void UpdateGooglePrediction();
 
+    // Recomputes cached evaluation config flags from active style & config
+    void UpdateEvalConfig() noexcept;
+
     // Internal Inking State
     bool m_isStrokeActive = false;
     StrokeStyle m_activeStyle;
     InkingConfig m_config;
+    InkingConfig m_evalConfig;
     float m_zoomScale = 1.0f;
     float m_smoothedWidth = -1.0f;
 

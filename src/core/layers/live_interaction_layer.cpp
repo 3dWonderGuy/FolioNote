@@ -111,6 +111,11 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
             const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
             if (!predOutline.is_empty()) {
                 ctx.fill_path(predOutline);
+            } else {
+                const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+                if (!livePts.empty() && activeStyle.capType == CapType::Round) {
+                    ctx.fill_circle(BLCircle(livePts.back().x, livePts.back().y, livePts.back().r));
+                }
             }
         }
 

@@ -158,6 +158,42 @@ void TestCurveSimplificationPreservesRoundness() {
               << simplified.size() << " smooth vertices." << std::endl;
 }
 
+void TestWidthThinningToggle() {
+    std::cout << "[Test] Running Width Thinning Toggle Invariant test..." << std::endl;
+
+    Folio::InkingConfig config;
+    config.dynamicWidthSmoothing = 1.0f; // Instantaneous response
+    constexpr float baseWidth = 1.0f;
+
+    // 1. Velocity thinning enabled: fast speed thins stroke
+    config.useVelocity = true;
+    config.usePressure = false;
+    float wFast = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, -1.0f, 1000.0f, 0.0f, 0.0f, -1.0f, 1.0f, config);
+    assert(wFast < baseWidth);
+
+    // 2. Velocity thinning disabled: fast speed does NOT thin stroke
+    config.useVelocity = false;
+    float wFastNoThin = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, -1.0f, 1000.0f, 0.0f, 0.0f, -1.0f, 1.0f, config);
+    assert(std::abs(wFastNoThin - baseWidth) < 1e-4f);
+
+    // 3. Pressure thinning enabled: light pressure thins stroke
+    config.useVelocity = false;
+    config.usePressure = true;
+    float wLight = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, 0.2f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, config);
+    assert(wLight < baseWidth);
+
+    // 4. Pressure thinning disabled: light pressure does NOT thin stroke
+    config.usePressure = false;
+    float wLightNoThin = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, 0.2f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, config);
+    assert(std::abs(wLightNoThin - baseWidth) < 1e-4f);
+
+    std::cout << "[Test] Width Thinning Toggle test passed (100% OK)!" << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "Starting Folio Physics Model Test Suite" << std::endl;
@@ -167,6 +203,7 @@ int main() {
     TestDynamicEraserPhysicsModel();
     TestStylusTiltDynamics();
     TestCurveSimplificationPreservesRoundness();
+    TestWidthThinningToggle();
 
     std::cout << "========================================" << std::endl;
     std::cout << "All Physics Model tests passed (100% OK)!" << std::endl;

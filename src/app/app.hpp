@@ -505,7 +505,7 @@ public:
         inputManager.stateMachine.isDynamicEraser = SettingsManager::Instance().isDynamicEraser;
         inputManager.stateMachine.eraserRadiusMm = SettingsManager::Instance().eraserSizeMm * 0.5f;
         ribbon.isCanvasInverted = SettingsManager::Instance().isCanvasInverted;
-        canvas.GetInkEngine().GetConfig() = SettingsManager::Instance().inkingConfig;
+        canvas.GetInkEngine().SetConfig(SettingsManager::Instance().inkingConfig);
 
         // Restore per-device default tools from settings.
         // (Placeholder — settings UI not yet built; values come from the JSON defaults.)
