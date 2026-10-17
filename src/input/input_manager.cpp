@@ -391,6 +391,14 @@ void InputManager::HandlePenEvent(const SDL_Event& event) {
     // Digitizers report continuous physical parameters independently of contact events.
     // -------------------------------------------------------------------------
     if (event.type == SDL_EVENT_PEN_AXIS) {
+        pen.inProximity = true;
+        pen.x = event.paxis.x;
+        pen.y = event.paxis.y;
+        if ((event.paxis.pen_state & SDL_PEN_INPUT_DOWN) != 0) {
+            pen.isDown = true;
+            pen.isHovering = false;
+        }
+
         // Pressure: Normalized [0.0, 1.0]. Clamped to avoid hardware driver overflows.
         if (event.paxis.axis == SDL_PEN_AXIS_PRESSURE) {
             pen.pressure = std::clamp(event.paxis.value, 0.0f, 1.0f);

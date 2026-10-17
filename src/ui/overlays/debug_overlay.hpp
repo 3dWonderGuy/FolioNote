@@ -254,7 +254,12 @@ public:
                 ImGui::Text("Active Pen Pressure: %.4f (ADC: %.0f / 4096)", inputState.pen.pressure, inputState.pen.pressure * 4096.0f);
                 ImGui::ProgressBar(inputState.pen.pressure, ImVec2(-FLT_MIN, 0));
 
-                ImGui::Text("Tilt Angles        : X: %.1f deg | Y: %.1f deg", inputState.pen.tiltX, inputState.pen.tiltY);
+                constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
+                float tiltDegX = inputState.pen.tiltX * kRadToDeg;
+                float tiltDegY = inputState.pen.tiltY * kRadToDeg;
+                float tiltMagDeg = std::hypot(tiltDegX, tiltDegY);
+                ImGui::Text("Tilt Angles        : X: %.1f deg | Y: %.1f deg (Mag: %.1f deg | %.2f rad)",
+                            tiltDegX, tiltDegY, tiltMagDeg, std::hypot(inputState.pen.tiltX, inputState.pen.tiltY));
                 ImGui::Text("Barrel Button 1    : %s (Eraser Shortcut)", inputState.pen.barrel1 ? "PRESSED" : "Released");
                 ImGui::Text("Barrel Button 2    : %s (Lasso Shortcut)", inputState.pen.barrel2 ? "PRESSED" : "Released");
                 ImGui::Text("Eraser Tail Tip    : %s", inputState.pen.eraserTip ? "INVERTED (Active)" : "Normal");
