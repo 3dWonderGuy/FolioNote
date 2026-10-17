@@ -121,8 +121,11 @@ struct SDL_VideoData
         // Pen atoms (these have names that don't map well to C symbols)
         Atom pen_atom_device_product_id;
         Atom pen_atom_abs_pressure;
+        Atom pen_atom_pressure;
         Atom pen_atom_abs_tilt_x;
+        Atom pen_atom_tilt_x;
         Atom pen_atom_abs_tilt_y;
+        Atom pen_atom_tilt_y;
         Atom pen_atom_wacom_serial_ids;
         Atom pen_atom_wacom_tool_type;
     } atoms;

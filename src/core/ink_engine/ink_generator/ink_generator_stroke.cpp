@@ -196,33 +196,61 @@ static void TracePolygonCap(BLPath& path,
                             const Point2D& startPt,
                             const Point2D& endPt,
                             double ux, double uy,
-                            double vx, double vy,
                             CapType capType) {
                                 
     auto verts = GetNibVertices(capType, center.r);
+    if (verts.empty()) {
+        path.line_to(endPt.x, endPt.y);
+        return;
+    }
+
     Point2D startRel = { startPt.x - center.x, startPt.y - center.y };
     Point2D endRel   = { endPt.x - center.x,   endPt.y - center.y };
 
-    std::vector<Point2D> outwardVerts;
-    for (const auto& v : verts) {
-        double dStart = std::hypot(v.x - startRel.x, v.y - startRel.y);
-        double dEnd   = std::hypot(v.x - endRel.x,   v.y - endRel.y);
-        if (dStart < 1e-3 || dEnd < 1e-3) continue;
+    int startIdx = 0, endIdx = 0;
+    double minDStart = 1e9, minDEnd = 1e9;
+    for (int i = 0; i < static_cast<int>(verts.size()); ++i) {
+        double ds = std::hypot(verts[i].x - startRel.x, verts[i].y - startRel.y);
+        double de = std::hypot(verts[i].x - endRel.x,   verts[i].y - endRel.y);
+        if (ds < minDStart) { minDStart = ds; startIdx = i; }
+        if (de < minDEnd)   { minDEnd = de;   endIdx = i; }
+    }
 
-        double projOut = (v.x - startRel.x) * ux + (v.y - startRel.y) * uy;
-        if (projOut > 1e-4) {
-            outwardVerts.push_back(v);
+    if (startIdx == endIdx) {
+        path.line_to(endPt.x, endPt.y);
+        return;
+    }
+
+    const int K = static_cast<int>(verts.size());
+
+    // Path CCW: startIdx -> endIdx
+    std::vector<int> pathCCW;
+    for (int idx = (startIdx + 1) % K; idx != endIdx; idx = (idx + 1) % K) {
+        pathCCW.push_back(idx);
+    }
+
+    // Path CW: startIdx -> endIdx
+    std::vector<int> pathCW;
+    for (int idx = (startIdx - 1 + K) % K; idx != endIdx; idx = (idx - 1 + K) % K) {
+        pathCW.push_back(idx);
+    }
+
+    // Evaluate which path faces outward along (ux, uy)
+    auto evalProj = [&](const std::vector<int>& p) -> double {
+        if (p.empty()) return -1e9;
+        double sum = 0.0;
+        for (int idx : p) {
+            sum += (verts[idx].x - startRel.x) * ux + (verts[idx].y - startRel.y) * uy;
         }
-    }
+        return sum / static_cast<double>(p.size());
+    };
 
-    if (outwardVerts.size() > 1) {
-        std::sort(outwardVerts.begin(), outwardVerts.end(), [&](const Point2D& a, const Point2D& b) {
-            return (a.x * vx + a.y * vy) < (b.x * vx + b.y * vy);
-        });
-    }
+    double projCCW = evalProj(pathCCW);
+    double projCW  = evalProj(pathCW);
 
-    for (const auto& v : outwardVerts) {
-        path.line_to(center.x + v.x, center.y + v.y);
+    const auto& chosenPath = (projCCW >= projCW) ? pathCCW : pathCW;
+    for (int idx : chosenPath) {
+        path.line_to(center.x + verts[idx].x, center.y + verts[idx].y);
     }
     path.line_to(endPt.x, endPt.y);
 }
@@ -251,7 +279,7 @@ void InkGenerator::TraceCap(BLPath& path,
     double uy =  vx / vLen;
 
     if (capType == CapType::Square || capType == CapType::Chisel) {
-        TracePolygonCap(path, center, startPt, endPt, ux, uy, vx, vy, capType);
+        TracePolygonCap(path, center, startPt, endPt, ux, uy, capType);
     } else {
         TraceRoundCap(path, center, startPt, endPt, ux, uy);
     }
@@ -364,6 +392,39 @@ BLPath InkGenerator::BuildSolidRibbon(const std::vector<StrokePoint>& pts, CapTy
             // Collinear: smooth continuous offset
             leftPts.push_back({ Pi.x + offL_in.x, Pi.y + offL_in.y });
             rightPts.push_back({ Pi.x + offR_in.x, Pi.y + offR_in.y });
+            continue;
+        }
+
+        // Polygonal nibs (Square/Highlighter, Chisel/Calligraphy):
+        // Ribbon edges MUST attach directly to the nib's extreme corners.
+        // When adjacent segments share the same corner (dL < 1e-4), pass directly through Pi + corner.
+        // When the corner changes: bevel the outer elbow, join the inner corner at facet midpoint.
+        if (capType == CapType::Square || capType == CapType::Chisel) {
+            double dL = std::hypot(offL_in.x - offL_out.x, offL_in.y - offL_out.y);
+            if (dL < 1e-4) {
+                leftPts.push_back({ Pi.x + offL_in.x, Pi.y + offL_in.y });
+            } else if (cross > 0.0) {
+                // Left is inner
+                leftPts.push_back({ Pi.x + (offL_in.x + offL_out.x) * 0.5,
+                                    Pi.y + (offL_in.y + offL_out.y) * 0.5 });
+            } else {
+                // Left is outer
+                leftPts.push_back({ Pi.x + offL_in.x, Pi.y + offL_in.y });
+                leftPts.push_back({ Pi.x + offL_out.x, Pi.y + offL_out.y });
+            }
+
+            double dR = std::hypot(offR_in.x - offR_out.x, offR_in.y - offR_out.y);
+            if (dR < 1e-4) {
+                rightPts.push_back({ Pi.x + offR_in.x, Pi.y + offR_in.y });
+            } else if (cross < 0.0) {
+                // Right is inner
+                rightPts.push_back({ Pi.x + (offR_in.x + offR_out.x) * 0.5,
+                                     Pi.y + (offR_in.y + offR_out.y) * 0.5 });
+            } else {
+                // Right is outer
+                rightPts.push_back({ Pi.x + offR_in.x, Pi.y + offR_in.y });
+                rightPts.push_back({ Pi.x + offR_out.x, Pi.y + offR_out.y });
+            }
             continue;
         }
 

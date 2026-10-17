@@ -373,6 +373,7 @@ void InputManager::HandlePenEvent(const SDL_Event& event) {
     if (event.type == SDL_EVENT_PEN_PROXIMITY_IN) {
         pen.inProximity = true;
         pen.isHovering = true;
+        pen.penId = event.pproximity.which;
         LOG_INFO(InputManager, "PEN PROXIMITY_IN (PenID: " + std::to_string(event.pproximity.which) + ")");
         return;
     }
@@ -391,6 +392,11 @@ void InputManager::HandlePenEvent(const SDL_Event& event) {
     // Digitizers report continuous physical parameters independently of contact events.
     // -------------------------------------------------------------------------
     if (event.type == SDL_EVENT_PEN_AXIS) {
+        pen.axisEventCount++;
+        pen.lastAxis = static_cast<int>(event.paxis.axis);
+        pen.lastAxisValue = event.paxis.value;
+        pen.penId = event.paxis.which;
+
         pen.inProximity = true;
         pen.x = event.paxis.x;
         pen.y = event.paxis.y;
@@ -410,12 +416,26 @@ void InputManager::HandlePenEvent(const SDL_Event& event) {
         // Tilt X/Y: SDL3 reports stylus inclination angles in degrees (-90° to +90°).
         // Convert to radians [-pi/2, +pi/2] for Google Ink Modeler and StrokeWidthEvaluator.
         else if (event.paxis.axis == SDL_PEN_AXIS_XTILT) {
+            pen.tiltEventCount++;
+            pen.rawTiltX = event.paxis.value;
             constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
             pen.tiltX = std::clamp(event.paxis.value * kDegToRad, -1.570796f, 1.570796f);
+            static int s_xtiltLog = 0;
+            if (s_xtiltLog < 5) {
+                LOG_INFO(InputManager, "PEN XTILT: raw=" + std::to_string(event.paxis.value) + " rad=" + std::to_string(pen.tiltX));
+                s_xtiltLog++;
+            }
         }
         else if (event.paxis.axis == SDL_PEN_AXIS_YTILT) {
+            pen.tiltEventCount++;
+            pen.rawTiltY = event.paxis.value;
             constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
             pen.tiltY = std::clamp(event.paxis.value * kDegToRad, -1.570796f, 1.570796f);
+            static int s_ytiltLog = 0;
+            if (s_ytiltLog < 5) {
+                LOG_INFO(InputManager, "PEN YTILT: raw=" + std::to_string(event.paxis.value) + " rad=" + std::to_string(pen.tiltY));
+                s_ytiltLog++;
+            }
         }
 
         // Check if the physical tail-end eraser tip is currently active via hardware state bitmask

@@ -258,8 +258,23 @@ public:
                 float tiltDegX = inputState.pen.tiltX * kRadToDeg;
                 float tiltDegY = inputState.pen.tiltY * kRadToDeg;
                 float tiltMagDeg = std::hypot(tiltDegX, tiltDegY);
-                ImGui::Text("Tilt Angles        : X: %.1f deg | Y: %.1f deg (Mag: %.1f deg | %.2f rad)",
-                            tiltDegX, tiltDegY, tiltMagDeg, std::hypot(inputState.pen.tiltX, inputState.pen.tiltY));
+                ImGui::Text("Tilt Angles (Deg)  : X: %.1f deg | Y: %.1f deg (Mag: %.1f deg)",
+                            tiltDegX, tiltDegY, tiltMagDeg);
+                ImGui::Text("Tilt Radians       : X: %.3f rad | Y: %.3f rad (Mag: %.3f rad)",
+                            inputState.pen.tiltX, inputState.pen.tiltY, std::hypot(inputState.pen.tiltX, inputState.pen.tiltY));
+
+                const char* axisNames[] = { "PRESSURE", "XTILT", "YTILT", "DISTANCE", "ROTATION", "SLIDER", "TANGENTIAL" };
+                const char* lastAxisStr = (inputState.pen.lastAxis >= 0 && inputState.pen.lastAxis < 7) 
+                                              ? axisNames[inputState.pen.lastAxis] : "None";
+                ImGui::Text("Raw Tilt Ingested  : X: %.3f | Y: %.3f (LastAxis: %s, RawVal: %.4f)",
+                            inputState.pen.rawTiltX, inputState.pen.rawTiltY, lastAxisStr, inputState.pen.lastAxisValue);
+                const char* currentDriver = SDL_GetCurrentVideoDriver();
+                ImGui::Text("Axis Packets / Tool: %llu total / %llu tilt (PenID: %u | Backend: %s)",
+                            static_cast<unsigned long long>(inputState.pen.axisEventCount),
+                            static_cast<unsigned long long>(inputState.pen.tiltEventCount),
+                            inputState.pen.penId,
+                            currentDriver ? currentDriver : "Unknown");
+
                 ImGui::Text("Barrel Button 1    : %s (Eraser Shortcut)", inputState.pen.barrel1 ? "PRESSED" : "Released");
                 ImGui::Text("Barrel Button 2    : %s (Lasso Shortcut)", inputState.pen.barrel2 ? "PRESSED" : "Released");
                 ImGui::Text("Eraser Tail Tip    : %s", inputState.pen.eraserTip ? "INVERTED (Active)" : "Normal");
