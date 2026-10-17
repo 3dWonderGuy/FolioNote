@@ -91,12 +91,14 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
 
         if (activeStyle.pattern == StrokePattern::TexturedPencil) {
             const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+            const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
             if (!livePts.empty()) {
-                InkGenerator::RenderPencilStroke(ctx, livePts, activeStyle.baseWidth, activeStyle.color);
+                InkGenerator::RenderPencilStroke(ctx, livePts, activeStyle.baseWidth, activeStyle.color, &liveOutline);
             }
             const auto& predPts = m_inkEngine.GetPredictedPoints();
+            const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
             if (predPts.size() >= 2) {
-                InkGenerator::RenderPencilStroke(ctx, predPts, activeStyle.baseWidth, activeStyle.color);
+                InkGenerator::RenderPencilStroke(ctx, predPts, activeStyle.baseWidth, activeStyle.color, &predOutline);
             }
         } else {
             ctx.set_fill_style(BLRgba32(activeStyle.color.value));

@@ -26,7 +26,7 @@ sm::Input MakeGoogleInput(sm::Input::EventType type, const StylusInputPoint& pt)
     input.position = { static_cast<float>(pt.x), static_cast<float>(pt.y) };           // convert double world mm to google float Vec2
     input.time = sm::Time(pt.timeSeconds);                                             // wrap timestamp into google Time struct
     input.pressure = pt.pressure;                                                      // stylus pressure [0.0, 1.0]
-    input.tilt = std::hypot(pt.tiltX, pt.tiltY);                                       // polar tilt magnitude (>= 0)
+    input.tilt = std::clamp(std::hypot(pt.tiltX, pt.tiltY), 0.0f, 1.570796f);          // polar tilt magnitude clamped to [0, pi/2]
     float angle = std::atan2(pt.tiltY, pt.tiltX);                                      // polar azimuth angle [-pi, pi]
     input.orientation = angle < 0.0f ? angle + 2.0f * static_cast<float>(M_PI) : angle;// wrap orientation into [0, 2*pi)
     return input;
@@ -72,15 +72,20 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
     m_activeStrokePoints.push_back(startPt);
 
     // Initial touch-down preview delegated to the stroke/ribbon builder (which runs BuildPointCap for single points)
+    InkingConfig evalConfig = m_config;
+    evalConfig.usePressure = m_activeStyle.usePressure;
+    evalConfig.useTilt     = m_activeStyle.useTilt || m_config.useTilt;
+    evalConfig.useVelocity = m_activeStyle.useVelocity || m_config.useVelocity;
+
     float startPressure = (startPt.pressure >= 0.0f) ? startPt.pressure : 0.65f;
     float dynamicWidth = 0.0f;
     if (m_activeStyle.pattern == StrokePattern::TexturedPencil) {
         float tipWidth = m_activeStyle.baseWidth * (0.90f + 0.12f * std::clamp(startPressure, 0.0f, 1.0f));
         dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-            tipWidth, -1.0f, 0.0f, startPt.tiltX, startPt.tiltY, -1.0f, m_zoomScale, m_config);
+            tipWidth, -1.0f, 0.0f, startPt.tiltX, startPt.tiltY, -1.0f, m_zoomScale, evalConfig);
     } else {
         dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-            m_activeStyle.baseWidth, startPt, -1.0f, m_zoomScale, m_config);
+            m_activeStyle.baseWidth, startPt, -1.0f, m_zoomScale, evalConfig);
     }
     m_smoothedWidth = dynamicWidth;
     StrokePoint dotPt(startPt.x, startPt.y, dynamicWidth * 0.5f, startPressure, startPt.tiltX, startPt.tiltY);
@@ -146,15 +151,20 @@ FinishedStrokeData InkEngine::FinishStroke() {
 
         if (m_liveModeledPoints.empty()) {
             StylusInputPoint pt = m_activeStrokePoints.front();                        // tap origin
+            InkingConfig evalConfig = m_config;
+            evalConfig.usePressure = m_activeStyle.usePressure;
+            evalConfig.useTilt     = m_activeStyle.useTilt || m_config.useTilt;
+            evalConfig.useVelocity = m_activeStyle.useVelocity || m_config.useVelocity;
+
             float tapPressure = (pt.pressure >= 0.0f) ? pt.pressure : 0.65f;
             float dynamicWidth = 0.0f;
             if (m_activeStyle.pattern == StrokePattern::TexturedPencil) {
                 float tipWidth = m_activeStyle.baseWidth * (0.90f + 0.12f * std::clamp(tapPressure, 0.0f, 1.0f));
                 dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-                    tipWidth, -1.0f, 0.0f, pt.tiltX, pt.tiltY, -1.0f, m_zoomScale, m_config);
+                    tipWidth, -1.0f, 0.0f, pt.tiltX, pt.tiltY, -1.0f, m_zoomScale, evalConfig);
             } else {
                 dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-                    m_activeStyle.baseWidth, pt, -1.0f, m_zoomScale, m_config);
+                    m_activeStyle.baseWidth, pt, -1.0f, m_zoomScale, evalConfig);
             }
             m_liveModeledPoints.push_back(StrokePoint(pt.x, pt.y, dynamicWidth * 0.5f, tapPressure, pt.tiltX, pt.tiltY));
         } else if (strokeLen < 1e-4) {
@@ -163,10 +173,13 @@ FinishedStrokeData InkEngine::FinishStroke() {
         }
     }
 
-    // Stage 3: Post-processing simplification (decimates redundant collinear vertices upon pen-up)
+    // Stage 3: Post-processing simplification (decimates redundant collinear vertices while preserving curve roundness)
     if (m_config.enablePostProcessSimplification && m_liveModeledPoints.size() > 2) {
         m_liveModeledPoints = StrokePostProcessor::Simplify(
-            m_liveModeledPoints, m_config.simplificationToleranceMm);
+            m_liveModeledPoints,
+            m_config.simplificationToleranceMm,
+            m_config.simplificationMaxTurnDeg,
+            m_config.simplificationRadiusTolerance);
     }
 
     // Stage 4: Build collision segments and final vector stroke data once at the end (used for lasso math and eraser detection)
@@ -229,34 +242,63 @@ StrokePoint InkEngine::ToStrokePoint(const sm::Result& res, float previousWidth)
     float tiltY = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::sin(res.orientation) : 0.0f;
     float effectivePressure = (res.pressure >= 0.0f) ? res.pressure : 0.65f;
 
+    // Protect active tool flags from per-frame SettingsManager overwrites on m_config
+    InkingConfig evalConfig = m_config;
+    evalConfig.usePressure = m_activeStyle.usePressure;
+    evalConfig.useTilt     = m_activeStyle.useTilt || m_config.useTilt;
+    evalConfig.useVelocity = m_activeStyle.useVelocity || m_config.useVelocity;
+
     // For TexturedPencil, tip thickness stays nearly constant under pressure (pressure controls darkness
     // and grain concentration, whereas stylus tilt expands the shading width).
     float dynamicWidth = 0.0f;
     if (m_activeStyle.pattern == StrokePattern::TexturedPencil) {
         float tipWidth = m_activeStyle.baseWidth * (0.90f + 0.12f * std::clamp(effectivePressure, 0.0f, 1.0f));
         dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-            tipWidth, -1.0f, 0.0f, tiltX, tiltY, previousWidth, m_zoomScale, m_config);
+            tipWidth, -1.0f, 0.0f, tiltX, tiltY, previousWidth, m_zoomScale, evalConfig);
     } else {
         dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
             m_activeStyle.baseWidth, res.pressure, speed, tiltX, tiltY,
-            previousWidth, m_zoomScale, m_config);
+            previousWidth, m_zoomScale, evalConfig);
     }
 
     return StrokePoint(res.position.x, res.position.y, dynamicWidth * 0.5f, effectivePressure, tiltX, tiltY);
 }
 
 void InkEngine::ProcessGoogleResults(const std::vector<sm::Result>& results) {
+    if (results.empty()) return;
 
-    // convert incoming google batch directly into complete StrokePoints and append to live stroke array
+    const size_t prevSize = m_liveModeledPoints.size();
+
+    // Convert incoming Google batch into StrokePoints, filtering out stationary duplicates (< 1e-4 mm)
     for (const auto& res : results) {
         StrokePoint pt = ToStrokePoint(res, m_smoothedWidth);
         m_smoothedWidth = pt.r * 2.0f;
-        m_liveModeledPoints.push_back(pt);
+        if (m_liveModeledPoints.empty() ||
+            std::hypot(pt.x - m_liveModeledPoints.back().x, pt.y - m_liveModeledPoints.back().y) >= 1e-4) {
+            m_liveModeledPoints.push_back(pt);
+        } else {
+            // Update radius/pressure/tilt on stationary initial point
+            m_liveModeledPoints.back() = pt;
+        }
     }
 
-    // rebuild the live 2D outline polygon from the entire stroke's points with safety check
-    if (!m_liveModeledPoints.empty()) {
-        m_liveStrokeOutline = InkGenerator::GenerateStroke(m_liveModeledPoints, m_activeStyle.capType, m_activeStyle.pattern);
+    const size_t newSize = m_liveModeledPoints.size();
+    if (newSize == 0) return;
+
+    // O(1) incremental live stroke tessellation for Solid and TexturedPencil patterns
+    if (m_activeStyle.pattern == StrokePattern::Solid ||
+        m_activeStyle.pattern == StrokePattern::TexturedPencil) {
+        if (prevSize == 0) {
+            m_liveStrokeOutline.clear();
+            InkGenerator::AppendRibbonSegments(
+                m_liveStrokeOutline, m_liveModeledPoints, 0, m_activeStyle.capType, m_activeStyle.pattern);
+        } else if (newSize > prevSize) {
+            InkGenerator::AppendRibbonSegments(
+                m_liveStrokeOutline, m_liveModeledPoints, prevSize, m_activeStyle.capType, m_activeStyle.pattern);
+        }
+    } else {
+        m_liveStrokeOutline = InkGenerator::GenerateStroke(
+            m_liveModeledPoints, m_activeStyle.capType, m_activeStyle.pattern);
     }
 }
 

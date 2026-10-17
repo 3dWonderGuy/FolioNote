@@ -314,7 +314,7 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
         renderColor.setA(static_cast<uint32_t>(std::round(static_cast<float>(renderColor.a()) * combinedOpacity)));
 
         if ((stroke.strokePattern == StrokePattern::TexturedPencil || stroke.penType == PenType::Pencil) && !stroke.points.empty()) {
-            InkGenerator::RenderPencilStroke(ctx, stroke.points, stroke.baseWidthMm, renderColor);
+            InkGenerator::RenderPencilStroke(ctx, stroke.points, stroke.baseWidthMm, renderColor, &stroke.outlinePath);
         } else {
             ctx.set_fill_style(renderColor);
 

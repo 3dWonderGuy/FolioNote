@@ -67,21 +67,40 @@ public:
     static void FillInfill(BLContext& ctx, const BLPath& region, const InfillStyle& style);
 
     /**
-     * @brief Renders a multi-band textured graphite pencil stroke using cached world-space noise BLPatterns.
+     * @brief Incrementally appends newly modeled stroke segments [startIdx - 1 .. pts.size() - 1]
+     *        onto an existing live BLPath in O(1) time per frame (eliminates O(N^2) live inking lag).
      *
-     * Models physical pencil behavior:
-     * - Outer grain base maintains constant tip thickness under varying pressure and spreads outward when tilted.
-     * - Inner concentration bands build up darkness and suppress paper tooth noise as pressure increases.
+     * @param path     Target BLPath being grown incrementally during live inking.
+     * @param pts      Full modeled point buffer (must have no consecutive duplicates < 1e-4 mm).
+     * @param startIdx Index of the first newly appended point in pts.
+     * @param capType  Endcap / nib style.
+     * @param pattern  Active stroke pattern (Solid or TexturedPencil).
+     */
+    static void AppendRibbonSegments(BLPath& path,
+                                     const std::vector<StrokePoint>& pts,
+                                     size_t startIdx,
+                                     CapType capType = CapType::Round,
+                                     StrokePattern pattern = StrokePattern::Solid);
+
+    /**
+     * @brief Renders a textured graphite pencil stroke using cached high-resolution world-space noise BLPatterns.
      *
-     * @param ctx          Target Blend2D context (in world-space coordinates).
-     * @param centerline   Modeled stroke vertices containing position, radius, pressure, and tilt.
-     * @param baseWidthMm  Nominal tool base thickness in millimeters.
-     * @param color        Graphite pigment color (including combined opacity).
+     * Models physical pencil behavior without concentric contour bands:
+     * - Reuses the pre-built smooth outlinePath directly in O(1) geometry overhead.
+     * - High-density micro-grain base provides dark, crisp initial lines with subtle paper-tooth pores and color noise.
+     * - Pressure darkens and concentrates the graphite fill; stylus tilt expands a directional shading gradient.
+     *
+     * @param ctx             Target Blend2D context (in world-space coordinates).
+     * @param centerline      Modeled stroke vertices containing position, radius, pressure, and tilt.
+     * @param baseWidthMm     Nominal tool base thickness in millimeters.
+     * @param color           Graphite pigment color (including combined opacity).
+     * @param prebuiltOutline Optional pre-tessellated stroke outline path to avoid rebuilding geometry per frame.
      */
     static void RenderPencilStroke(BLContext& ctx,
                                    const std::vector<StrokePoint>& centerline,
                                    float baseWidthMm,
-                                   const BLRgba32& color);
+                                   const BLRgba32& color,
+                                   const BLPath* prebuiltOutline = nullptr);
 
     /**
      * @brief Universal cap tracer: generates a full closed cap polygon for a single-point tap.

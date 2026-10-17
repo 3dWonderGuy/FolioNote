@@ -122,6 +122,42 @@ void TestStylusTiltDynamics() {
     std::cout << "[Test] Stylus Tilt & Pencil Shading Dynamics test passed!" << std::endl;
 }
 
+#include "core/ink_engine/stroke_post_processor.hpp"
+
+void TestCurveSimplificationPreservesRoundness() {
+    std::cout << "[Test] Running StrokePostProcessor curve roundness preservation test..." << std::endl;
+
+    // Generate a smooth 180-degree circular arc of radius 5.0 mm with 100 samples
+    std::vector<StrokePoint> arc;
+    arc.reserve(100);
+    for (int i = 0; i < 100; ++i) {
+        double a = (3.14159265358979323846 * i) / 99.0;
+        arc.emplace_back(5.0 * std::cos(a), 5.0 * std::sin(a), 0.35f, 0.7f);
+    }
+
+    auto simplified = Folio::StrokePostProcessor::Simplify(arc, 0.015f, 4.0f, 0.08f);
+    // Should retain enough vertices to keep the arc smooth without collapsing into a coarse polygon
+    assert(simplified.size() >= 18);
+
+    // Verify no adjacent segments form a sharp corner peak (> 12 degrees)
+    for (size_t i = 1; i + 1 < simplified.size(); ++i) {
+        double ux = simplified[i].x - simplified[i - 1].x;
+        double uy = simplified[i].y - simplified[i - 1].y;
+        double vx = simplified[i + 1].x - simplified[i].x;
+        double vy = simplified[i + 1].y - simplified[i].y;
+        double uLen = std::hypot(ux, uy);
+        double vLen = std::hypot(vx, vy);
+        if (uLen > 1e-6 && vLen > 1e-6) {
+            double cosTurn = std::clamp((ux * vx + uy * vy) / (uLen * vLen), -1.0, 1.0);
+            double turnDeg = std::acos(cosTurn) * (180.0 / 3.14159265358979323846);
+            assert(turnDeg < 12.0);
+        }
+    }
+
+    std::cout << "[Test] StrokePostProcessor curve roundness test passed! Retained "
+              << simplified.size() << " smooth vertices." << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "Starting Folio Physics Model Test Suite" << std::endl;
@@ -130,10 +166,12 @@ int main() {
     TestSpringDamperCriticallyDamped();
     TestDynamicEraserPhysicsModel();
     TestStylusTiltDynamics();
+    TestCurveSimplificationPreservesRoundness();
 
     std::cout << "========================================" << std::endl;
     std::cout << "All Physics Model tests passed (100% OK)!" << std::endl;
     std::cout << "========================================" << std::endl;
     return 0;
 }
+
 

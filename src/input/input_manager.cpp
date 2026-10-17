@@ -399,13 +399,15 @@ void InputManager::HandlePenEvent(const SDL_Event& event) {
         else if (event.paxis.axis == SDL_PEN_AXIS_DISTANCE) {
             pen.distance = event.paxis.value;
         }
-        // Tilt X/Y: Stylus inclination angles in degrees relative to the screen normal (-90° to +90°).
-        // Used by rendering shaders to simulate angle-dependent brush calligraphics and pencil shading.
+        // Tilt X/Y: SDL3 reports stylus inclination angles in degrees (-90° to +90°).
+        // Convert to radians [-pi/2, +pi/2] for Google Ink Modeler and StrokeWidthEvaluator.
         else if (event.paxis.axis == SDL_PEN_AXIS_XTILT) {
-            pen.tiltX = event.paxis.value;
+            constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+            pen.tiltX = std::clamp(event.paxis.value * kDegToRad, -1.570796f, 1.570796f);
         }
         else if (event.paxis.axis == SDL_PEN_AXIS_YTILT) {
-            pen.tiltY = event.paxis.value;
+            constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+            pen.tiltY = std::clamp(event.paxis.value * kDegToRad, -1.570796f, 1.570796f);
         }
 
         // Check if the physical tail-end eraser tip is currently active via hardware state bitmask

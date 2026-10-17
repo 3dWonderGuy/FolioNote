@@ -76,9 +76,9 @@ struct InkingConfig {
     bool useTilt = false;
     float minWidthMultiplier = 0.2f;
     float maxWidthMultiplier = 1.5f;
-    float maxTiltWidthMultiplier = 2.5f;     // Shading width expansion at maximum stylus tilt
-    float tiltDeadzoneRad = 0.20f;          // Deadzone angle in radians (~11.5 deg) below which tilt is ignored
-    float tiltMaxAngleRad = 1.10f;          // Tilt angle in radians (~63 deg) reaching max shading width
+    float maxTiltWidthMultiplier = 2.8f;     // Shading width expansion at maximum stylus tilt
+    float tiltDeadzoneRad = 0.22f;          // ~12.6 deg from vertical: upright grip stays thin, tilting widens smoothly
+    float tiltMaxAngleRad = 1.05f;          // ~60 deg from vertical: full side-shading (typical digitizer max)
     float velocityThinningMaxSpeed = 1500.0f; // mm/s
     float dynamicWidthSmoothing = 0.6f;        // EMA factor (0.0 to 1.0)
 
@@ -86,7 +86,9 @@ struct InkingConfig {
     // 7. POST-PROCESSING & SIMPLIFICATION (Pen-Up Commit)
     // -------------------------------------------------------------
     bool enablePostProcessSimplification = true;
-    float simplificationToleranceMm = 0.03f;  // Ramer-Douglas-Peucker distance threshold (mm)
+    float simplificationToleranceMm = 0.015f; // Ramer-Douglas-Peucker distance threshold (mm)
+    float simplificationMaxTurnDeg = 4.0f;    // Max direction deviation a dropped span may have (keeps curves round)
+    float simplificationRadiusTolerance = 0.08f; // Max relative radius error when dropping points (keeps width profile)
     float minTurnAngleForJointCapDeg = 3.0f;  // Minimum turn angle (degrees) to emit a joint cap disk
 };
 
