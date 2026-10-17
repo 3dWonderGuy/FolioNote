@@ -76,11 +76,77 @@ public:
      */
     [[nodiscard]] static std::vector<StrokePoint> Simplify(
         const std::vector<StrokePoint>& points,
-        float toleranceMm = 0.05f) {
-        (void)toleranceMm;
+        float toleranceMm = 0.03f) {
+        if (points.size() <= 2 || toleranceMm <= 0.0f) {
+            return points;
+        }
 
-        // Stub: returns points unmodified for now
-        return points;
+        const size_t n = points.size();
+        std::vector<bool> keep(n, false);
+        keep[0] = true;
+        keep[n - 1] = true;
+
+        // Iterative Ramer-Douglas-Peucker with segment stack
+        std::vector<std::pair<size_t, size_t>> stack;
+        stack.reserve(64);
+        stack.push_back({ 0, n - 1 });
+
+        const double tolSq = static_cast<double>(toleranceMm) * toleranceMm;
+
+        while (!stack.empty()) {
+            auto [startIdx, endIdx] = stack.back();
+            stack.pop_back();
+
+            if (endIdx <= startIdx + 1) continue;
+
+            const double ax = points[startIdx].x;
+            const double ay = points[startIdx].y;
+            const double bx = points[endIdx].x;
+            const double by = points[endIdx].y;
+
+            const double abx = bx - ax;
+            const double aby = by - ay;
+            const double abLenSq = abx * abx + aby * aby;
+
+            double maxDistSq = -1.0;
+            size_t maxIdx = startIdx;
+
+            for (size_t i = startIdx + 1; i < endIdx; ++i) {
+                const double px = points[i].x;
+                const double py = points[i].y;
+
+                double distSq = 0.0;
+                if (abLenSq < 1e-9) {
+                    const double dx = px - ax;
+                    const double dy = py - ay;
+                    distSq = dx * dx + dy * dy;
+                } else {
+                    // Perpendicular distance squared: |(P - A) x (B - A)|^2 / |B - A|^2
+                    const double cross = (px - ax) * aby - (py - ay) * abx;
+                    distSq = (cross * cross) / abLenSq;
+                }
+
+                if (distSq > maxDistSq) {
+                    maxDistSq = distSq;
+                    maxIdx = i;
+                }
+            }
+
+            if (maxDistSq > tolSq) {
+                keep[maxIdx] = true;
+                stack.push_back({ startIdx, maxIdx });
+                stack.push_back({ maxIdx, endIdx });
+            }
+        }
+
+        std::vector<StrokePoint> result;
+        result.reserve(n);
+        for (size_t i = 0; i < n; ++i) {
+            if (keep[i]) {
+                result.push_back(points[i]);
+            }
+        }
+        return result;
     }
 
     /**

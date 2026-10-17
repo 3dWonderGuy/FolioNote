@@ -52,6 +52,8 @@
 #include "core/objects/object_registry.hpp"
 #include "core/ink_engine/stroke_collision.hpp"
 #include "core/ink_engine/ink_engine.hpp"
+#include "utils/uid_generator.hpp"
+#include "utils/guid_generator.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -181,11 +183,6 @@ bool InkContainer::HitTest(double x, double y) const noexcept {
     for (const auto& stroke : strokes) {
         if (!stroke.bounds.Contains(localPt.x, localPt.y)) continue;
 
-        if (!stroke.outlinePath.is_empty()) {
-            BLHitTest hit = stroke.outlinePath.hit_test(localPt, BL_FILL_RULE_NON_ZERO);
-            if (hit == BL_HIT_TEST_IN) return true;
-        }
-
         auto hit = StrokeCollisionEngine::HitTestStroke(stroke.segments, localPt.x, localPt.y, 1.5);
         if (hit.hit) return true;
     }
@@ -208,11 +205,6 @@ bool InkContainer::HitTestCircle(double cx, double cy, double radiusMm) const no
     for (const auto& stroke : strokes) {
         auto hit = StrokeCollisionEngine::HitTestStroke(stroke.segments, localPt.x, localPt.y, localRadius);
         if (hit.hit) return true;
-
-        if (!stroke.outlinePath.is_empty()) {
-            BLHitTest blHit = stroke.outlinePath.hit_test(localPt, BL_FILL_RULE_NON_ZERO);
-            if (blHit == BL_HIT_TEST_IN) return true;
-        }
     }
     return false;
 }
@@ -320,18 +312,23 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
         BLRgba32 renderColor = stroke.color;
         float combinedOpacity = std::clamp(opacity * stroke.opacity, 0.0f, 1.0f);
         renderColor.setA(static_cast<uint32_t>(std::round(static_cast<float>(renderColor.a()) * combinedOpacity)));
-        ctx.set_fill_style(renderColor);
 
-        if (!stroke.outlinePath.is_empty()) {
-            ctx.fill_path(stroke.outlinePath);
-        } else if (!stroke.points.empty()) {
-            BLPath fallbackOutline = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
-            ctx.fill_path(fallbackOutline);
-        } else if (stroke.segments.size() == 1) {
-            ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
-            ctx.set_stroke_width(stroke.segments[0].width);
-            ctx.stroke_line(stroke.segments[0].p0.x, stroke.segments[0].p0.y,
-                            stroke.segments[0].p1.x, stroke.segments[0].p1.y);
+        if ((stroke.strokePattern == StrokePattern::TexturedPencil || stroke.penType == PenType::Pencil) && !stroke.points.empty()) {
+            InkGenerator::RenderPencilStroke(ctx, stroke.points, stroke.baseWidthMm, renderColor);
+        } else {
+            ctx.set_fill_style(renderColor);
+
+            if (!stroke.outlinePath.is_empty()) {
+                ctx.fill_path(stroke.outlinePath);
+            } else if (!stroke.points.empty()) {
+                BLPath fallbackOutline = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
+                ctx.fill_path(fallbackOutline);
+            } else if (stroke.segments.size() == 1) {
+                ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
+                ctx.set_stroke_width(stroke.segments[0].width);
+                ctx.stroke_line(stroke.segments[0].p0.x, stroke.segments[0].p0.y,
+                                stroke.segments[0].p1.x, stroke.segments[0].p1.y);
+            }
         }
     }
 
@@ -390,6 +387,27 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
 
         if (strokeModified) {
             anyModified = true;
+            auto makePointWithTelemetry = [&](double px, double py, float rVal) -> StrokePoint {
+                StrokePoint res(px, py, rVal);
+                if (!stroke.points.empty()) {
+                    double bestDistSq = 1e30;
+                    const StrokePoint* bestPt = &stroke.points[0];
+                    for (const auto& origPt : stroke.points) {
+                        double dx = origPt.x - px;
+                        double dy = origPt.y - py;
+                        double d2 = dx * dx + dy * dy;
+                        if (d2 < bestDistSq) {
+                            bestDistSq = d2;
+                            bestPt = &origPt;
+                        }
+                    }
+                    res.pressure = bestPt->pressure;
+                    res.tiltX = bestPt->tiltX;
+                    res.tiltY = bestPt->tiltY;
+                }
+                return res;
+            };
+
             for (size_t subIdx = 0; subIdx < subChains.size(); ++subIdx) {
                 auto& subChain = subChains[subIdx];
                 if (subChain.empty()) continue;
@@ -404,12 +422,13 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                 newStroke.opacity = stroke.opacity;
                 newStroke.segments = std::move(subChain);
 
-                // Reconstruct points and polygon outline
+                // Reconstruct points and polygon outline (preserving pressure/tilt telemetry)
                 newStroke.points.reserve(newStroke.segments.size() + 1);
-                newStroke.points.push_back({ newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width * 0.5f });
+                newStroke.points.push_back(makePointWithTelemetry(
+                    newStroke.segments[0].p0.x, newStroke.segments[0].p0.y, newStroke.segments[0].width * 0.5f));
 
                 for (const auto& s : newStroke.segments) {
-                    newStroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
+                    newStroke.points.push_back(makePointWithTelemetry(s.p1.x, s.p1.y, s.width * 0.5f));
                 }
 
                 newStroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(newStroke.points, newStroke.capType, newStroke.strokePattern);
@@ -421,7 +440,32 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
     }
 
     if (anyModified) {
-        strokes = std::move(newStrokes);
+        if (newStrokes.empty()) {
+            strokes.clear();
+        } else {
+            // Keep the first surviving fragment in this container
+            strokes = { std::move(newStrokes[0]) };
+
+            // Any additional pieces become distinct, independent InkContainer objects
+            for (size_t k = 1; k < newStrokes.size(); ++k) {
+                auto frag = std::make_shared<InkContainer>();
+                frag->uid = UIDGenerator::Next();
+                frag->guuid = GUIDGenerator::GenerateV4();
+                frag->type = this->type;
+                frag->transform = this->transform;
+                frag->zOrder = this->zOrder;
+                frag->pageIndex = this->pageIndex;
+                frag->opacity = this->opacity;
+                frag->isVisible = this->isVisible;
+                frag->isLocked = this->isLocked;
+                frag->isSelectable = this->isSelectable;
+                frag->isHighlighter = this->isHighlighter;
+                frag->strokes = { std::move(newStrokes[k]) };
+                frag->renderDirty = true;
+                frag->UpdateBounds();
+                outNewFragments.push_back(frag);
+            }
+        }
         renderDirty = true;
         UpdateBounds();
         return true;

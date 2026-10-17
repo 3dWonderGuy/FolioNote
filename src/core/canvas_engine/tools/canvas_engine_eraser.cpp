@@ -103,7 +103,7 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
 
                 std::shared_ptr<InkContainer> originalClone = nullptr;
                 bool inkModified = false;
-                std::vector<std::shared_ptr<InkContainer>> dummyFrags;
+                std::vector<std::shared_ptr<InkContainer>> spawnedFrags;
 
                 for (int s = (steps > 1 ? 0 : 1); s <= steps; ++s) {
                     double t = (steps == 1) ? 1.0 : (static_cast<double>(s) / steps);
@@ -114,21 +114,38 @@ bool CanvasEngine::EraseSegment(float screenX0, float screenY0, float screenX1, 
                         originalClone = std::shared_ptr<InkContainer>(static_cast<InkContainer*>(ink->Clone().release()));
                     }
 
-                    if (ink->SliceStrokeAt(curX, curY, r, dummyFrags)) {
+                    std::vector<std::shared_ptr<InkContainer>> stepFrags;
+                    if (ink->SliceStrokeAt(curX, curY, r, stepFrags)) {
                         inkModified = true;
+                        for (auto& frag : stepFrags) {
+                            activePage->InsertObjectAdjacent(ink, frag);
+                            spawnedFrags.push_back(frag);
+                        }
                     }
                 }
 
                 if (inkModified) {
                     if (devMode) debugCollision.hitUids.push_back(obj->uid);
                     damageBox.Merge(originalClone->bounds);
+
+                    std::vector<std::shared_ptr<InkContainer>> surviving;
                     if (ink->strokes.empty()) {
-                        session.RecordErasedObject(ink);
                         activePage->RemoveObject(ink);
                     } else {
                         damageBox.Merge(ink->bounds);
                         activePage->UpdateObject(ink);
-                        session.RecordSlicedStroke(originalClone, { ink });
+                        surviving.push_back(ink);
+                    }
+
+                    for (const auto& frag : spawnedFrags) {
+                        damageBox.Merge(frag->bounds);
+                        surviving.push_back(frag);
+                    }
+
+                    if (surviving.empty()) {
+                        session.RecordErasedObject(originalClone);
+                    } else {
+                        session.RecordSlicedStroke(originalClone, surviving);
                     }
                     modified = true;
                 }

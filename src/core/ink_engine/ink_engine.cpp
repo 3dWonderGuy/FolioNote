@@ -1,6 +1,7 @@
 #include "core/ink_engine/ink_engine.hpp"
 #include "core/ink_engine/stroke_width_evaluator.hpp"
 #include "core/ink_engine/ink_generator.hpp"
+#include "core/ink_engine/stroke_post_processor.hpp"
 
 #include <ink_stroke_modeler/stroke_modeler.h>
 #include <ink_stroke_modeler/params.h>
@@ -62,16 +63,27 @@ void InkEngine::BeginStroke(double worldX, double worldY, float pressure, double
 
     m_isStrokeActive = true;
     m_activeStyle = style;
+    m_config.usePressure = style.usePressure;
+    m_config.useTilt = style.useTilt;
+    m_config.useVelocity = style.useVelocity;
     m_zoomScale = zoomScale > 0.001f ? zoomScale : 1.0f;
 
     StylusInputPoint startPt(worldX, worldY, pressure, timeSec, 0.0f, tiltX, tiltY);
     m_activeStrokePoints.push_back(startPt);
 
     // Initial touch-down preview delegated to the stroke/ribbon builder (which runs BuildPointCap for single points)
-    float dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-        m_activeStyle.baseWidth, startPt, -1.0f, m_zoomScale, m_config);
+    float startPressure = (startPt.pressure >= 0.0f) ? startPt.pressure : 0.65f;
+    float dynamicWidth = 0.0f;
+    if (m_activeStyle.pattern == StrokePattern::TexturedPencil) {
+        float tipWidth = m_activeStyle.baseWidth * (0.90f + 0.12f * std::clamp(startPressure, 0.0f, 1.0f));
+        dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+            tipWidth, -1.0f, 0.0f, startPt.tiltX, startPt.tiltY, -1.0f, m_zoomScale, m_config);
+    } else {
+        dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+            m_activeStyle.baseWidth, startPt, -1.0f, m_zoomScale, m_config);
+    }
     m_smoothedWidth = dynamicWidth;
-    StrokePoint dotPt(startPt.x, startPt.y, dynamicWidth * 0.5f);
+    StrokePoint dotPt(startPt.x, startPt.y, dynamicWidth * 0.5f, startPressure, startPt.tiltX, startPt.tiltY);
 
     m_liveStrokeOutline = InkGenerator::GenerateStroke(
         { dotPt }, m_activeStyle.capType, m_activeStyle.pattern);
@@ -134,16 +146,30 @@ FinishedStrokeData InkEngine::FinishStroke() {
 
         if (m_liveModeledPoints.empty()) {
             StylusInputPoint pt = m_activeStrokePoints.front();                        // tap origin
-            float dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-                m_activeStyle.baseWidth, pt, -1.0f, m_zoomScale, m_config);
-            m_liveModeledPoints.push_back(StrokePoint(pt.x, pt.y, dynamicWidth * 0.5f));
+            float tapPressure = (pt.pressure >= 0.0f) ? pt.pressure : 0.65f;
+            float dynamicWidth = 0.0f;
+            if (m_activeStyle.pattern == StrokePattern::TexturedPencil) {
+                float tipWidth = m_activeStyle.baseWidth * (0.90f + 0.12f * std::clamp(tapPressure, 0.0f, 1.0f));
+                dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+                    tipWidth, -1.0f, 0.0f, pt.tiltX, pt.tiltY, -1.0f, m_zoomScale, m_config);
+            } else {
+                dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+                    m_activeStyle.baseWidth, pt, -1.0f, m_zoomScale, m_config);
+            }
+            m_liveModeledPoints.push_back(StrokePoint(pt.x, pt.y, dynamicWidth * 0.5f, tapPressure, pt.tiltX, pt.tiltY));
         } else if (strokeLen < 1e-4) {
             // Google modeler flushed multiple coincident points for a stationary tap; collapse to single point
             m_liveModeledPoints.resize(1);
         }
     }
 
-    // Stage 3: Build collision segments and final vector stroke data once at the end (used for lasso math and eraser detection)
+    // Stage 3: Post-processing simplification (decimates redundant collinear vertices upon pen-up)
+    if (m_config.enablePostProcessSimplification && m_liveModeledPoints.size() > 2) {
+        m_liveModeledPoints = StrokePostProcessor::Simplify(
+            m_liveModeledPoints, m_config.simplificationToleranceMm);
+    }
+
+    // Stage 4: Build collision segments and final vector stroke data once at the end (used for lasso math and eraser detection)
     FinishedStrokeData data;
     if (m_liveModeledPoints.size() == 1) {
 
@@ -201,13 +227,22 @@ StrokePoint InkEngine::ToStrokePoint(const sm::Result& res, float previousWidth)
     float speed = std::hypot(res.velocity.x, res.velocity.y);
     float tiltX = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::cos(res.orientation) : 0.0f;
     float tiltY = (res.tilt >= 0.0f && res.orientation >= 0.0f) ? res.tilt * std::sin(res.orientation) : 0.0f;
+    float effectivePressure = (res.pressure >= 0.0f) ? res.pressure : 0.65f;
 
-    // calculate dynamic thickness with physics and internal EMA smoothing
-    float dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
-        m_activeStyle.baseWidth, res.pressure, speed, tiltX, tiltY,
-        previousWidth, m_zoomScale, m_config);
+    // For TexturedPencil, tip thickness stays nearly constant under pressure (pressure controls darkness
+    // and grain concentration, whereas stylus tilt expands the shading width).
+    float dynamicWidth = 0.0f;
+    if (m_activeStyle.pattern == StrokePattern::TexturedPencil) {
+        float tipWidth = m_activeStyle.baseWidth * (0.90f + 0.12f * std::clamp(effectivePressure, 0.0f, 1.0f));
+        dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+            tipWidth, -1.0f, 0.0f, tiltX, tiltY, previousWidth, m_zoomScale, m_config);
+    } else {
+        dynamicWidth = StrokeWidthEvaluator::CalculateDynamicWidth(
+            m_activeStyle.baseWidth, res.pressure, speed, tiltX, tiltY,
+            previousWidth, m_zoomScale, m_config);
+    }
 
-    return StrokePoint(res.position.x, res.position.y, dynamicWidth * 0.5f);
+    return StrokePoint(res.position.x, res.position.y, dynamicWidth * 0.5f, effectivePressure, tiltX, tiltY);
 }
 
 void InkEngine::ProcessGoogleResults(const std::vector<sm::Result>& results) {

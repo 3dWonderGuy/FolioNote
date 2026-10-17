@@ -124,6 +124,8 @@ public:
     [[nodiscard]] bool IsStrokeActive() const noexcept { return m_isStrokeActive; }
     [[nodiscard]] const BLPath& GetLiveOutlinePath() const noexcept { return m_liveStrokeOutline; }
     [[nodiscard]] const BLPath& GetPredictedOutlinePath() const noexcept { return m_predictedStrokeOutline; }
+    [[nodiscard]] const std::vector<StrokePoint>& GetLiveModeledPoints() const noexcept { return m_liveModeledPoints; }
+    [[nodiscard]] const std::vector<StrokePoint>& GetPredictedPoints() const noexcept { return m_predictedPointsBuffer; }
     [[nodiscard]] const StrokeStyle& GetActiveStyle() const noexcept { return m_activeStyle; }
 
     // -------------------------------------------------------------------------

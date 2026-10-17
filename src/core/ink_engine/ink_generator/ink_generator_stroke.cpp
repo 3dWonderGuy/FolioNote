@@ -289,162 +289,50 @@ BLPath InkGenerator::BuildSolidRibbon(const std::vector<StrokePoint>& pts, CapTy
     }
 
     const size_t N = cleanPts.size();
-    std::vector<Point2D> left;
-    std::vector<Point2D> right;
-    left.reserve(N * 2);
-    right.reserve(N * 2);
 
-    // Step 1: Compute smoothed boundary chains with sharp turn subdivision (theta limit)
-    for (size_t i = 0; i < N; ++i) {
-        // First point (Head)
-        if (i == 0) {
-            double dx = cleanPts[1].x - cleanPts[0].x;
-            double dy = cleanPts[1].y - cleanPts[0].y;
-            double len = std::hypot(dx, dy);
-            double nx = (len > 1e-7) ? -dy / len : 0.0;
-            double ny = (len > 1e-7) ?  dx / len : 1.0;
-
-            Point2D offL, offR;
-            GetRibbonOffsets(capType, cleanPts[0].r, nx, ny, offL, offR);
-            left.push_back({ cleanPts[0].x + offL.x,  cleanPts[0].y + offL.y });
-            right.push_back({ cleanPts[0].x + offR.x, cleanPts[0].y + offR.y });
-            continue;
+    // 2. Add joint caps at every vertex (oriented CW to match connecting quads)
+    if (capType == CapType::Round) {
+        for (size_t i = 0; i < N; ++i) {
+            if (cleanPts[i].r <= 0.002f) continue;
+            path.add_circle(BLCircle(cleanPts[i].x, cleanPts[i].y, cleanPts[i].r), BL_GEOMETRY_DIRECTION_CW);
         }
-
-        // Last point (Tail)
-        if (i == N - 1) {
-            double dx = cleanPts[N - 1].x - cleanPts[N - 2].x;
-            double dy = cleanPts[N - 1].y - cleanPts[N - 2].y;
-            double len = std::hypot(dx, dy);
-            double nx = (len > 1e-7) ? -dy / len : 0.0;
-            double ny = (len > 1e-7) ?  dx / len : 1.0;
-
-            Point2D offL, offR;
-            GetRibbonOffsets(capType, cleanPts[N - 1].r, nx, ny, offL, offR);
-            left.push_back({ cleanPts[N - 1].x + offL.x,  cleanPts[N - 1].y + offL.y });
-            right.push_back({ cleanPts[N - 1].x + offR.x, cleanPts[N - 1].y + offR.y });
-            break;
-        }
-
-        // Intermediate Joint (i-1 -> i -> i+1)
-        double dxIn  = cleanPts[i].x - cleanPts[i - 1].x;
-        double dyIn  = cleanPts[i].y - cleanPts[i - 1].y;
-        double lenIn = std::hypot(dxIn, dyIn);
-
-        double dxOut  = cleanPts[i + 1].x - cleanPts[i].x;
-        double dyOut  = cleanPts[i + 1].y - cleanPts[i].y;
-        double lenOut = std::hypot(dxOut, dyOut);
-
-        double uxIn  = (lenIn  > 1e-7) ? dxIn  / lenIn  : 1.0;
-        double uyIn  = (lenIn  > 1e-7) ? dyIn  / lenIn  : 0.0;
-        double uxOut = (lenOut > 1e-7) ? dxOut / lenOut : 1.0;
-        double uyOut = (lenOut > 1e-7) ? dyOut / lenOut : 0.0;
-
-        // Angle between incoming and outgoing directions
-        double dot   = uxIn * uxOut + uyIn * uyOut;
-        double cross = uxIn * uyOut - uyIn * uxOut;
-        double turnAngle = std::atan2(std::abs(cross), dot);
-
-        // THETA LIMIT: If turn is gentle (<= 45°), use angle bisector with miter compensation
-        constexpr double kMaxTurnPerStep = M_PI * 0.25; // 45 degrees
-        if (turnAngle <= kMaxTurnPerStep) {
-            double nx = -uyIn - uyOut;
-            double ny =  uxIn + uxOut;
-            double nLen = std::hypot(nx, ny);
-            if (nLen > 1e-6) {
-                nx /= nLen;
-                ny /= nLen;
-            } else {
-                nx = -uyIn;
-                ny =  uxIn;
-            }
-
-            // Miter compensation: prevents line from thinning down across the bend
-            double miter = std::min(1.4, 2.0 / std::max(0.5, nLen));
-            nx *= miter;
-            ny *= miter;
-
-            Point2D offL, offR;
-            GetRibbonOffsets(capType, cleanPts[i].r, nx, ny, offL, offR);
-            left.push_back({ cleanPts[i].x + offL.x,  cleanPts[i].y + offL.y });
-            right.push_back({ cleanPts[i].x + offR.x, cleanPts[i].y + offR.y });
-        } else {
-            // SHARP TURN (> 45° up to 180° hairpin reversal):
-            // 1. Compute exact uncorrupted incoming and outgoing normal offsets directly at joint cleanPts[i].
-            //    (Avoids bisector sum cancellation (-uyIn - uyOut) which vanishes to (0,0) at 180° and normalizes noise).
-            double nxIn  = -uyIn;
-            double nyIn  =  uxIn;
-            double nxOut = -uyOut;
-            double nyOut =  uxOut;
-
-            Point2D inL, inR, outL, outR;
-            GetRibbonOffsets(capType, cleanPts[i].r, nxIn,  nyIn,  inL,  inR);
-            GetRibbonOffsets(capType, cleanPts[i].r, nxOut, nyOut, outL, outR);
-
-            // 2. Only sweep the OUTSIDE (convex) wall in small angular steps (<= 22.5° each).
-            //    The INSIDE (concave) wall cleanly connects incoming edge to outgoing edge directly at joint i.
-            //    This guarantees boundaries never cut through the stroke tube, preventing winding cancellation.
-            constexpr double kSubStepAngle = M_PI / 8.0; // 22.5 degrees per step
-            int steps = std::max(2, static_cast<int>(std::ceil(turnAngle / kSubStepAngle)));
-            double turnSign = (cross >= 0.0) ? 1.0 : -1.0;
-            double aIn = std::atan2(uyIn, uxIn);
-
-            if (cross >= 0.0) {
-                // Turn is LEFT:
-                // Inside is Left: connects incoming inL to outgoing outL across the joint
-                left.push_back({ cleanPts[i].x + inL.x,  cleanPts[i].y + inL.y });
-                left.push_back({ cleanPts[i].x + outL.x, cleanPts[i].y + outL.y });
-
-                // Outside is Right: sweeps arc from inR to outR
-                for (int s = 0; s <= steps; ++s) {
-                    double t = static_cast<double>(s) / steps;
-                    double heading = aIn + turnSign * t * turnAngle;
-                    double nx = -std::sin(heading);
-                    double ny =  std::cos(heading);
-
-                    Point2D offL, offR;
-                    GetRibbonOffsets(capType, cleanPts[i].r, nx, ny, offL, offR);
-                    right.push_back({ cleanPts[i].x + offR.x, cleanPts[i].y + offR.y });
+    } else {
+        // Oriented polygon cap for Square / Chisel nibs
+        for (size_t i = 0; i < N; ++i) {
+            if (cleanPts[i].r <= 0.002f) continue;
+            auto nibVerts = GetNibVertices(capType, cleanPts[i].r);
+            if (!nibVerts.empty()) {
+                path.move_to(cleanPts[i].x + nibVerts[0].x, cleanPts[i].y + nibVerts[0].y);
+                for (size_t k = 1; k < nibVerts.size(); ++k) {
+                    path.line_to(cleanPts[i].x + nibVerts[k].x, cleanPts[i].y + nibVerts[k].y);
                 }
-            } else {
-                // Turn is RIGHT:
-                // Inside is Right: connects incoming inR to outgoing outR across the joint
-                right.push_back({ cleanPts[i].x + inR.x,  cleanPts[i].y + inR.y });
-                right.push_back({ cleanPts[i].x + outR.x, cleanPts[i].y + outR.y });
-
-                // Outside is Left: sweeps arc from inL to outL
-                for (int s = 0; s <= steps; ++s) {
-                    double t = static_cast<double>(s) / steps;
-                    double heading = aIn + turnSign * t * turnAngle;
-                    double nx = -std::sin(heading);
-                    double ny =  std::cos(heading);
-
-                    Point2D offL, offR;
-                    GetRibbonOffsets(capType, cleanPts[i].r, nx, ny, offL, offR);
-                    left.push_back({ cleanPts[i].x + offL.x, cleanPts[i].y + offL.y });
-                }
+                path.close();
             }
         }
     }
 
-    // Step 2: Extrude continuous closed ribbon
-    path.move_to(left[0].x, left[0].y);
+    // 3. Add connecting quads between consecutive points (CW winding: L0 -> R0 -> R1 -> L1 -> Close)
+    for (size_t i = 0; i < N - 1; ++i) {
+        if (cleanPts[i].r <= 0.002f && cleanPts[i + 1].r <= 0.002f) continue;
+        double dx = cleanPts[i + 1].x - cleanPts[i].x;
+        double dy = cleanPts[i + 1].y - cleanPts[i].y;
+        double len = std::hypot(dx, dy);
+        if (len < 1e-6) continue;
 
-    for (size_t i = 1; i < left.size(); ++i) {
-        path.line_to(left[i].x, left[i].y);
+        double nx = -dy / len;
+        double ny =  dx / len;
+
+        Point2D offL0, offR0, offL1, offR1;
+        GetRibbonOffsets(capType, std::max(0.0f, cleanPts[i].r),     nx, ny, offL0, offR0);
+        GetRibbonOffsets(capType, std::max(0.0f, cleanPts[i + 1].r), nx, ny, offL1, offR1);
+
+        // CW Quad: L0 -> R0 -> R1 -> L1 -> Close
+        path.move_to(cleanPts[i].x     + offL0.x, cleanPts[i].y     + offL0.y);
+        path.line_to(cleanPts[i].x     + offR0.x, cleanPts[i].y     + offR0.y);
+        path.line_to(cleanPts[i + 1].x + offR1.x, cleanPts[i + 1].y + offR1.y);
+        path.line_to(cleanPts[i + 1].x + offL1.x, cleanPts[i + 1].y + offL1.y);
+        path.close();
     }
 
-    // Tail Cap (left -> right around the front)
-    TraceCap(path, cleanPts.back(), left.back(), right.back(), capType, /*isTail=*/true);
-
-    for (size_t i = right.size() - 1; i > 0; --i) {
-        path.line_to(right[i - 1].x, right[i - 1].y);
-    }
-
-    // Head Cap (right -> left around the back)
-    TraceCap(path, cleanPts.front(), left.front(), right.front(), capType, /*isTail=*/false);
-
-    // Step 3: Seal closed polygon
-    path.close();
     return path;
 }

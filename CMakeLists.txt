@@ -618,6 +618,7 @@ if(NOT ANDROID)
     target_include_directories(test_physics_model PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
     )
 
     add_test(NAME test_physics_model COMMAND test_physics_model)

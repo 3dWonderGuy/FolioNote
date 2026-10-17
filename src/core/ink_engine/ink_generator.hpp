@@ -67,6 +67,23 @@ public:
     static void FillInfill(BLContext& ctx, const BLPath& region, const InfillStyle& style);
 
     /**
+     * @brief Renders a multi-band textured graphite pencil stroke using cached world-space noise BLPatterns.
+     *
+     * Models physical pencil behavior:
+     * - Outer grain base maintains constant tip thickness under varying pressure and spreads outward when tilted.
+     * - Inner concentration bands build up darkness and suppress paper tooth noise as pressure increases.
+     *
+     * @param ctx          Target Blend2D context (in world-space coordinates).
+     * @param centerline   Modeled stroke vertices containing position, radius, pressure, and tilt.
+     * @param baseWidthMm  Nominal tool base thickness in millimeters.
+     * @param color        Graphite pigment color (including combined opacity).
+     */
+    static void RenderPencilStroke(BLContext& ctx,
+                                   const std::vector<StrokePoint>& centerline,
+                                   float baseWidthMm,
+                                   const BLRgba32& color);
+
+    /**
      * @brief Universal cap tracer: generates a full closed cap polygon for a single-point tap.
      *
      * @param pt Centerline point with radius (r).
@@ -126,6 +143,9 @@ private:
 
     // Generates an arc-length parameterized dash-dot sequence contour
     static BLPath BuildDashDotPattern(const std::vector<StrokePoint>& pts);
+
+    // Generates a graphite pencil stroke contour with paper tooth micro-texture and fiber striations
+    static BLPath BuildTexturedPencilPattern(const std::vector<StrokePoint>& pts);
 
     // =========================================================================
     // STEP 3: INFILL HATCH PATTERN FACTORY

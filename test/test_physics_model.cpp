@@ -9,6 +9,7 @@
 #include <iostream>
 #include <cmath>
 #include "utils/physics_model.hpp"
+#include "core/ink_engine/stroke_width_evaluator.hpp"
 
 using namespace Folio::Physics;
 
@@ -77,6 +78,50 @@ void TestDynamicEraserPhysicsModel() {
     std::cout << "[Test] DynamicEraserPhysicsModel velocity simulation test passed!" << std::endl;
 }
 
+void TestStylusTiltDynamics() {
+    std::cout << "[Test] Running Stylus Tilt & Pencil Shading Dynamics test..." << std::endl;
+
+    Folio::InkingConfig config;
+    config.useTilt = true;
+    config.usePressure = false; // Isolate tilt
+    config.useVelocity = false;
+    config.dynamicWidthSmoothing = 1.0f; // Instant for unit test
+    config.maxTiltWidthMultiplier = 2.5f;
+    config.tiltDeadzoneRad = 0.20f;
+    config.tiltMaxAngleRad = 1.10f;
+
+    const float baseWidth = 0.7f; // 2B Pencil baseline
+
+    // 1. Upright stylus (tilt = 0): no expansion
+    float wUpright = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, 1.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, config);
+    assert(std::abs(wUpright - baseWidth) < 1e-4f);
+
+    // 2. Stylus within deadzone (tilt = 0.15 rad < 0.20 rad): stays at base width
+    float wDeadzone = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, 1.0f, 0.0f, 0.15f, 0.0f, -1.0f, 1.0f, config);
+    assert(std::abs(wDeadzone - baseWidth) < 1e-4f);
+
+    // 3. Stylus tilted for shading (tilt = 0.65 rad ~ mid-shading): smooth expansion
+    float wMidShading = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, 1.0f, 0.0f, 0.65f, 0.0f, -1.0f, 1.0f, config);
+    assert(wMidShading > baseWidth);
+    assert(wMidShading < baseWidth * config.maxTiltWidthMultiplier);
+
+    // 4. Stylus at maximum tilt (tilt = 1.20 rad > 1.10 rad ceiling): clamped to maxTiltWidthMultiplier
+    float wMaxTilt = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, 1.0f, 0.0f, 1.20f, 0.0f, -1.0f, 1.0f, config);
+    assert(std::abs(wMaxTilt - (baseWidth * config.maxTiltWidthMultiplier)) < 1e-4f);
+
+    // 5. Stylus with useTilt disabled: tilt angle does not affect width
+    config.useTilt = false;
+    float wNoTilt = Folio::StrokeWidthEvaluator::CalculateDynamicWidth(
+        baseWidth, 1.0f, 0.0f, 1.20f, 0.0f, -1.0f, 1.0f, config);
+    assert(std::abs(wNoTilt - baseWidth) < 1e-4f);
+
+    std::cout << "[Test] Stylus Tilt & Pencil Shading Dynamics test passed!" << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "Starting Folio Physics Model Test Suite" << std::endl;
@@ -84,6 +129,7 @@ int main() {
 
     TestSpringDamperCriticallyDamped();
     TestDynamicEraserPhysicsModel();
+    TestStylusTiltDynamics();
 
     std::cout << "========================================" << std::endl;
     std::cout << "All Physics Model tests passed (100% OK)!" << std::endl;

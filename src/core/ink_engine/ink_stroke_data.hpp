@@ -44,10 +44,13 @@ enum class StrokePattern : uint8_t {
  * @brief Core visual and geometric properties applied to a vector stroke or shape outline.
  */
 struct StrokeStyle {
-    float         baseWidth = 0.5f;                             ///< Base line thickness in world millimeters (mm)
-    CapType       capType   = CapType::Round;                   ///< Terminal segment cap style
-    StrokePattern pattern   = StrokePattern::Solid;             ///< Tessellation pattern (solid, dashed, dotted, dash-dot)
-    BLRgba32      color     = BLRgba32(0x18, 0x1A, 0x20, 0xFF); ///< Pigment color
+    float         baseWidth   = 0.5f;                             ///< Base line thickness in world millimeters (mm)
+    CapType       capType     = CapType::Round;                   ///< Terminal segment cap style
+    StrokePattern pattern     = StrokePattern::Solid;             ///< Tessellation pattern (solid, dashed, dotted, dash-dot, textured pencil)
+    BLRgba32      color       = BLRgba32(0x18, 0x1A, 0x20, 0xFF); ///< Pigment color
+    bool          usePressure = true;                             ///< Enable digitizer tip pressure dynamics
+    bool          useTilt     = false;                            ///< Enable stylus tilt shading dynamics
+    bool          useVelocity = false;                            ///< Enable hydrodynamic velocity thinning
 };
 
 /**
@@ -93,9 +96,17 @@ struct Point2D {
  * @brief Discrete centerline vertex with pre-resolved stroke radius (r).
  */
 struct StrokePoint {
-    double x = 0.0;
-    double y = 0.0;
-    float  r = 0.25f;   ///< Pre-calculated stroke radius (half-thickness) in world millimeters (mm)
+    double x        = 0.0;
+    double y        = 0.0;
+    float  r        = 0.25f;  ///< Pre-calculated stroke radius (half-thickness) in world millimeters (mm)
+    float  pressure = 0.65f;  ///< Normalized stylus pressure [0.0, 1.0] (controls pencil darkness & grain concentration)
+    float  tiltX    = 0.0f;   ///< Stylus tilt angle along X axis in radians
+    float  tiltY    = 0.0f;   ///< Stylus tilt angle along Y axis in radians
+
+    constexpr StrokePoint() noexcept = default;
+    constexpr StrokePoint(double x_, double y_, float r_ = 0.25f,
+                          float pressure_ = 0.65f, float tiltX_ = 0.0f, float tiltY_ = 0.0f) noexcept
+        : x(x_), y(y_), r(r_), pressure(pressure_), tiltX(tiltX_), tiltY(tiltY_) {}
 
     operator Point2D() const noexcept { return {x, y}; }
 };

@@ -87,16 +87,29 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
     if (m_inkEngine.IsStrokeActive()) {
         ctx.save();
         ctx.set_transform(viewport.worldToScreenMatrix);
-        ctx.set_fill_style(BLRgba32(m_inkEngine.GetActiveStyle().color.value));
+        const auto& activeStyle = m_inkEngine.GetActiveStyle();
 
-        const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
-        if (!liveOutline.is_empty()) {
-            ctx.fill_path(liveOutline);
-        }
+        if (activeStyle.pattern == StrokePattern::TexturedPencil) {
+            const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+            if (!livePts.empty()) {
+                InkGenerator::RenderPencilStroke(ctx, livePts, activeStyle.baseWidth, activeStyle.color);
+            }
+            const auto& predPts = m_inkEngine.GetPredictedPoints();
+            if (predPts.size() >= 2) {
+                InkGenerator::RenderPencilStroke(ctx, predPts, activeStyle.baseWidth, activeStyle.color);
+            }
+        } else {
+            ctx.set_fill_style(BLRgba32(activeStyle.color.value));
 
-        const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
-        if (!predOutline.is_empty()) {
-            ctx.fill_path(predOutline);
+            const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
+            if (!liveOutline.is_empty()) {
+                ctx.fill_path(liveOutline);
+            }
+
+            const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
+            if (!predOutline.is_empty()) {
+                ctx.fill_path(predOutline);
+            }
         }
 
         ctx.restore();

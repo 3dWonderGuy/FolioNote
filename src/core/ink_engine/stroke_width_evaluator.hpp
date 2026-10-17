@@ -134,8 +134,23 @@ private:
             return 1.0f;
         }
 
-        // Empty stub: ready for custom tilt math (pencil shading / chisel angle modulation)
-        return 1.0f;
+        float tiltRad = std::hypot(tiltX, tiltY);
+        if (tiltRad <= config.tiltDeadzoneRad) {
+            return 1.0f;
+        }
+        if (tiltRad >= config.tiltMaxAngleRad) {
+            return config.maxTiltWidthMultiplier;
+        }
+
+        float range = config.tiltMaxAngleRad - config.tiltDeadzoneRad;
+        if (range <= 1e-5f) {
+            return config.maxTiltWidthMultiplier;
+        }
+
+        float t = std::clamp((tiltRad - config.tiltDeadzoneRad) / range, 0.0f, 1.0f);
+        // Smoothstep interpolation (Hermite polynomial) for natural shading onset
+        float smoothT = t * t * (3.0f - 2.0f * t);
+        return 1.0f + smoothT * (config.maxTiltWidthMultiplier - 1.0f);
     }
 
     /**

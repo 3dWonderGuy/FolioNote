@@ -76,8 +76,18 @@ struct InkingConfig {
     bool useTilt = false;
     float minWidthMultiplier = 0.2f;
     float maxWidthMultiplier = 1.5f;
+    float maxTiltWidthMultiplier = 2.5f;     // Shading width expansion at maximum stylus tilt
+    float tiltDeadzoneRad = 0.20f;          // Deadzone angle in radians (~11.5 deg) below which tilt is ignored
+    float tiltMaxAngleRad = 1.10f;          // Tilt angle in radians (~63 deg) reaching max shading width
     float velocityThinningMaxSpeed = 1500.0f; // mm/s
     float dynamicWidthSmoothing = 0.6f;        // EMA factor (0.0 to 1.0)
+
+    // -------------------------------------------------------------
+    // 7. POST-PROCESSING & SIMPLIFICATION (Pen-Up Commit)
+    // -------------------------------------------------------------
+    bool enablePostProcessSimplification = true;
+    float simplificationToleranceMm = 0.03f;  // Ramer-Douglas-Peucker distance threshold (mm)
+    float minTurnAngleForJointCapDeg = 3.0f;  // Minimum turn angle (degrees) to emit a joint cap disk
 };
 
 using InkingTuningConfig = InkingConfig;
