@@ -22,6 +22,7 @@
 #include "core/layers/live_interaction_layer.hpp"
 #include "core/canvas_engine/gizmo/selection_gizmo.hpp"
 #include "core/canvas_engine/transform/canvas_transform.hpp"
+#include "core/gpu/gpu_ink_manager.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -74,14 +75,6 @@ AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) 
                 bounds.Merge(sp.x - rPx, sp.y - rPx);
                 bounds.Merge(sp.x + rPx, sp.y + rPx);
             }
-        }
-        BLBox box;
-        const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
-        if (!predOutline.is_empty() && predOutline.get_bounding_box(&box) == BL_SUCCESS) {
-            Point2D s0 = viewport.WorldToScreen(box.x0, box.y0);
-            Point2D s1 = viewport.WorldToScreen(box.x1, box.y1);
-            bounds.Merge(s0.x, s0.y);
-            bounds.Merge(s1.x, s1.y);
         }
         const auto& predPts = m_inkEngine.GetPredictedPoints();
         for (const auto& pt : predPts) {
@@ -207,11 +200,33 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
  * - Priority 2: Fallback for borrowed spans / raw points with round caps & round joins.
  */
 void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& viewport) {
-    // 1. Primary Vector Inking Engine: Continuous Modeled Ribbon Polygon (Google Ink & Spring Physics)
+    // 1. Primary Vector Inking Engine: SDL_GPU Hardware Triangle Mesh & Modeled Ribbon
     if (m_inkEngine.IsStrokeActive()) {
+        const auto& activeStyle = m_inkEngine.GetActiveStyle();
+        auto& gpu = GpuInkManager::Instance();
+
+        if (activeStyle.pattern == StrokePattern::Solid && gpu.IsEnabled()) {
+            const float effectiveScale = static_cast<float>(viewport.GetEffectiveScale());
+            gpu.BeginBatch();
+
+            const auto& liveMesh = m_inkEngine.GetLiveMesh();
+            if (!liveMesh.empty()) {
+                gpu.SubmitMesh(liveMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, BlendMode::Normal);
+            }
+
+            const auto& predMesh = m_inkEngine.GetPredictedMesh();
+            if (!predMesh.empty()) {
+                gpu.SubmitMesh(predMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, BlendMode::Normal);
+            }
+
+            if (gpu.HasPendingDraws()) {
+                gpu.FlushToContext(ctx);
+                return;
+            }
+        }
+
         ctx.save();
         ctx.set_transform(viewport.worldToScreenMatrix);
-        const auto& activeStyle = m_inkEngine.GetActiveStyle();
 
         if (activeStyle.pattern == StrokePattern::TexturedPencil) {
             const auto& livePts = m_inkEngine.GetLiveModeledPoints();

@@ -7,6 +7,7 @@
 #include "app/settings_manager.hpp"
 #include "io/storage/file_logger.hpp"
 #include "core/document/document_session.hpp"
+#include <folio_sketch/ink_generator.hpp>
 #include <deque>
 #include <string>
 #include <algorithm>
@@ -342,6 +343,36 @@ public:
                     ImGui::Text("Query Radius : %.2f mm", canvas.debugCollision.queryRadius);
                     ImGui::Text("Candidates   : %zu broadphase hits", canvas.debugCollision.candidateUids.size());
                     ImGui::Text("Collided     : %zu narrowphase hits", canvas.debugCollision.hitUids.size());
+                }
+
+                ImGui::Separator();
+                ImGui::TextColored(theme.colorPrimary, "INK TESSELLATION GEOMETRY DEBUGGER");
+                bool captureEnabled = InkGenerator::IsDebugCaptureEnabled();
+                if (ImGui::Checkbox("Capture Stroke Geometry Telemetry", &captureEnabled)) {
+                    InkGenerator::SetDebugCapture(captureEnabled);
+                }
+                if (ImGui::Checkbox("Show Ink Wireframe (Debug Overlay)", &canvas.debugShowInkWireframe)) {
+                    if (canvas.debugShowInkWireframe) {
+                        InkGenerator::SetDebugCapture(true);
+                    }
+                    canvas.isDirty = true;
+                }
+
+                const auto& dbgInfo = InkGenerator::GetLastDebugInfo();
+                ImGui::Text("Last Stroke Telemetry:");
+                ImGui::BulletText("Raw Points: %zu", dbgInfo.rawInputPts.size());
+                ImGui::BulletText("Clean Points: %zu", dbgInfo.cleanPts.size());
+                ImGui::BulletText("Left Rail Vertices: %zu", dbgInfo.leftRail.size());
+                ImGui::BulletText("Right Rail Vertices: %zu", dbgInfo.rightRail.size());
+                if (dbgInfo.hasDefects) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "DEFECTS DETECTED: %zu intersections, %zu folds",
+                                       dbgInfo.selfIntersections.size(), dbgInfo.retrogradeIndices.size());
+                } else {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Defects: None (0 intersections, 0 folds)");
+                }
+
+                if (ImGui::Button("Dump Last Stroke to C++ (stdout & file)")) {
+                    InkGenerator::DumpLastStrokeToConsole();
                 }
 
                 ImGui::EndTabItem();

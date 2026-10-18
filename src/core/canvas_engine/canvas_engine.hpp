@@ -140,6 +140,7 @@ public:
     bool debugShowSegmentAABB = true;
     bool debugShowQueryAABB = true;
     bool debugShowLabels = true;
+    bool debugShowInkWireframe = false;
 
     struct DebugCollisionInfo {
         bool active = false;

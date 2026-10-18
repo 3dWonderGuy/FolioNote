@@ -51,6 +51,7 @@
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/object_registry.hpp"
 #include "core/ink_engine/ink_engine.hpp"
+#include "core/gpu/gpu_ink_manager.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"
 
@@ -278,6 +279,9 @@ void InkContainer::BakeTransform() {
 
         if (!stroke.points.empty()) {
             stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
+            Folio::InkEngine::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache);
+        } else {
+            stroke.meshCache.clear();
         }
     }
 
@@ -296,20 +300,57 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
 
     renderDirty = false;
 
+    auto& gpu = Folio::GpuInkManager::Instance();
+    const bool useGpuBatch = gpu.IsLayerPassActive() && gpu.IsEnabled();
+
+    // Combine object local transform T with viewport worldToScreenMatrix V: M = V * T
+    const BLMatrix2D& T = transform;
+    const BLMatrix2D& V = viewport.worldToScreenMatrix;
+    const BLMatrix2D combinedMatrix(
+        T.m00 * V.m00 + T.m01 * V.m10,
+        T.m00 * V.m01 + T.m01 * V.m11,
+        T.m10 * V.m00 + T.m11 * V.m10,
+        T.m10 * V.m01 + T.m11 * V.m11,
+        T.m20 * V.m00 + T.m21 * V.m10 + V.m20,
+        T.m20 * V.m01 + T.m21 * V.m11 + V.m21
+    );
+    const float effectiveScale = static_cast<float>(viewport.GetEffectiveScale());
+
     ctx.save();
     ctx.apply_transform(transform);
     ctx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
 
     for (const auto& stroke : strokes) {
-        if (stroke.outlinePath.is_empty() && stroke.segments.empty()) continue;
+        if (stroke.outlinePath.is_empty() && stroke.segments.empty() && stroke.points.empty()) continue;
 
-        BLCompOp compOp = (isHighlighter || stroke.blendMode == BlendMode::Multiply)
+        float combinedOpacity = std::clamp(opacity * stroke.opacity, 0.0f, 1.0f);
+        BlendMode effectiveBlend = (isHighlighter || stroke.blendMode == BlendMode::Multiply)
+                                       ? BlendMode::Multiply
+                                       : stroke.blendMode;
+
+        const bool isSolidGpuStroke = (stroke.strokePattern == StrokePattern::Solid) &&
+                                      (stroke.penType != PenType::Pencil) &&
+                                      !stroke.points.empty();
+
+        if (useGpuBatch && isSolidGpuStroke) {
+            const auto& mesh = stroke.EnsureMeshCache();
+            if (!mesh.empty()) {
+                gpu.SubmitMesh(mesh, combinedMatrix, effectiveScale, combinedOpacity, effectiveBlend);
+                continue;
+            }
+        }
+
+        // If transitioning from GPU batch to CPU pencil/patterned stroke, flush pending GPU draws first
+        if (useGpuBatch && gpu.HasPendingDraws()) {
+            gpu.FlushToContext(ctx);
+        }
+
+        BLCompOp compOp = (effectiveBlend == BlendMode::Multiply)
                               ? BL_COMP_OP_MULTIPLY
                               : stroke.GetBlend2DCompOp();
         ctx.set_comp_op(compOp);
 
         BLRgba32 renderColor = stroke.color;
-        float combinedOpacity = std::clamp(opacity * stroke.opacity, 0.0f, 1.0f);
         renderColor.setA(static_cast<uint32_t>(std::round(static_cast<float>(renderColor.a()) * combinedOpacity)));
 
         if ((stroke.strokePattern == StrokePattern::TexturedPencil || stroke.penType == PenType::Pencil) && !stroke.points.empty()) {
@@ -431,6 +472,7 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                 }
 
                 newStroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(newStroke.points, newStroke.capType, newStroke.strokePattern);
+                Folio::InkEngine::BuildStrokeMesh(newStroke.points, newStroke.capType, Folio::PackGpuColor(newStroke.color), newStroke.meshCache);
                 newStrokes.push_back(std::move(newStroke));
             }
         } else {

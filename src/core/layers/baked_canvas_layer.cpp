@@ -32,8 +32,10 @@
 #include "baked_canvas_layer.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/objects/canvas_object.hpp"
+#include "core/gpu/gpu_ink_manager.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace Folio {
 
@@ -141,6 +143,10 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
 
     m_bakedContext.begin(m_bakedSurface);
 
+    auto& gpu = GpuInkManager::Instance();
+    gpu.BeginBatch();
+    gpu.SetLayerPassActive(true);
+
     if (m_needsFullRebake) {
         m_lastRenderedDirtyWorldRegion.Reset();
         // --- Path A: Full Viewport Rebake (Camera pan/zoom/resize) ---
@@ -170,7 +176,13 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
         m_bakedContext.set_transform(viewport.worldToScreenMatrix);
 
         for (const auto& obj : candidates) {
+            if (obj->type != ObjectType::InkContainer && gpu.HasPendingDraws()) {
+                gpu.FlushToContext(m_bakedContext, 0, 0, m_surfaceWidth, m_surfaceHeight);
+            }
             obj->Render(m_bakedContext, viewport);
+        }
+        if (gpu.HasPendingDraws()) {
+            gpu.FlushToContext(m_bakedContext, 0, 0, m_surfaceWidth, m_surfaceHeight);
         }
 
         m_bakedContext.restore();
@@ -184,6 +196,13 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
             // 1. Scissor-clip in screen space using the projected dirty bounds
             BLRect screenClip = viewport.WorldToScreenRect(m_dirtyWorldRegion);
             m_bakedContext.clip_to_rect(screenClip);
+
+            const int clipX = std::clamp(static_cast<int>(std::floor(screenClip.x)), 0, m_surfaceWidth - 1);
+            const int clipY = std::clamp(static_cast<int>(std::floor(screenClip.y)), 0, m_surfaceHeight - 1);
+            const int clipR = std::clamp(static_cast<int>(std::ceil(screenClip.x + screenClip.w)), 1, m_surfaceWidth);
+            const int clipB = std::clamp(static_cast<int>(std::ceil(screenClip.y + screenClip.h)), 1, m_surfaceHeight);
+            const int clipW = std::max(1, clipR - clipX);
+            const int clipH = std::max(1, clipB - clipY);
 
             // 2. Repaint paper backdrop inside the clipped screen patch
             DrawBackground(page, viewport);
@@ -210,13 +229,20 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
             });
 
             for (const auto& obj : candidates) {
+                if (obj->type != ObjectType::InkContainer && gpu.HasPendingDraws()) {
+                    gpu.FlushToContext(m_bakedContext, clipX, clipY, clipW, clipH);
+                }
                 obj->Render(m_bakedContext, viewport);
+            }
+            if (gpu.HasPendingDraws()) {
+                gpu.FlushToContext(m_bakedContext, clipX, clipY, clipW, clipH);
             }
 
             m_bakedContext.restore();
         }
     }
 
+    gpu.SetLayerPassActive(false);
     m_bakedContext.end();
 
     // Reset tracking flags for the next frame

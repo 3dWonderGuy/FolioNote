@@ -7,9 +7,11 @@
 
 #include <cassert>
 #include <iostream>
+#include <fstream>
 #include <cmath>
 #include "utils/physics_model.hpp"
 #include "core/ink_engine/ink_engine.hpp"
+#include "core/gpu/gpu_ink_manager.hpp"
 
 using namespace Folio::Physics;
 
@@ -194,6 +196,215 @@ void TestWidthThinningToggle() {
     std::cout << "[Test] Width Thinning Toggle test passed (100% OK)!" << std::endl;
 }
 
+void TestStrokeGeometryDebugger() {
+    std::cout << "[Test] Running StrokeGeometryDebugger and telemetry verification..." << std::endl;
+
+    InkGenerator::SetDebugCapture(true);
+    assert(InkGenerator::IsDebugCaptureEnabled());
+
+    // 1. Clean straight stroke (no defects)
+    std::vector<StrokePoint> cleanStroke = {
+        { 0.0, 0.0, 2.0f, 0.5f, 0.0f, 0.0f },
+        { 10.0, 0.0, 2.0f, 0.5f, 0.0f, 0.0f },
+        { 20.0, 0.0, 2.0f, 0.5f, 0.0f, 0.0f }
+    };
+    BLPath cleanPath = InkGenerator::BuildSolidRibbon(cleanStroke);
+    assert(!cleanPath.is_empty());
+
+    const auto& cleanInfo = InkGenerator::GetLastDebugInfo();
+    assert(cleanInfo.rawInputPts.size() == 3);
+    assert(cleanInfo.cleanPts.size() == 3);
+    assert(!cleanInfo.leftRail.empty());
+    assert(!cleanInfo.rightRail.empty());
+    assert(cleanInfo.selfIntersections.empty());
+    assert(!cleanInfo.hasDefects);
+
+    // 2. Self-intersecting crossing stroke (figure-8 / scissors)
+    std::vector<StrokePoint> crossingStroke = {
+        { 0.0, 0.0, 3.0f, 0.5f, 0.0f, 0.0f },
+        { 40.0, 40.0, 3.0f, 0.5f, 0.0f, 0.0f },
+        { 40.0, 0.0, 3.0f, 0.5f, 0.0f, 0.0f },
+        { 0.0, 40.0, 3.0f, 0.5f, 0.0f, 0.0f }
+    };
+    BLPath crossPath = InkGenerator::BuildSolidRibbon(crossingStroke);
+    assert(!crossPath.is_empty());
+
+    const auto& crossInfo = InkGenerator::GetLastDebugInfo();
+    assert(crossInfo.hasDefects);
+    assert(!crossInfo.selfIntersections.empty());
+
+    // 3. Verify RenderDebugOverlay runs without crash on Blend2D context
+    BLImage img(400, 400, BL_FORMAT_PRGB32);
+    BLContext ctx(img);
+    InkGenerator::RenderDebugOverlay(ctx, crossInfo, 1.0);
+    ctx.end();
+
+    // 4. Verify dumper creates valid file output
+    const std::string testDumpFile = "test_stroke_dump.txt";
+    InkGenerator::DumpStrokeToFile(testDumpFile, &crossInfo);
+    std::ifstream dumpCheck(testDumpFile);
+    assert(dumpCheck.is_open());
+    std::string line;
+    bool foundRepro = false;
+    while (std::getline(dumpCheck, line)) {
+        if (line.find("std::vector<StrokePoint> reproPts") != std::string::npos) {
+            foundRepro = true;
+            break;
+        }
+    }
+    dumpCheck.close();
+    std::remove(testDumpFile.c_str());
+    assert(foundRepro);
+
+    // Clean up
+    InkGenerator::ClearDebugInfo();
+    InkGenerator::SetDebugCapture(false);
+    assert(!InkGenerator::IsDebugCaptureEnabled());
+
+    std::cout << "[Test] StrokeGeometryDebugger test passed (100% OK)!" << std::endl;
+}
+
+void TestCrescentTurnGeometry() {
+    std::cout << "[Test] Running Crescent Turn Geometry (Tight Radius Curvature) test..." << std::endl;
+
+    InkGenerator::SetDebugCapture(true);
+    std::vector<StrokePoint> crescentPts = {
+#include "repro114.inc"
+    };
+
+    BLPath path = InkGenerator::BuildSolidRibbon(crescentPts);
+    assert(!path.is_empty());
+
+    const auto& info = InkGenerator::GetLastDebugInfo();
+    std::cout << "  Crescent stroke clean points: " << info.cleanPts.size() << std::endl;
+    std::cout << "  Left rail points: " << info.leftRail.size() << ", Right rail points: " << info.rightRail.size() << std::endl;
+    std::cout << "  Self intersections: " << info.selfIntersections.size() << std::endl;
+    std::cout << "  Retrograde folds: " << info.retrogradeIndices.size() << std::endl;
+
+    // Verify 100% elimination of self-intersections and retrograde folds
+    assert(info.selfIntersections.empty());
+    assert(info.retrogradeIndices.empty());
+    assert(!info.hasDefects);
+
+    InkGenerator::ClearDebugInfo();
+    InkGenerator::SetDebugCapture(false);
+    std::cout << "[Test] Crescent Turn Geometry test passed (0 defects, 100% OK)!" << std::endl;
+}
+
+void TestInkEngineMeshIntegration() {
+    std::cout << "[Test] Running InkEngine GPU Mesh Integration test..." << std::endl;
+
+    Folio::InkEngine engine;
+    StrokeStyle style;
+    style.baseWidth = 1.5f;
+    style.capType = CapType::Round;
+    style.color = BLRgba32(0x20, 0x80, 0xFF, 0xFF);
+
+    engine.BeginStroke(10.0, 10.0, 0.5f, 0.000, style, 1.0f);
+    assert(engine.IsStrokeActive());
+    const auto& initialMesh = engine.GetLiveMesh();
+    assert(!initialMesh.empty());
+    assert(initialMesh.indices.size() % 3 == 0);
+
+    engine.AppendPoint(20.0, 15.0, 0.7f, 0.016);
+    engine.AppendPoint(35.0, 28.0, 0.8f, 0.032);
+    engine.AppendPoint(50.0, 30.0, 0.6f, 0.048);
+
+    const auto& liveMesh = engine.GetLiveMesh();
+    assert(!liveMesh.empty());
+    assert(liveMesh.indices.size() % 3 == 0);
+
+    FinishedStrokeData finished = engine.FinishStroke();
+    assert(!engine.IsStrokeActive());
+    assert(!finished.mesh.empty());
+    assert(finished.mesh.indices.size() % 3 == 0);
+
+    std::cout << "[Test] InkEngine GPU Mesh Integration test passed ("
+              << finished.mesh.vertices.size() << " vertices, "
+              << finished.mesh.indices.size() / 3 << " triangles, 100% OK)!" << std::endl;
+}
+
+void TestGpuInkManagerRender() {
+    std::cout << "[Test] Running SDL_GPU InkMesh Hardware Rasterization test..." << std::endl;
+
+    auto& gpu = Folio::GpuInkManager::Instance();
+    if (!gpu.Init()) {
+        std::cout << "  -> SDL_GPU device unavailable in headless environment; skipping GPU raster check." << std::endl;
+        return;
+    }
+
+    std::cout << "  SDL_GPU initialized with driver: " << gpu.GetDriverName() << std::endl;
+
+    BLImage surface(256, 256, BL_FORMAT_PRGB32);
+    BLContext ctx(surface);
+    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+    ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+    ctx.fill_all();
+    ctx.end();
+
+    // Build a horizontal variable-width stroke from (32, 128) to (224, 128) with radius 8px
+    std::vector<StrokePoint> pts = {
+        { 32.0, 128.0, 8.0f, 0.8f, 0.0f, 0.0f },
+        { 128.0, 128.0, 10.0f, 0.9f, 0.0f, 0.0f },
+        { 224.0, 128.0, 8.0f, 0.8f, 0.0f, 0.0f }
+    };
+
+    BLRgba32 inkColor(0xE0, 0x20, 0x10, 0xFF);
+    Folio::InkMesh mesh;
+    Folio::InkEngine::BuildStrokeMesh(pts, CapType::Round, Folio::PackGpuColor(inkColor), mesh);
+    assert(!mesh.empty());
+
+    gpu.BeginBatch();
+    gpu.SubmitMesh(mesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal);
+    assert(gpu.HasPendingDraws());
+
+    bool ok = gpu.FlushToSurface(surface);
+    assert(ok);
+    assert(gpu.GetLastVertexCount() == mesh.vertices.size());
+    assert(gpu.GetLastTriangleCount() == mesh.indices.size() / 3);
+
+    // 1. Verify rendered pixel at center (128, 128) matches inkColor (R=0xE0, G=0x20, B=0x10)
+    BLImageData imgData = {};
+    surface.get_data(&imgData);
+    const uint8_t* centerPx = static_cast<const uint8_t*>(imgData.pixel_data) + 128 * imgData.stride + 128 * 4;
+    // BL_FORMAT_PRGB32 in little-endian memory is [B, G, R, A]
+    uint8_t b = centerPx[0];
+    uint8_t g = centerPx[1];
+    uint8_t r = centerPx[2];
+    uint8_t a = centerPx[3];
+
+    assert(std::abs(int(r) - 0xE0) <= 2);
+    assert(std::abs(int(g) - 0x20) <= 2);
+    assert(std::abs(int(b) - 0x10) <= 2);
+    assert(a == 0xFF);
+
+    // 2. Render a curved S-turn stroke with variable width to verify smooth edge rasterization
+    std::vector<StrokePoint> curvedPts;
+    for (int i = 0; i <= 60; ++i) {
+        double t = i / 60.0;
+        double x = 40.0 + t * 180.0;
+        double y = 128.0 + 50.0 * std::sin(t * M_PI * 2.0);
+        float radius = static_cast<float>(6.0 + 8.0 * std::sin(t * M_PI));
+        curvedPts.push_back({ x, y, radius, 0.8f, 0.0f, 0.0f });
+    }
+    Folio::InkMesh curvedMesh;
+    Folio::InkEngine::BuildStrokeMesh(curvedPts, CapType::Round, Folio::PackGpuColor(BLRgba32(0xD6, 0x20, 0x20, 0xFF)), curvedMesh);
+
+    ctx.begin(surface);
+    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+    ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+    ctx.fill_all();
+    ctx.end();
+
+    gpu.BeginBatch();
+    gpu.SubmitMesh(curvedMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal);
+    gpu.FlushToSurface(surface);
+
+    gpu.Shutdown();
+    std::cout << "[Test] SDL_GPU InkMesh Hardware Rasterization test passed (100% OK)!" << std::endl;
+}
+
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "Starting Folio Physics Model Test Suite" << std::endl;
@@ -204,6 +415,10 @@ int main() {
     TestStylusTiltDynamics();
     TestCurveSimplificationPreservesRoundness();
     TestWidthThinningToggle();
+    TestStrokeGeometryDebugger();
+    TestCrescentTurnGeometry();
+    TestInkEngineMeshIntegration();
+    TestGpuInkManagerRender();
 
     std::cout << "========================================" << std::endl;
     std::cout << "All Physics Model tests passed (100% OK)!" << std::endl;

@@ -1,12 +1,15 @@
 #include "core/canvas_engine/canvas_engine.hpp"
 #include "core/document/canvas_page.hpp"
 #include "core/document/document_session.hpp"
+#include "core/gpu/gpu_ink_manager.hpp"
 #include "utils/logger.hpp"
+#include <folio_sketch/ink_generator.hpp>
 #include <algorithm>
 #include <cmath>
 
 void CanvasEngine::Init(int initialW, int initialH, float displayDpi) {
     transform.SetDPI(displayDpi);
+    Folio::GpuInkManager::Instance().Init();
 
     glGenTextures(1, &glTexture);
     glBindTexture(GL_TEXTURE_2D, glTexture);
@@ -209,9 +212,21 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         liveLayer.ClearEraserReticle();
     }
 
-    if (devMode) {
-        liveLayer.SetCustomFeedbackRenderer([this, &visibleBakedObjects](BLContext& ctx, const Viewport& /*vp*/) {
-            RenderDevModeAABBs(ctx, visibleBakedObjects, transform);
+    if (debugShowInkWireframe) {
+        InkGenerator::SetDebugCapture(true);
+    }
+
+    if (devMode || debugShowInkWireframe) {
+        liveLayer.SetCustomFeedbackRenderer([this, &visibleBakedObjects](BLContext& ctx, const Viewport& vp) {
+            if (devMode) {
+                RenderDevModeAABBs(ctx, visibleBakedObjects, transform);
+            }
+            if (debugShowInkWireframe) {
+                ctx.save();
+                ctx.set_transform(vp.worldToScreenMatrix);
+                InkGenerator::RenderDebugOverlay(ctx, InkGenerator::GetLastDebugInfo(), vp.GetEffectiveScale());
+                ctx.restore();
+            }
         });
     } else {
         liveLayer.SetCustomFeedbackRenderer(nullptr);
@@ -261,11 +276,14 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     BLContext compCtx(compositeSurface);
     if (canUsePartialUpload) {
         compCtx.clip_to_rect(BLRectI(dirtyX, dirtyY, dirtyW, dirtyH));
+        Folio::GpuInkManager::Instance().SetActiveClipRect(dirtyX, dirtyY, dirtyW, dirtyH);
     } else {
         compCtx.clear_all();
+        Folio::GpuInkManager::Instance().SetActiveClipRect(0, 0, viewportW, viewportH);
     }
 
     layerCompositor.RenderFrame(compCtx, activePage, currentView, activeAppObjects, deltaTime);
+    Folio::GpuInkManager::Instance().ClearActiveClipRect();
     compCtx.end();
 
     if (inkColorInverted) {

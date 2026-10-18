@@ -644,16 +644,19 @@ endif()
 if(NOT ANDROID)
     add_executable(test_physics_model
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_physics_model.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/gpu/gpu_ink_manager.cpp"
     )
 
     target_include_directories(test_physics_model PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
     )
 
     target_link_libraries(test_physics_model PRIVATE
         FolioSketch::FolioSketch
+        SDL3::SDL3
     )
 
     add_test(NAME test_physics_model COMMAND test_physics_model)
@@ -698,6 +701,7 @@ if(NOT ANDROID)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/storage/db_manager.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/search/notebook_search_index.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/ink_container/ink_container.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/gpu/gpu_ink_manager.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/text/text_box.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/text/font_manager.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/object_registry.cpp"
