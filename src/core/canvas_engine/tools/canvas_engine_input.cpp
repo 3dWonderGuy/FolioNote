@@ -53,8 +53,31 @@ void CanvasEngine::OnPointerUp(DocumentSession& session, const PenTool& tool) {
     isDirty = true;
 
     if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
-        session.CommitStroke(std::move(data), tool);
-    }
+        BLBox wBox;
+        bool hasBox = false;
+        if (!data.outlinePath.is_empty() && data.outlinePath.get_bounding_box(&wBox) == BL_SUCCESS) {
+            hasBox = true;
+        } else if (!data.modeledPoints.empty()) {
+            wBox.x0 = wBox.x1 = data.modeledPoints[0].x;
+            wBox.y0 = wBox.y1 = data.modeledPoints[0].y;
+            for (const auto& pt : data.modeledPoints) {
+                wBox.x0 = (std::min)(wBox.x0, static_cast<double>(pt.x - pt.r));
+                wBox.y0 = (std::min)(wBox.y0, static_cast<double>(pt.y - pt.r));
+                wBox.x1 = (std::max)(wBox.x1, static_cast<double>(pt.x + pt.r));
+                wBox.y1 = (std::max)(wBox.y1, static_cast<double>(pt.y + pt.r));
+            }
+            hasBox = true;
+        }
 
-    InvalidateLayer();
+        session.CommitStroke(std::move(data), tool);
+
+        if (hasBox) {
+            AABB strokeBox(wBox.x0 - 2.0, wBox.y0 - 2.0, wBox.x1 + 2.0, wBox.y1 + 2.0);
+            InvalidateLayerRect(strokeBox);
+        } else {
+            InvalidateLayer();
+        }
+    } else {
+        InvalidateLayer();
+    }
 }

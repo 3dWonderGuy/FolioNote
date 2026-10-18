@@ -159,6 +159,13 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     }
 
     if (!isDirty && !layerCompositor.GetBakedCanvasLayer().IsDirty() && !layerCompositor.GetLiveInteractionLayer().HasActiveInteraction()) {
+        double dtClamped = std::clamp(deltaTime, 0.001, 0.1);
+        pcieWindowElapsedSec += dtClamped;
+        if (pcieWindowElapsedSec >= 0.25) {
+            pcieBandwidthMBps = (static_cast<double>(pcieBytesAccumulated) / (1024.0 * 1024.0)) / pcieWindowElapsedSec;
+            pcieBytesAccumulated = 0;
+            pcieWindowElapsedSec = 0.0;
+        }
         return;
     }
 
@@ -332,6 +339,15 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
 
     m_prevLiveScreenBounds = currLiveBounds;
     isDirty = false;
+
+    double dtClamped = std::clamp(deltaTime, 0.001, 0.1);
+    pcieBytesAccumulated += lastUploadedBytes;
+    pcieWindowElapsedSec += dtClamped;
+    if (pcieWindowElapsedSec >= 0.25) {
+        pcieBandwidthMBps = (static_cast<double>(pcieBytesAccumulated) / (1024.0 * 1024.0)) / pcieWindowElapsedSec;
+        pcieBytesAccumulated = 0;
+        pcieWindowElapsedSec = 0.0;
+    }
 }
 
 /**

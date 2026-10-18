@@ -181,6 +181,9 @@ public:
     bool lastUploadWasPartial = false;
     int lastDirtyW = 0;
     int lastDirtyH = 0;
+    double pcieBandwidthMBps = 0.0;
+    size_t pcieBytesAccumulated = 0;
+    double pcieWindowElapsedSec = 0.0;
 
     // Canvas-level ink color invert and dark mode state
     bool isDarkMode = false;

@@ -160,19 +160,23 @@ public:
                 ImGui::Separator();
                 ImGui::TextColored(theme.colorPrimary, "PCIe / GPU MEMORY BANDWIDTH (DIRTY-RECT OPTIMIZED)");
                 double fullFrameBytesMB = (canvas.viewportW * canvas.viewportH * 4.0) / (1024.0 * 1024.0);
-                double fullBandwidthMBps = fullFrameBytesMB * currentFps;
-                double actualUploadedMB = static_cast<double>(canvas.lastUploadedBytes) / (1024.0 * 1024.0);
-                double actualBandwidthMBps = actualUploadedMB * currentFps;
+                double theoreticalFullMBps = fullFrameBytesMB * currentFps;
 
                 ImGui::Text("1:1 Render Target  : %dx%d (%.2f MB PRGB32 Buffer)", canvas.viewportW, canvas.viewportH, fullFrameBytesMB);
-                if (canvas.lastUploadWasPartial) {
-                    double pctSaved = fullFrameBytesMB > 0.0 ? (1.0 - (actualUploadedMB / fullFrameBytesMB)) * 100.0 : 0.0;
-                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), 
-                                       "PCIe Bus Transfer  : %.1f MB/sec [DIRTY-RECT: %dx%d] (%.1f%% saved vs %.1f MB/s full)",
-                                       actualBandwidthMBps, canvas.lastDirtyW, canvas.lastDirtyH, pctSaved, fullBandwidthMBps);
+                if (canvas.pcieBandwidthMBps > 0.05) {
+                    if (canvas.lastUploadWasPartial) {
+                        double pctSaved = theoreticalFullMBps > 0.0 ? (1.0 - (canvas.pcieBandwidthMBps / theoreticalFullMBps)) * 100.0 : 0.0;
+                        if (pctSaved < 0.0) pctSaved = 0.0;
+                        ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), 
+                                           "PCIe Bus Transfer  : %.1f MB/sec [DIRTY-RECT: %dx%d] (%.1f%% saved vs %.1f MB/s full)",
+                                           canvas.pcieBandwidthMBps, canvas.lastDirtyW, canvas.lastDirtyH, pctSaved, theoreticalFullMBps);
+                    } else {
+                        ImGui::Text("PCIe Bus Transfer  : %.1f MB/sec (Full Upload: %dx%d)", 
+                                    canvas.pcieBandwidthMBps, canvas.viewportW, canvas.viewportH);
+                    }
                 } else {
-                    ImGui::Text("PCIe Bus Transfer  : %.1f MB/sec (Full Upload: %dx%d)", 
-                                actualBandwidthMBps, canvas.viewportW, canvas.viewportH);
+                    ImGui::TextColored(ImVec4(0.4f, 0.75f, 1.0f, 1.0f), 
+                                       "PCIe Bus Transfer  : 0.0 MB/sec [IDLE - 0 bytes transferred]");
                 }
 
                 ImGui::Separator();

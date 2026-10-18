@@ -58,16 +58,24 @@ AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) 
     const double effectiveScale = viewport.GetEffectiveScale();
     AABB bounds;
 
-    // 1. In-flight ink stroke
+    // 1. In-flight ink stroke: Track the active pen tip and forward prediction tail
+    // Older settled segments are already rendered on compositeSurface and in GPU VRAM,
+    // so dirty bounds remain tightly localized to the pen tip (~100-200px) regardless of stroke length.
     if (m_inkEngine.IsStrokeActive()) {
-        BLBox box;
-        const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
-        if (!liveOutline.is_empty() && liveOutline.get_bounding_box(&box) == BL_SUCCESS) {
-            Point2D s0 = viewport.WorldToScreen(box.x0, box.y0);
-            Point2D s1 = viewport.WorldToScreen(box.x1, box.y1);
-            bounds.Merge(s0.x, s0.y);
-            bounds.Merge(s1.x, s1.y);
+        const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+        const size_t numPts = livePts.size();
+        if (numPts > 0) {
+            const size_t tailCount = (numPts > 20) ? 20 : numPts;
+            const size_t startIdx = numPts - tailCount;
+            for (size_t i = startIdx; i < numPts; ++i) {
+                const auto& pt = livePts[i];
+                Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
+                double rPx = pt.r * effectiveScale;
+                bounds.Merge(sp.x - rPx, sp.y - rPx);
+                bounds.Merge(sp.x + rPx, sp.y + rPx);
+            }
         }
+        BLBox box;
         const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
         if (!predOutline.is_empty() && predOutline.get_bounding_box(&box) == BL_SUCCESS) {
             Point2D s0 = viewport.WorldToScreen(box.x0, box.y0);
@@ -75,28 +83,33 @@ AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) 
             bounds.Merge(s0.x, s0.y);
             bounds.Merge(s1.x, s1.y);
         }
-        const auto& livePts = m_inkEngine.GetLiveModeledPoints();
-        if (!livePts.empty()) {
-            const auto& pt = livePts.back();
+        const auto& predPts = m_inkEngine.GetPredictedPoints();
+        for (const auto& pt : predPts) {
             Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
             double rPx = pt.r * effectiveScale;
             bounds.Merge(sp.x - rPx, sp.y - rPx);
             bounds.Merge(sp.x + rPx, sp.y + rPx);
         }
-        bounds.Expand(6.0);
+        bounds.Expand(12.0);
     } else if (m_hasBorrowedStroke && m_borrowedStroke.points.size() >= 2) {
-        for (const auto& p : m_borrowedStroke.points) {
+        const size_t numPts = m_borrowedStroke.points.size();
+        const size_t tailCount = (numPts > 20) ? 20 : numPts;
+        for (size_t i = numPts - tailCount; i < numPts; ++i) {
+            const auto& p = m_borrowedStroke.points[i];
             Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
             bounds.Merge(sp.x, sp.y);
         }
-        double rPx = (m_borrowedStroke.baseWidthMm * 0.5) * effectiveScale + 4.0;
+        double rPx = (m_borrowedStroke.baseWidthMm * 0.5) * effectiveScale + 8.0;
         bounds.Expand(rPx);
     } else if (m_isInking && m_internalPoints.size() >= 2) {
-        for (const auto& p : m_internalPoints) {
+        const size_t numPts = m_internalPoints.size();
+        const size_t tailCount = (numPts > 20) ? 20 : numPts;
+        for (size_t i = numPts - tailCount; i < numPts; ++i) {
+            const auto& p = m_internalPoints[i];
             Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
             bounds.Merge(sp.x, sp.y);
         }
-        double rPx = (m_penWidthMm * 0.5) * effectiveScale + 4.0;
+        double rPx = (m_penWidthMm * 0.5) * effectiveScale + 8.0;
         bounds.Expand(rPx);
     }
 
