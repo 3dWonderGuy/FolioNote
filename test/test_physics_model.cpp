@@ -475,26 +475,26 @@ void TestGpuInkManagerRender() {
     std::cout << "  [Multiply Stencil Test] Two distinct strokes (inter-stroke) green: " << int(greenChDouble) << std::endl;
     assert(greenChDouble < greenChSingle);
 
-    // Verify Brush / Normal blend mode semi-transparent self-overlap (Zero Intra-Stroke Darkening)
+    // Verify Normal blend mode opaque pen self-overlap (Zero Intra-Stroke Darkening & Zero Seams)
     ctx.begin(surface);
     ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
     ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
     ctx.fill_all();
     ctx.end();
 
-    Folio::InkMesh brushOverlapMesh = selfOverlapMesh;
-    // Set 50% opacity green (0x8000FF00) on all vertices
-    for (auto& v : brushOverlapMesh.vertices) {
-        v.color = 0x8000FF00;
+    Folio::InkMesh penOverlapMesh = selfOverlapMesh;
+    // Set 100% opacity green (0xFF00FF00) on all vertices
+    for (auto& v : penOverlapMesh.vertices) {
+        v.color = 0xFF00FF00;
     }
 
     gpu.BeginBatch();
-    gpu.SubmitMesh(brushOverlapMesh, BLMatrix2D::make_identity(), 1.0f, 0.5f, BlendMode::Normal, 1);
+    gpu.SubmitMesh(penOverlapMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal, 1);
     gpu.FlushToSurface(surface);
 
     surface.get_data(&imgData);
-    const uint8_t* brushOverlapPx = static_cast<const uint8_t*>(imgData.pixel_data) + 90 * imgData.stride + 90 * 4;
-    uint8_t brushGreenOverlap = brushOverlapPx[1];
+    const uint8_t* penOverlapPx = static_cast<const uint8_t*>(imgData.pixel_data) + 90 * imgData.stride + 90 * 4;
+    uint8_t penGreenOverlap = penOverlapPx[1];
 
     ctx.begin(surface);
     ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
@@ -502,22 +502,22 @@ void TestGpuInkManagerRender() {
     ctx.fill_all();
     ctx.end();
 
-    Folio::InkMesh brushSingleMesh = singleQuadMesh;
-    for (auto& v : brushSingleMesh.vertices) {
-        v.color = 0x8000FF00;
+    Folio::InkMesh penSingleMesh = singleQuadMesh;
+    for (auto& v : penSingleMesh.vertices) {
+        v.color = 0xFF00FF00;
     }
 
     gpu.BeginBatch();
-    gpu.SubmitMesh(brushSingleMesh, BLMatrix2D::make_identity(), 1.0f, 0.5f, BlendMode::Normal, 1);
+    gpu.SubmitMesh(penSingleMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal, 1);
     gpu.FlushToSurface(surface);
 
     surface.get_data(&imgData);
-    const uint8_t* brushSinglePx = static_cast<const uint8_t*>(imgData.pixel_data) + 90 * imgData.stride + 90 * 4;
-    uint8_t brushGreenSingle = brushSinglePx[1];
+    const uint8_t* penSinglePx = static_cast<const uint8_t*>(imgData.pixel_data) + 90 * imgData.stride + 90 * 4;
+    uint8_t penGreenSingle = penSinglePx[1];
 
-    std::cout << "  [Normal/Brush Stencil Test] Single-pass green: " << int(brushGreenSingle)
-              << ", Self-overlap intra-stroke green: " << int(brushGreenOverlap) << std::endl;
-    assert(std::abs(int(brushGreenOverlap) - int(brushGreenSingle)) <= 1);
+    std::cout << "  [Normal/Pen Test] Single-pass green: " << int(penGreenSingle)
+              << ", Self-overlap intra-stroke green: " << int(penGreenOverlap) << std::endl;
+    assert(penGreenOverlap == penGreenSingle && penGreenSingle == 255);
 
     gpu.Shutdown();
     std::cout << "[Test] SDL_GPU InkMesh Hardware Rasterization test passed (100% OK)!" << std::endl;
