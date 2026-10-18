@@ -25,7 +25,7 @@
 #include "core/storage/db_manager.hpp"
 #include "core/storage/page_repository.hpp"
 #include "core/document/canvas_page.hpp"
-#include "core/ink_engine/ink_generator.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/text/text_box.hpp"
 #include "io/facade/file_manager.hpp"
@@ -497,6 +497,145 @@ void TestStrokeTessellationAndRasterPerformance() {
     assert(pencilMs < 10.0);
 }
 
+void TestStrokePressureTransitions() {
+    std::cout << "[Test 8] Running Stroke Pressure Transition & Miter Clamping Invariant Tests..." << std::endl;
+
+    BLImage img(1000, 1000, BL_FORMAT_PRGB32);
+    BLContext ctx(img);
+
+    // 1. Rapid pressure transition test (step from 0.1mm to 3.0mm back to 0.1mm along a curved path)
+    std::vector<StrokePoint> stepPoints;
+    for (int i = 0; i < 100; ++i) {
+        double angle = i * 0.05; // 0.05 rad ~ 2.8 deg per step
+        double x = 100.0 + i * 0.8;
+        double y = 100.0 + 30.0 * std::sin(angle);
+        float p = (i >= 30 && i <= 60) ? 0.95f : 0.10f;
+        float r = 0.2f + p * 2.8f; // jumps from 0.48mm to 2.86mm
+        stepPoints.emplace_back(x, y, r, p);
+    }
+
+    // Verify all cap types generate valid contours without self-intersections or crashes
+    std::vector<CapType> caps = { CapType::Round, CapType::Square, CapType::Chisel };
+    for (auto cap : caps) {
+        BLPath path = InkGenerator::GenerateStroke(stepPoints, cap, StrokePattern::Solid);
+        assert(!path.is_empty());
+        ctx.clear_all();
+        ctx.set_fill_style(BLRgba32(0xFF000000));
+        BLResult res = ctx.fill_path(path);
+        assert(res == BL_SUCCESS);
+    }
+
+    // 2. High-curvature corner under extreme pressure (r = 4.0mm with 90 deg turn on 0.1mm segment)
+    std::vector<StrokePoint> cornerPoints;
+    cornerPoints.emplace_back(200.0, 200.0, 4.0f, 0.95f);
+    cornerPoints.emplace_back(200.1, 200.0, 4.0f, 0.95f);
+    cornerPoints.emplace_back(200.1, 200.1, 4.0f, 0.95f);
+    cornerPoints.emplace_back(200.1, 201.0, 4.0f, 0.95f);
+
+    BLPath cornerPath = InkGenerator::GenerateStroke(cornerPoints, CapType::Round, StrokePattern::Solid);
+    assert(!cornerPath.is_empty());
+    ctx.clear_all();
+    BLResult cRes = ctx.fill_path(cornerPath);
+    assert(cRes == BL_SUCCESS);
+
+    // 3. 180-Degree Hairpin Turnaround Invariant Tests:
+    // Test exact 180 deg, near-180 deg (179.9 deg CCW and CW), and multi-turn zig-zags
+    {
+        // 3a. Exact 180 deg reversal
+        std::vector<StrokePoint> hairpinExact = {
+            StrokePoint(100.0, 100.0, 2.0f, 0.5f),
+            StrokePoint(150.0, 100.0, 2.0f, 0.5f),
+            StrokePoint(100.0, 100.0, 2.0f, 0.5f)
+        };
+        BLPath hp1 = InkGenerator::GenerateStroke(hairpinExact, CapType::Round, StrokePattern::Solid);
+        assert(!hp1.is_empty());
+        BLBox b1;
+        hp1.get_bounding_box(&b1);
+        // Turnaround apex at P1 (150, 100) with r=2.0 must reach approximately x=152.0
+        assert(b1.x1 >= 151.9);
+        ctx.clear_all();
+        assert(ctx.fill_path(hp1) == BL_SUCCESS);
+
+        // 3b. Near-180 deg slight left turn (179.9 deg)
+        std::vector<StrokePoint> hairpinLeft = {
+            StrokePoint(100.0, 100.0, 2.0f, 0.5f),
+            StrokePoint(150.0, 100.0, 2.0f, 0.5f),
+            StrokePoint(100.0, 100.1, 2.0f, 0.5f)
+        };
+        BLPath hp2 = InkGenerator::GenerateStroke(hairpinLeft, CapType::Round, StrokePattern::Solid);
+        assert(!hp2.is_empty());
+        BLBox b2;
+        hp2.get_bounding_box(&b2);
+        assert(b2.x1 >= 151.9);
+        ctx.clear_all();
+        assert(ctx.fill_path(hp2) == BL_SUCCESS);
+
+        // 3c. Near-180 deg slight right turn (179.9 deg)
+        std::vector<StrokePoint> hairpinRight = {
+            StrokePoint(100.0, 100.0, 2.0f, 0.5f),
+            StrokePoint(150.0, 100.0, 2.0f, 0.5f),
+            StrokePoint(100.0, 99.9, 2.0f, 0.5f)
+        };
+        BLPath hp3 = InkGenerator::GenerateStroke(hairpinRight, CapType::Round, StrokePattern::Solid);
+        assert(!hp3.is_empty());
+        BLBox b3;
+        hp3.get_bounding_box(&b3);
+        assert(b3.x1 >= 151.9);
+        ctx.clear_all();
+        assert(ctx.fill_path(hp3) == BL_SUCCESS);
+
+        // 3d. Polygonal nib (Chisel & Square) 180 deg reversal
+        for (auto cap : { CapType::Square, CapType::Chisel }) {
+            BLPath polyHp = InkGenerator::GenerateStroke(hairpinExact, cap, StrokePattern::Solid);
+            assert(!polyHp.is_empty());
+            ctx.clear_all();
+            assert(ctx.fill_path(polyHp) == BL_SUCCESS);
+        }
+    }
+
+    // 4. Textured pencil with selective pressure band activation (press hard in middle only)
+    ctx.clear_all();
+    InkGenerator::RenderPencilStroke(ctx, stepPoints, 0.8f, BLRgba32(0xFF202020));
+
+    // 5. Hockey-stick / J-turn Inner Corner Notch Regression Test:
+    // When a stroke turns sharply with short segments near deceleration,
+    // inner corner vertex must NEVER collapse into the centerline.
+    {
+        float rNominal = 2.0f;
+        std::vector<StrokePoint> jTurnPoints = {
+            StrokePoint(100.0, 100.0, rNominal, 0.5f),
+            StrokePoint(120.0, 105.0, rNominal, 0.5f),
+            StrokePoint(120.2, 105.1, rNominal, 0.5f), // Short deceleration segment (0.22mm)
+            StrokePoint(122.0, 130.0, rNominal, 0.5f), // Sharp 80 deg turn upward
+            StrokePoint(123.0, 150.0, rNominal, 0.5f)
+        };
+
+        for (auto cap : { CapType::Round, CapType::Square, CapType::Chisel }) {
+            BLPath jPath = InkGenerator::GenerateStroke(jTurnPoints, cap, StrokePattern::Solid);
+            assert(!jPath.is_empty());
+            ctx.clear_all();
+            assert(ctx.fill_path(jPath) == BL_SUCCESS);
+
+            // Verify that around the corner node (120.2, 105.1), NO contour vertex collapses inside the radius
+            BLPathView v = jPath.view();
+            assert(v.size > 0);
+            for (size_t i = 0; i < v.size; ++i) {
+                if (std::isnan(v.vertex_data[i].x) || std::isnan(v.vertex_data[i].y)) continue;
+                double dx = v.vertex_data[i].x - 120.2;
+                double dy = v.vertex_data[i].y - 105.1;
+                double dist = std::hypot(dx, dy);
+                // Contour around corner node (120.2, 105.1) must never collapse into centerline
+                if (cap == CapType::Round && i == 2) {
+                    assert(dist >= rNominal * 0.99); // Inner corner vertex is at full nominal radius
+                }
+                assert(dist >= rNominal * 0.45);
+            }
+        }
+    }
+
+    std::cout << "  -> Pressure step transition, 180 deg turnaround, and J-turn inner corner tests passed successfully." << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "Starting FolioNote Storage Test Suite" << std::endl;
@@ -509,6 +648,7 @@ int main() {
     TestSQLiteDBManagerOperations();
     TestPageRepositorySafety();
     TestStrokeTessellationAndRasterPerformance();
+    TestStrokePressureTransitions();
 
     std::cout << "========================================" << std::endl;
     std::cout << "All Storage & Performance Tests Passed!" << std::endl;

@@ -92,7 +92,6 @@ set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(INK_STROKE_MODELER_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(third_party/ink-stroke-modeler ink_sm EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/SDL sdl EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/blend2d b2d EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/lunasvg lsvg EXCLUDE_FROM_ALL)
@@ -120,6 +119,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3/sqlite3.c")
     add_library(sqlite3 STATIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3/sqlite3.c")
     target_include_directories(sqlite3 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3")
     target_compile_definitions(sqlite3 PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5=1 SQLITE_ENABLE_JSON1=1)
+endif()
+
+# 2.5 Folio-Sketch Vector Inking Engine
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/CMakeLists.txt")
+    add_subdirectory(third_party/Folio-Sketch folio_sketch)
 endif()
 
 # 3. ImGui Configuration
@@ -177,8 +181,6 @@ target_include_directories(${APP_TARGET} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d/blend2d
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ink-stroke-modeler
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil-cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lunasvg/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL_image/include
@@ -217,8 +219,8 @@ target_link_libraries(${APP_TARGET} PRIVATE
     blend2d::blend2d
     lunasvg::lunasvg
     SDL3_image::SDL3_image
-    InkStrokeModeler::stroke_modeler
     sqlite3
+    FolioSketch::FolioSketch
 )
 
 if(ANDROID)
@@ -621,6 +623,10 @@ if(NOT ANDROID)
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
     )
 
+    target_link_libraries(test_physics_model PRIVATE
+        FolioSketch::FolioSketch
+    )
+
     add_test(NAME test_physics_model COMMAND test_physics_model)
 
     # 15. Standalone Local Test Executable: Layer Order & Stacking
@@ -643,6 +649,7 @@ if(NOT ANDROID)
     target_link_libraries(test_layer_order PRIVATE
         blend2d::blend2d
         SDL3::SDL3
+        FolioSketch::FolioSketch
     )
 
     if(WIN32)
@@ -654,13 +661,6 @@ if(NOT ANDROID)
     )
 
     add_test(NAME test_layer_order COMMAND test_layer_order)
-
-    set(INK_GENERATOR_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_polygon.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_stroke.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_patterns.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_infill.cpp"
-    )
 
     # 16. Standalone Local Test Executable: Storage & Serialization Subsystem
     add_executable(test_storage
@@ -674,7 +674,6 @@ if(NOT ANDROID)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/object_registry.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/history/command_history.cpp"
-        ${INK_GENERATOR_SOURCES}
         ${FOLIO_IO_SOURCES}
     )
 
@@ -693,6 +692,7 @@ if(NOT ANDROID)
         blend2d::blend2d
         SDL3::SDL3
         sqlite3
+        FolioSketch::FolioSketch
     )
 
     if(WIN32)

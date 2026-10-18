@@ -9,7 +9,7 @@
 #include <iostream>
 #include <cmath>
 #include "utils/physics_model.hpp"
-#include "core/ink_engine/stroke_width_evaluator.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 
 using namespace Folio::Physics;
 
@@ -122,7 +122,7 @@ void TestStylusTiltDynamics() {
     std::cout << "[Test] Stylus Tilt & Pencil Shading Dynamics test passed!" << std::endl;
 }
 
-#include "core/ink_engine/stroke_post_processor.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 
 void TestCurveSimplificationPreservesRoundness() {
     std::cout << "[Test] Running StrokePostProcessor curve roundness preservation test..." << std::endl;

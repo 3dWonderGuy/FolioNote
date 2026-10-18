@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <blend2d/blend2d.h>
-#include "core/ink_engine/ink_stroke_data.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "core/spatial/aabb.hpp"
 
 enum class PaperStyle { Grid, Lined, Blank, Dotted, Cornell };

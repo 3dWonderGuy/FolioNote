@@ -50,7 +50,6 @@
 
 #include "core/objects/ink_container/ink_container.hpp"
 #include "core/objects/object_registry.hpp"
-#include "core/ink_engine/stroke_collision.hpp"
 #include "core/ink_engine/ink_engine.hpp"
 #include "utils/uid_generator.hpp"
 #include "utils/guid_generator.hpp"

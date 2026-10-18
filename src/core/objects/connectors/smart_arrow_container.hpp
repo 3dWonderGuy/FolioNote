@@ -33,7 +33,7 @@
 #include <blend2d/blend2d.h>
 
 #include "core/objects/canvas_object.hpp"
-#include "core/ink_engine/ink_stroke_data.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "core/objects/connectors/connector_types.hpp"
 #include "core/objects/primitives/shape_types.hpp"  // ShapeOutlineType reuse
 #include "core/spatial/aabb.hpp"
