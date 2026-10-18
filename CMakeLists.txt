@@ -122,9 +122,32 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3/sqlite3.c")
 endif()
 
 # 2.5 Folio-Sketch Vector Inking Engine
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/CMakeLists.txt")
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/CMakeLists.txt")
+    find_package(Git QUIET)
+    if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+        message(STATUS "Folio-Sketch submodule not initialized. Updating git submodules...")
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive third_party/Folio-Sketch
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            RESULT_VARIABLE GIT_SUBMOD_RESULT
+        )
+    endif()
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/CMakeLists.txt")
+    message(STATUS "Folio-Sketch submodule missing locally. Fetching via FetchContent...")
+    include(FetchContent)
+    FetchContent_Declare(
+        FolioSketch
+        GIT_REPOSITORY https://github.com/3dWonderGuy/Folio-Sketch.git
+        GIT_TAG        main
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(FolioSketch)
+else()
     add_subdirectory(third_party/Folio-Sketch folio_sketch)
 endif()
+
 
 # 3. ImGui Configuration
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui")
