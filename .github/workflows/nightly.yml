@@ -158,7 +158,7 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
-            fedora:latest \
+            fedora:40 \
             bash -c "
               set -e
               dnf install -y \
@@ -197,9 +197,13 @@ jobs:
 
               mkdir -p dist/FolioNote-Linux
               cp build-linux/bin/FolioNote dist/FolioNote-Linux/ 2>/dev/null || cp build-linux/FolioNote dist/FolioNote-Linux/
+              [ -f third_party/pdfium/lib/libpdfium.so ] && cp third_party/pdfium/lib/libpdfium.so dist/FolioNote-Linux/
+              [ -f build-linux/bin/libpdfium.so ] && cp build-linux/bin/libpdfium.so dist/FolioNote-Linux/
+              [ -f build-linux/bin/libblend2d.so ] && cp build-linux/bin/libblend2d.so dist/FolioNote-Linux/
               [ -d assets ] && cp -r assets dist/FolioNote-Linux/
               [ -d config ] && cp -r config dist/FolioNote-Linux/
               [ -f LICENSE ] && cp LICENSE dist/FolioNote-Linux/
+              chmod +x dist/FolioNote-Linux/FolioNote
               tar -czvf FolioNote-Linux-Fedora-x86_64.tar.gz -C dist/FolioNote-Linux .
             "
 

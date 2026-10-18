@@ -194,6 +194,12 @@ else()
 
     )
     set(APP_TARGET FolioNote)
+    if(UNIX AND NOT APPLE)
+        set_target_properties(FolioNote PROPERTIES
+            INSTALL_RPATH "$ORIGIN"
+            BUILD_WITH_INSTALL_RPATH TRUE
+        )
+    endif()
 endif()
 
 # 6. Target Include Directories
