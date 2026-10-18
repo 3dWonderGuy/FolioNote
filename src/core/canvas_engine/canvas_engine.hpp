@@ -176,6 +176,12 @@ public:
     // PCIe Bus Bandwidth Optimization: Conservative bounding box of live interaction from previous frame
     AABB m_prevLiveScreenBounds;
 
+    // Telemetry: Actual PCIe texture upload metrics for diagnostics and overlays
+    size_t lastUploadedBytes = 0;
+    bool lastUploadWasPartial = false;
+    int lastDirtyW = 0;
+    int lastDirtyH = 0;
+
     // Canvas-level ink color invert and dark mode state
     bool isDarkMode = false;
     bool inkColorInverted = false;

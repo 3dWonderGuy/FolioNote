@@ -287,6 +287,10 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     glBindTexture(GL_TEXTURE_2D, glTexture);
 
     if (canUsePartialUpload) {
+        lastUploadedBytes = static_cast<size_t>(dirtyW) * static_cast<size_t>(dirtyH) * 4;
+        lastUploadWasPartial = true;
+        lastDirtyW = dirtyW;
+        lastDirtyH = dirtyH;
 #if defined(__ANDROID__)
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
@@ -309,6 +313,10 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 #endif
     } else {
+        lastUploadedBytes = static_cast<size_t>(viewportW) * static_cast<size_t>(viewportH) * 4;
+        lastUploadWasPartial = false;
+        lastDirtyW = viewportW;
+        lastDirtyH = viewportH;
 #if defined(__ANDROID__)
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
