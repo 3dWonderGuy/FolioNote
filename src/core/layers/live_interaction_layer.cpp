@@ -211,12 +211,12 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
 
             const auto& liveMesh = m_inkEngine.GetLiveMesh();
             if (!liveMesh.empty()) {
-                gpu.SubmitMesh(liveMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, BlendMode::Normal);
+                gpu.SubmitMesh(liveMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1);
             }
 
             const auto& predMesh = m_inkEngine.GetPredictedMesh();
             if (!predMesh.empty()) {
-                gpu.SubmitMesh(predMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, BlendMode::Normal);
+                gpu.SubmitMesh(predMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1);
             }
 
             if (gpu.HasPendingDraws()) {
@@ -240,6 +240,9 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
                 InkGenerator::RenderPencilStroke(ctx, predPts, activeStyle.baseWidth, activeStyle.color, &predOutline);
             }
         } else {
+            if (m_activeStrokeBlendMode == BlendMode::Multiply) {
+                ctx.set_comp_op(BL_COMP_OP_MULTIPLY);
+            }
             ctx.set_fill_style(BLRgba32(activeStyle.color.value));
 
             const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
@@ -539,6 +542,9 @@ void LiveInteractionLayer::RenderEraser(BLContext& ctx) {
 
 void LiveInteractionLayer::BeginStroke(double worldXMm, double worldYMm, float pressure, double timeSec,
                                        const PenTool& tool, float zoomScale, float tiltX, float tiltY) {
+    m_activeStrokeBlendMode = (tool.penType == PenType::Highlighter || tool.blendMode == BlendMode::Multiply)
+                                  ? BlendMode::Multiply
+                                  : tool.blendMode;
     m_inkEngine.BeginStroke(worldXMm, worldYMm, pressure, timeSec, tool, zoomScale, tiltX, tiltY);
     m_isInking = true;
 }
@@ -550,11 +556,13 @@ void LiveInteractionLayer::AddStrokePoint(double worldXMm, double worldYMm, floa
 
 FinishedStrokeData LiveInteractionLayer::FinishStroke() {
     m_isInking = false;
+    m_activeStrokeBlendMode = BlendMode::Normal;
     return m_inkEngine.FinishStroke();
 }
 
 void LiveInteractionLayer::CancelStroke() {
     m_isInking = false;
+    m_activeStrokeBlendMode = BlendMode::Normal;
     m_inkEngine.CancelStroke();
 }
 
@@ -563,6 +571,7 @@ void LiveInteractionLayer::CancelStroke() {
 // -----------------------------------------------------------------------------
 
 void LiveInteractionLayer::BeginStroke(const LivePoint& startPoint) {
+    m_activeStrokeBlendMode = m_borrowedStroke.isHighlighter ? BlendMode::Multiply : BlendMode::Normal;
     m_internalPoints.clear();
     m_internalPoints.push_back(startPoint);
     m_isInking = true;

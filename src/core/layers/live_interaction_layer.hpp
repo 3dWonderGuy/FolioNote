@@ -352,6 +352,7 @@ private:
 
     // High-performance physics-modeled inking engine
     InkEngine              m_inkEngine;
+    BlendMode              m_activeStrokeBlendMode = BlendMode::Normal;
 
     std::function<void(BLContext&, const Viewport&)> m_customRenderer;
 };

@@ -320,6 +320,7 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
     ctx.apply_transform(transform);
     ctx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
 
+    uint32_t currentStrokeId = 1;
     for (const auto& stroke : strokes) {
         if (stroke.outlinePath.is_empty() && stroke.segments.empty() && stroke.points.empty()) continue;
 
@@ -335,7 +336,7 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
         if (useGpuBatch && isSolidGpuStroke) {
             const auto& mesh = stroke.EnsureMeshCache();
             if (!mesh.empty()) {
-                gpu.SubmitMesh(mesh, combinedMatrix, effectiveScale, combinedOpacity, effectiveBlend);
+                gpu.SubmitMesh(mesh, combinedMatrix, effectiveScale, combinedOpacity, effectiveBlend, currentStrokeId++);
                 continue;
             }
         }

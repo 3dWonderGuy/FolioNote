@@ -101,6 +101,10 @@ void GpuInkManager::Shutdown() {
         SDL_ReleaseGPUTexture(m_device, m_canvasTexture);
         m_canvasTexture = nullptr;
     }
+    if (m_depthStencilTexture) {
+        SDL_ReleaseGPUTexture(m_device, m_depthStencilTexture);
+        m_depthStencilTexture = nullptr;
+    }
     m_textureWidth = 0;
     m_textureHeight = 0;
 
@@ -128,6 +132,7 @@ void GpuInkManager::Shutdown() {
     SDL_DestroyGPUDevice(m_device);
     m_device = nullptr;
     m_initialized = false;
+    m_initAttempted = false;
 }
 
 const char* GpuInkManager::GetDriverName() const noexcept {
@@ -204,6 +209,15 @@ bool GpuInkManager::CreatePipelines() {
     vertexInput.num_vertex_attributes      = 3;
     vertexInput.vertex_attributes          = vattrs;
 
+    m_depthStencilFormat = SDL_GPU_TEXTUREFORMAT_INVALID;
+    if (SDL_GPUTextureSupportsFormat(m_device, SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,
+                                     SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
+        m_depthStencilFormat = SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT;
+    } else if (SDL_GPUTextureSupportsFormat(m_device, SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT,
+                                            SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
+        m_depthStencilFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
+    }
+
     SDL_GPURasterizerState rasterizer = {};
     rasterizer.fill_mode         = SDL_GPU_FILLMODE_FILL;
     rasterizer.cull_mode         = SDL_GPU_CULLMODE_NONE;
@@ -215,12 +229,29 @@ bool GpuInkManager::CreatePipelines() {
     multisample.sample_count = SDL_GPU_SAMPLECOUNT_1;
     multisample.enable_mask  = false;
 
-    SDL_GPUDepthStencilState depthStencil = {};
-    depthStencil.enable_depth_test   = false;
-    depthStencil.enable_depth_write  = false;
-    depthStencil.enable_stencil_test = false;
+    SDL_GPUDepthStencilState dsDisabled = {};
+    dsDisabled.enable_depth_test   = false;
+    dsDisabled.enable_depth_write  = false;
+    dsDisabled.enable_stencil_test = false;
 
-    auto makePipeline = [&](const SDL_GPUColorTargetBlendState& blendState) -> SDL_GPUGraphicsPipeline* {
+    SDL_GPUDepthStencilState dsMultiply = dsDisabled;
+    if (m_depthStencilFormat != SDL_GPU_TEXTUREFORMAT_INVALID) {
+        dsMultiply.enable_stencil_test = true;
+        dsMultiply.compare_mask        = 0xFF;
+        dsMultiply.write_mask          = 0xFF;
+
+        // Front & Back: Only pass if stencil != ref. On pass, replace with ref. On fail, keep.
+        // This ensures the first fragment writes the ref and passes, and subsequent overlapping
+        // fragments from the same stroke test (stencil == ref) and fail, achieving zero intra-stroke darkening.
+        dsMultiply.front_stencil_state.compare_op    = SDL_GPU_COMPAREOP_NOT_EQUAL;
+        dsMultiply.front_stencil_state.pass_op       = SDL_GPU_STENCILOP_REPLACE;
+        dsMultiply.front_stencil_state.fail_op       = SDL_GPU_STENCILOP_KEEP;
+        dsMultiply.front_stencil_state.depth_fail_op = SDL_GPU_STENCILOP_KEEP;
+        dsMultiply.back_stencil_state                = dsMultiply.front_stencil_state;
+    }
+
+    auto makePipeline = [&](const SDL_GPUColorTargetBlendState& blendState,
+                            const SDL_GPUDepthStencilState& dsState) -> SDL_GPUGraphicsPipeline* {
         SDL_GPUColorTargetDescription colorDesc[1] = {};
         colorDesc[0].format      = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
         colorDesc[0].blend_state = blendState;
@@ -228,7 +259,12 @@ bool GpuInkManager::CreatePipelines() {
         SDL_GPUGraphicsPipelineTargetInfo targetInfo = {};
         targetInfo.num_color_targets         = 1;
         targetInfo.color_target_descriptions = colorDesc;
-        targetInfo.has_depth_stencil_target  = false;
+        if (m_depthStencilFormat != SDL_GPU_TEXTUREFORMAT_INVALID) {
+            targetInfo.has_depth_stencil_target = true;
+            targetInfo.depth_stencil_format     = m_depthStencilFormat;
+        } else {
+            targetInfo.has_depth_stencil_target = false;
+        }
 
         SDL_GPUGraphicsPipelineCreateInfo pipeInfo = {};
         pipeInfo.vertex_shader       = m_vertexShader;
@@ -237,7 +273,7 @@ bool GpuInkManager::CreatePipelines() {
         pipeInfo.primitive_type      = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         pipeInfo.rasterizer_state    = rasterizer;
         pipeInfo.multisample_state   = multisample;
-        pipeInfo.depth_stencil_state = depthStencil;
+        pipeInfo.depth_stencil_state = dsState;
         pipeInfo.target_info         = targetInfo;
 
         return SDL_CreateGPUGraphicsPipeline(m_device, &pipeInfo);
@@ -265,9 +301,9 @@ bool GpuInkManager::CreatePipelines() {
     blendAdditive.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     blendAdditive.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
 
-    m_pipelineNormal   = makePipeline(blendNormal);
-    m_pipelineMultiply = makePipeline(blendMultiply);
-    m_pipelineAdditive = makePipeline(blendAdditive);
+    m_pipelineNormal   = makePipeline(blendNormal, dsDisabled);
+    m_pipelineMultiply = makePipeline(blendMultiply, dsMultiply);
+    m_pipelineAdditive = makePipeline(blendAdditive, dsDisabled);
 
     return m_pipelineNormal != nullptr && m_pipelineMultiply != nullptr && m_pipelineAdditive != nullptr;
 }
@@ -283,6 +319,10 @@ bool GpuInkManager::EnsureCanvasTexture(uint32_t width, uint32_t height) {
     if (m_canvasTexture) {
         SDL_ReleaseGPUTexture(m_device, m_canvasTexture);
         m_canvasTexture = nullptr;
+    }
+    if (m_depthStencilTexture) {
+        SDL_ReleaseGPUTexture(m_device, m_depthStencilTexture);
+        m_depthStencilTexture = nullptr;
     }
 
     SDL_GPUTextureCreateInfo texInfo = {};
@@ -301,6 +341,25 @@ bool GpuInkManager::EnsureCanvasTexture(uint32_t width, uint32_t height) {
         m_textureWidth = 0;
         m_textureHeight = 0;
         return false;
+    }
+
+    if (m_depthStencilFormat != SDL_GPU_TEXTUREFORMAT_INVALID) {
+        SDL_GPUTextureCreateInfo dsInfo = {};
+        dsInfo.type                 = SDL_GPU_TEXTURETYPE_2D;
+        dsInfo.format               = m_depthStencilFormat;
+        dsInfo.usage                = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+        dsInfo.width                = newW;
+        dsInfo.height               = newH;
+        dsInfo.layer_count_or_depth = 1;
+        dsInfo.num_levels           = 1;
+        dsInfo.sample_count         = SDL_GPU_SAMPLECOUNT_1;
+
+        m_depthStencilTexture = SDL_CreateGPUTexture(m_device, &dsInfo);
+        if (!m_depthStencilTexture) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                        "[GpuInkManager] SDL_CreateGPUTexture for depth-stencil failed: %s",
+                        SDL_GetError());
+        }
     }
 
     m_textureWidth  = newW;
@@ -388,13 +447,15 @@ void GpuInkManager::BeginBatch() noexcept {
     m_stagedVertices.clear();
     m_stagedIndices.clear();
     m_drawCommands.clear();
+    m_nextAutoStrokeId = 1;
 }
 
 void GpuInkManager::SubmitMesh(const InkMesh& mesh,
                                const BLMatrix2D& worldToScreen,
                                float scalePxPerMm,
                                float opacity,
-                               BlendMode blendMode) {
+                               BlendMode blendMode,
+                               uint32_t strokeId) {
     if (mesh.empty()) return;
 
     if (!m_initialized && !m_initAttempted) {
@@ -407,6 +468,7 @@ void GpuInkManager::SubmitMesh(const InkMesh& mesh,
     cmd.indexOffset  = static_cast<uint32_t>(m_stagedIndices.size());
     cmd.indexCount   = static_cast<uint32_t>(mesh.indices.size());
     cmd.blendMode    = blendMode;
+    cmd.strokeId     = (strokeId != 0) ? strokeId : m_nextAutoStrokeId++;
 
     cmd.uniforms.transform0[0] = static_cast<float>(worldToScreen.m00);
     cmd.uniforms.transform0[1] = static_cast<float>(worldToScreen.m01);
@@ -550,7 +612,21 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
     colorTarget.load_op     = SDL_GPU_LOADOP_LOAD;
     colorTarget.store_op    = SDL_GPU_STOREOP_STORE;
 
-    SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdBuf, &colorTarget, 1, nullptr);
+    SDL_GPUDepthStencilTargetInfo dsTarget = {};
+    const SDL_GPUDepthStencilTargetInfo* pDsTarget = nullptr;
+    if (m_depthStencilTexture) {
+        dsTarget.texture          = m_depthStencilTexture;
+        dsTarget.clear_depth      = 0.0f;
+        dsTarget.load_op          = SDL_GPU_LOADOP_DONT_CARE;
+        dsTarget.store_op         = SDL_GPU_STOREOP_DONT_CARE;
+        dsTarget.clear_stencil    = 0;
+        dsTarget.stencil_load_op  = SDL_GPU_LOADOP_CLEAR;
+        dsTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        dsTarget.cycle            = false;
+        pDsTarget = &dsTarget;
+    }
+
+    SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(cmdBuf, &colorTarget, 1, pDsTarget);
 
     SDL_GPUViewport gpuVp = {};
     gpuVp.x         = 0.0f;
@@ -569,7 +645,11 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
     SDL_BindGPUVertexBuffers(renderPass, 0, &vtxBind, 1);
     SDL_BindGPUIndexBuffer(renderPass, &idxBind, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
+    uint8_t currentStencilRef = 0;
+    uint32_t lastStrokeId = 0;
+    bool hasLastStrokeId = false;
     SDL_GPUGraphicsPipeline* currentPipe = nullptr;
+
     for (auto& dc : m_drawCommands) {
         dc.uniforms.transform1[2] = static_cast<float>(surfW);
         dc.uniforms.transform1[3] = static_cast<float>(surfH);
@@ -584,6 +664,28 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
         if (wantPipe != currentPipe) {
             SDL_BindGPUGraphicsPipeline(renderPass, wantPipe);
             currentPipe = wantPipe;
+        }
+
+        if (dc.blendMode == BlendMode::Multiply && m_depthStencilTexture) {
+            if (!hasLastStrokeId || dc.strokeId != lastStrokeId) {
+                currentStencilRef++;
+                if (currentStencilRef == 255) {
+                    // Stencil reference saturated: restart render pass to clear stencil buffer
+                    SDL_EndGPURenderPass(renderPass);
+                    renderPass = SDL_BeginGPURenderPass(cmdBuf, &colorTarget, 1, pDsTarget);
+                    SDL_SetGPUViewport(renderPass, &gpuVp);
+                    SDL_SetGPUScissor(renderPass, &scissor);
+                    SDL_BindGPUVertexBuffers(renderPass, 0, &vtxBind, 1);
+                    SDL_BindGPUIndexBuffer(renderPass, &idxBind, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+                    currentPipe = nullptr;
+                    SDL_BindGPUGraphicsPipeline(renderPass, wantPipe);
+                    currentPipe = wantPipe;
+                    currentStencilRef = 1;
+                }
+                lastStrokeId = dc.strokeId;
+                hasLastStrokeId = true;
+            }
+            SDL_SetGPUStencilReference(renderPass, currentStencilRef);
         }
 
         SDL_PushGPUVertexUniformData(cmdBuf, 0, &dc.uniforms, sizeof(GpuStrokeUniforms));

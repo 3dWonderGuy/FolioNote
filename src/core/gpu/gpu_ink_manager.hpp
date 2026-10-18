@@ -103,7 +103,8 @@ public:
                     const BLMatrix2D& worldToScreen,
                     float scalePxPerMm,
                     float opacity = 1.0f,
-                    BlendMode blendMode = BlendMode::Normal);
+                    BlendMode blendMode = BlendMode::Normal,
+                    uint32_t strokeId = 0);
 
     /**
      * @brief Queries whether any stroke meshes are queued in the current batch.
@@ -163,6 +164,7 @@ private:
         uint32_t indexCount  = 0;
         int32_t  vertexOffset = 0;
         BlendMode blendMode  = BlendMode::Normal;
+        uint32_t strokeId    = 0;
         GpuStrokeUniforms uniforms;
     };
 
@@ -177,6 +179,9 @@ private:
     SDL_GPUGraphicsPipeline* m_pipelineNormal   = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineMultiply = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineAdditive = nullptr;
+
+    SDL_GPUTextureFormat     m_depthStencilFormat  = SDL_GPU_TEXTUREFORMAT_INVALID;
+    SDL_GPUTexture*          m_depthStencilTexture = nullptr;
 
     SDL_GPUTexture*          m_canvasTexture    = nullptr;
     uint32_t                 m_textureWidth     = 0;
@@ -198,6 +203,7 @@ private:
     std::vector<uint32_t>    m_stagedIndices;
     std::vector<DrawCommand> m_drawCommands;
 
+    uint32_t m_nextAutoStrokeId  = 1;
     bool     m_initialized       = false;
     bool     m_initAttempted     = false;
     bool     m_enabled           = true;

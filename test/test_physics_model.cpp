@@ -400,8 +400,201 @@ void TestGpuInkManagerRender() {
     gpu.SubmitMesh(curvedMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal);
     gpu.FlushToSurface(surface);
 
+    // 3. Zero Intra-Stroke Darkening Test: Self-intersecting / overlapping Multiply mesh
+    ctx.begin(surface);
+    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+    ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+    ctx.fill_all();
+    ctx.end();
+
+    BLRgba32 hlColor(0x00, 0xC8, 0x00, 0x80);
+    uint32_t packedHlColor = Folio::PackGpuColor(hlColor);
+
+    Folio::InkMesh selfOverlapMesh;
+    selfOverlapMesh.vertices = {
+        { 60.0f,  60.0f, 0.0f, 10.0f, packedHlColor },
+        { 120.0f, 60.0f, 0.0f, 10.0f, packedHlColor },
+        { 120.0f, 120.0f, 0.0f, 10.0f, packedHlColor },
+        { 60.0f,  120.0f, 0.0f, 10.0f, packedHlColor },
+        { 60.0f,  60.0f, 0.0f, 10.0f, packedHlColor },
+        { 120.0f, 60.0f, 0.0f, 10.0f, packedHlColor },
+        { 120.0f, 120.0f, 0.0f, 10.0f, packedHlColor },
+        { 60.0f,  120.0f, 0.0f, 10.0f, packedHlColor }
+    };
+    selfOverlapMesh.indices = {
+        0, 1, 2,  0, 2, 3,
+        4, 5, 6,  4, 6, 7
+    };
+
+    gpu.BeginBatch();
+    gpu.SubmitMesh(selfOverlapMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Multiply, 1);
+    gpu.FlushToSurface(surface);
+
+    surface.get_data(&imgData);
+    const uint8_t* overlapPx = static_cast<const uint8_t*>(imgData.pixel_data) + 90 * imgData.stride + 90 * 4;
+    uint8_t greenChOverlap = overlapPx[1];
+
+    ctx.begin(surface);
+    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+    ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+    ctx.fill_all();
+    ctx.end();
+
+    Folio::InkMesh singleQuadMesh;
+    singleQuadMesh.vertices.assign(selfOverlapMesh.vertices.begin(), selfOverlapMesh.vertices.begin() + 4);
+    singleQuadMesh.indices = { 0, 1, 2,  0, 2, 3 };
+
+    gpu.BeginBatch();
+    gpu.SubmitMesh(singleQuadMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Multiply, 1);
+    gpu.FlushToSurface(surface);
+
+    surface.get_data(&imgData);
+    const uint8_t* singlePx = static_cast<const uint8_t*>(imgData.pixel_data) + 90 * imgData.stride + 90 * 4;
+    uint8_t greenChSingle = singlePx[1];
+
+    std::cout << "  [Multiply Stencil Test] Single-pass green: " << int(greenChSingle)
+              << ", Self-overlap intra-stroke green: " << int(greenChOverlap) << std::endl;
+    assert(std::abs(int(greenChOverlap) - int(greenChSingle)) <= 1);
+
+    // Verify inter-stroke multiplication between distinct strokes
+    ctx.begin(surface);
+    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+    ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+    ctx.fill_all();
+    ctx.end();
+
+    gpu.BeginBatch();
+    gpu.SubmitMesh(singleQuadMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Multiply, 1);
+    gpu.SubmitMesh(singleQuadMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Multiply, 2);
+    gpu.FlushToSurface(surface);
+
+    surface.get_data(&imgData);
+    const uint8_t* doublePx = static_cast<const uint8_t*>(imgData.pixel_data) + 90 * imgData.stride + 90 * 4;
+    uint8_t greenChDouble = doublePx[1];
+
+    std::cout << "  [Multiply Stencil Test] Two distinct strokes (inter-stroke) green: " << int(greenChDouble) << std::endl;
+    assert(greenChDouble < greenChSingle);
+
     gpu.Shutdown();
     std::cout << "[Test] SDL_GPU InkMesh Hardware Rasterization test passed (100% OK)!" << std::endl;
+}
+
+void TestReproduceLoopImages() {
+    std::cout << "[Test] Generating loop images for Round, Square, and Chisel..." << std::endl;
+    auto& gpu = Folio::GpuInkManager::Instance();
+    gpu.Init();
+
+    // Generate a rounded rectangular loop of points (around a box with rounded corners)
+    std::vector<StrokePoint> loopPts;
+    // Top-left to top-right
+    for (int i = 0; i <= 25; ++i) {
+        double t = i / 25.0;
+        loopPts.push_back({ 150.0 + t * 200.0, 100.0, 16.0f, 0.8f, 0.0f, 0.0f });
+    }
+    // Top-right corner turn to down
+    for (int i = 1; i <= 25; ++i) {
+        double t = i / 25.0;
+        loopPts.push_back({ 350.0, 100.0 + t * 200.0, 16.0f, 0.8f, 0.0f, 0.0f });
+    }
+    // Bottom-right to bottom-left
+    for (int i = 1; i <= 25; ++i) {
+        double t = i / 25.0;
+        loopPts.push_back({ 350.0 - t * 200.0, 300.0, 16.0f, 0.8f, 0.0f, 0.0f });
+    }
+    // Bottom-left to top-left and overlap
+    for (int i = 1; i <= 35; ++i) {
+        double t = i / 25.0;
+        loopPts.push_back({ 150.0, 300.0 - t * 200.0, 16.0f, 0.8f, 0.0f, 0.0f });
+    }
+
+    // Generate a zigzag turnaround stroke (left to right, turnaround 180 deg, right to left, etc.)
+    std::vector<StrokePoint> zigzagPts;
+    for (int i = 0; i <= 30; ++i) {
+        double t = i / 30.0;
+        zigzagPts.push_back({ 80.0 + t * 350.0, 120.0, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+    // Turnaround to next row
+    for (int i = 1; i <= 10; ++i) {
+        double a = -M_PI * 0.5 + (M_PI * i) / 10.0;
+        zigzagPts.push_back({ 430.0 + std::cos(a) * 20.0, 140.0 + std::sin(a) * 20.0, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+    // Right to left
+    for (int i = 1; i <= 30; ++i) {
+        double t = i / 30.0;
+        zigzagPts.push_back({ 430.0 - t * 350.0, 160.0, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+    // Turnaround to third row
+    for (int i = 1; i <= 10; ++i) {
+        double a = M_PI * 0.5 + (M_PI * i) / 10.0;
+        zigzagPts.push_back({ 80.0 + std::cos(a) * 20.0, 180.0 + std::sin(a) * 20.0, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+    // Left to right
+    for (int i = 1; i <= 30; ++i) {
+        double t = i / 30.0;
+        zigzagPts.push_back({ 80.0 + t * 350.0, 200.0, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+
+    auto renderAndSave = [&](const std::vector<StrokePoint>& pts, CapType cap, const char* name, BlendMode blend, BLRgba32 col) {
+        BLImage surface(512, 512, BL_FORMAT_PRGB32);
+        BLContext ctx(surface);
+        ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+        ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+        ctx.fill_all();
+        ctx.end();
+
+        Folio::InkMesh mesh;
+        Folio::InkEngine::BuildStrokeMesh(pts, cap, Folio::PackGpuColor(col), mesh);
+
+        gpu.BeginBatch();
+        gpu.SubmitMesh(mesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, blend, 1);
+        gpu.FlushToSurface(surface);
+
+        std::string filename = std::string("/home/odysseus/.gemini/antigravity/brain/3314c842-4afc-44b2-8c5b-c660e95ed743/scratch/") + name + ".png";
+        surface.write_to_file(filename.c_str());
+
+        // Also render outlinePath via Blend2D
+        BLImage surfaceCpu(512, 512, BL_FORMAT_PRGB32);
+        BLContext ctxCpu(surfaceCpu);
+        ctxCpu.set_comp_op(BL_COMP_OP_SRC_COPY);
+        ctxCpu.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+        ctxCpu.fill_all();
+        ctxCpu.set_comp_op(blend == BlendMode::Multiply ? BL_COMP_OP_MULTIPLY : BL_COMP_OP_SRC_OVER);
+        ctxCpu.set_fill_style(col);
+        BLPath outline = Folio::InkEngine::BuildStrokeOutline(pts, cap);
+        ctxCpu.fill_path(outline);
+        ctxCpu.end();
+
+        std::string filenameCpu = std::string("/home/odysseus/.gemini/antigravity/brain/3314c842-4afc-44b2-8c5b-c660e95ed743/scratch/") + name + "_cpu.png";
+        surfaceCpu.write_to_file(filenameCpu.c_str());
+    };
+
+    // Generate a diagonal test stroke matching the user's shape
+    std::vector<StrokePoint> diagonalPts;
+    for (int i = 0; i <= 40; ++i) {
+        double t = i / 40.0;
+        // Introduce small sub-pixel digitizer jitter typical of real stylus input
+        double jx = (i % 2 == 0 ? 0.3 : -0.3);
+        double jy = (i % 3 == 0 ? 0.3 : -0.3);
+        diagonalPts.push_back({ 300.0 - t * 150.0 + jx, 400.0 - t * 150.0 + jy, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+    for (int i = 1; i <= 20; ++i) {
+        double t = i / 20.0;
+        diagonalPts.push_back({ 150.0, 250.0 - t * 100.0, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+    for (int i = 1; i <= 40; ++i) {
+        double t = i / 40.0;
+        double jx = (i % 2 == 0 ? 0.3 : -0.3);
+        double jy = (i % 3 == 0 ? 0.3 : -0.3);
+        diagonalPts.push_back({ 150.0 + t * 150.0 + jx, 150.0 - t * 100.0 + jy, 18.0f, 0.8f, 0.0f, 0.0f });
+    }
+
+    renderAndSave(loopPts, CapType::Round, "loop_round", BlendMode::Normal, BLRgba32(0xD6, 0x20, 0x20, 0xFF));
+    renderAndSave(loopPts, CapType::Square, "loop_square_pink", BlendMode::Multiply, BLRgba32(0xFF, 0x40, 0x80, 0x80));
+    renderAndSave(loopPts, CapType::Chisel, "loop_chisel_red", BlendMode::Normal, BLRgba32(0xD6, 0x20, 0x20, 0xFF));
+    renderAndSave(zigzagPts, CapType::Square, "zigzag_square_pink", BlendMode::Multiply, BLRgba32(0xFF, 0x40, 0x80, 0x80));
+    renderAndSave(diagonalPts, CapType::Square, "diagonal_square_pink", BlendMode::Multiply, BLRgba32(0xFF, 0x40, 0x80, 0x80));
+
+    gpu.Shutdown();
 }
 
 
@@ -419,6 +612,7 @@ int main() {
     TestCrescentTurnGeometry();
     TestInkEngineMeshIntegration();
     TestGpuInkManagerRender();
+    TestReproduceLoopImages();
 
     std::cout << "========================================" << std::endl;
     std::cout << "All Physics Model tests passed (100% OK)!" << std::endl;
