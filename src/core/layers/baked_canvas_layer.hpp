@@ -117,6 +117,16 @@ public:
     [[nodiscard]] bool IsDirty() const noexcept { return m_isDirty; }
 
     /**
+     * @brief Queries whether a full rebake (camera motion/resize) is pending.
+     */
+    [[nodiscard]] bool IsFullRebakePending() const noexcept { return m_needsFullRebake; }
+
+    /**
+     * @brief Accesses the world-space bounding box of the last partial rebake damage area.
+     */
+    [[nodiscard]] const AABB& GetLastRenderedDirtyWorldRegion() const noexcept { return m_lastRenderedDirtyWorldRegion; }
+
+    /**
      * @brief Read-only accessor for LayerCompositorManager to blit or upload to OpenGL texture.
      * @return Const reference to the internal 32-bit PRGB32 raster surface.
      */
@@ -153,6 +163,7 @@ private:
     bool m_isDirty         = true; ///< True when any rasterization pass is queued
     bool m_needsFullRebake = true; ///< True for Path A (full frustum rebake), false for Path B (partial)
     AABB m_dirtyWorldRegion;       ///< Accumulated world-space bounding box requiring re-baking
+    AABB m_lastRenderedDirtyWorldRegion; ///< Saved damage region from the most recent partial rebake pass
     PaperTheme m_theme;            ///< Paper background, grid line, and border styling colors
 
     /**

@@ -83,6 +83,7 @@ void BakedCanvasLayer::Invalidate() {
     m_isDirty = true;
     m_needsFullRebake = true;
     m_dirtyWorldRegion.Reset();
+    m_lastRenderedDirtyWorldRegion.Reset();
 }
 
 /**
@@ -141,6 +142,7 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
     m_bakedContext.begin(m_bakedSurface);
 
     if (m_needsFullRebake) {
+        m_lastRenderedDirtyWorldRegion.Reset();
         // --- Path A: Full Viewport Rebake (Camera pan/zoom/resize) ---
         DrawBackground(page, viewport);
 
@@ -175,6 +177,7 @@ void BakedCanvasLayer::Render(CanvasPage* page, const Viewport& viewport) {
     } 
     else {
         // --- Path B: Partial Region Patch (Single object mutation) ---
+        m_lastRenderedDirtyWorldRegion = m_dirtyWorldRegion;
         if (m_dirtyWorldRegion.IsValid() && !m_dirtyWorldRegion.IsEmpty()) {
             m_bakedContext.save();
 

@@ -46,6 +46,117 @@ bool LiveInteractionLayer::HasActiveInteraction() const noexcept {
            (m_customRenderer != nullptr);
 }
 
+AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) const noexcept {
+    if (!HasActiveInteraction()) {
+        return AABB{};
+    }
+
+    if (m_customRenderer != nullptr) {
+        return viewport.bounds;
+    }
+
+    const double effectiveScale = viewport.GetEffectiveScale();
+    AABB bounds;
+
+    // 1. In-flight ink stroke
+    if (m_inkEngine.IsStrokeActive()) {
+        BLBox box;
+        const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
+        if (!liveOutline.is_empty() && liveOutline.get_bounding_box(&box) == BL_SUCCESS) {
+            Point2D s0 = viewport.WorldToScreen(box.x0, box.y0);
+            Point2D s1 = viewport.WorldToScreen(box.x1, box.y1);
+            bounds.Merge(s0.x, s0.y);
+            bounds.Merge(s1.x, s1.y);
+        }
+        const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
+        if (!predOutline.is_empty() && predOutline.get_bounding_box(&box) == BL_SUCCESS) {
+            Point2D s0 = viewport.WorldToScreen(box.x0, box.y0);
+            Point2D s1 = viewport.WorldToScreen(box.x1, box.y1);
+            bounds.Merge(s0.x, s0.y);
+            bounds.Merge(s1.x, s1.y);
+        }
+        const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+        if (!livePts.empty()) {
+            const auto& pt = livePts.back();
+            Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
+            double rPx = pt.r * effectiveScale;
+            bounds.Merge(sp.x - rPx, sp.y - rPx);
+            bounds.Merge(sp.x + rPx, sp.y + rPx);
+        }
+        bounds.Expand(6.0);
+    } else if (m_hasBorrowedStroke && m_borrowedStroke.points.size() >= 2) {
+        for (const auto& p : m_borrowedStroke.points) {
+            Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
+            bounds.Merge(sp.x, sp.y);
+        }
+        double rPx = (m_borrowedStroke.baseWidthMm * 0.5) * effectiveScale + 4.0;
+        bounds.Expand(rPx);
+    } else if (m_isInking && m_internalPoints.size() >= 2) {
+        for (const auto& p : m_internalPoints) {
+            Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
+            bounds.Merge(sp.x, sp.y);
+        }
+        double rPx = (m_penWidthMm * 0.5) * effectiveScale + 4.0;
+        bounds.Expand(rPx);
+    }
+
+    // 2. Selection / Transform Gizmo
+    if (m_boundGizmo && m_boundGizmo->HasSelection()) {
+        const AABB& wBox = m_boundGizmo->bounds;
+        if (wBox.IsValid() && !wBox.IsEmpty()) {
+            BLRect sRect = viewport.WorldToScreenRect(wBox);
+            bounds.Merge(sRect.x, sRect.y);
+            bounds.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+            bounds.Expand(40.0);
+        }
+    } else if (m_hasActiveGizmo && !m_activeGizmo.targetBounds.IsEmpty()) {
+        BLRect sRect = viewport.WorldToScreenRect(m_activeGizmo.targetBounds);
+        bounds.Merge(sRect.x, sRect.y);
+        bounds.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+        bounds.Expand(40.0);
+    }
+
+    // 3. Eraser Cursor Reticle
+    if (m_hasActiveEraser && m_activeEraser.isVisible) {
+        double r = m_activeEraser.radiusPx + 8.0;
+        bounds.Merge(m_activeEraser.screenX - r, m_activeEraser.screenY - r);
+        bounds.Merge(m_activeEraser.screenX + r, m_activeEraser.screenY + r);
+    }
+
+    // 4. Marquee Box / Lasso
+    if (m_hasActiveMarquee) {
+        if (m_activeMarquee.isScreenRect) {
+            bounds.Merge(m_activeMarquee.screenMinX - 2.0, m_activeMarquee.screenMinY - 2.0);
+            bounds.Merge(m_activeMarquee.screenMaxX + 2.0, m_activeMarquee.screenMaxY + 2.0);
+        } else if (!m_activeMarquee.rectBounds.IsEmpty()) {
+            BLRect sRect = viewport.WorldToScreenRect(m_activeMarquee.rectBounds);
+            bounds.Merge(sRect.x - 2.0, sRect.y - 2.0);
+            bounds.Merge(sRect.x + sRect.w + 2.0, sRect.y + sRect.h + 2.0);
+        } else if (!m_activeMarquee.polygonPoints.empty()) {
+            for (const auto& pt : m_activeMarquee.polygonPoints) {
+                Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
+                bounds.Merge(sp.x, sp.y);
+            }
+            bounds.Expand(4.0);
+        }
+    }
+
+    // 5. Active Text Editor Caret
+    if (m_hasActiveText) {
+        Point2D sp = viewport.WorldToScreen(m_activeText.caretWorldX, m_activeText.caretWorldY);
+        double hPx = m_activeText.caretHeightMm * effectiveScale;
+        bounds.Merge(sp.x - 6.0, sp.y - 6.0);
+        bounds.Merge(sp.x + 6.0, sp.y + hPx + 6.0);
+        for (const auto& r : m_activeText.selectionRects) {
+            BLRect sRect = viewport.WorldToScreenRect(r);
+            bounds.Merge(sRect.x, sRect.y);
+            bounds.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+        }
+    }
+
+    return bounds;
+}
+
 void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
     if (!HasActiveInteraction()) {
         return;

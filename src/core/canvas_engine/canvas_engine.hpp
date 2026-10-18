@@ -173,6 +173,9 @@ public:
     bool isDirty = true;
     bool needsFullRebake = true;      // Background grid + all objects
 
+    // PCIe Bus Bandwidth Optimization: Conservative bounding box of live interaction from previous frame
+    AABB m_prevLiveScreenBounds;
+
     // Canvas-level ink color invert and dark mode state
     bool isDarkMode = false;
     bool inkColorInverted = false;

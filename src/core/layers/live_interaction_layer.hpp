@@ -200,6 +200,12 @@ public:
     // --- State Queries ---
     [[nodiscard]] bool HasActiveInteraction() const noexcept;
 
+    /**
+     * @brief Computes the conservative screen-pixel bounding box of active ephemeral interactions.
+     * Used for PCIe dirty-rect partial texture uploads.
+     */
+    [[nodiscard]] AABB GetInteractionScreenBounds(const Viewport& viewport) const noexcept;
+
     // --- High-Performance Modeled Vector Inking Pipeline (Google Ink & Spring Physics) ---
     /**
      * @brief Begins a modeled, physics-simulated continuous vector ink stroke.

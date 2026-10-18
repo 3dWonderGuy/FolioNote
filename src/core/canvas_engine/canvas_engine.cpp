@@ -152,6 +152,7 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
 
     layerCompositor.GetBakedCanvasLayer().SetPaperTheme(canvasBgColor, gridLineColor, pageBorderColor);
 
+    bool wasFullRebake = needsFullRebake;
     if (needsFullRebake) {
         layerCompositor.InvalidateBakedCanvas();
         needsFullRebake = false;
@@ -172,9 +173,6 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
             }
         }
     }
-
-    BLContext compCtx(compositeSurface);
-    compCtx.clear_all();
 
     auto& liveLayer = layerCompositor.GetLiveInteractionLayer();
 
@@ -212,6 +210,54 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         liveLayer.SetCustomFeedbackRenderer(nullptr);
     }
 
+    // -------------------------------------------------------------------------
+    // PCIe BUS BANDWIDTH OPTIMIZATION: Sub-image Dirty Rect Determination
+    // -------------------------------------------------------------------------
+    AABB currLiveBounds = liveLayer.GetInteractionScreenBounds(currentView);
+
+    bool canUsePartialUpload = false;
+    int dirtyX = 0, dirtyY = 0, dirtyW = 0, dirtyH = 0;
+
+    if (!wasFullRebake && !layerCompositor.GetBakedCanvasLayer().IsFullRebakePending()) {
+        AABB frameDirtyBox;
+        if (currLiveBounds.IsValid() && !currLiveBounds.IsEmpty()) {
+            frameDirtyBox.Merge(currLiveBounds);
+        }
+        if (m_prevLiveScreenBounds.IsValid() && !m_prevLiveScreenBounds.IsEmpty()) {
+            frameDirtyBox.Merge(m_prevLiveScreenBounds);
+        }
+
+        const AABB& bakedDirtyWorld = layerCompositor.GetBakedCanvasLayer().GetLastRenderedDirtyWorldRegion();
+        if (bakedDirtyWorld.IsValid() && !bakedDirtyWorld.IsEmpty()) {
+            BLRect sRect = currentView.WorldToScreenRect(bakedDirtyWorld);
+            frameDirtyBox.Merge(sRect.x, sRect.y);
+            frameDirtyBox.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+        }
+
+        if (frameDirtyBox.IsValid() && !frameDirtyBox.IsEmpty()) {
+            dirtyX = std::clamp(static_cast<int>(std::floor(frameDirtyBox.minX)), 0, viewportW - 1);
+            dirtyY = std::clamp(static_cast<int>(std::floor(frameDirtyBox.minY)), 0, viewportH - 1);
+            int dirtyR = std::clamp(static_cast<int>(std::ceil(frameDirtyBox.maxX)), 1, viewportW);
+            int dirtyB = std::clamp(static_cast<int>(std::ceil(frameDirtyBox.maxY)), 1, viewportH);
+            dirtyW = dirtyR - dirtyX;
+            dirtyH = dirtyB - dirtyY;
+
+            double dirtyArea = static_cast<double>(dirtyW) * static_cast<double>(dirtyH);
+            double totalArea = static_cast<double>(viewportW) * static_cast<double>(viewportH);
+
+            if (dirtyW > 0 && dirtyH > 0 && dirtyArea < totalArea * 0.70) {
+                canUsePartialUpload = true;
+            }
+        }
+    }
+
+    BLContext compCtx(compositeSurface);
+    if (canUsePartialUpload) {
+        compCtx.clip_to_rect(BLRectI(dirtyX, dirtyY, dirtyW, dirtyH));
+    } else {
+        compCtx.clear_all();
+    }
+
     layerCompositor.RenderFrame(compCtx, activePage, currentView, activeAppObjects, deltaTime);
     compCtx.end();
 
@@ -219,11 +265,15 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         BLImageData invertData;
         compositeSurface.get_data(&invertData);
         uint8_t* pixels = static_cast<uint8_t*>(invertData.pixel_data);
-        int totalRows = viewportH;
         intptr_t stride = invertData.stride;
-        for (int row = 0; row < totalRows; ++row) {
+        int rowStart = canUsePartialUpload ? dirtyY : 0;
+        int rowEnd   = canUsePartialUpload ? (dirtyY + dirtyH) : viewportH;
+        int colStart = canUsePartialUpload ? dirtyX : 0;
+        int colEnd   = canUsePartialUpload ? (dirtyX + dirtyW) : viewportW;
+
+        for (int row = rowStart; row < rowEnd; ++row) {
             uint8_t* rowPtr = pixels + row * stride;
-            for (int col = 0; col < viewportW; ++col) {
+            for (int col = colStart; col < colEnd; ++col) {
                 uint8_t* px = rowPtr + col * 4;
                 px[0] = 255 - px[0];
                 px[1] = 255 - px[1];
@@ -235,18 +285,44 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     BLImageData imgData;
     compositeSurface.get_data(&imgData);
     glBindTexture(GL_TEXTURE_2D, glTexture);
-#if defined(__ANDROID__)
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-#else
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-#endif
 
+    if (canUsePartialUpload) {
+#if defined(__ANDROID__)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, dirtyX);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, dirtyY);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, dirtyX, dirtyY, dirtyW, dirtyH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+#else
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, dirtyX);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, dirtyY);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, dirtyX, dirtyY, dirtyW, dirtyH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+#endif
+    } else {
+#if defined(__ANDROID__)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+#else
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+#endif
+    }
+
+    m_prevLiveScreenBounds = currLiveBounds;
     isDirty = false;
 }
 
