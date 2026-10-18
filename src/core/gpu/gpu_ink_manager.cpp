@@ -301,7 +301,7 @@ bool GpuInkManager::CreatePipelines() {
     blendAdditive.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     blendAdditive.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
 
-    m_pipelineNormal   = makePipeline(blendNormal, dsDisabled);
+    m_pipelineNormal   = makePipeline(blendNormal, dsMultiply);
     m_pipelineMultiply = makePipeline(blendMultiply, dsMultiply);
     m_pipelineAdditive = makePipeline(blendAdditive, dsDisabled);
 
@@ -666,7 +666,7 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
             currentPipe = wantPipe;
         }
 
-        if (dc.blendMode == BlendMode::Multiply && m_depthStencilTexture) {
+        if ((dc.blendMode == BlendMode::Multiply || dc.blendMode == BlendMode::Normal) && m_depthStencilTexture) {
             if (!hasLastStrokeId || dc.strokeId != lastStrokeId) {
                 currentStencilRef++;
                 if (currentStencilRef == 255) {
