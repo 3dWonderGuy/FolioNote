@@ -8,7 +8,6 @@
 
 #include "core/canvas_engine/transform/canvas_transform.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/ink_engine/ink_stroke_data.hpp"
 #include "core/ink_engine/ink_engine.hpp"
 #include "input/pen_palette.hpp"
 
@@ -201,6 +200,12 @@ public:
     // --- State Queries ---
     [[nodiscard]] bool HasActiveInteraction() const noexcept;
 
+    /**
+     * @brief Computes the conservative screen-pixel bounding box of active ephemeral interactions.
+     * Used for PCIe dirty-rect partial texture uploads.
+     */
+    [[nodiscard]] AABB GetInteractionScreenBounds(const Viewport& viewport) const noexcept;
+
     // --- High-Performance Modeled Vector Inking Pipeline (Google Ink & Spring Physics) ---
     /**
      * @brief Begins a modeled, physics-simulated continuous vector ink stroke.
@@ -347,6 +352,7 @@ private:
 
     // High-performance physics-modeled inking engine
     InkEngine              m_inkEngine;
+    BlendMode              m_activeStrokeBlendMode = BlendMode::Normal;
 
     std::function<void(BLContext&, const Viewport&)> m_customRenderer;
 };

@@ -63,6 +63,7 @@ endif()
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "" FORCE)
+set(SDL_IBUS OFF CACHE BOOL "" FORCE)
 set(BLEND2D_TEST OFF CACHE BOOL "" FORCE)
 set(BLEND2D_DEMOS OFF CACHE BOOL "" FORCE)
 set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -92,7 +93,6 @@ set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(INK_STROKE_MODELER_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(third_party/ink-stroke-modeler ink_sm EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/SDL sdl EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/blend2d b2d EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/lunasvg lsvg EXCLUDE_FROM_ALL)
@@ -121,6 +121,34 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3/sqlite3.c")
     target_include_directories(sqlite3 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3")
     target_compile_definitions(sqlite3 PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5=1 SQLITE_ENABLE_JSON1=1)
 endif()
+
+# 2.5 Folio-Sketch Vector Inking Engine
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/CMakeLists.txt")
+    find_package(Git QUIET)
+    if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+        message(STATUS "Folio-Sketch submodule not initialized. Updating git submodules...")
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive third_party/Folio-Sketch
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            RESULT_VARIABLE GIT_SUBMOD_RESULT
+        )
+    endif()
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/CMakeLists.txt")
+    message(STATUS "Folio-Sketch submodule missing locally. Fetching via FetchContent...")
+    include(FetchContent)
+    FetchContent_Declare(
+        FolioSketch
+        GIT_REPOSITORY https://github.com/3dWonderGuy/Folio-Sketch.git
+        GIT_TAG        main
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(FolioSketch)
+else()
+    add_subdirectory(third_party/Folio-Sketch folio_sketch)
+endif()
+
 
 # 3. ImGui Configuration
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui")
@@ -167,6 +195,12 @@ else()
 
     )
     set(APP_TARGET FolioNote)
+    if(UNIX AND NOT APPLE)
+        set_target_properties(FolioNote PROPERTIES
+            INSTALL_RPATH "$ORIGIN"
+            BUILD_WITH_INSTALL_RPATH TRUE
+        )
+    endif()
 endif()
 
 # 6. Target Include Directories
@@ -177,8 +211,6 @@ target_include_directories(${APP_TARGET} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d/blend2d
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/ink-stroke-modeler
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil-cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite3
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lunasvg/include
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL_image/include
@@ -217,8 +249,8 @@ target_link_libraries(${APP_TARGET} PRIVATE
     blend2d::blend2d
     lunasvg::lunasvg
     SDL3_image::SDL3_image
-    InkStrokeModeler::stroke_modeler
     sqlite3
+    FolioSketch::FolioSketch
 )
 
 if(ANDROID)
@@ -463,9 +495,13 @@ set(FOLIO_IO_SOURCES
 )
 
 # testing
-enable_testing()
+option(FOLIONOTE_BUILD_TESTS "Build FolioNote unit tests" ON)
+if(FOLIONOTE_BUILD_TESTS)
+    enable_testing()
+endif()
+
 # 10. Standalone Local Test Executable
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_rtree
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_rtree.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
@@ -497,7 +533,7 @@ if(NOT ANDROID)
 endif()
 
 # 11. Standalone Local Test Executable: FileManager
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_file_manager
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_manager.cpp"
         ${FOLIO_IO_SOURCES}
@@ -518,6 +554,27 @@ if(NOT ANDROID)
         target_link_libraries(test_file_manager PRIVATE dwmapi ole32 shell32 winspool)
     endif()
 
+    if(FOLIO_PDFIUM_FOUND)
+        target_sources(test_file_manager PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/core/pdf_engine/pdf_renderer.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/core/pdf_engine/pdf_text_layer.cpp"
+        )
+        target_include_directories(test_file_manager PRIVATE
+            "${PDFIUM_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+            "${IMGUI_DIR}"
+        )
+        target_compile_definitions(test_file_manager PRIVATE FOLIO_HAS_PDFIUM=1)
+        target_link_libraries(test_file_manager PRIVATE
+            blend2d::blend2d
+        )
+        if(WIN32)
+            target_link_libraries(test_file_manager PRIVATE "${PDFIUM_DIR}/lib/pdfium.dll.lib")
+        elseif(UNIX AND NOT APPLE AND NOT ANDROID)
+            target_link_libraries(test_file_manager PRIVATE "${PDFIUM_DIR}/lib/libpdfium.so")
+        endif()
+    endif()
+
     set_target_properties(test_file_manager PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
@@ -525,7 +582,7 @@ if(NOT ANDROID)
 endif()
 
 # 12. Standalone Local Test Executable: ThreadPool
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_thread_pool
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_thread_pool.cpp"
         ${FOLIO_IO_SOURCES}
@@ -553,7 +610,7 @@ if(NOT ANDROID)
 endif()
 
 # 13. Standalone Local Test Executable: FileSaver
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_file_saver
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_saver.cpp"
         ${FOLIO_IO_SOURCES}
@@ -581,7 +638,7 @@ if(NOT ANDROID)
 endif()
 
 # 14. Standalone Local Test Executable: ActionScheduler
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_action_scheduler
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_action_scheduler.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/actions/action_scheduler.cpp"
@@ -610,18 +667,29 @@ if(NOT ANDROID)
 endif()
 
 # 15. Standalone Local Test Executable: PhysicsModel
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_physics_model
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_physics_model.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/gpu/gpu_ink_manager.cpp"
     )
 
     target_include_directories(test_physics_model PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/src"
+    )
+
+    target_link_libraries(test_physics_model PRIVATE
+        FolioSketch::FolioSketch
+        SDL3::SDL3
     )
 
     add_test(NAME test_physics_model COMMAND test_physics_model)
+endif()
 
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     # 15. Standalone Local Test Executable: Layer Order & Stacking
     add_executable(test_layer_order
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_layer_order.cpp"
@@ -642,6 +710,7 @@ if(NOT ANDROID)
     target_link_libraries(test_layer_order PRIVATE
         blend2d::blend2d
         SDL3::SDL3
+        FolioSketch::FolioSketch
     )
 
     if(WIN32)
@@ -654,13 +723,6 @@ if(NOT ANDROID)
 
     add_test(NAME test_layer_order COMMAND test_layer_order)
 
-    set(INK_GENERATOR_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_polygon.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_stroke.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_patterns.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ink_engine/ink_generator/ink_generator_infill.cpp"
-    )
-
     # 16. Standalone Local Test Executable: Storage & Serialization Subsystem
     add_executable(test_storage
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_storage.cpp"
@@ -668,12 +730,12 @@ if(NOT ANDROID)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/storage/db_manager.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/search/notebook_search_index.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/ink_container/ink_container.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/gpu/gpu_ink_manager.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/text/text_box.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/text/font_manager.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/objects/object_registry.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/history/command_history.cpp"
-        ${INK_GENERATOR_SOURCES}
         ${FOLIO_IO_SOURCES}
     )
 
@@ -692,6 +754,7 @@ if(NOT ANDROID)
         blend2d::blend2d
         SDL3::SDL3
         sqlite3
+        FolioSketch::FolioSketch
     )
 
     if(WIN32)

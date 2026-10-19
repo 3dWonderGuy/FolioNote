@@ -7,6 +7,7 @@
 #include "app/settings_manager.hpp"
 #include "io/storage/file_logger.hpp"
 #include "core/document/document_session.hpp"
+#include <folio_sketch/ink_generator.hpp>
 #include <deque>
 #include <string>
 #include <algorithm>
@@ -158,11 +159,26 @@ public:
                 ImGui::PlotLines("##FrameGraph", frameTimeHistory, 120, frameTimeOffset, "Frame Latency (ms)", 0.0f, 33.0f, ImVec2(0, 50));
                 
                 ImGui::Separator();
-                ImGui::TextColored(theme.colorPrimary, "PCIe / GPU MEMORY BANDWIDTH (20%% LOAD EXPLANATION)");
-                double frameBytesMB = (canvas.viewportW * canvas.viewportH * 4.0) / (1024.0 * 1024.0);
-                double bandwidthMBps = frameBytesMB * currentFps;
-                ImGui::Text("1:1 Render Target  : %dx%d (%.2f MB PRGB32 Buffer)", canvas.viewportW, canvas.viewportH, frameBytesMB);
-                ImGui::Text("PCIe Bus Transfer  : %.1f MB/sec (Full Texture Upload)", bandwidthMBps);
+                ImGui::TextColored(theme.colorPrimary, "PCIe / GPU MEMORY BANDWIDTH (DIRTY-RECT OPTIMIZED)");
+                double fullFrameBytesMB = (canvas.viewportW * canvas.viewportH * 4.0) / (1024.0 * 1024.0);
+                double theoreticalFullMBps = fullFrameBytesMB * currentFps;
+
+                ImGui::Text("1:1 Render Target  : %dx%d (%.2f MB PRGB32 Buffer)", canvas.viewportW, canvas.viewportH, fullFrameBytesMB);
+                if (canvas.pcieBandwidthMBps > 0.05) {
+                    if (canvas.lastUploadWasPartial) {
+                        double pctSaved = theoreticalFullMBps > 0.0 ? (1.0 - (canvas.pcieBandwidthMBps / theoreticalFullMBps)) * 100.0 : 0.0;
+                        if (pctSaved < 0.0) pctSaved = 0.0;
+                        ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), 
+                                           "PCIe Bus Transfer  : %.1f MB/sec [DIRTY-RECT: %dx%d] (%.1f%% saved vs %.1f MB/s full)",
+                                           canvas.pcieBandwidthMBps, canvas.lastDirtyW, canvas.lastDirtyH, pctSaved, theoreticalFullMBps);
+                    } else {
+                        ImGui::Text("PCIe Bus Transfer  : %.1f MB/sec (Full Upload: %dx%d)", 
+                                    canvas.pcieBandwidthMBps, canvas.viewportW, canvas.viewportH);
+                    }
+                } else {
+                    ImGui::TextColored(ImVec4(0.4f, 0.75f, 1.0f, 1.0f), 
+                                       "PCIe Bus Transfer  : 0.0 MB/sec [IDLE - 0 bytes transferred]");
+                }
 
                 ImGui::Separator();
                 ImGui::TextColored(theme.colorPrimary, "WINDOW LIFECYCLE STATE MACHINE");
@@ -254,7 +270,27 @@ public:
                 ImGui::Text("Active Pen Pressure: %.4f (ADC: %.0f / 4096)", inputState.pen.pressure, inputState.pen.pressure * 4096.0f);
                 ImGui::ProgressBar(inputState.pen.pressure, ImVec2(-FLT_MIN, 0));
 
-                ImGui::Text("Tilt Angles        : X: %.1f deg | Y: %.1f deg", inputState.pen.tiltX, inputState.pen.tiltY);
+                constexpr float kRadToDeg = 180.0f / 3.14159265358979323846f;
+                float tiltDegX = inputState.pen.tiltX * kRadToDeg;
+                float tiltDegY = inputState.pen.tiltY * kRadToDeg;
+                float tiltMagDeg = std::hypot(tiltDegX, tiltDegY);
+                ImGui::Text("Tilt Angles (Deg)  : X: %.1f deg | Y: %.1f deg (Mag: %.1f deg)",
+                            tiltDegX, tiltDegY, tiltMagDeg);
+                ImGui::Text("Tilt Radians       : X: %.3f rad | Y: %.3f rad (Mag: %.3f rad)",
+                            inputState.pen.tiltX, inputState.pen.tiltY, std::hypot(inputState.pen.tiltX, inputState.pen.tiltY));
+
+                const char* axisNames[] = { "PRESSURE", "XTILT", "YTILT", "DISTANCE", "ROTATION", "SLIDER", "TANGENTIAL" };
+                const char* lastAxisStr = (inputState.pen.lastAxis >= 0 && inputState.pen.lastAxis < 7) 
+                                              ? axisNames[inputState.pen.lastAxis] : "None";
+                ImGui::Text("Raw Tilt Ingested  : X: %.3f | Y: %.3f (LastAxis: %s, RawVal: %.4f)",
+                            inputState.pen.rawTiltX, inputState.pen.rawTiltY, lastAxisStr, inputState.pen.lastAxisValue);
+                const char* currentDriver = SDL_GetCurrentVideoDriver();
+                ImGui::Text("Axis Packets / Tool: %llu total / %llu tilt (PenID: %u | Backend: %s)",
+                            static_cast<unsigned long long>(inputState.pen.axisEventCount),
+                            static_cast<unsigned long long>(inputState.pen.tiltEventCount),
+                            inputState.pen.penId,
+                            currentDriver ? currentDriver : "Unknown");
+
                 ImGui::Text("Barrel Button 1    : %s (Eraser Shortcut)", inputState.pen.barrel1 ? "PRESSED" : "Released");
                 ImGui::Text("Barrel Button 2    : %s (Lasso Shortcut)", inputState.pen.barrel2 ? "PRESSED" : "Released");
                 ImGui::Text("Eraser Tail Tip    : %s", inputState.pen.eraserTip ? "INVERTED (Active)" : "Normal");
@@ -307,6 +343,36 @@ public:
                     ImGui::Text("Query Radius : %.2f mm", canvas.debugCollision.queryRadius);
                     ImGui::Text("Candidates   : %zu broadphase hits", canvas.debugCollision.candidateUids.size());
                     ImGui::Text("Collided     : %zu narrowphase hits", canvas.debugCollision.hitUids.size());
+                }
+
+                ImGui::Separator();
+                ImGui::TextColored(theme.colorPrimary, "INK TESSELLATION GEOMETRY DEBUGGER");
+                bool captureEnabled = InkGenerator::IsDebugCaptureEnabled();
+                if (ImGui::Checkbox("Capture Stroke Geometry Telemetry", &captureEnabled)) {
+                    InkGenerator::SetDebugCapture(captureEnabled);
+                }
+                if (ImGui::Checkbox("Show Ink Wireframe (Debug Overlay)", &canvas.debugShowInkWireframe)) {
+                    if (canvas.debugShowInkWireframe) {
+                        InkGenerator::SetDebugCapture(true);
+                    }
+                    canvas.isDirty = true;
+                }
+
+                const auto& dbgInfo = InkGenerator::GetLastDebugInfo();
+                ImGui::Text("Last Stroke Telemetry:");
+                ImGui::BulletText("Raw Points: %zu", dbgInfo.rawInputPts.size());
+                ImGui::BulletText("Clean Points: %zu", dbgInfo.cleanPts.size());
+                ImGui::BulletText("Left Rail Vertices: %zu", dbgInfo.leftRail.size());
+                ImGui::BulletText("Right Rail Vertices: %zu", dbgInfo.rightRail.size());
+                if (dbgInfo.hasDefects) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "DEFECTS DETECTED: %zu intersections, %zu folds",
+                                       dbgInfo.selfIntersections.size(), dbgInfo.retrogradeIndices.size());
+                } else {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Defects: None (0 intersections, 0 folds)");
+                }
+
+                if (ImGui::Button("Dump Last Stroke to C++ (stdout & file)")) {
+                    InkGenerator::DumpLastStrokeToConsole();
                 }
 
                 ImGui::EndTabItem();

@@ -215,7 +215,7 @@ public:
             { "pen_black",     "Black Pen",           PenType::Pen,          ImVec4(0.09f, 0.10f, 0.13f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid },
             { "pen_blue",      "Blue Pen",            PenType::Pen,          ImVec4(0.10f, 0.34f, 0.86f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid },
             { "pen_red",       "Red Pen",             PenType::Pen,          ImVec4(0.86f, 0.15f, 0.15f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid },
-            { "pencil_2b",     "2B Pencil",           PenType::Pencil,       ImVec4(0.24f, 0.25f, 0.29f, 1.0f), 0.7f, 0.90f, false, StrokePattern::TexturedPencil },
+            { "pencil_2b",     "2B Pencil",           PenType::Pencil,       ImVec4(0.14f, 0.15f, 0.18f, 1.0f), 0.7f, 0.96f, false, StrokePattern::TexturedPencil },
             { "cal_fountain",  "Fountain Pen",        PenType::Fountain,     ImVec4(0.10f, 0.10f, 0.12f, 1.0f), 1.5f, 1.0f,  false, StrokePattern::Solid },
             { "brush_purple",  "Watercolor Brush",    PenType::Brush,        ImVec4(0.49f, 0.23f, 0.93f, 1.0f), 2.5f, 0.85f, false, StrokePattern::Solid },
             { "high_yellow",   "Yellow Highlighter",  PenType::Highlighter,  ImVec4(1.0f,  0.90f, 0.0f,  1.0f), 4.5f, 0.55f, false, StrokePattern::Solid },
@@ -316,6 +316,16 @@ public:
                         if (jp.contains("opacity")) p.opacity = jp["opacity"].get<float>();
                         if (jp.contains("isCustomPreset")) p.isCustomPreset = jp["isCustomPreset"].get<bool>();
                         if (jp.contains("strokePattern")) p.strokePattern = StringToStrokePattern(jp["strokePattern"].get<std::string>());
+                        if (p.id == "pencil_2b" && !p.isCustomPreset) {
+                            p.type = PenType::Pencil;
+                            p.strokePattern = StrokePattern::TexturedPencil;
+                            if (p.color.x > 0.20f && p.color.y > 0.20f && p.color.z > 0.20f) {
+                                p.color = ImVec4(0.14f, 0.15f, 0.18f, 1.0f);
+                            }
+                            if (p.opacity < 0.95f) {
+                                p.opacity = 0.96f;
+                            }
+                        }
                         inkingPresets.push_back(p);
                     }
                 }

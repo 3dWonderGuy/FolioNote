@@ -22,6 +22,7 @@
 #include "core/layers/live_interaction_layer.hpp"
 #include "core/canvas_engine/gizmo/selection_gizmo.hpp"
 #include "core/canvas_engine/transform/canvas_transform.hpp"
+#include "core/gpu/gpu_ink_manager.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -44,6 +45,108 @@ bool LiveInteractionLayer::HasActiveInteraction() const noexcept {
            m_isInking          ||
            m_isLassoing        ||
            (m_customRenderer != nullptr);
+}
+
+AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) const noexcept {
+    if (!HasActiveInteraction()) {
+        return AABB{};
+    }
+
+    if (m_customRenderer != nullptr) {
+        return viewport.bounds;
+    }
+
+    const double effectiveScale = viewport.GetEffectiveScale();
+    AABB bounds;
+
+    // 1. In-flight ink stroke
+    if (m_inkEngine.IsStrokeActive()) {
+        const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+        for (const auto& pt : livePts) {
+            Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
+            double rPx = pt.r * effectiveScale;
+            bounds.Merge(sp.x - rPx, sp.y - rPx);
+            bounds.Merge(sp.x + rPx, sp.y + rPx);
+        }
+        const auto& predPts = m_inkEngine.GetPredictedPoints();
+        for (const auto& pt : predPts) {
+            Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
+            double rPx = pt.r * effectiveScale;
+            bounds.Merge(sp.x - rPx, sp.y - rPx);
+            bounds.Merge(sp.x + rPx, sp.y + rPx);
+        }
+        bounds.Expand(12.0);
+    } else if (m_hasBorrowedStroke && m_borrowedStroke.points.size() >= 2) {
+        for (const auto& p : m_borrowedStroke.points) {
+            Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
+            bounds.Merge(sp.x, sp.y);
+        }
+        double rPx = (m_borrowedStroke.baseWidthMm * 0.5) * effectiveScale + 8.0;
+        bounds.Expand(rPx);
+    } else if (m_isInking && m_internalPoints.size() >= 2) {
+        for (const auto& p : m_internalPoints) {
+            Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
+            bounds.Merge(sp.x, sp.y);
+        }
+        double rPx = (m_penWidthMm * 0.5) * effectiveScale + 8.0;
+        bounds.Expand(rPx);
+    }
+
+    // 2. Selection / Transform Gizmo
+    if (m_boundGizmo && m_boundGizmo->HasSelection()) {
+        const AABB& wBox = m_boundGizmo->bounds;
+        if (wBox.IsValid() && !wBox.IsEmpty()) {
+            BLRect sRect = viewport.WorldToScreenRect(wBox);
+            bounds.Merge(sRect.x, sRect.y);
+            bounds.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+            bounds.Expand(40.0);
+        }
+    } else if (m_hasActiveGizmo && !m_activeGizmo.targetBounds.IsEmpty()) {
+        BLRect sRect = viewport.WorldToScreenRect(m_activeGizmo.targetBounds);
+        bounds.Merge(sRect.x, sRect.y);
+        bounds.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+        bounds.Expand(40.0);
+    }
+
+    // 3. Eraser Cursor Reticle
+    if (m_hasActiveEraser && m_activeEraser.isVisible) {
+        double r = m_activeEraser.radiusPx + 8.0;
+        bounds.Merge(m_activeEraser.screenX - r, m_activeEraser.screenY - r);
+        bounds.Merge(m_activeEraser.screenX + r, m_activeEraser.screenY + r);
+    }
+
+    // 4. Marquee Box / Lasso
+    if (m_hasActiveMarquee) {
+        if (m_activeMarquee.isScreenRect) {
+            bounds.Merge(m_activeMarquee.screenMinX - 2.0, m_activeMarquee.screenMinY - 2.0);
+            bounds.Merge(m_activeMarquee.screenMaxX + 2.0, m_activeMarquee.screenMaxY + 2.0);
+        } else if (!m_activeMarquee.rectBounds.IsEmpty()) {
+            BLRect sRect = viewport.WorldToScreenRect(m_activeMarquee.rectBounds);
+            bounds.Merge(sRect.x - 2.0, sRect.y - 2.0);
+            bounds.Merge(sRect.x + sRect.w + 2.0, sRect.y + sRect.h + 2.0);
+        } else if (!m_activeMarquee.polygonPoints.empty()) {
+            for (const auto& pt : m_activeMarquee.polygonPoints) {
+                Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
+                bounds.Merge(sp.x, sp.y);
+            }
+            bounds.Expand(4.0);
+        }
+    }
+
+    // 5. Active Text Editor Caret
+    if (m_hasActiveText) {
+        Point2D sp = viewport.WorldToScreen(m_activeText.caretWorldX, m_activeText.caretWorldY);
+        double hPx = m_activeText.caretHeightMm * effectiveScale;
+        bounds.Merge(sp.x - 6.0, sp.y - 6.0);
+        bounds.Merge(sp.x + 6.0, sp.y + hPx + 6.0);
+        for (const auto& r : m_activeText.selectionRects) {
+            BLRect sRect = viewport.WorldToScreenRect(r);
+            bounds.Merge(sRect.x, sRect.y);
+            bounds.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+        }
+    }
+
+    return bounds;
 }
 
 void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
@@ -83,20 +186,74 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
  * - Priority 2: Fallback for borrowed spans / raw points with round caps & round joins.
  */
 void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& viewport) {
-    // 1. Primary Vector Inking Engine: Continuous Modeled Ribbon Polygon (Google Ink & Spring Physics)
+    // 1. Primary Vector Inking Engine: SDL_GPU Hardware Triangle Mesh & Modeled Ribbon
     if (m_inkEngine.IsStrokeActive()) {
-        ctx.save();
-        ctx.set_transform(viewport.worldToScreenMatrix);
-        ctx.set_fill_style(BLRgba32(m_inkEngine.GetActiveStyle().color.value));
+        const auto& activeStyle = m_inkEngine.GetActiveStyle();
+        auto& gpu = GpuInkManager::Instance();
 
-        const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
-        if (!liveOutline.is_empty()) {
-            ctx.fill_path(liveOutline);
+        if (activeStyle.pattern == StrokePattern::Solid && gpu.IsEnabled()) {
+            const float effectiveScale = static_cast<float>(viewport.GetEffectiveScale());
+            gpu.BeginBatch();
+
+            const auto& liveMesh = m_inkEngine.GetLiveMesh();
+            if (!liveMesh.empty()) {
+                gpu.SubmitMesh(liveMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1);
+            }
+
+            const auto& predMesh = m_inkEngine.GetPredictedMesh();
+            if (!predMesh.empty()) {
+                gpu.SubmitMesh(predMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1);
+            }
+
+            if (gpu.HasPendingDraws()) {
+                AABB liveBounds = GetInteractionScreenBounds(viewport);
+                if (liveBounds.IsValid() && !liveBounds.IsEmpty()) {
+                    int clipX = static_cast<int>(std::floor(liveBounds.minX));
+                    int clipY = static_cast<int>(std::floor(liveBounds.minY));
+                    int clipW = static_cast<int>(std::ceil(liveBounds.maxX)) - clipX;
+                    int clipH = static_cast<int>(std::ceil(liveBounds.maxY)) - clipY;
+                    gpu.FlushToContext(ctx, clipX, clipY, clipW, clipH);
+                } else {
+                    gpu.FlushToContext(ctx);
+                }
+                return;
+            }
         }
 
-        const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
-        if (!predOutline.is_empty()) {
-            ctx.fill_path(predOutline);
+        ctx.save();
+        ctx.set_transform(viewport.worldToScreenMatrix);
+
+        if (activeStyle.pattern == StrokePattern::TexturedPencil) {
+            const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+            const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
+            if (!livePts.empty()) {
+                InkGenerator::RenderPencilStroke(ctx, livePts, activeStyle.baseWidth, activeStyle.color, &liveOutline);
+            }
+            const auto& predPts = m_inkEngine.GetPredictedPoints();
+            const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
+            if (predPts.size() >= 2) {
+                InkGenerator::RenderPencilStroke(ctx, predPts, activeStyle.baseWidth, activeStyle.color, &predOutline);
+            }
+        } else {
+            if (m_activeStrokeBlendMode == BlendMode::Multiply) {
+                ctx.set_comp_op(BL_COMP_OP_MULTIPLY);
+            }
+            ctx.set_fill_style(BLRgba32(activeStyle.color.value));
+
+            const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
+            if (!liveOutline.is_empty()) {
+                ctx.fill_path(liveOutline);
+            }
+
+            const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
+            if (!predOutline.is_empty()) {
+                ctx.fill_path(predOutline);
+            } else {
+                const auto& livePts = m_inkEngine.GetLiveModeledPoints();
+                if (!livePts.empty() && activeStyle.capType == CapType::Round) {
+                    ctx.fill_circle(BLCircle(livePts.back().x, livePts.back().y, livePts.back().r));
+                }
+            }
         }
 
         ctx.restore();
@@ -380,6 +537,9 @@ void LiveInteractionLayer::RenderEraser(BLContext& ctx) {
 
 void LiveInteractionLayer::BeginStroke(double worldXMm, double worldYMm, float pressure, double timeSec,
                                        const PenTool& tool, float zoomScale, float tiltX, float tiltY) {
+    m_activeStrokeBlendMode = (tool.penType == PenType::Highlighter || tool.blendMode == BlendMode::Multiply)
+                                  ? BlendMode::Multiply
+                                  : tool.blendMode;
     m_inkEngine.BeginStroke(worldXMm, worldYMm, pressure, timeSec, tool, zoomScale, tiltX, tiltY);
     m_isInking = true;
 }
@@ -391,11 +551,13 @@ void LiveInteractionLayer::AddStrokePoint(double worldXMm, double worldYMm, floa
 
 FinishedStrokeData LiveInteractionLayer::FinishStroke() {
     m_isInking = false;
+    m_activeStrokeBlendMode = BlendMode::Normal;
     return m_inkEngine.FinishStroke();
 }
 
 void LiveInteractionLayer::CancelStroke() {
     m_isInking = false;
+    m_activeStrokeBlendMode = BlendMode::Normal;
     m_inkEngine.CancelStroke();
 }
 
@@ -404,6 +566,7 @@ void LiveInteractionLayer::CancelStroke() {
 // -----------------------------------------------------------------------------
 
 void LiveInteractionLayer::BeginStroke(const LivePoint& startPoint) {
+    m_activeStrokeBlendMode = m_borrowedStroke.isHighlighter ? BlendMode::Multiply : BlendMode::Normal;
     m_internalPoints.clear();
     m_internalPoints.push_back(startPoint);
     m_isInking = true;

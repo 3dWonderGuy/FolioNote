@@ -14,8 +14,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
+          submodules: recursive
           fetch-depth: 0
 
       - name: Set up MSVC environment
@@ -42,8 +43,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
+          submodules: recursive
           fetch-depth: 0
 
       - name: Build inside Fedora container
@@ -51,7 +53,7 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
-            fedora:latest \
+            fedora:40 \
             bash -c "
               set -e
               dnf install -y \
@@ -94,8 +96,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
+          submodules: recursive
           fetch-depth: 0
 
       - name: Set up Java 17

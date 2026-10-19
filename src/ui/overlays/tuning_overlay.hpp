@@ -175,7 +175,7 @@ public:
     }
 
     if (inkEngine) {
-      inkEngine->GetConfig() = g_InkingConfig;
+      inkEngine->SetConfig(g_InkingConfig);
     }
 
     ImGui::End();

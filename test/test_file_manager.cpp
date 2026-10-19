@@ -61,8 +61,14 @@
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
+#include <type_traits>
+#include <memory>
 
 #include "io/facade/file_manager.hpp"
+
+#if defined(FOLIO_HAS_PDFIUM)
+#include "core/pdf_engine/pdf_renderer.hpp"
+#endif
 
 #define TEST_ASSERT(cond, msg) \
     do { \
@@ -390,6 +396,135 @@ bool Test_ReadOnlyTargetOverwrite() {
     return true;
 }
 
+#if defined(FOLIO_HAS_PDFIUM)
+// =========================================================================================
+// 10. Requirement R5 Verification: FPDF_FILEACCESS Struct Ownership & Lifetime
+// =========================================================================================
+static bool Test_PdfDocHolderFileAccessLifetime() {
+    // 1. Static type assertion confirming member existence and pointer-to-member type
+    static_assert(std::is_member_object_pointer_v<decltype(&Folio::PdfDocHolder::fileAccess)>,
+                  "FPDF_FILEACCESS must be a member object pointer of Folio::PdfDocHolder");
+    static_assert(std::is_same_v<decltype(Folio::PdfDocHolder::fileAccess), std::unique_ptr<FPDF_FILEACCESS>>,
+                  "fileAccess must be std::unique_ptr<FPDF_FILEACCESS>");
+
+    // 2. Default instantiation
+    {
+        Folio::PdfDocHolder defaultHolder;
+        TEST_ASSERT(defaultHolder.doc == nullptr, "Default holder doc must be nullptr");
+        TEST_ASSERT(defaultHolder.fileAccess == nullptr, "Default holder fileAccess must be nullptr");
+        TEST_ASSERT(defaultHolder.fileStream == nullptr, "Default holder fileStream must be nullptr");
+        TEST_ASSERT(!defaultHolder, "Default holder operator bool must return false");
+        TEST_ASSERT(defaultHolder.get() == nullptr, "Default holder get() must return nullptr");
+    }
+
+    // 3. Custom instantiation, move construction, and move assignment lifetime verification
+    {
+        auto fa = std::make_unique<FPDF_FILEACCESS>();
+        fa->m_FileLen = 4096;
+        fa->m_Param = reinterpret_cast<void*>(0xC001CAFE);
+        fa->m_GetBlock = [](void* param, unsigned long pos, unsigned char* buf, unsigned long size) -> int {
+            (void)param; (void)pos; (void)buf; (void)size;
+            return 1;
+        };
+        FPDF_FILEACCESS* rawFaPtr = fa.get();
+
+        // Direct instantiation with owned FPDF_FILEACCESS
+        Folio::PdfDocHolder holder(nullptr, nullptr, std::move(fa));
+        TEST_ASSERT(holder.fileAccess != nullptr, "Holder must own non-null fileAccess");
+        TEST_ASSERT(holder.fileAccess.get() == rawFaPtr, "Holder fileAccess pointer must match raw pointer");
+        TEST_ASSERT(holder.fileAccess->m_FileLen == 4096, "Holder fileAccess m_FileLen mismatch");
+        TEST_ASSERT(holder.fileAccess->m_Param == reinterpret_cast<void*>(0xC001CAFE), "Holder fileAccess m_Param mismatch");
+        TEST_ASSERT(holder.fileAccess->m_GetBlock != nullptr, "Holder fileAccess callback must be valid");
+
+        // Move construction: verify source is cleared and destination inherits fileAccess without reallocation
+        Folio::PdfDocHolder movedHolder(std::move(holder));
+        TEST_ASSERT(holder.fileAccess == nullptr, "Source fileAccess must be null after move construction");
+        TEST_ASSERT(holder.doc == nullptr, "Source doc must be null after move construction");
+        TEST_ASSERT(movedHolder.fileAccess != nullptr, "Moved holder must retain fileAccess");
+        TEST_ASSERT(movedHolder.fileAccess.get() == rawFaPtr, "Moved holder fileAccess address must remain stable");
+        TEST_ASSERT(movedHolder.fileAccess->m_FileLen == 4096, "Moved holder fileAccess m_FileLen must match");
+
+        // Move assignment: verify transfer and old resource reset
+        Folio::PdfDocHolder assignedHolder;
+        assignedHolder = std::move(movedHolder);
+        TEST_ASSERT(movedHolder.fileAccess == nullptr, "Source fileAccess must be null after move assignment");
+        TEST_ASSERT(movedHolder.doc == nullptr, "Source doc must be null after move assignment");
+        TEST_ASSERT(assignedHolder.fileAccess != nullptr, "Assigned holder must retain fileAccess");
+        TEST_ASSERT(assignedHolder.fileAccess.get() == rawFaPtr, "Assigned holder fileAccess address must remain stable");
+        TEST_ASSERT(assignedHolder.fileAccess->m_FileLen == 4096, "Assigned holder fileAccess m_FileLen must match");
+    }
+
+    // 4. End-to-end PDFium custom document loading: verify FPDF_FILEACCESS remains valid across page operations
+    const std::string samplePdf = "third_party/SDL/Xcode/SDL/pkg-support/sdl_logo.pdf";
+    if (Folio::FileManager::Exists(samplePdf)) {
+        Folio::PdfRenderer::InitializeLibrary();
+        {
+            SDL_IOStream* stream = Folio::FileManager::OpenReadStream(samplePdf);
+            TEST_ASSERT(stream != nullptr, "OpenReadStream failed on sample PDF");
+            Sint64 sz = SDL_GetIOSize(stream);
+            TEST_ASSERT(sz > 0, "sample PDF size must be > 0");
+
+            auto access = std::make_unique<FPDF_FILEACCESS>();
+            access->m_FileLen = static_cast<unsigned long>(sz);
+            access->m_Param = stream;
+            access->m_GetBlock = [](void* param, unsigned long pos, unsigned char* buf, unsigned long size) -> int {
+                SDL_IOStream* s = static_cast<SDL_IOStream*>(param);
+                if (!s || !buf || size == 0) return 0;
+                if (SDL_SeekIO(s, static_cast<Sint64>(pos), SDL_IO_SEEK_SET) < 0) return 0;
+                return SDL_ReadIO(s, buf, size) == size ? 1 : 0;
+            };
+
+            FPDF_FILEACCESS* ownedFa = access.get();
+            FPDF_DOCUMENT doc = FPDF_LoadCustomDocument(access.get(), nullptr);
+            TEST_ASSERT(doc != nullptr, "FPDF_LoadCustomDocument must succeed on valid PDF");
+
+            Folio::PdfDocHolder docHolder(doc, stream, std::move(access));
+            TEST_ASSERT(docHolder, "PdfDocHolder bool conversion must be true");
+            TEST_ASSERT(docHolder.doc == doc, "PdfDocHolder doc handle must match");
+            TEST_ASSERT(docHolder.fileAccess != nullptr, "PdfDocHolder fileAccess must be non-null");
+            TEST_ASSERT(docHolder.fileAccess.get() == ownedFa, "fileAccess pointer must match ownedFa");
+            TEST_ASSERT(docHolder.fileStream == stream, "fileStream pointer must match");
+
+            // Move-construct to another holder and query page data
+            Folio::PdfDocHolder relocatedDoc(std::move(docHolder));
+            TEST_ASSERT(docHolder.doc == nullptr, "Source doc must be null after move");
+            TEST_ASSERT(docHolder.fileAccess == nullptr, "Source fileAccess must be null after move");
+            TEST_ASSERT(docHolder.fileStream == nullptr, "Source fileStream must be null after move");
+            TEST_ASSERT(relocatedDoc.doc == doc, "Relocated doc must hold valid FPDF_DOCUMENT");
+            TEST_ASSERT(relocatedDoc.fileAccess.get() == ownedFa, "Relocated fileAccess address must match");
+            TEST_ASSERT(relocatedDoc.fileStream == stream, "Relocated fileStream must match");
+
+            int pageCount = FPDF_GetPageCount(relocatedDoc.doc);
+            TEST_ASSERT(pageCount > 0, "FPDF_GetPageCount must return > 0");
+
+            FPDF_PAGE page = FPDF_LoadPage(relocatedDoc.doc, 0);
+            TEST_ASSERT(page != nullptr, "FPDF_LoadPage(0) must succeed without Use-After-Free");
+            FPDF_ClosePage(page);
+
+            // Move-assign to another holder and verify document remains readable
+            Folio::PdfDocHolder assignedDoc;
+            assignedDoc = std::move(relocatedDoc);
+            TEST_ASSERT(relocatedDoc.doc == nullptr, "Source doc must be null after move assign");
+            TEST_ASSERT(relocatedDoc.fileAccess == nullptr, "Source fileAccess must be null after move assign");
+            TEST_ASSERT(relocatedDoc.fileStream == nullptr, "Source fileStream must be null after move assign");
+            TEST_ASSERT(assignedDoc.doc == doc, "Assigned doc must hold valid FPDF_DOCUMENT");
+            TEST_ASSERT(assignedDoc.fileAccess.get() == ownedFa, "Assigned fileAccess address must match");
+            TEST_ASSERT(assignedDoc.fileStream == stream, "Assigned fileStream must match");
+
+            int pageCountAssigned = FPDF_GetPageCount(assignedDoc.doc);
+            TEST_ASSERT(pageCountAssigned == pageCount, "Page count must remain consistent after move assignment");
+
+            FPDF_PAGE page2 = FPDF_LoadPage(assignedDoc.doc, 0);
+            TEST_ASSERT(page2 != nullptr, "FPDF_LoadPage(0) on assigned doc must succeed");
+            FPDF_ClosePage(page2);
+        }
+        Folio::PdfRenderer::DestroyLibrary();
+    }
+
+    return true;
+}
+#endif
+
 // =========================================================================================
 // Main Entry Point
 // =========================================================================================
@@ -409,6 +544,9 @@ int main() {
     RUN_TEST_CASE(Test_IdentityMove);
     RUN_TEST_CASE(Test_RecursiveCopyLoopPrevention);
     RUN_TEST_CASE(Test_ReadOnlyTargetOverwrite);
+#if defined(FOLIO_HAS_PDFIUM)
+    RUN_TEST_CASE(Test_PdfDocHolderFileAccessLifetime);
+#endif
 
     auto tEnd = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(tEnd - tStart).count();

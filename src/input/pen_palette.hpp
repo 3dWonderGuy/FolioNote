@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <blend2d/blend2d.h>
 
-#include "core/ink_engine/ink_stroke_data.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 
 enum class BlendMode : uint8_t {
     Normal = 0,
@@ -43,11 +43,14 @@ struct PenTool {
 
     /// Seamless conversion allowing PenTool to be passed directly to InkEngine APIs
     operator StrokeStyle() const noexcept {
-        return StrokeStyle{ baseSize, capType, strokePattern, color };
+        return ToStrokeStyle();
     }
 
     [[nodiscard]] StrokeStyle ToStrokeStyle() const noexcept {
-        return StrokeStyle{ baseSize, capType, strokePattern, color };
+        BLRgba32 effectiveColor = color;
+        float clampedOpacity = std::clamp(opacity, 0.0f, 1.0f);
+        effectiveColor.setA(static_cast<uint32_t>(static_cast<float>(color.a()) * clampedOpacity + 0.5f));
+        return StrokeStyle{ baseSize, capType, strokePattern, effectiveColor, isPressureEnabled, isTiltEnabled, isFlowSimEnabled };
     }
 };
 

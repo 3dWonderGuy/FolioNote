@@ -44,7 +44,7 @@
 #include <algorithm>
 #include <imgui.h>
 
-#include "core/ink_engine/ink_stroke_data.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "core/canvas_engine/transform/canvas_transform.hpp"
 
 namespace Folio {

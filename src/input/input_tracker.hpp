@@ -9,6 +9,13 @@ struct PenState {
     float distance = 0.0f;
     float tiltX = 0.0f;
     float tiltY = 0.0f;
+    float rawTiltX = 0.0f;
+    float rawTiltY = 0.0f;
+    uint32_t penId = 0;
+    uint64_t axisEventCount = 0;
+    uint64_t tiltEventCount = 0;
+    int lastAxis = -1;
+    float lastAxisValue = 0.0f;
     bool isDown = false;
     bool isHovering = false;
     bool inProximity = false;

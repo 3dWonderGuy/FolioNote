@@ -240,11 +240,11 @@ static X11_PenHandle *X11_MaybeAddPen(SDL_VideoDevice *_this, const XIDeviceInfo
             SDL_PenAxis axis = SDL_PEN_AXIS_COUNT;
 
             // afaict, SDL_PEN_AXIS_DISTANCE is never reported by XInput2 (Wayland can offer it, though)
-            if (vname == data->atoms.pen_atom_abs_pressure) {
+            if (vname == data->atoms.pen_atom_abs_pressure || vname == data->atoms.pen_atom_pressure) {
                 axis = SDL_PEN_AXIS_PRESSURE;
-            } else if (vname == data->atoms.pen_atom_abs_tilt_x) {
+            } else if (vname == data->atoms.pen_atom_abs_tilt_x || vname == data->atoms.pen_atom_tilt_x) {
                 axis = SDL_PEN_AXIS_XTILT;
-            } else if (vname == data->atoms.pen_atom_abs_tilt_y) {
+            } else if (vname == data->atoms.pen_atom_abs_tilt_y || vname == data->atoms.pen_atom_tilt_y) {
                 axis = SDL_PEN_AXIS_YTILT;
             } else {
                 use_this_axis = false;
@@ -345,8 +345,11 @@ void X11_InitPen(SDL_VideoDevice *_this)
     data->atoms.pen_atom_wacom_serial_ids = LOOKUP_PEN_ATOM("Wacom Serial IDs");
     data->atoms.pen_atom_wacom_tool_type = LOOKUP_PEN_ATOM("Wacom Tool Type");
     data->atoms.pen_atom_abs_pressure = LOOKUP_PEN_ATOM("Abs Pressure");
+    data->atoms.pen_atom_pressure = LOOKUP_PEN_ATOM("Pressure");
     data->atoms.pen_atom_abs_tilt_x = LOOKUP_PEN_ATOM("Abs Tilt X");
+    data->atoms.pen_atom_tilt_x = LOOKUP_PEN_ATOM("Tilt X");
     data->atoms.pen_atom_abs_tilt_y = LOOKUP_PEN_ATOM("Abs Tilt Y");
+    data->atoms.pen_atom_tilt_y = LOOKUP_PEN_ATOM("Tilt Y");
     #undef LOOKUP_PEN_ATOM
 
     // Do an initial check on devices. After this, we'll add/remove individual pens when XI_HierarchyChanged events alert us.
@@ -412,9 +415,8 @@ static void X11_XInput2NormalizePenAxes(const X11_PenHandle *pen, float *coords)
         switch (axis) {
             case SDL_PEN_AXIS_XTILT:
             case SDL_PEN_AXIS_YTILT:
-                //if (peninfo->info.max_tilt > 0.0f) {
-                //    value *= peninfo->info.max_tilt; // normalize to physical max
-                //}
+                // Normalised to -1..1; convert to degrees (-90..90) per SDL_pen.h specification
+                value *= 90.0f;
                 break;
 
             case SDL_PEN_AXIS_ROTATION:

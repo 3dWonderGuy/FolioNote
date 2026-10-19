@@ -125,6 +125,7 @@ void DocumentSession::CommitStroke(FinishedStrokeData&& data, const PenTool& too
     }
 
     stroke.outlinePath = std::move(data.outlinePath);
+    stroke.meshCache = std::move(data.mesh);
     stroke.segments = std::move(data.liveSegments);
     container->AddStroke(stroke);
 

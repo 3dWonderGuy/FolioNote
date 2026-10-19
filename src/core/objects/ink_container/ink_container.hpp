@@ -36,7 +36,7 @@
 
 #include "core/objects/canvas_object.hpp"
 #include "core/spatial/aabb.hpp"
-#include "core/ink_engine/ink_stroke_data.hpp"
+#include "core/ink_engine/ink_engine.hpp"
 #include "input/pen_palette.hpp"
 
 
@@ -73,8 +73,19 @@ struct Stroke {
     // 2. TRANSIENT RUNTIME ACCELERATION CACHES (Ephemeral in RAM — Never Saved)
     // =========================================================================
     std::vector<Segment1D>   segments;     ///< Swept segment tree for distance hit-testing & eraser slicing
-    BLPath                   outlinePath;  ///< Closed 2D polygon contour ribbon for hardware-accelerated Blend2D rasterization
+    BLPath                   outlinePath;  ///< Closed 2D polygon contour ribbon for fallback / hit-testing
+    mutable Folio::InkMesh   meshCache;    ///< Hardware-accelerated SDL_GPU indexed triangle mesh cache
     AABB                     bounds;       ///< Axis-aligned bounding box in millimeters (mm) for spatial R-Tree indexing
+
+    /**
+     * @brief Lazily builds or returns the cached SDL_GPU indexed triangle mesh for this stroke.
+     */
+    [[nodiscard]] const Folio::InkMesh& EnsureMeshCache() const {
+        if (meshCache.empty() && !points.empty()) {
+            Folio::InkEngine::BuildStrokeMesh(points, capType, Folio::PackGpuColor(color), meshCache);
+        }
+        return meshCache;
+    }
 
     /**
      * @brief Maps internal BlendMode to Blend2D composite operator.

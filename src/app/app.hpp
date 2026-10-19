@@ -18,6 +18,7 @@
 #include "app/theme_manager.hpp"
 #include "app/window_state_manager.hpp"
 #include "core/canvas_engine/canvas_engine.hpp"
+#include "core/gpu/gpu_ink_manager.hpp"
 #include "core/document/document_session.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
 #include "core/objects/attachment_container/attachment_container.hpp"
@@ -505,7 +506,7 @@ public:
         inputManager.stateMachine.isDynamicEraser = SettingsManager::Instance().isDynamicEraser;
         inputManager.stateMachine.eraserRadiusMm = SettingsManager::Instance().eraserSizeMm * 0.5f;
         ribbon.isCanvasInverted = SettingsManager::Instance().isCanvasInverted;
-        canvas.GetInkEngine().GetConfig() = SettingsManager::Instance().inkingConfig;
+        canvas.GetInkEngine().SetConfig(SettingsManager::Instance().inkingConfig);
 
         // Restore per-device default tools from settings.
         // (Placeholder — settings UI not yet built; values come from the JSON defaults.)
@@ -1594,6 +1595,8 @@ public:
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();
+
+        Folio::GpuInkManager::Instance().Shutdown();
 
         if (glContext) {
             SDL_GL_DestroyContext(glContext);
