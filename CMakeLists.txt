@@ -495,9 +495,13 @@ set(FOLIO_IO_SOURCES
 )
 
 # testing
-enable_testing()
+option(FOLIONOTE_BUILD_TESTS "Build FolioNote unit tests" ON)
+if(FOLIONOTE_BUILD_TESTS)
+    enable_testing()
+endif()
+
 # 10. Standalone Local Test Executable
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_rtree
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_rtree.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/spatial/r_tree.cpp"
@@ -529,7 +533,7 @@ if(NOT ANDROID)
 endif()
 
 # 11. Standalone Local Test Executable: FileManager
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_file_manager
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_manager.cpp"
         ${FOLIO_IO_SOURCES}
@@ -578,7 +582,7 @@ if(NOT ANDROID)
 endif()
 
 # 12. Standalone Local Test Executable: ThreadPool
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_thread_pool
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_thread_pool.cpp"
         ${FOLIO_IO_SOURCES}
@@ -606,7 +610,7 @@ if(NOT ANDROID)
 endif()
 
 # 13. Standalone Local Test Executable: FileSaver
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_file_saver
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_file_saver.cpp"
         ${FOLIO_IO_SOURCES}
@@ -634,7 +638,7 @@ if(NOT ANDROID)
 endif()
 
 # 14. Standalone Local Test Executable: ActionScheduler
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_action_scheduler
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_action_scheduler.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/actions/action_scheduler.cpp"
@@ -663,7 +667,7 @@ if(NOT ANDROID)
 endif()
 
 # 15. Standalone Local Test Executable: PhysicsModel
-if(NOT ANDROID)
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     add_executable(test_physics_model
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_physics_model.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/core/gpu/gpu_ink_manager.cpp"
@@ -683,7 +687,9 @@ if(NOT ANDROID)
     )
 
     add_test(NAME test_physics_model COMMAND test_physics_model)
+endif()
 
+if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     # 15. Standalone Local Test Executable: Layer Order & Stacking
     add_executable(test_layer_order
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_layer_order.cpp"
