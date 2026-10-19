@@ -112,9 +112,21 @@ void GpuInkManager::Shutdown() {
         SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineAdditive);
         m_pipelineAdditive = nullptr;
     }
-    if (m_pipelineMultiply) {
-        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineMultiply);
-        m_pipelineMultiply = nullptr;
+    if (m_pipelineMultiplySkirt) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineMultiplySkirt);
+        m_pipelineMultiplySkirt = nullptr;
+    }
+    if (m_pipelineMultiplyCore) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineMultiplyCore);
+        m_pipelineMultiplyCore = nullptr;
+    }
+    if (m_pipelineNormalSkirt) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineNormalSkirt);
+        m_pipelineNormalSkirt = nullptr;
+    }
+    if (m_pipelineNormalCore) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineNormalCore);
+        m_pipelineNormalCore = nullptr;
     }
     if (m_pipelineNormal) {
         SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineNormal);
@@ -234,20 +246,30 @@ bool GpuInkManager::CreatePipelines() {
     dsDisabled.enable_depth_write  = false;
     dsDisabled.enable_stencil_test = false;
 
-    SDL_GPUDepthStencilState dsMultiply = dsDisabled;
-    if (m_depthStencilFormat != SDL_GPU_TEXTUREFORMAT_INVALID) {
-        dsMultiply.enable_stencil_test = true;
-        dsMultiply.compare_mask        = 0xFF;
-        dsMultiply.write_mask          = 0xFF;
+    SDL_GPUDepthStencilState dsReplace = dsDisabled;
+    SDL_GPUDepthStencilState dsKeep    = dsDisabled;
 
-        // Front & Back: Only pass if stencil != ref. On pass, replace with ref. On fail, keep.
-        // This ensures the first fragment writes the ref and passes, and subsequent overlapping
-        // fragments from the same stroke test (stencil == ref) and fail, achieving zero intra-stroke darkening.
-        dsMultiply.front_stencil_state.compare_op    = SDL_GPU_COMPAREOP_NOT_EQUAL;
-        dsMultiply.front_stencil_state.pass_op       = SDL_GPU_STENCILOP_REPLACE;
-        dsMultiply.front_stencil_state.fail_op       = SDL_GPU_STENCILOP_KEEP;
-        dsMultiply.front_stencil_state.depth_fail_op = SDL_GPU_STENCILOP_KEEP;
-        dsMultiply.back_stencil_state                = dsMultiply.front_stencil_state;
+    if (m_depthStencilFormat != SDL_GPU_TEXTUREFORMAT_INVALID) {
+        // Pass 1: Solid Core Ribbon stamps stencil with strokeId
+        dsReplace.enable_stencil_test = true;
+        dsReplace.compare_mask        = 0xFF;
+        dsReplace.write_mask          = 0xFF;
+        dsReplace.front_stencil_state.compare_op    = SDL_GPU_COMPAREOP_NOT_EQUAL;
+        dsReplace.front_stencil_state.pass_op       = SDL_GPU_STENCILOP_REPLACE;
+        dsReplace.front_stencil_state.fail_op       = SDL_GPU_STENCILOP_KEEP;
+        dsReplace.front_stencil_state.depth_fail_op = SDL_GPU_STENCILOP_KEEP;
+        dsReplace.back_stencil_state                = dsReplace.front_stencil_state;
+
+        // Pass 2: Exterior AA Skirt tests against stencil but NEVER writes (pass_op = KEEP, write_mask = 0x00),
+        // preventing skirts from blocking subsequent crossing core ribbons (zero white cracks).
+        dsKeep.enable_stencil_test = true;
+        dsKeep.compare_mask        = 0xFF;
+        dsKeep.write_mask          = 0x00;
+        dsKeep.front_stencil_state.compare_op    = SDL_GPU_COMPAREOP_NOT_EQUAL;
+        dsKeep.front_stencil_state.pass_op       = SDL_GPU_STENCILOP_KEEP;
+        dsKeep.front_stencil_state.fail_op       = SDL_GPU_STENCILOP_KEEP;
+        dsKeep.front_stencil_state.depth_fail_op = SDL_GPU_STENCILOP_KEEP;
+        dsKeep.back_stencil_state                = dsKeep.front_stencil_state;
     }
 
     auto makePipeline = [&](const SDL_GPUColorTargetBlendState& blendState,
@@ -301,11 +323,19 @@ bool GpuInkManager::CreatePipelines() {
     blendAdditive.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     blendAdditive.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
 
-    m_pipelineNormal   = makePipeline(blendNormal, dsDisabled);
-    m_pipelineMultiply = makePipeline(blendMultiply, dsMultiply);
-    m_pipelineAdditive = makePipeline(blendAdditive, dsDisabled);
+    m_pipelineNormal        = makePipeline(blendNormal,   dsDisabled);
+    m_pipelineNormalCore    = makePipeline(blendNormal,   dsReplace);
+    m_pipelineNormalSkirt   = makePipeline(blendNormal,   dsKeep);
+    m_pipelineMultiplyCore  = makePipeline(blendMultiply, dsReplace);
+    m_pipelineMultiplySkirt = makePipeline(blendMultiply, dsKeep);
+    m_pipelineAdditive      = makePipeline(blendAdditive, dsDisabled);
 
-    return m_pipelineNormal != nullptr && m_pipelineMultiply != nullptr && m_pipelineAdditive != nullptr;
+    return m_pipelineNormal != nullptr &&
+           m_pipelineNormalCore != nullptr &&
+           m_pipelineNormalSkirt != nullptr &&
+           m_pipelineMultiplyCore != nullptr &&
+           m_pipelineMultiplySkirt != nullptr &&
+           m_pipelineAdditive != nullptr;
 }
 
 bool GpuInkManager::EnsureCanvasTexture(uint32_t width, uint32_t height) {
@@ -463,27 +493,89 @@ void GpuInkManager::SubmitMesh(const InkMesh& mesh,
     }
     if (!IsEnabled()) return;
 
-    DrawCommand cmd;
-    cmd.vertexOffset = static_cast<int32_t>(m_stagedVertices.size());
-    cmd.indexOffset  = static_cast<uint32_t>(m_stagedIndices.size());
-    cmd.indexCount   = static_cast<uint32_t>(mesh.indices.size());
-    cmd.blendMode    = blendMode;
-    cmd.strokeId     = (strokeId != 0) ? strokeId : m_nextAutoStrokeId++;
+    const uint32_t baseVertex = static_cast<uint32_t>(m_stagedVertices.size());
+    const uint32_t baseIndex  = static_cast<uint32_t>(m_stagedIndices.size());
+    const uint32_t sid        = (strokeId != 0) ? strokeId : m_nextAutoStrokeId++;
 
-    cmd.uniforms.transform0[0] = static_cast<float>(worldToScreen.m00);
-    cmd.uniforms.transform0[1] = static_cast<float>(worldToScreen.m01);
-    cmd.uniforms.transform0[2] = static_cast<float>(worldToScreen.m10);
-    cmd.uniforms.transform0[3] = static_cast<float>(worldToScreen.m11);
-    cmd.uniforms.transform1[0] = static_cast<float>(worldToScreen.m20);
-    cmd.uniforms.transform1[1] = static_cast<float>(worldToScreen.m21);
-    cmd.uniforms.params[0]     = std::max(0.01f, scalePxPerMm);
-    cmd.uniforms.params[1]     = std::clamp(opacity, 0.0f, 1.0f);
-    cmd.uniforms.params[2]     = 0.5f;
-    cmd.uniforms.params[3]     = 0.0f;
+    GpuStrokeUniforms uniforms;
+    uniforms.transform0[0] = static_cast<float>(worldToScreen.m00);
+    uniforms.transform0[1] = static_cast<float>(worldToScreen.m01);
+    uniforms.transform0[2] = static_cast<float>(worldToScreen.m10);
+    uniforms.transform0[3] = static_cast<float>(worldToScreen.m11);
+    uniforms.transform1[0] = static_cast<float>(worldToScreen.m20);
+    uniforms.transform1[1] = static_cast<float>(worldToScreen.m21);
+    uniforms.params[0]     = std::max(0.01f, scalePxPerMm);
+    uniforms.params[1]     = std::clamp(opacity, 0.0f, 1.0f);
+    uniforms.params[2]     = 0.5f;
+    uniforms.params[3]     = 0.0f;
+
+    const uint32_t totalIndices = static_cast<uint32_t>(mesh.indices.size());
+    const uint32_t coreIndices  = mesh.coreIndexCount;
+
+    // Check whether the stroke is semi-transparent either via uniform opacity or vertex color alpha
+    bool hasVertexAlpha = false;
+    if (!mesh.vertices.empty()) {
+        uint8_t vAlpha = static_cast<uint8_t>(mesh.vertices[0].color >> 24);
+        if (vAlpha < 254) {
+            hasVertexAlpha = true;
+        }
+    }
+
+    // Semi-transparent strokes (Multiply highlighter, or semi-transparent brush/pencil)
+    // require stencil isolation to prevent intra-stroke self-intersection darkening.
+    const bool isSemiTransparent = (blendMode == BlendMode::Multiply) ||
+                                   (blendMode == BlendMode::Normal && (opacity < 0.999f || hasVertexAlpha));
+
+    if (blendMode == BlendMode::Additive) {
+        DrawCommand cmd;
+        cmd.vertexOffset = static_cast<int32_t>(baseVertex);
+        cmd.indexOffset  = baseIndex;
+        cmd.indexCount   = totalIndices;
+        cmd.pipeline     = PipelineType::Additive;
+        cmd.strokeId     = sid;
+        cmd.uniforms     = uniforms;
+        m_drawCommands.push_back(cmd);
+    } else if (!isSemiTransparent || coreIndices == 0 || coreIndices >= totalIndices) {
+        // Opaque stroke (100% opacity) or mesh with no skirt partition: single draw call
+        DrawCommand cmd;
+        cmd.vertexOffset = static_cast<int32_t>(baseVertex);
+        cmd.indexOffset  = baseIndex;
+        cmd.indexCount   = totalIndices;
+        if (blendMode == BlendMode::Multiply) {
+            cmd.pipeline = PipelineType::MultiplyCore;
+        } else if (opacity < 0.999f) {
+            cmd.pipeline = PipelineType::NormalCore;
+        } else {
+            cmd.pipeline = PipelineType::NormalOpaque;
+        }
+        cmd.strokeId     = sid;
+        cmd.uniforms     = uniforms;
+        m_drawCommands.push_back(cmd);
+    } else {
+        // Two-Pass Stencil for Semi-Transparent Stroke:
+        // Pass 1: Solid Core Ribbon (dsReplace)
+        DrawCommand cmdCore;
+        cmdCore.vertexOffset = static_cast<int32_t>(baseVertex);
+        cmdCore.indexOffset  = baseIndex;
+        cmdCore.indexCount   = coreIndices;
+        cmdCore.pipeline     = (blendMode == BlendMode::Multiply) ? PipelineType::MultiplyCore : PipelineType::NormalCore;
+        cmdCore.strokeId     = sid;
+        cmdCore.uniforms     = uniforms;
+        m_drawCommands.push_back(cmdCore);
+
+        // Pass 2: Anti-Aliasing Skirt (dsKeep, never stamps stencil)
+        DrawCommand cmdSkirt;
+        cmdSkirt.vertexOffset = static_cast<int32_t>(baseVertex);
+        cmdSkirt.indexOffset  = baseIndex + coreIndices;
+        cmdSkirt.indexCount   = totalIndices - coreIndices;
+        cmdSkirt.pipeline     = (blendMode == BlendMode::Multiply) ? PipelineType::MultiplySkirt : PipelineType::NormalSkirt;
+        cmdSkirt.strokeId     = sid;
+        cmdSkirt.uniforms     = uniforms;
+        m_drawCommands.push_back(cmdSkirt);
+    }
 
     m_stagedVertices.insert(m_stagedVertices.end(), mesh.vertices.begin(), mesh.vertices.end());
     m_stagedIndices.insert(m_stagedIndices.end(), mesh.indices.begin(), mesh.indices.end());
-    m_drawCommands.push_back(cmd);
 }
 
 bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
@@ -655,10 +747,31 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
         dc.uniforms.transform1[3] = static_cast<float>(surfH);
 
         SDL_GPUGraphicsPipeline* wantPipe = m_pipelineNormal;
-        if (dc.blendMode == BlendMode::Multiply) {
-            wantPipe = m_pipelineMultiply;
-        } else if (dc.blendMode == BlendMode::Additive) {
-            wantPipe = m_pipelineAdditive;
+        bool usesStencil = false;
+
+        switch (dc.pipeline) {
+            case PipelineType::NormalOpaque:
+                wantPipe = m_pipelineNormal;
+                break;
+            case PipelineType::NormalCore:
+                wantPipe = m_pipelineNormalCore;
+                usesStencil = true;
+                break;
+            case PipelineType::NormalSkirt:
+                wantPipe = m_pipelineNormalSkirt;
+                usesStencil = true;
+                break;
+            case PipelineType::MultiplyCore:
+                wantPipe = m_pipelineMultiplyCore;
+                usesStencil = true;
+                break;
+            case PipelineType::MultiplySkirt:
+                wantPipe = m_pipelineMultiplySkirt;
+                usesStencil = true;
+                break;
+            case PipelineType::Additive:
+                wantPipe = m_pipelineAdditive;
+                break;
         }
 
         if (wantPipe != currentPipe) {
@@ -666,7 +779,7 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
             currentPipe = wantPipe;
         }
 
-        if (dc.blendMode == BlendMode::Multiply && m_depthStencilTexture) {
+        if (usesStencil && m_depthStencilTexture) {
             if (!hasLastStrokeId || dc.strokeId != lastStrokeId) {
                 currentStencilRef++;
                 if (currentStencilRef == 255) {

@@ -633,6 +633,7 @@ void TestReproduceLoopImages() {
     }
 
     renderAndSave(loopPts, CapType::Round, "loop_round", BlendMode::Normal, BLRgba32(0xD6, 0x20, 0x20, 0xFF));
+    renderAndSave(loopPts, CapType::Round, "loop_brush_semi_trans", BlendMode::Normal, BLRgba32(0x20, 0x60, 0xD6, 0x80));
     renderAndSave(loopPts, CapType::Square, "loop_square_pink", BlendMode::Multiply, BLRgba32(0xFF, 0x40, 0x80, 0x80));
     renderAndSave(loopPts, CapType::Chisel, "loop_chisel_red", BlendMode::Normal, BLRgba32(0xD6, 0x20, 0x20, 0xFF));
     renderAndSave(zigzagPts, CapType::Square, "zigzag_square_pink", BlendMode::Multiply, BLRgba32(0xFF, 0x40, 0x80, 0x80));

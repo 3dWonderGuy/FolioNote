@@ -159,12 +159,21 @@ public:
     }
 
 private:
+    enum class PipelineType : uint8_t {
+        NormalOpaque = 0,
+        NormalCore,
+        NormalSkirt,
+        MultiplyCore,
+        MultiplySkirt,
+        Additive
+    };
+
     struct DrawCommand {
-        uint32_t indexOffset = 0;
-        uint32_t indexCount  = 0;
+        uint32_t indexOffset  = 0;
+        uint32_t indexCount   = 0;
         int32_t  vertexOffset = 0;
-        BlendMode blendMode  = BlendMode::Normal;
-        uint32_t strokeId    = 0;
+        PipelineType pipeline = PipelineType::NormalOpaque;
+        uint32_t strokeId     = 0;
         GpuStrokeUniforms uniforms;
     };
 
@@ -173,12 +182,15 @@ private:
     bool EnsureGeometryBuffers(uint32_t vertexBytes, uint32_t indexBytes);
     bool EnsureImageTransferBuffers(uint32_t byteSize);
 
-    SDL_GPUDevice*           m_device           = nullptr;
-    SDL_GPUShader*           m_vertexShader     = nullptr;
-    SDL_GPUShader*           m_fragmentShader   = nullptr;
-    SDL_GPUGraphicsPipeline* m_pipelineNormal   = nullptr;
-    SDL_GPUGraphicsPipeline* m_pipelineMultiply = nullptr;
-    SDL_GPUGraphicsPipeline* m_pipelineAdditive = nullptr;
+    SDL_GPUDevice*           m_device                = nullptr;
+    SDL_GPUShader*           m_vertexShader          = nullptr;
+    SDL_GPUShader*           m_fragmentShader        = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineNormal        = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineNormalCore    = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineNormalSkirt   = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineMultiplyCore  = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineMultiplySkirt = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineAdditive      = nullptr;
 
     SDL_GPUTextureFormat     m_depthStencilFormat  = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUTexture*          m_depthStencilTexture = nullptr;
