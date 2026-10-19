@@ -7,7 +7,6 @@
 !third_party/pdfium/bin/pdfium.dll
 
 # Android Studio & Gradle
-src/android-project/
 .gradle/
 build/
 local.properties
