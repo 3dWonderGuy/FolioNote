@@ -610,16 +610,61 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
     }
 
     if (clipW <= 0 || clipH <= 0) {
-        clipX = m_activeClipX;
-        clipY = m_activeClipY;
-        clipW = m_activeClipW;
-        clipH = m_activeClipH;
+        if (m_activeClipW > 0 && m_activeClipH > 0) {
+            clipX = m_activeClipX;
+            clipY = m_activeClipY;
+            clipW = m_activeClipW;
+            clipH = m_activeClipH;
+        } else if (!m_stagedVertices.empty()) {
+            // Compute tight screen-space bounding rect of staged vertices
+            float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
+            for (const auto& dc : m_drawCommands) {
+                float m00 = dc.uniforms.transform0[0];
+                float m01 = dc.uniforms.transform0[1];
+                float m10 = dc.uniforms.transform0[2];
+                float m11 = dc.uniforms.transform0[3];
+                float m20 = dc.uniforms.transform1[0];
+                float m21 = dc.uniforms.transform1[1];
+                for (uint32_t i = 0; i < dc.indexCount; ++i) {
+                    uint32_t idx = m_stagedIndices[dc.indexOffset + i];
+                    const auto& v = m_stagedVertices[dc.vertexOffset + idx];
+                    float sx = m00 * v.x + m10 * v.y + m20;
+                    float sy = m01 * v.x + m11 * v.y + m21;
+                    minX = std::min(minX, sx);
+                    minY = std::min(minY, sy);
+                    maxX = std::max(maxX, sx);
+                    maxY = std::max(maxY, sy);
+                }
+            }
+            if (minX <= maxX && minY <= maxY) {
+                clipX = static_cast<int>(std::floor(minX)) - 4;
+                clipY = static_cast<int>(std::floor(minY)) - 4;
+                clipW = static_cast<int>(std::ceil(maxX)) - clipX + 8;
+                clipH = static_cast<int>(std::ceil(maxY)) - clipY + 8;
+            }
+        }
     }
 
-    int rx = (clipW > 0 && clipH > 0) ? std::clamp(clipX, 0, surfW - 1) : 0;
-    int ry = (clipW > 0 && clipH > 0) ? std::clamp(clipY, 0, surfH - 1) : 0;
-    int rw = (clipW > 0 && clipH > 0) ? std::clamp(clipW, 1, surfW - rx) : surfW;
-    int rh = (clipW > 0 && clipH > 0) ? std::clamp(clipH, 1, surfH - ry) : surfH;
+    int rx = 0;
+    int ry = 0;
+    int rw = surfW;
+    int rh = surfH;
+
+    if (clipW > 0 && clipH > 0) {
+        int x0 = std::clamp(clipX, 0, surfW);
+        int y0 = std::clamp(clipY, 0, surfH);
+        int x1 = std::clamp(clipX + clipW, 0, surfW);
+        int y1 = std::clamp(clipY + clipH, 0, surfH);
+        if (x1 <= x0 || y1 <= y0) {
+            // The dirty rect is completely outside the surface bounds
+            BeginBatch();
+            return true;
+        }
+        rx = x0;
+        ry = y0;
+        rw = x1 - x0;
+        rh = y1 - y0;
+    }
 
     const uint32_t vtxBytes = static_cast<uint32_t>(m_stagedVertices.size() * sizeof(InkVertex));
     const uint32_t idxBytes = static_cast<uint32_t>(m_stagedIndices.size() * sizeof(uint32_t));
@@ -850,6 +895,7 @@ bool GpuInkManager::FlushToContext(BLContext& ctx,
                                    int clipW,
                                    int clipH) {
     if (m_drawCommands.empty()) {
+        BeginBatch();
         return false;
     }
     BLImage* targetImg = ctx.target_image();

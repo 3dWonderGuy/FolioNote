@@ -63,6 +63,7 @@ endif()
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "" FORCE)
+set(SDL_IBUS OFF CACHE BOOL "" FORCE)
 set(BLEND2D_TEST OFF CACHE BOOL "" FORCE)
 set(BLEND2D_DEMOS OFF CACHE BOOL "" FORCE)
 set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -549,6 +550,27 @@ if(NOT ANDROID)
         target_link_libraries(test_file_manager PRIVATE dwmapi ole32 shell32 winspool)
     endif()
 
+    if(FOLIO_PDFIUM_FOUND)
+        target_sources(test_file_manager PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/core/pdf_engine/pdf_renderer.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/core/pdf_engine/pdf_text_layer.cpp"
+        )
+        target_include_directories(test_file_manager PRIVATE
+            "${PDFIUM_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+            "${IMGUI_DIR}"
+        )
+        target_compile_definitions(test_file_manager PRIVATE FOLIO_HAS_PDFIUM=1)
+        target_link_libraries(test_file_manager PRIVATE
+            blend2d::blend2d
+        )
+        if(WIN32)
+            target_link_libraries(test_file_manager PRIVATE "${PDFIUM_DIR}/lib/pdfium.dll.lib")
+        elseif(UNIX AND NOT APPLE AND NOT ANDROID)
+            target_link_libraries(test_file_manager PRIVATE "${PDFIUM_DIR}/lib/libpdfium.so")
+        endif()
+    endif()
+
     set_target_properties(test_file_manager PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
     )
@@ -652,6 +674,7 @@ if(NOT ANDROID)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/src"
     )
 
     target_link_libraries(test_physics_model PRIVATE

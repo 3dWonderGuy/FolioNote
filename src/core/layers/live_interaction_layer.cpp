@@ -59,22 +59,14 @@ AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) 
     const double effectiveScale = viewport.GetEffectiveScale();
     AABB bounds;
 
-    // 1. In-flight ink stroke: Track the active pen tip and forward prediction tail
-    // Older settled segments are already rendered on compositeSurface and in GPU VRAM,
-    // so dirty bounds remain tightly localized to the pen tip (~100-200px) regardless of stroke length.
+    // 1. In-flight ink stroke
     if (m_inkEngine.IsStrokeActive()) {
         const auto& livePts = m_inkEngine.GetLiveModeledPoints();
-        const size_t numPts = livePts.size();
-        if (numPts > 0) {
-            const size_t tailCount = (numPts > 20) ? 20 : numPts;
-            const size_t startIdx = numPts - tailCount;
-            for (size_t i = startIdx; i < numPts; ++i) {
-                const auto& pt = livePts[i];
-                Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
-                double rPx = pt.r * effectiveScale;
-                bounds.Merge(sp.x - rPx, sp.y - rPx);
-                bounds.Merge(sp.x + rPx, sp.y + rPx);
-            }
+        for (const auto& pt : livePts) {
+            Point2D sp = viewport.WorldToScreen(pt.x, pt.y);
+            double rPx = pt.r * effectiveScale;
+            bounds.Merge(sp.x - rPx, sp.y - rPx);
+            bounds.Merge(sp.x + rPx, sp.y + rPx);
         }
         const auto& predPts = m_inkEngine.GetPredictedPoints();
         for (const auto& pt : predPts) {
@@ -85,20 +77,14 @@ AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) 
         }
         bounds.Expand(12.0);
     } else if (m_hasBorrowedStroke && m_borrowedStroke.points.size() >= 2) {
-        const size_t numPts = m_borrowedStroke.points.size();
-        const size_t tailCount = (numPts > 20) ? 20 : numPts;
-        for (size_t i = numPts - tailCount; i < numPts; ++i) {
-            const auto& p = m_borrowedStroke.points[i];
+        for (const auto& p : m_borrowedStroke.points) {
             Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
             bounds.Merge(sp.x, sp.y);
         }
         double rPx = (m_borrowedStroke.baseWidthMm * 0.5) * effectiveScale + 8.0;
         bounds.Expand(rPx);
     } else if (m_isInking && m_internalPoints.size() >= 2) {
-        const size_t numPts = m_internalPoints.size();
-        const size_t tailCount = (numPts > 20) ? 20 : numPts;
-        for (size_t i = numPts - tailCount; i < numPts; ++i) {
-            const auto& p = m_internalPoints[i];
+        for (const auto& p : m_internalPoints) {
             Point2D sp = viewport.WorldToScreen(p.worldX, p.worldY);
             bounds.Merge(sp.x, sp.y);
         }
@@ -220,7 +206,16 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
             }
 
             if (gpu.HasPendingDraws()) {
-                gpu.FlushToContext(ctx);
+                AABB liveBounds = GetInteractionScreenBounds(viewport);
+                if (liveBounds.IsValid() && !liveBounds.IsEmpty()) {
+                    int clipX = static_cast<int>(std::floor(liveBounds.minX));
+                    int clipY = static_cast<int>(std::floor(liveBounds.minY));
+                    int clipW = static_cast<int>(std::ceil(liveBounds.maxX)) - clipX;
+                    int clipH = static_cast<int>(std::ceil(liveBounds.maxY)) - clipY;
+                    gpu.FlushToContext(ctx, clipX, clipY, clipW, clipH);
+                } else {
+                    gpu.FlushToContext(ctx);
+                }
                 return;
             }
         }

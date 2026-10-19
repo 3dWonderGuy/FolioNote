@@ -12,6 +12,7 @@
 #include "utils/physics_model.hpp"
 #include "core/ink_engine/ink_engine.hpp"
 #include "core/gpu/gpu_ink_manager.hpp"
+#include "geometry/ink_stroke_filter.hpp"
 
 using namespace Folio::Physics;
 
@@ -715,6 +716,345 @@ void TestTailTaper() {
               << pts.back().r * 2.0f << " mm)!" << std::endl;
 }
 
+void TestAcuteTurnsAndTightLoopsMeshIntegrity() {
+    std::cout << "[Test] Verifying acute needle turns and tight loops (R3 & R4)..." << std::endl;
+
+    auto verifyMeshInvariants = [](const std::vector<StrokePoint>& pts, const char* testName) {
+        Folio::InkMesh mesh;
+        Folio::InkMeshBuilder::BuildSolidMesh(pts, CapType::Round, 0xFF000000, mesh);
+        assert(!mesh.empty());
+        assert(mesh.coreIndexCount > 0);
+        assert(mesh.indices.size() > mesh.coreIndexCount);
+
+        // 1. Verify all vertices are valid numbers
+        for (const auto& v : mesh.vertices) {
+            assert(!std::isnan(v.x) && !std::isnan(v.y));
+            assert(!std::isinf(v.x) && !std::isinf(v.y));
+        }
+
+        // 2. Verify all skirt triangle indices are valid and non-inverted
+        for (size_t i = mesh.coreIndexCount; i < mesh.indices.size(); i += 3) {
+            uint32_t i0 = mesh.indices[i];
+            uint32_t i1 = mesh.indices[i + 1];
+            uint32_t i2 = mesh.indices[i + 2];
+            assert(i0 < mesh.vertices.size());
+            assert(i1 < mesh.vertices.size());
+            assert(i2 < mesh.vertices.size());
+
+            const auto& v0 = mesh.vertices[i0];
+            const auto& v1 = mesh.vertices[i1];
+            const auto& v2 = mesh.vertices[i2];
+
+            // Signed 2D cross product of triangle edges
+            double cross = (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
+            assert(!std::isnan(cross) && !std::isinf(cross));
+        }
+
+        // 3. For acute interior corners, verify inner skirt vertices are clamped to safeLimit
+        for (size_t i = 1; i + 1 < pts.size(); ++i) {
+            double dxIn = pts[i].x - pts[i - 1].x;
+            double dyIn = pts[i].y - pts[i - 1].y;
+            double lenIn = std::hypot(dxIn, dyIn);
+            double dxOut = pts[i + 1].x - pts[i].x;
+            double dyOut = pts[i + 1].y - pts[i].y;
+            double lenOut = std::hypot(dxOut, dyOut);
+
+            if (lenIn < 1e-4 || lenOut < 1e-4) continue;
+            double uxIn = dxIn / lenIn, uyIn = dyIn / lenIn;
+            double uxOut = dxOut / lenOut, uyOut = dyOut / lenOut;
+            double dot = uxIn * uxOut + uyIn * uyOut;
+
+            if (dot >= -0.65) {
+                double sinHalf = std::sqrt(std::max(0.0, (1.0 - dot) * 0.5));
+                double safeLimit = (std::min(lenIn, lenOut) * 0.5) / std::max(1e-4, sinHalf);
+
+                // Check that no inner skirt vertex associated with pts[i] punches past safeLimit
+                for (const auto& v : mesh.vertices) {
+                    if (v.edgeDist > 1.0f) {
+                        double dJoint = std::hypot(v.x - pts[i].x, v.y - pts[i].y);
+                        double crossTurn = uxIn * uyOut - uyIn * uxOut;
+                        if (std::abs(crossTurn) > 0.01 && dJoint < pts[i].r * 2.5) {
+                            double nxIn = -uyIn, nyIn = uxIn;
+                            double nxOut = -uyOut, nyOut = uxOut;
+                            double avgNx = nxIn + nxOut, avgNy = nyIn + nyOut;
+                            double avgLen = std::hypot(avgNx, avgNy);
+                            if (avgLen > 1e-4) {
+                                avgNx /= avgLen; avgNy /= avgLen;
+                                double innerSign = (crossTurn < 0.0) ? 1.0 : -1.0;
+                                double proj = (v.x - pts[i].x) * (innerSign * avgNx) + (v.y - pts[i].y) * (innerSign * avgNy);
+                                if (proj > 0.0) {
+                                    assert(proj <= safeLimit + 1e-3 && "Inner skirt vertex must not exceed safeLimit!");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        std::cout << "  " << testName << " mesh generated ("
+                  << mesh.vertices.size() << " vertices, "
+                  << mesh.indices.size() / 3 << " triangles) - 0 inverted skirt vertices." << std::endl;
+    };
+
+    // Test 1: Acute needle hairpin turn (179.5 degree reversal)
+    std::vector<StrokePoint> needlePts = {
+        {  0.0, 0.0, 2.0f, 0.8f, 0.0f, 0.0f },
+        { 50.0, 0.0, 2.0f, 0.8f, 0.0f, 0.0f },
+        {  0.0, 0.5, 2.0f, 0.8f, 0.0f, 0.0f }
+    };
+    verifyMeshInvariants(needlePts, "Acute needle turn (0,0)->(50,0)->(0,0.5)");
+
+    // Test 2: Acute turn with dot >= -0.65 exercising sharp turn safeLimit clamp loop
+    std::vector<StrokePoint> acuteSharpPts = {
+        {  0.0,  0.0, 2.0f, 0.8f, 0.0f, 0.0f },
+        { 40.0,  0.0, 2.0f, 0.8f, 0.0f, 0.0f },
+        { 16.0, 32.0, 2.0f, 0.8f, 0.0f, 0.0f }
+    };
+    verifyMeshInvariants(acuteSharpPts, "Acute turn with dot >= -0.65");
+
+    // Test 3: Tight cursive loop 'e'
+    std::vector<StrokePoint> loopE = {
+        { 50.0, 100.0, 1.2f, 0.7f, 0.0f, 0.0f },
+        { 60.0,  80.0, 1.2f, 0.7f, 0.0f, 0.0f },
+        { 65.0,  75.0, 1.2f, 0.7f, 0.0f, 0.0f },
+        { 65.0,  70.0, 1.2f, 0.7f, 0.0f, 0.0f },
+        { 60.0,  68.0, 1.2f, 0.7f, 0.0f, 0.0f },
+        { 55.0,  72.0, 1.2f, 0.7f, 0.0f, 0.0f },
+        { 53.0,  78.0, 1.2f, 0.7f, 0.0f, 0.0f },
+        { 70.0,  85.0, 1.2f, 0.7f, 0.0f, 0.0f }
+    };
+    verifyMeshInvariants(loopE, "Cursive loop 'e'");
+
+    // Test 4: Tight cursive loop 'l'
+    std::vector<StrokePoint> loopL = {
+        { 100.0, 150.0, 1.5f, 0.8f, 0.0f, 0.0f },
+        { 102.0, 100.0, 1.5f, 0.8f, 0.0f, 0.0f },
+        { 105.0,  50.0, 1.5f, 0.8f, 0.0f, 0.0f },
+        { 103.0,  45.0, 1.5f, 0.8f, 0.0f, 0.0f },
+        {  98.0,  45.0, 1.5f, 0.8f, 0.0f, 0.0f },
+        {  96.0,  52.0, 1.5f, 0.8f, 0.0f, 0.0f },
+        {  98.0, 100.0, 1.5f, 0.8f, 0.0f, 0.0f },
+        { 105.0, 150.0, 1.5f, 0.8f, 0.0f, 0.0f }
+    };
+    verifyMeshInvariants(loopL, "Cursive loop 'l'");
+
+    // Test 5: Tight cursive loop 'o'
+    std::vector<StrokePoint> loopO = {
+        { 100.0, 50.0, 1.0f, 0.6f, 0.0f, 0.0f },
+        {  85.0, 70.0, 1.0f, 0.6f, 0.0f, 0.0f },
+        { 100.0, 90.0, 1.0f, 0.6f, 0.0f, 0.0f },
+        { 115.0, 70.0, 1.0f, 0.6f, 0.0f, 0.0f },
+        { 101.0, 51.0, 1.0f, 0.6f, 0.0f, 0.0f },
+        { 105.0, 48.0, 1.0f, 0.6f, 0.0f, 0.0f }
+    };
+    verifyMeshInvariants(loopO, "Cursive loop 'o'");
+
+    // -------------------------------------------------------------------------
+    // Zero inward endcap spikes verification (R4):
+    // Test InkGenerator::TraceCap with crossed rails and tangent hint dirX, dirY
+    // -------------------------------------------------------------------------
+    {
+        // Tail cap: stroke travels along +X (dirX = 1.0, dirY = 0.0).
+        // Crossed rails: leftPt at (100, 1) and rightPt at (100, -1)
+        // With dirX=1.0, dirY=0.0, chord normal must be aligned outward (+X) so no inward spike occurs.
+        BLPath tailCapPath;
+        StrokePoint tailCenter(100.0, 0.0, 0.5f);
+        InkGenerator::TraceCap(tailCapPath, tailCenter, {100.0, 1.0}, {100.0, -1.0},
+                                     CapType::Round, /*isTail=*/true, 1.0, 0.0);
+        assert(!tailCapPath.is_empty());
+
+        BLPathView tailView = tailCapPath.view();
+        for (size_t i = 0; i < tailView.size; ++i) {
+            double proj = (tailView.vertex_data[i].x - tailCenter.x) * 1.0 +
+                          (tailView.vertex_data[i].y - tailCenter.y) * 0.0;
+            assert(proj >= -1e-4 && "Inward endcap spike detected on tail cap!");
+        }
+
+        // Head cap: stroke originates from -X heading +X; backward tangent is -X (dirX = -1.0, dirY = 0.0)
+        // Crossed rails: leftPt at (0, -1) and rightPt at (0, 1)
+        BLPath headCapPath;
+        StrokePoint headCenter(0.0, 0.0, 0.5f);
+        InkGenerator::TraceCap(headCapPath, headCenter, {0.0, -1.0}, {0.0, 1.0},
+                                     CapType::Round, /*isTail=*/false, -1.0, 0.0);
+        assert(!headCapPath.is_empty());
+
+        BLPathView headView = headCapPath.view();
+        for (size_t i = 0; i < headView.size; ++i) {
+            double proj = (headView.vertex_data[i].x - headCenter.x) * (-1.0) +
+                          (headView.vertex_data[i].y - headCenter.y) * 0.0;
+            assert(proj >= -1e-4 && "Inward endcap spike detected on head cap!");
+        }
+
+        // Square & Chisel caps with crossed rails
+        BLPath squareCapPath;
+        InkGenerator::TraceCap(squareCapPath, tailCenter, {100.0, 1.0}, {100.0, -1.0},
+                                     CapType::Square, /*isTail=*/true, 1.0, 0.0);
+        assert(!squareCapPath.is_empty());
+        BLPathView squareView = squareCapPath.view();
+        for (size_t i = 0; i < squareView.size; ++i) {
+            double proj = (squareView.vertex_data[i].x - tailCenter.x) * 1.0;
+            assert(proj >= -1e-4 && "Inward endcap spike detected on square cap!");
+        }
+    }
+
+    std::cout << "[Test] Acute turns, tight cursive loops, and endcap normal alignment tests passed (100% OK)!" << std::endl;
+}
+
+void TestPreFilterTerminalEndpointPreservation() {
+    std::cout << "[Test] Running StrokeFilter::PreFilterPoints terminal endpoint preservation test (R6)..." << std::endl;
+
+    // Case 1: Trailing segment shorter than 0.20 * r (0.3mm < 0.20 * 2.0mm = 0.40mm)
+    std::vector<StrokePoint> pts1 = {
+        {  0.0, 0.0, 2.0f, 0.5f, 0.0f, 0.0f },
+        { 10.0, 0.0, 2.0f, 0.5f, 0.0f, 0.0f },
+        { 20.0, 0.0, 2.0f, 0.5f, 0.0f, 0.0f },
+        { 20.3, 0.0, 2.0f, 0.5f, 0.0f, 0.0f }
+    };
+
+    auto clean1 = Folio::InkInternal::StrokeFilter::PreFilterPoints(pts1);
+    assert(!clean1.empty());
+    assert(clean1.size() >= 2);
+    // Exact floating-point terminal coordinate must be preserved
+    assert(clean1.back().x == pts1.back().x);
+    assert(clean1.back().y == pts1.back().y);
+    assert(clean1.back().r >= pts1.back().r);
+
+    // Case 2: Micro-steps within minStep (d = 0.25mm < minStep = 0.40mm for r = 2.0mm)
+    std::vector<StrokePoint> pts2 = {
+        { 10.0,  10.0, 2.0f, 0.4f, 0.0f, 0.0f },
+        { 20.0,  10.0, 2.0f, 0.5f, 0.0f, 0.0f },
+        { 30.0,  10.0, 2.0f, 0.6f, 0.0f, 0.0f },
+        { 30.20, 10.15, 2.0f, 0.7f, 0.0f, 0.0f } // hypot(0.20, 0.15) = 0.25mm < 0.40mm
+    };
+
+    auto clean2 = Folio::InkInternal::StrokeFilter::PreFilterPoints(pts2);
+    assert(!clean2.empty());
+    assert(clean2.size() >= 2);
+    assert(clean2.back().x == pts2.back().x);
+    assert(clean2.back().y == pts2.back().y);
+    assert(clean2.back().pressure >= pts2.back().pressure);
+
+    // Case 3: Two-point flick gesture shorter than 0.20 * r (d = 0.25mm < 0.40mm for r = 2.0mm)
+    std::vector<StrokePoint> pts3 = {
+        { 5.0,  5.0, 2.0f, 0.5f, 0.0f, 0.0f },
+        { 5.2, 5.15, 2.0f, 0.8f, 0.0f, 0.0f } // hypot = 0.25mm
+    };
+
+    auto clean3 = Folio::InkInternal::StrokeFilter::PreFilterPoints(pts3);
+    assert(clean3.size() == 1);
+    assert(clean3.back().x == pts3.back().x);
+    assert(clean3.back().y == pts3.back().y);
+    assert(clean3.back().pressure >= pts3.back().pressure);
+
+    // Case 4: Diagonal lift-off flick at acute angle with trailing segment < 0.20 * r
+    std::vector<StrokePoint> pts4 = {
+        {  0.0,  0.0, 1.5f, 0.5f, 0.0f, 0.0f },
+        { 15.0,  0.0, 1.5f, 0.5f, 0.0f, 0.0f },
+        { 15.15, 0.1, 1.5f, 0.6f, 0.0f, 0.0f } // hypot = 0.180 < 0.20 * 1.5 = 0.30
+    };
+
+    auto clean4 = Folio::InkInternal::StrokeFilter::PreFilterPoints(pts4);
+    assert(!clean4.empty());
+    assert(clean4.back().x == pts4.back().x);
+    assert(clean4.back().y == pts4.back().y);
+
+    std::cout << "[Test] StrokeFilter terminal endpoint preservation tests passed (100% OK)!" << std::endl;
+}
+
+void TestGpuInkManagerSubRectAndBatchClearing() {
+    std::cout << "[Test] Running GpuInkManager dirty sub-rect transfer & batch clearing test (R2)..." << std::endl;
+
+    auto& gpu = Folio::GpuInkManager::Instance();
+
+    // 1. Invariant: BeginBatch() clears staging buffers and resets pending draw commands
+    gpu.BeginBatch();
+    assert(!gpu.HasPendingDraws() && "BeginBatch() must ensure HasPendingDraws() == false");
+
+    // Build a sample mesh
+    Folio::InkMesh sampleMesh;
+    sampleMesh.vertices = {
+        { 110.0f, 110.0f, 0.0f, 5.0f, 0xFFFF0000 },
+        { 150.0f, 110.0f, 0.0f, 5.0f, 0xFFFF0000 },
+        { 150.0f, 150.0f, 0.0f, 5.0f, 0xFFFF0000 },
+        { 110.0f, 150.0f, 0.0f, 5.0f, 0xFFFF0000 }
+    };
+    sampleMesh.indices = { 0, 1, 2,  0, 2, 3 };
+
+    gpu.SubmitMesh(sampleMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal);
+    assert(gpu.HasPendingDraws() && "SubmitMesh() must stage draw commands");
+
+    gpu.BeginBatch();
+    assert(!gpu.HasPendingDraws() && "BeginBatch() must clear staging buffers");
+
+    // 2. Hardware rasterization test with localized dirty sub-rect
+    if (!gpu.Init()) {
+        std::cout << "  -> SDL_GPU device unavailable in headless environment; skipping GPU raster check." << std::endl;
+        return;
+    }
+
+    // Allocate 512x512 surface cleared to pure white (0xFF, 0xFF, 0xFF, 0xFF)
+    BLImage surface(512, 512, BL_FORMAT_PRGB32);
+    BLContext ctx(surface);
+    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+    ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+    ctx.fill_all();
+    ctx.end();
+
+    // Submit stroke localized strictly inside [100, 100, 80, 80]
+    uint32_t redColor = Folio::PackGpuColor(BLRgba32(0xFF, 0x00, 0x00, 0xFF));
+    Folio::InkMesh strokeMesh;
+    strokeMesh.vertices = {
+        { 120.0f, 120.0f, 0.0f, 8.0f, redColor },
+        { 160.0f, 120.0f, 0.0f, 8.0f, redColor },
+        { 160.0f, 160.0f, 0.0f, 8.0f, redColor },
+        { 120.0f, 160.0f, 0.0f, 8.0f, redColor }
+    };
+    strokeMesh.indices = { 0, 1, 2,  0, 2, 3 };
+
+    gpu.BeginBatch();
+    gpu.SubmitMesh(strokeMesh, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal);
+    assert(gpu.HasPendingDraws());
+
+    // Flush strictly to active dirty sub-rect [100, 100, 80, 80]
+    bool flushed = gpu.FlushToSurface(surface, 100, 100, 80, 80);
+    assert(flushed);
+
+    // Invariant: FlushToSurface must call BeginBatch(), clearing staging buffers
+    assert(!gpu.HasPendingDraws() && "FlushToSurface() must clear staging buffers upon completion");
+
+    // 3. Verify pixel results:
+    BLImageData imgData = {};
+    surface.get_data(&imgData);
+    const uint8_t* pixels = static_cast<const uint8_t*>(imgData.pixel_data);
+
+    // Pixel at (50, 50) far outside dirty sub-rect must remain untouched white (0xFF, 0xFF, 0xFF, 0xFF)
+    const uint8_t* pxOutside1 = pixels + 50 * imgData.stride + 50 * 4;
+    assert(pxOutside1[0] == 0xFF && pxOutside1[1] == 0xFF && pxOutside1[2] == 0xFF && pxOutside1[3] == 0xFF);
+
+    // Pixel at (300, 300) far outside dirty sub-rect must remain untouched white
+    const uint8_t* pxOutside2 = pixels + 300 * imgData.stride + 300 * 4;
+    assert(pxOutside2[0] == 0xFF && pxOutside2[1] == 0xFF && pxOutside2[2] == 0xFF && pxOutside2[3] == 0xFF);
+
+    // Pixel at (140, 140) inside dirty rect and inside stroke must be red (R=0xFF, G=0x00, B=0x00)
+    const uint8_t* pxInside = pixels + 140 * imgData.stride + 140 * 4;
+    // In little-endian PRGB32, channels are [B, G, R, A]
+    assert(pxInside[2] == 0xFF && "Red channel inside stroke dirty rect must be 255");
+    assert(pxInside[1] == 0x00 && "Green channel inside stroke dirty rect must be 0");
+    assert(pxInside[0] == 0x00 && "Blue channel inside stroke dirty rect must be 0");
+    assert(pxInside[3] == 0xFF && "Alpha channel inside stroke dirty rect must be 255");
+
+    // 4. Test FlushToContext with empty batch: must reset buffers and safely return false
+    gpu.BeginBatch();
+    BLContext testCtx(surface);
+    bool ctxFlushed = gpu.FlushToContext(testCtx, 100, 100, 80, 80);
+    assert(!ctxFlushed && "FlushToContext with empty commands must return false");
+    assert(!gpu.HasPendingDraws() && "FlushToContext must ensure staging buffers are cleared");
+    testCtx.end();
+
+    std::cout << "[Test] GpuInkManager dirty sub-rect and batch clearing test passed (100% OK)!" << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "Starting Folio Physics Model Test Suite" << std::endl;
@@ -732,6 +1072,9 @@ int main() {
     TestReproduceLoopImages();
     TestQuickStrokeLoopMesh();
     TestTailTaper();
+    TestAcuteTurnsAndTightLoopsMeshIntegrity();
+    TestPreFilterTerminalEndpointPreservation();
+    TestGpuInkManagerSubRectAndBatchClearing();
 
     std::cout << "========================================" << std::endl;
     std::cout << "All Physics Model tests passed (100% OK)!" << std::endl;

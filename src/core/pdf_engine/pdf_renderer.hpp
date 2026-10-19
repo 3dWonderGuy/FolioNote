@@ -29,9 +29,11 @@ namespace Folio {
 struct PdfDocHolder {
     FPDF_DOCUMENT doc = nullptr;
     SDL_IOStream* fileStream = nullptr;
+    std::unique_ptr<FPDF_FILEACCESS> fileAccess = nullptr;
 
     PdfDocHolder() = default;
-    PdfDocHolder(FPDF_DOCUMENT d, SDL_IOStream* f = nullptr) noexcept : doc(d), fileStream(f) {}
+    PdfDocHolder(FPDF_DOCUMENT d, SDL_IOStream* f = nullptr, std::unique_ptr<FPDF_FILEACCESS> fa = nullptr) noexcept
+        : doc(d), fileStream(f), fileAccess(std::move(fa)) {}
     ~PdfDocHolder();
 
     // Move semantics (non-copyable)

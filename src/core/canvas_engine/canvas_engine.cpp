@@ -274,11 +274,13 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     }
 
     BLContext compCtx(compositeSurface);
+    if (!canUsePartialUpload) {
+        compCtx.clear_all();
+    }
+    
     if (canUsePartialUpload) {
-        compCtx.clip_to_rect(BLRectI(dirtyX, dirtyY, dirtyW, dirtyH));
         Folio::GpuInkManager::Instance().SetActiveClipRect(dirtyX, dirtyY, dirtyW, dirtyH);
     } else {
-        compCtx.clear_all();
         Folio::GpuInkManager::Instance().SetActiveClipRect(0, 0, viewportW, viewportH);
     }
 
@@ -344,7 +346,9 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         lastDirtyH = viewportH;
 #if defined(__ANDROID__)
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 #else
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);

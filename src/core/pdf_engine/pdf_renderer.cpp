@@ -22,6 +22,7 @@ PdfDocHolder::~PdfDocHolder() {
         FPDF_CloseDocument(doc);
         doc = nullptr;
     }
+    fileAccess.reset();
     if (fileStream) {
         SDL_CloseIO(fileStream);
         fileStream = nullptr;
@@ -29,17 +30,25 @@ PdfDocHolder::~PdfDocHolder() {
 }
 
 PdfDocHolder::PdfDocHolder(PdfDocHolder&& other) noexcept
-    : doc(other.doc), fileStream(other.fileStream) {
+    : doc(other.doc), fileStream(other.fileStream), fileAccess(std::move(other.fileAccess)) {
     other.doc = nullptr;
     other.fileStream = nullptr;
 }
 
 PdfDocHolder& PdfDocHolder::operator=(PdfDocHolder&& other) noexcept {
     if (this != &other) {
-        if (doc) FPDF_CloseDocument(doc);
-        if (fileStream) SDL_CloseIO(fileStream);
+        if (doc) {
+            FPDF_CloseDocument(doc);
+            doc = nullptr;
+        }
+        fileAccess.reset();
+        if (fileStream) {
+            SDL_CloseIO(fileStream);
+            fileStream = nullptr;
+        }
         doc = other.doc;
         fileStream = other.fileStream;
+        fileAccess = std::move(other.fileAccess);
         other.doc = nullptr;
         other.fileStream = nullptr;
     }
@@ -155,19 +164,19 @@ PdfDocHolder PdfRenderer::OpenDocument(const std::string& filePath) {
     if (stream) {
         Sint64 sz = SDL_GetIOSize(stream);
         if (sz > 0) {
-            FPDF_FILEACCESS access{};
-            access.m_FileLen = static_cast<unsigned long>(sz);
-            access.m_Param = stream;
-            access.m_GetBlock = [](void* param, unsigned long pos, unsigned char* buf, unsigned long size) -> int {
+            auto access = std::make_unique<FPDF_FILEACCESS>();
+            access->m_FileLen = static_cast<unsigned long>(sz);
+            access->m_Param = stream;
+            access->m_GetBlock = [](void* param, unsigned long pos, unsigned char* buf, unsigned long size) -> int {
                 SDL_IOStream* s = static_cast<SDL_IOStream*>(param);
                 if (!s || !buf || size == 0) return 0;
                 if (SDL_SeekIO(s, static_cast<Sint64>(pos), SDL_IO_SEEK_SET) < 0) return 0;
                 return SDL_ReadIO(s, buf, size) == size ? 1 : 0;
             };
 
-            doc = FPDF_LoadCustomDocument(&access, nullptr);
+            doc = FPDF_LoadCustomDocument(access.get(), nullptr);
             if (doc) {
-                return PdfDocHolder(doc, stream);
+                return PdfDocHolder(doc, stream, std::move(access));
             }
         }
         SDL_CloseIO(stream);
