@@ -24,7 +24,7 @@
  *    - Coordinate Space Inversion: Query points, circles, and swept capsules are mapped
  *      into object-local space via the inverted affine matrix M^-1.
  *    - Narrowphase:
- *        a. BLPath::hit_test with BL_FILL_RULE_NON_ZERO for instant polygonal containment.
+ *        a. BLPath::hit_test with BL_FILL_RULE_EVEN_ODD for instant polygonal containment.
  *        b. StrokeCollisionEngine for segment-to-point and swept capsule continuous collision.
  *
  * 3. Affine Transform Baking (BakeTransform):
@@ -44,7 +44,7 @@
  * 5. High-Fidelity Rendering (Render):
  *    - Viewport frustum culling discards off-screen containers before context dispatch.
  *    - Context transform is isolated via save() / restore().
- *    - Uses BL_FILL_RULE_NON_ZERO to ensure overlapping cursive loops fuse cleanly without hollows.
+ *    - Uses BL_FILL_RULE_EVEN_ODD to ensure overlapping cursive loops fuse cleanly without hollows.
  *    - Renders with per-stroke blend modes (SrcOver, Multiply for Highlighters, Plus for Glow).
  */
 
@@ -318,7 +318,7 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
 
     ctx.save();
     ctx.apply_transform(transform);
-    ctx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
+    ctx.set_fill_rule(BL_FILL_RULE_EVEN_ODD);
 
     uint32_t currentStrokeId = 1;
     for (const auto& stroke : strokes) {

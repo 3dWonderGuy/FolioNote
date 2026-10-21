@@ -239,6 +239,7 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
                 ctx.set_comp_op(BL_COMP_OP_MULTIPLY);
             }
             ctx.set_fill_style(BLRgba32(activeStyle.color.value));
+            ctx.set_fill_rule(BL_FILL_RULE_EVEN_ODD);
 
             const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
             if (!liveOutline.is_empty()) {
