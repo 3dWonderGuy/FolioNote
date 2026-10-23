@@ -280,41 +280,12 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
         startAngle = std::atan2(pts[0].y - pts[1].y, pts[0].x - pts[1].x);
     }
 
-    // Render line stroke (solid or dashed via unified InkGenerator)
+    // Render line stroke (solid or dashed)
     if (outlineType == ShapeOutlineType::Solid) {
         ctx.stroke_path(rawPath);
     } else {
-        std::vector<StrokePoint> arrowPts;
-        const float rF = static_cast<float>(effWidth * 0.5);
-        if (connectorStyle == ConnectorStyle::Straight) {
-            arrowPts.push_back({ x1, y1, rF });
-            arrowPts.push_back({ x2, y2, rF });
-        } else if (connectorStyle == ConnectorStyle::Elbow) {
-            Point2D epts[4];
-            GetElbowWaypoints(epts);
-            for (int i = 0; i < 4; ++i) arrowPts.push_back({ epts[i].x, epts[i].y, rF });
-        } else if (connectorStyle == ConnectorStyle::Curved) {
-            Point2D c1, c2;
-            GetCurvedControlPoints(c1, c2);
-            const int steps = 24;
-            for (int i = 0; i <= steps; ++i) {
-                double t = static_cast<double>(i) / steps;
-                double u = 1.0 - t;
-                double px = u*u*u*x1 + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*x2;
-                double py = u*u*u*y1 + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*y2;
-                arrowPts.push_back({ px, py, rF });
-            }
-        }
-        if (!arrowPts.empty()) {
-            BLPath dashedOutline = InkEngine::BuildStrokeOutline(
-                arrowPts,
-                CapType::Round,
-                ToStrokePattern(outlineType),
-                false // open stroke
-            );
-            ctx.set_fill_style(col);
-            ctx.fill_path(dashedOutline);
-        }
+        // Fallback to stroked rawPath for dashed/dotted connector lines
+        ctx.stroke_path(rawPath);
     }
 
     // Arrowheads (rendered in local line direction angles)

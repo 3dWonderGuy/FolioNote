@@ -52,12 +52,10 @@ void CanvasEngine::OnPointerUp(DocumentSession& session, const PenTool& tool) {
 
     isDirty = true;
 
-    if (!data.outlinePath.is_empty() || !data.liveSegments.empty()) {
+    if (!data.modeledPoints.empty() || !data.liveSegments.empty()) {
         BLBox wBox;
         bool hasBox = false;
-        if (!data.outlinePath.is_empty() && data.outlinePath.get_bounding_box(&wBox) == BL_SUCCESS) {
-            hasBox = true;
-        } else if (!data.modeledPoints.empty()) {
+        if (!data.modeledPoints.empty()) {
             wBox.x0 = wBox.x1 = data.modeledPoints[0].x;
             wBox.y0 = wBox.y1 = data.modeledPoints[0].y;
             for (const auto& pt : data.modeledPoints) {

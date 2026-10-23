@@ -553,8 +553,8 @@ inline std::shared_ptr<InkContainer> ParseIsfToInkContainer(const uint8_t* isfDa
                         }
                     }
 
-                    // Build closed polygon outline contour (BLPath)
-                    s.outlinePath = Folio::InkEngine::BuildStrokeOutline(s.points, CapType::Round);
+                    // Build GPU triangle mesh
+                    Folio::InkEngine::BuildStrokeMesh(s.points, CapType::Round, Folio::PackGpuColor(s.color), s.meshCache);
 
                     inkContainer->AddStroke(s);
                 }

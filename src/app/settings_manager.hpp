@@ -35,6 +35,7 @@ struct PenPreset {
     float opacity = 1.0f;
     bool isCustomPreset = false;
     StrokePattern strokePattern = StrokePattern::Solid;
+    CapType capType = CapType::Round;
 };
 
 using PenPresetSetting = PenPreset;
@@ -193,6 +194,21 @@ public:
         return StrokePattern::Solid;
     }
 
+    static std::string CapTypeToString(CapType cap) {
+        switch (cap) {
+            case CapType::Square: return "Square";
+            case CapType::Chisel: return "Chisel";
+            case CapType::Round:
+            default:              return "Round";
+        }
+    }
+
+    static CapType StringToCapType(const std::string& str) {
+        if (str == "Square") return CapType::Square;
+        if (str == "Chisel") return CapType::Chisel;
+        return CapType::Round;
+    }
+
     // -------------------------------------------------------------------------
     // Default Fallbacks
     // -------------------------------------------------------------------------
@@ -212,15 +228,15 @@ public:
 
     static std::vector<PenPreset> GetDefaultPenPresets() {
         return {
-            { "pen_black",     "Black Pen",           PenType::Pen,          ImVec4(0.09f, 0.10f, 0.13f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid },
-            { "pen_blue",      "Blue Pen",            PenType::Pen,          ImVec4(0.10f, 0.34f, 0.86f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid },
-            { "pen_red",       "Red Pen",             PenType::Pen,          ImVec4(0.86f, 0.15f, 0.15f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid },
-            { "pencil_2b",     "2B Pencil",           PenType::Pencil,       ImVec4(0.14f, 0.15f, 0.18f, 1.0f), 0.7f, 0.96f, false, StrokePattern::TexturedPencil },
-            { "cal_fountain",  "Fountain Pen",        PenType::Fountain,     ImVec4(0.10f, 0.10f, 0.12f, 1.0f), 1.5f, 1.0f,  false, StrokePattern::Solid },
-            { "brush_purple",  "Watercolor Brush",    PenType::Brush,        ImVec4(0.49f, 0.23f, 0.93f, 1.0f), 2.5f, 0.85f, false, StrokePattern::Solid },
-            { "high_yellow",   "Yellow Highlighter",  PenType::Highlighter,  ImVec4(1.0f,  0.90f, 0.0f,  1.0f), 4.5f, 0.55f, false, StrokePattern::Solid },
-            { "high_green",    "Mint Highlighter",    PenType::Highlighter,  ImVec4(0.06f, 0.73f, 0.51f, 1.0f), 4.5f, 0.55f, false, StrokePattern::Solid },
-            { "laser_pointer", "Laser Pointer",       PenType::LaserPointer, ImVec4(1.0f,  0.15f, 0.25f, 1.0f), 3.0f, 0.95f, false, StrokePattern::Solid }
+            { "pen_black",     "Black Pen",           PenType::Pen,          ImVec4(0.09f, 0.10f, 0.13f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid, CapType::Round },
+            { "pen_blue",      "Blue Pen",            PenType::Pen,          ImVec4(0.10f, 0.34f, 0.86f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid, CapType::Round },
+            { "pen_red",       "Red Pen",             PenType::Pen,          ImVec4(0.86f, 0.15f, 0.15f, 1.0f), 0.5f, 1.0f,  false, StrokePattern::Solid, CapType::Round },
+            { "pencil_2b",     "2B Pencil",           PenType::Pencil,       ImVec4(0.14f, 0.15f, 0.18f, 1.0f), 0.7f, 0.96f, false, StrokePattern::TexturedPencil, CapType::Round },
+            { "cal_fountain",  "Fountain Pen",        PenType::Fountain,     ImVec4(0.10f, 0.10f, 0.12f, 1.0f), 1.5f, 1.0f,  false, StrokePattern::Solid, CapType::Chisel },
+            { "brush_purple",  "Watercolor Brush",    PenType::Brush,        ImVec4(0.49f, 0.23f, 0.93f, 1.0f), 2.5f, 0.85f, false, StrokePattern::Solid, CapType::Round },
+            { "high_yellow",   "Yellow Highlighter",  PenType::Highlighter,  ImVec4(1.0f,  0.90f, 0.0f,  1.0f), 4.5f, 0.55f, false, StrokePattern::Solid, CapType::Square },
+            { "high_green",    "Mint Highlighter",    PenType::Highlighter,  ImVec4(0.06f, 0.73f, 0.51f, 1.0f), 4.5f, 0.55f, false, StrokePattern::Solid, CapType::Square },
+            { "laser_pointer", "Laser Pointer",       PenType::LaserPointer, ImVec4(1.0f,  0.15f, 0.25f, 1.0f), 3.0f, 0.95f, false, StrokePattern::Solid, CapType::Round }
         };
     }
 
@@ -316,6 +332,14 @@ public:
                         if (jp.contains("opacity")) p.opacity = jp["opacity"].get<float>();
                         if (jp.contains("isCustomPreset")) p.isCustomPreset = jp["isCustomPreset"].get<bool>();
                         if (jp.contains("strokePattern")) p.strokePattern = StringToStrokePattern(jp["strokePattern"].get<std::string>());
+                        if (jp.contains("capType")) {
+                            p.capType = StringToCapType(jp["capType"].get<std::string>());
+                        } else {
+                            // Deduce default cap type from pen type if missing in older settings
+                            if (p.type == PenType::Highlighter) p.capType = CapType::Square;
+                            else if (p.type == PenType::Fountain) p.capType = CapType::Chisel;
+                            else p.capType = CapType::Round;
+                        }
                         if (p.id == "pencil_2b" && !p.isCustomPreset) {
                             p.type = PenType::Pencil;
                             p.strokePattern = StrokePattern::TexturedPencil;
@@ -545,7 +569,8 @@ public:
                     { "thicknessMm", p.thicknessMm },
                     { "opacity", p.opacity },
                     { "isCustomPreset", p.isCustomPreset },
-                    { "strokePattern", StrokePatternToString(p.strokePattern) }
+                    { "strokePattern", StrokePatternToString(p.strokePattern) },
+                    { "capType", CapTypeToString(p.capType) }
                 });
             }
 

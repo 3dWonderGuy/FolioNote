@@ -191,7 +191,7 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
         const auto& activeStyle = m_inkEngine.GetActiveStyle();
         auto& gpu = GpuInkManager::Instance();
 
-        if (activeStyle.pattern == StrokePattern::Solid && gpu.IsEnabled()) {
+        if (gpu.IsEnabled()) {
             const float effectiveScale = static_cast<float>(viewport.GetEffectiveScale());
             gpu.BeginBatch();
 
@@ -219,45 +219,6 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
                 return;
             }
         }
-
-        ctx.save();
-        ctx.set_transform(viewport.worldToScreenMatrix);
-
-        if (activeStyle.pattern == StrokePattern::TexturedPencil) {
-            const auto& livePts = m_inkEngine.GetLiveModeledPoints();
-            const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
-            if (!livePts.empty()) {
-                InkGenerator::RenderPencilStroke(ctx, livePts, activeStyle.baseWidth, activeStyle.color, &liveOutline);
-            }
-            const auto& predPts = m_inkEngine.GetPredictedPoints();
-            const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
-            if (predPts.size() >= 2) {
-                InkGenerator::RenderPencilStroke(ctx, predPts, activeStyle.baseWidth, activeStyle.color, &predOutline);
-            }
-        } else {
-            if (m_activeStrokeBlendMode == BlendMode::Multiply) {
-                ctx.set_comp_op(BL_COMP_OP_MULTIPLY);
-            }
-            ctx.set_fill_style(BLRgba32(activeStyle.color.value));
-            ctx.set_fill_rule(BL_FILL_RULE_NON_ZERO);
-
-            const auto& liveOutline = m_inkEngine.GetLiveOutlinePath();
-            if (!liveOutline.is_empty()) {
-                ctx.fill_path(liveOutline);
-            }
-
-            const auto& predOutline = m_inkEngine.GetPredictedOutlinePath();
-            if (!predOutline.is_empty()) {
-                ctx.fill_path(predOutline);
-            } else {
-                const auto& livePts = m_inkEngine.GetLiveModeledPoints();
-                if (!livePts.empty() && activeStyle.capType == CapType::Round) {
-                    ctx.fill_circle(BLCircle(livePts.back().x, livePts.back().y, livePts.back().r));
-                }
-            }
-        }
-
-        ctx.restore();
         return;
     }
 

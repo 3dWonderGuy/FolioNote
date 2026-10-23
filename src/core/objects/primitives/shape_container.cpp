@@ -763,18 +763,8 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
         if (outlineType == ShapeOutlineType::Solid) {
             ctx.stroke_path(path);
         } else {
-            std::vector<StrokePoint> perimPts;
-            GetPerimeterPoints(perimPts, effWidth);
-            if (!perimPts.empty()) {
-                BLPath patternOutline = InkEngine::BuildStrokeOutline(
-                    perimPts,
-                    CapType::Round,
-                    ToStrokePattern(outlineType),
-                    true // isStandardShape
-                );
-                ctx.set_fill_style(solidStroke);
-                ctx.fill_path(patternOutline);
-            }
+            // Simplified outline stroke without BLPath ink engine dependency
+            ctx.stroke_path(path);
         }
 
         ctx.restore();

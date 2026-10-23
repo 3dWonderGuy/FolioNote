@@ -105,22 +105,13 @@ void InkContainer::UpdateBounds() {
     double minX = 1e20, minY = 1e20, maxX = -1e20, maxY = -1e20;
 
     for (auto& stroke : strokes) {
-        if (!stroke.outlinePath.is_empty()) {
-            BLBox box;
-            if (stroke.outlinePath.get_bounding_box(&box) == BL_SUCCESS) {
-                stroke.bounds = AABB{box.x0, box.y0, box.x1, box.y1};
-                minX = (std::min)(minX, box.x0);
-                minY = (std::min)(minY, box.y0);
-                maxX = (std::max)(maxX, box.x1);
-                maxY = (std::max)(maxY, box.y1);
-            }
-        } else if (!stroke.points.empty()) {
+        if (!stroke.points.empty()) {
             double sMinX = 1e20, sMinY = 1e20, sMaxX = -1e20, sMaxY = -1e20;
             for (const auto& pt : stroke.points) {
-                sMinX = (std::min)(sMinX, pt.x - pt.r);
-                sMinY = (std::min)(sMinY, pt.y - pt.r);
-                sMaxX = (std::max)(sMaxX, pt.x + pt.r);
-                sMaxY = (std::max)(sMaxY, pt.y + pt.r);
+                sMinX = (std::min)(sMinX, static_cast<double>(pt.x - pt.r));
+                sMinY = (std::min)(sMinY, static_cast<double>(pt.y - pt.r));
+                sMaxX = (std::max)(sMaxX, static_cast<double>(pt.x + pt.r));
+                sMaxY = (std::max)(sMaxY, static_cast<double>(pt.y + pt.r));
             }
             stroke.bounds = AABB{sMinX, sMinY, sMaxX, sMaxY};
             minX = (std::min)(minX, sMinX);
@@ -278,7 +269,6 @@ void InkContainer::BakeTransform() {
         stroke.baseWidthMm *= static_cast<float>(scaleFactor);
 
         if (!stroke.points.empty()) {
-            stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
             Folio::InkEngine::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache);
         } else {
             stroke.meshCache.clear();
@@ -322,18 +312,14 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
 
     uint32_t currentStrokeId = 1;
     for (const auto& stroke : strokes) {
-        if (stroke.outlinePath.is_empty() && stroke.segments.empty() && stroke.points.empty()) continue;
+        if (stroke.segments.empty() && stroke.points.empty()) continue;
 
         float combinedOpacity = std::clamp(opacity * stroke.opacity, 0.0f, 1.0f);
         BlendMode effectiveBlend = (isHighlighter || stroke.blendMode == BlendMode::Multiply)
                                        ? BlendMode::Multiply
                                        : stroke.blendMode;
 
-        const bool isSolidGpuStroke = (stroke.strokePattern == StrokePattern::Solid) &&
-                                      (stroke.penType != PenType::Pencil) &&
-                                      !stroke.points.empty();
-
-        if (useGpuBatch && isSolidGpuStroke) {
+        if (useGpuBatch && !stroke.points.empty()) {
             const auto& mesh = stroke.EnsureMeshCache();
             if (!mesh.empty()) {
                 gpu.SubmitMesh(mesh, combinedMatrix, effectiveScale, combinedOpacity, effectiveBlend, currentStrokeId++);
@@ -341,7 +327,7 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
             }
         }
 
-        // If transitioning from GPU batch to CPU pencil/patterned stroke, flush pending GPU draws first
+        // If transitioning from GPU batch, flush pending GPU draws first
         if (useGpuBatch && gpu.HasPendingDraws()) {
             gpu.FlushToContext(ctx);
         }
@@ -354,22 +340,12 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
         BLRgba32 renderColor = stroke.color;
         renderColor.setA(static_cast<uint32_t>(std::round(static_cast<float>(renderColor.a()) * combinedOpacity)));
 
-        if ((stroke.strokePattern == StrokePattern::TexturedPencil || stroke.penType == PenType::Pencil) && !stroke.points.empty()) {
-            InkGenerator::RenderPencilStroke(ctx, stroke.points, stroke.baseWidthMm, renderColor, &stroke.outlinePath);
-        } else {
-            ctx.set_fill_style(renderColor);
-
-            if (!stroke.outlinePath.is_empty()) {
-                ctx.fill_path(stroke.outlinePath);
-            } else if (!stroke.points.empty()) {
-                BLPath fallbackOutline = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
-                ctx.fill_path(fallbackOutline);
-            } else if (stroke.segments.size() == 1) {
-                ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
-                ctx.set_stroke_width(stroke.segments[0].width);
-                ctx.stroke_line(stroke.segments[0].p0.x, stroke.segments[0].p0.y,
-                                stroke.segments[0].p1.x, stroke.segments[0].p1.y);
-            }
+        ctx.set_fill_style(renderColor);
+        if (stroke.segments.size() == 1) {
+            ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
+            ctx.set_stroke_width(stroke.segments[0].width);
+            ctx.stroke_line(stroke.segments[0].p0.x, stroke.segments[0].p0.y,
+                            stroke.segments[0].p1.x, stroke.segments[0].p1.y);
         }
     }
 
@@ -472,7 +448,6 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                     newStroke.points.push_back(makePointWithTelemetry(s.p1.x, s.p1.y, s.width * 0.5f));
                 }
 
-                newStroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(newStroke.points, newStroke.capType, newStroke.strokePattern);
                 Folio::InkEngine::BuildStrokeMesh(newStroke.points, newStroke.capType, Folio::PackGpuColor(newStroke.color), newStroke.meshCache);
                 newStrokes.push_back(std::move(newStroke));
             }

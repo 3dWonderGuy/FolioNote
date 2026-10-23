@@ -141,6 +141,17 @@ public:
     [[nodiscard]] uint32_t GetLastTriangleCount() const noexcept { return m_lastTriangleCount; }
     [[nodiscard]] uint32_t GetLastDrawCallCount() const noexcept { return m_lastDrawCallCount; }
 
+    // Memory footprint queries (bytes)
+    [[nodiscard]] size_t GetVertexCapacityBytes() const noexcept { return m_vertexCapacity; }
+    [[nodiscard]] size_t GetIndexCapacityBytes() const noexcept { return m_indexCapacity; }
+    [[nodiscard]] size_t GetImageTransferCapacityBytes() const noexcept { return m_imageTransferCapacity; }
+    [[nodiscard]] size_t GetTextureMemoryBytes() const noexcept {
+        return static_cast<size_t>(m_textureWidth) * static_cast<size_t>(m_textureHeight) * 4u;
+    }
+    [[nodiscard]] size_t GetDepthStencilMemoryBytes() const noexcept {
+        return m_depthStencilTexture ? (static_cast<size_t>(m_textureWidth) * static_cast<size_t>(m_textureHeight) * 4u) : 0;
+    }
+
     void SetLayerPassActive(bool active) noexcept { m_layerPassActive = active; }
     [[nodiscard]] bool IsLayerPassActive() const noexcept { return m_layerPassActive; }
 

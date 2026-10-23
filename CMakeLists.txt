@@ -766,6 +766,40 @@ if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     )
 
     add_test(NAME test_storage COMMAND test_storage)
+
+    # --- GPU Ink Benchmark ---
+    add_executable(folionote_gpu_bench
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmarks/gpu_ink_benchmark.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/core/gpu/gpu_ink_manager.cpp"
+        ${IMGUI_SOURCES}
+    )
+
+    target_include_directories(folionote_gpu_bench PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/blend2d/blend2d"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SDL/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Folio-Sketch/include"
+        "${IMGUI_DIR}"
+        "${IMGUI_DIR}/backends"
+    )
+
+    target_link_libraries(folionote_gpu_bench PRIVATE
+        blend2d::blend2d
+        SDL3::SDL3
+        FolioSketch::FolioSketch
+        OpenGL::GL
+    )
+
+    if(WIN32)
+        target_link_libraries(folionote_gpu_bench PRIVATE dwmapi ole32 shell32 winspool)
+    endif()
+
+    set_target_properties(folionote_gpu_bench PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+    )
 endif()
 
 

@@ -596,21 +596,6 @@ void TestReproduceLoopImages() {
 
         std::string filename = std::string("/home/odysseus/.gemini/antigravity/brain/3314c842-4afc-44b2-8c5b-c660e95ed743/scratch/") + name + ".png";
         surface.write_to_file(filename.c_str());
-
-        // Also render outlinePath via Blend2D
-        BLImage surfaceCpu(512, 512, BL_FORMAT_PRGB32);
-        BLContext ctxCpu(surfaceCpu);
-        ctxCpu.set_comp_op(BL_COMP_OP_SRC_COPY);
-        ctxCpu.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
-        ctxCpu.fill_all();
-        ctxCpu.set_comp_op(blend == BlendMode::Multiply ? BL_COMP_OP_MULTIPLY : BL_COMP_OP_SRC_OVER);
-        ctxCpu.set_fill_style(col);
-        BLPath outline = Folio::InkEngine::BuildStrokeOutline(pts, cap);
-        ctxCpu.fill_path(outline);
-        ctxCpu.end();
-
-        std::string filenameCpu = std::string("/home/odysseus/.gemini/antigravity/brain/3314c842-4afc-44b2-8c5b-c660e95ed743/scratch/") + name + "_cpu.png";
-        surfaceCpu.write_to_file(filenameCpu.c_str());
     };
 
     // Generate a diagonal test stroke matching the user's shape

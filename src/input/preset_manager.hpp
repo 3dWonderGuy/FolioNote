@@ -109,7 +109,7 @@ public:
         // Configure tool behavior defaults based on pen category
         switch (p.type) {
         case PenType::Pen:
-            activePen.capType = CapType::Round;
+            activePen.capType = p.capType;
             activePen.blendMode = BlendMode::Normal;
             activePen.isPressureEnabled = true;
             activePen.isTiltEnabled = false;
@@ -118,7 +118,7 @@ public:
             break;
 
         case PenType::Fountain:
-            activePen.capType = CapType::Chisel;
+            activePen.capType = (p.capType != CapType::Round) ? p.capType : CapType::Chisel;
             activePen.blendMode = BlendMode::Normal;
             activePen.isPressureEnabled = true;
             activePen.isTiltEnabled = true;
@@ -127,7 +127,7 @@ public:
             break;
 
         case PenType::Pencil:
-            activePen.capType = CapType::Round;
+            activePen.capType = p.capType;
             activePen.blendMode = BlendMode::Normal;
             activePen.isPressureEnabled = true;
             activePen.isTiltEnabled = true;
@@ -136,7 +136,7 @@ public:
             break;
 
         case PenType::Brush:
-            activePen.capType = CapType::Round;
+            activePen.capType = p.capType;
             activePen.blendMode = BlendMode::Normal;
             activePen.isPressureEnabled = true;
             activePen.isTiltEnabled = true;
@@ -145,7 +145,7 @@ public:
             break;
 
         case PenType::Highlighter:
-            activePen.capType = CapType::Square;
+            activePen.capType = (p.capType != CapType::Round) ? p.capType : CapType::Square;
             activePen.blendMode = BlendMode::Multiply;
             activePen.isPressureEnabled = false;
             activePen.isTiltEnabled = false;
@@ -154,7 +154,7 @@ public:
             break;
 
         case PenType::LaserPointer:
-            activePen.capType = CapType::Round;
+            activePen.capType = p.capType;
             activePen.blendMode = BlendMode::Normal;
             activePen.isPressureEnabled = false;
             activePen.isTiltEnabled = false;
@@ -206,30 +206,35 @@ public:
             p.color = ImVec4(0.10f, 0.10f, 0.14f, 1.0f);
             p.thicknessMm = 1.8f;
             p.opacity = 1.0f;
+            p.capType = CapType::Chisel;
             break;
         case PenType::Pencil:
             p.name = "Custom Pencil";
             p.color = ImVec4(0.30f, 0.30f, 0.35f, 1.0f);
             p.thicknessMm = 0.7f;
             p.opacity = 0.90f;
+            p.capType = CapType::Round;
             break;
         case PenType::Brush:
             p.name = "Paintbrush";
             p.color = ImVec4(0.95f, 0.40f, 0.15f, 1.0f);
             p.thicknessMm = 3.0f;
             p.opacity = 0.85f;
+            p.capType = CapType::Round;
             break;
         case PenType::Highlighter:
             p.name = "Custom High";
             p.color = ImVec4(1.0f, 0.45f, 0.75f, 1.0f); // Neon Pink
             p.thicknessMm = 5.0f;
             p.opacity = 0.55f;
+            p.capType = CapType::Square;
             break;
         case PenType::LaserPointer:
             p.name = "Laser Pointer";
             p.color = ImVec4(1.0f, 0.15f, 0.25f, 1.0f);
             p.thicknessMm = 3.0f;
             p.opacity = 0.95f;
+            p.capType = CapType::Round;
             break;
         }
 

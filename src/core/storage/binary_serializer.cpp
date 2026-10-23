@@ -609,7 +609,10 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
                 for (const auto& segItem : stroke.segments) {
                     stroke.points.push_back({ segItem.p1.x, segItem.p1.y, segItem.width * 0.5f });
                 }
-                stroke.outlinePath = Folio::InkEngine::BuildStrokeOutline(stroke.points, CapType::Round);
+                if (ink->isHighlighter) {
+                    stroke.capType = CapType::Square;
+                }
+                Folio::InkEngine::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache);
             }
             ink->strokes.push_back(std::move(stroke));
         }

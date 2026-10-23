@@ -73,7 +73,6 @@ struct Stroke {
     // 2. TRANSIENT RUNTIME ACCELERATION CACHES (Ephemeral in RAM — Never Saved)
     // =========================================================================
     std::vector<Segment1D>   segments;     ///< Swept segment tree for distance hit-testing & eraser slicing
-    BLPath                   outlinePath;  ///< Closed 2D polygon contour ribbon for fallback / hit-testing
     mutable Folio::InkMesh   meshCache;    ///< Hardware-accelerated SDL_GPU indexed triangle mesh cache
     AABB                     bounds;       ///< Axis-aligned bounding box in millimeters (mm) for spatial R-Tree indexing
 
