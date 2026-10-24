@@ -684,6 +684,7 @@ if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     target_link_libraries(test_physics_model PRIVATE
         FolioSketch::FolioSketch
         SDL3::SDL3
+        OpenGL::GL
     )
 
     add_test(NAME test_physics_model COMMAND test_physics_model)
@@ -755,6 +756,7 @@ if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
         SDL3::SDL3
         sqlite3
         FolioSketch::FolioSketch
+        OpenGL::GL
     )
 
     if(WIN32)

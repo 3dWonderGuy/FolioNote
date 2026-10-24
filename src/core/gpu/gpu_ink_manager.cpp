@@ -8,6 +8,14 @@
 #include "core/gpu/gpu_ink_manager.hpp"
 #include "core/gpu/gpu_ink_shaders.hpp"
 
+#if defined(__ANDROID__)
+#include <GLES3/gl3.h>
+#else
+#define GL_GLEXT_PROTOTYPES 1
+#include <SDL3/SDL_opengl.h>
+#include <SDL3/SDL_opengl_glext.h>
+#endif
+
 #include <algorithm>
 #include <cstring>
 
@@ -23,7 +31,7 @@ GpuInkManager::~GpuInkManager() {
 }
 
 bool GpuInkManager::Init() {
-    if (m_initialized && m_device != nullptr) {
+    if (m_initialized && (m_device != nullptr || m_glesInitialized)) {
         return true;
     }
     if (m_initAttempted) {
@@ -35,33 +43,58 @@ bool GpuInkManager::Init() {
         SDL_InitSubSystem(SDL_INIT_VIDEO);
     }
 
-    m_device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXBC | SDL_GPU_SHADERFORMAT_MSL,
-        false,
-        nullptr);
+    // 1. Try pure SDL_GPU (Vulkan on Android / Linux / Windows, Metal on Apple)
+    // Relax optional desktop-only features that mobile GPUs reject
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_DXBC_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, false);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
 
-    if (!m_device) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] SDL_CreateGPUDevice unavailable: %s", SDL_GetError());
-        return false;
+    m_device = SDL_CreateGPUDeviceWithProperties(props);
+    SDL_DestroyProperties(props);
+
+    if (m_device) {
+        if (!CreatePipelines()) {
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] Failed to create SDL_GPU graphics pipelines");
+            Shutdown();
+            return false;
+        }
+
+        m_stagedVertices.reserve(65536);
+        m_stagedIndices.reserve(196608);
+        m_drawCommands.reserve(512);
+
+        m_initialized = true;
+        SDL_LogInfo(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] Initialized pure SDL_GPU device successfully using driver: %s", GetDriverName());
+        return true;
     }
 
-    if (!CreatePipelines()) {
-        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] Failed to create SDL_GPU graphics pipelines");
-        Shutdown();
-        return false;
+    SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] SDL_CreateGPUDevice unavailable (%s), trying GLES fallback...", SDL_GetError());
+
+    // 2. Direct OpenGL ES fallback if SDL_GPU device could not be acquired
+    if (InitGlesFallback()) {
+        m_stagedVertices.reserve(65536);
+        m_stagedIndices.reserve(196608);
+        m_drawCommands.reserve(512);
+
+        m_initialized = true;
+        return true;
     }
 
-    m_stagedVertices.reserve(65536);
-    m_stagedIndices.reserve(196608);
-    m_drawCommands.reserve(512);
-
-    m_initialized = true;
-    return true;
+    SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] Neither SDL_GPU nor OpenGL ES could be initialized");
+    return false;
 }
 
 void GpuInkManager::Shutdown() {
+    ShutdownGlesFallback();
+
     if (!m_device) {
         m_initialized = false;
+        m_initAttempted = false;
         return;
     }
 
@@ -148,9 +181,14 @@ void GpuInkManager::Shutdown() {
 }
 
 const char* GpuInkManager::GetDriverName() const noexcept {
-    if (!m_device) return "none";
-    const char* drv = SDL_GetGPUDeviceDriver(m_device);
-    return drv ? drv : "unknown";
+    if (m_device) {
+        const char* drv = SDL_GetGPUDeviceDriver(m_device);
+        return drv ? drv : "unknown";
+    }
+    if (m_glesInitialized) {
+        return "opengles";
+    }
+    return "none";
 }
 
 bool GpuInkManager::CreatePipelines() {
@@ -666,6 +704,10 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
         rh = y1 - y0;
     }
 
+    if (!m_device && m_glesInitialized) {
+        return FlushToSurfaceGLES(imgData, surfW, surfH, rx, ry, rw, rh);
+    }
+
     const uint32_t vtxBytes = static_cast<uint32_t>(m_stagedVertices.size() * sizeof(InkVertex));
     const uint32_t idxBytes = static_cast<uint32_t>(m_stagedIndices.size() * sizeof(uint32_t));
     const uint32_t regionRowBytes = static_cast<uint32_t>(rw) * 4u;
@@ -880,6 +922,372 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
         }
         SDL_UnmapGPUTransferBuffer(m_device, m_imageDownloadTransfer);
     }
+
+    m_lastVertexCount   = static_cast<uint32_t>(m_stagedVertices.size());
+    m_lastTriangleCount = static_cast<uint32_t>(m_stagedIndices.size() / 3);
+    m_lastDrawCallCount = static_cast<uint32_t>(m_drawCommands.size());
+
+    BeginBatch();
+    return true;
+}
+
+bool GpuInkManager::InitGlesFallback() {
+    if (m_glesInitialized) {
+        return true;
+    }
+
+    const char* vShaderSrc =
+        "#version 300 es\n"
+        "precision highp float;\n"
+        "layout(location = 0) in vec2 aPos;\n"
+        "layout(location = 1) in vec2 aEdgeDist_radius;\n"
+        "layout(location = 2) in vec4 aColor;\n"
+        "uniform vec4 uTransform0;\n"
+        "uniform vec4 uTransform1;\n"
+        "uniform vec4 uParams;\n"
+        "out vec4 vColor;\n"
+        "out vec2 vEdgeParams;\n"
+        "void main() {\n"
+        "    float m00 = uTransform0.x;\n"
+        "    float m01 = uTransform0.y;\n"
+        "    float m10 = uTransform0.z;\n"
+        "    float m11 = uTransform0.w;\n"
+        "    float m20 = uTransform1.x;\n"
+        "    float m21 = uTransform1.y;\n"
+        "    vec2 vpSize = uTransform1.zw;\n"
+        "    vec2 screenPos = vec2(\n"
+        "        m00 * aPos.x + m10 * aPos.y + m20,\n"
+        "        m01 * aPos.x + m11 * aPos.y + m21\n"
+        "    );\n"
+        "    vec2 ndc = vec2(\n"
+        "        (screenPos.x / vpSize.x) * 2.0 - 1.0,\n"
+        "        1.0 - (screenPos.y / vpSize.y) * 2.0\n"
+        "    );\n"
+        "    gl_Position = vec4(ndc, 0.0, 1.0);\n"
+        "    vColor = aColor;\n"
+        "    vColor.a *= uParams.y;\n"
+        "    vEdgeParams = vec2(aEdgeDist_radius.x, aEdgeDist_radius.y * uParams.x);\n"
+        "}\n";
+
+    const char* fShaderSrc =
+        "#version 300 es\n"
+        "precision highp float;\n"
+        "in vec4 vColor;\n"
+        "in vec2 vEdgeParams;\n"
+        "out vec4 fragColor;\n"
+        "void main() {\n"
+        "    float u = abs(vEdgeParams.x);\n"
+        "    float rPx = max(vEdgeParams.y, 0.5);\n"
+        "    float dPx = (1.0 - u) * rPx;\n"
+        "    float alpha = clamp(dPx, 0.0, 1.0);\n"
+        "    fragColor = vec4(vColor.rgb * (vColor.a * alpha), vColor.a * alpha);\n"
+        "}\n";
+
+    GLuint vert = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vert, 1, &vShaderSrc, nullptr);
+    glCompileShader(vert);
+
+    GLint compiled = 0;
+    glGetShaderiv(vert, GL_COMPILE_STATUS, &compiled);
+    if (!compiled) {
+        char infoLog[512];
+        glGetShaderInfoLog(vert, sizeof(infoLog), nullptr, infoLog);
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager GLES] Vertex shader failed: %s", infoLog);
+        glDeleteShader(vert);
+        return false;
+    }
+
+    GLuint frag = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(frag, 1, &fShaderSrc, nullptr);
+    glCompileShader(frag);
+
+    glGetShaderiv(frag, GL_COMPILE_STATUS, &compiled);
+    if (!compiled) {
+        char infoLog[512];
+        glGetShaderInfoLog(frag, sizeof(infoLog), nullptr, infoLog);
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager GLES] Fragment shader failed: %s", infoLog);
+        glDeleteShader(vert);
+        glDeleteShader(frag);
+        return false;
+    }
+
+    m_glesProgram = glCreateProgram();
+    glAttachShader(m_glesProgram, vert);
+    glAttachShader(m_glesProgram, frag);
+    glLinkProgram(m_glesProgram);
+
+    glDeleteShader(vert);
+    glDeleteShader(frag);
+
+    GLint linked = 0;
+    glGetProgramiv(m_glesProgram, GL_LINK_STATUS, &linked);
+    if (!linked) {
+        char infoLog[512];
+        glGetProgramInfoLog(m_glesProgram, sizeof(infoLog), nullptr, infoLog);
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager GLES] Program link failed: %s", infoLog);
+        glDeleteProgram(m_glesProgram);
+        m_glesProgram = 0;
+        return false;
+    }
+
+    m_glesLocTransform0 = glGetUniformLocation(m_glesProgram, "uTransform0");
+    m_glesLocTransform1 = glGetUniformLocation(m_glesProgram, "uTransform1");
+    m_glesLocParams     = glGetUniformLocation(m_glesProgram, "uParams");
+
+    // Generate dynamic VAO, VBO, IBO
+    glGenVertexArrays(1, &m_glesVao);
+    glGenBuffers(1, &m_glesVbo);
+    glGenBuffers(1, &m_glesIbo);
+
+    glBindVertexArray(m_glesVao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_glesVbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_glesIbo);
+
+    // Attribute 0: vec2 pos (offset 0)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(InkVertex), reinterpret_cast<const void*>(offsetof(InkVertex, x)));
+
+    // Attribute 1: vec2 edgeDist_radius (offset 8)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(InkVertex), reinterpret_cast<const void*>(offsetof(InkVertex, edgeDist)));
+
+    // Attribute 2: vec4 color normalized from UBYTE4_NORM (offset 16)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(InkVertex), reinterpret_cast<const void*>(offsetof(InkVertex, color)));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    // Framebuffer setup for offscreen canvas backing
+    glGenFramebuffers(1, &m_glesFbo);
+    glGenTextures(1, &m_glesCanvasTex);
+    glGenRenderbuffers(1, &m_glesRboDepthStencil);
+
+    m_glesInitialized = true;
+    SDL_LogInfo(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager GLES] Initialized OpenGL ES 3.2 fallback pipeline successfully");
+    return true;
+}
+
+void GpuInkManager::ShutdownGlesFallback() {
+    if (!m_glesInitialized) return;
+
+    if (m_glesRboDepthStencil) {
+        glDeleteRenderbuffers(1, &m_glesRboDepthStencil);
+        m_glesRboDepthStencil = 0;
+    }
+    if (m_glesCanvasTex) {
+        glDeleteTextures(1, &m_glesCanvasTex);
+        m_glesCanvasTex = 0;
+    }
+    if (m_glesFbo) {
+        glDeleteFramebuffers(1, &m_glesFbo);
+        m_glesFbo = 0;
+    }
+    if (m_glesIbo) {
+        glDeleteBuffers(1, &m_glesIbo);
+        m_glesIbo = 0;
+    }
+    if (m_glesVbo) {
+        glDeleteBuffers(1, &m_glesVbo);
+        m_glesVbo = 0;
+    }
+    if (m_glesVao) {
+        glDeleteVertexArrays(1, &m_glesVao);
+        m_glesVao = 0;
+    }
+    if (m_glesProgram) {
+        glDeleteProgram(m_glesProgram);
+        m_glesProgram = 0;
+    }
+
+    m_glesTexWidth = 0;
+    m_glesTexHeight = 0;
+    m_glesInitialized = false;
+}
+
+bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surfH, int rx, int ry, int rw, int rh) {
+    if (!m_glesInitialized || m_drawCommands.empty()) {
+        BeginBatch();
+        return false;
+    }
+
+    // Save previous OpenGL state to avoid interfering with ImGui / Canvas presentation
+    GLint prevProgram = 0;
+    GLint prevVao = 0;
+    GLint prevArrayBuffer = 0;
+    GLint prevElementBuffer = 0;
+    GLint prevFbo = 0;
+    GLint prevTexture = 0;
+    GLint prevViewport[4];
+    GLint prevScissorBox[4];
+    GLboolean prevScissorTest = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevCullFace = glIsEnabled(GL_CULL_FACE);
+    GLboolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean prevStencilTest = glIsEnabled(GL_STENCIL_TEST);
+    GLint prevBlendSrcRgb = 0, prevBlendDstRgb = 0, prevBlendSrcAlpha = 0, prevBlendDstAlpha = 0;
+
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVao);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArrayBuffer);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &prevElementBuffer);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTexture);
+    glGetIntegerv(GL_VIEWPORT, prevViewport);
+    glGetIntegerv(GL_SCISSOR_BOX, prevScissorBox);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &prevBlendSrcRgb);
+    glGetIntegerv(GL_BLEND_DST_RGB, &prevBlendDstRgb);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &prevBlendSrcAlpha);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &prevBlendDstAlpha);
+
+    // Ensure backing FBO texture and depth/stencil renderbuffer
+    if (m_glesTexWidth != static_cast<uint32_t>(surfW) || m_glesTexHeight != static_cast<uint32_t>(surfH)) {
+        m_glesTexWidth = static_cast<uint32_t>(surfW);
+        m_glesTexHeight = static_cast<uint32_t>(surfH);
+
+        glBindTexture(GL_TEXTURE_2D, m_glesCanvasTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_glesTexWidth, m_glesTexHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+        glBindRenderbuffer(GL_RENDERBUFFER, m_glesRboDepthStencil);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, m_glesTexWidth, m_glesTexHeight);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_glesFbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_glesCanvasTex, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_glesRboDepthStencil);
+
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE) {
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager GLES] FBO incomplete: 0x%X", status);
+        }
+    } else {
+        glBindFramebuffer(GL_FRAMEBUFFER, m_glesFbo);
+    }
+
+    // Upload background patch to backing texture
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+    glBindTexture(GL_TEXTURE_2D, m_glesCanvasTex);
+    const uint8_t* patchData = static_cast<const uint8_t*>(imgData.pixel_data) + (static_cast<size_t>(ry) * imgData.stride) + (static_cast<size_t>(rx) * 4);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, rx, ry, rw, rh, GL_RGBA, GL_UNSIGNED_BYTE, patchData);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+    // Upload vertex & index buffers
+    glBindBuffer(GL_ARRAY_BUFFER, m_glesVbo);
+    glBufferData(GL_ARRAY_BUFFER, m_stagedVertices.size() * sizeof(InkVertex), m_stagedVertices.data(), GL_STREAM_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_glesIbo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_stagedIndices.size() * sizeof(uint32_t), m_stagedIndices.data(), GL_STREAM_DRAW);
+
+    // Setup viewport & scissor
+    glViewport(0, 0, surfW, surfH);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(rx, ry, rw, rh);
+
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glEnable(GL_STENCIL_TEST);
+    glClearStencil(0);
+    glClear(GL_STENCIL_BUFFER_BIT);
+
+    glUseProgram(m_glesProgram);
+    glBindVertexArray(m_glesVao);
+
+    uint8_t currentStencilRef = 0;
+    uint32_t lastStrokeId = 0;
+    bool hasLastStrokeId = false;
+
+    for (auto& dc : m_drawCommands) {
+        dc.uniforms.transform1[2] = static_cast<float>(surfW);
+        dc.uniforms.transform1[3] = static_cast<float>(surfH);
+
+        // Blending configuration matching SDL_GPU pipelines
+        switch (dc.pipeline) {
+            case PipelineType::NormalOpaque:
+            case PipelineType::NormalCore:
+            case PipelineType::NormalSkirt:
+                glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                break;
+            case PipelineType::MultiplyCore:
+            case PipelineType::MultiplySkirt:
+                glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+                break;
+            case PipelineType::Additive:
+                glBlendFunc(GL_ONE, GL_ONE);
+                break;
+        }
+
+        // Stencil test configuration for semi-transparent strokes
+        bool usesStencil = (dc.pipeline == PipelineType::NormalCore || dc.pipeline == PipelineType::NormalSkirt ||
+                            dc.pipeline == PipelineType::MultiplyCore || dc.pipeline == PipelineType::MultiplySkirt);
+
+        if (usesStencil) {
+            if (!hasLastStrokeId || dc.strokeId != lastStrokeId) {
+                currentStencilRef++;
+                if (currentStencilRef == 255) {
+                    glClear(GL_STENCIL_BUFFER_BIT);
+                    currentStencilRef = 1;
+                }
+                lastStrokeId = dc.strokeId;
+                hasLastStrokeId = true;
+            }
+
+            if (dc.pipeline == PipelineType::NormalCore || dc.pipeline == PipelineType::MultiplyCore) {
+                // Pass 1: Solid core ribbon stamps stencil reference (GL_REPLACE)
+                glStencilFunc(GL_NOTEQUAL, currentStencilRef, 0xFF);
+                glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+                glStencilMask(0xFF);
+            } else {
+                // Pass 2: Anti-aliasing skirt preserves stencil (GL_KEEP)
+                glStencilFunc(GL_NOTEQUAL, currentStencilRef, 0xFF);
+                glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+                glStencilMask(0x00);
+            }
+        } else {
+            glStencilMask(0x00);
+            glStencilFunc(GL_ALWAYS, 0, 0xFF);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+        }
+
+        glUniform4fv(m_glesLocTransform0, 1, dc.uniforms.transform0);
+        glUniform4fv(m_glesLocTransform1, 1, dc.uniforms.transform1);
+        glUniform4fv(m_glesLocParams, 1, dc.uniforms.params);
+
+        // Draw primitives: in our batching, stagedIndices offsets already incorporate base index
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(dc.indexCount), GL_UNSIGNED_INT,
+                       reinterpret_cast<const void*>(static_cast<uintptr_t>(dc.indexOffset * sizeof(uint32_t))));
+    }
+
+    // Read back composited region into target surface
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glPixelStorei(GL_PACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+    uint8_t* dstData = static_cast<uint8_t*>(imgData.pixel_data) + (static_cast<size_t>(ry) * imgData.stride) + (static_cast<size_t>(rx) * 4);
+    glReadPixels(rx, ry, rw, rh, GL_RGBA, GL_UNSIGNED_BYTE, dstData);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+
+    // Restore previous OpenGL state
+    glUseProgram(prevProgram);
+    glBindVertexArray(prevVao);
+    glBindBuffer(GL_ARRAY_BUFFER, prevArrayBuffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, prevElementBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+    glBindTexture(GL_TEXTURE_2D, prevTexture);
+    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    glScissor(prevScissorBox[0], prevScissorBox[1], prevScissorBox[2], prevScissorBox[3]);
+    if (!prevScissorTest) glDisable(GL_SCISSOR_TEST);
+    if (!prevBlend) glDisable(GL_BLEND);
+    glBlendFuncSeparate(prevBlendSrcRgb, prevBlendDstRgb, prevBlendSrcAlpha, prevBlendDstAlpha);
+    if (prevCullFace) glEnable(GL_CULL_FACE);
+    if (prevDepthTest) glEnable(GL_DEPTH_TEST);
+    if (!prevStencilTest) glDisable(GL_STENCIL_TEST);
+    glStencilMask(0xFF);
 
     m_lastVertexCount   = static_cast<uint32_t>(m_stagedVertices.size());
     m_lastTriangleCount = static_cast<uint32_t>(m_stagedIndices.size() / 3);

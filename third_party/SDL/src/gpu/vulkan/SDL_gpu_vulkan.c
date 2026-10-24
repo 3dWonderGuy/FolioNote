@@ -12839,7 +12839,7 @@ static bool VULKAN_INTERNAL_PrepareVulkan(
 
     // These features have near universal support so they are always enabled
     features->desiredVulkan10DeviceFeatures.independentBlend = VK_TRUE;
-    features->desiredVulkan10DeviceFeatures.sampleRateShading = VK_TRUE;
+    features->desiredVulkan10DeviceFeatures.sampleRateShading = VK_FALSE;
     features->desiredVulkan10DeviceFeatures.imageCubeArray = VK_TRUE;
 
     // Handle opt-in device features

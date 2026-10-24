@@ -70,18 +70,18 @@ public:
     void Shutdown();
 
     /**
-     * @brief Queries whether the SDL_GPU device and stroke pipelines are initialized and active.
+     * @brief Queries whether the SDL_GPU device (or direct OpenGL ES fallback) and stroke pipelines are initialized and active.
      */
-    [[nodiscard]] bool IsAvailable() const noexcept { return m_initialized && m_device != nullptr; }
+    [[nodiscard]] bool IsAvailable() const noexcept { return m_initialized && (m_device != nullptr || m_glesInitialized); }
 
     /**
-     * @brief Enables or disables SDL_GPU stroke rendering (falls back to CPU when disabled).
+     * @brief Enables or disables GPU/GLES stroke rendering (falls back to CPU when disabled).
      */
     void SetEnabled(bool enabled) noexcept { m_enabled = enabled; }
     [[nodiscard]] bool IsEnabled() const noexcept { return m_enabled && IsAvailable(); }
 
     /**
-     * @brief Returns the active SDL_GPU backend driver name (e.g. "vulkan", "direct3d12", "metal").
+     * @brief Returns the active GPU backend driver name (e.g. "vulkan", "direct3d12", "metal", "opengles").
      */
     [[nodiscard]] const char* GetDriverName() const noexcept;
 
@@ -193,6 +193,11 @@ private:
     bool EnsureGeometryBuffers(uint32_t vertexBytes, uint32_t indexBytes);
     bool EnsureImageTransferBuffers(uint32_t byteSize);
 
+    // Direct OpenGL ES fallback pipeline
+    bool InitGlesFallback();
+    void ShutdownGlesFallback();
+    bool FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surfH, int rx, int ry, int rw, int rh);
+
     SDL_GPUDevice*           m_device                = nullptr;
     SDL_GPUShader*           m_vertexShader          = nullptr;
     SDL_GPUShader*           m_fragmentShader        = nullptr;
@@ -225,6 +230,21 @@ private:
     std::vector<InkVertex>   m_stagedVertices;
     std::vector<uint32_t>    m_stagedIndices;
     std::vector<DrawCommand> m_drawCommands;
+
+    // Direct OpenGL ES fallback state
+    bool     m_glesInitialized   = false;
+    uint32_t m_glesProgram       = 0;
+    uint32_t m_glesVao           = 0;
+    uint32_t m_glesVbo           = 0;
+    uint32_t m_glesIbo           = 0;
+    int32_t  m_glesLocTransform0 = -1;
+    int32_t  m_glesLocTransform1 = -1;
+    int32_t  m_glesLocParams     = -1;
+    uint32_t m_glesFbo           = 0;
+    uint32_t m_glesCanvasTex     = 0;
+    uint32_t m_glesRboDepthStencil = 0;
+    uint32_t m_glesTexWidth      = 0;
+    uint32_t m_glesTexHeight     = 0;
 
     uint32_t m_nextAutoStrokeId  = 1;
     bool     m_initialized       = false;
