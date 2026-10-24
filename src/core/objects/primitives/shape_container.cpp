@@ -763,7 +763,18 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
         if (outlineType == ShapeOutlineType::Solid) {
             ctx.stroke_path(path);
         } else {
-            // Simplified outline stroke without BLPath ink engine dependency
+            // Dash patterns proportional to stroke width (Blend2D native dasher)
+            BLArray<double> dashes;
+            const double w = (std::max)(effWidth, 0.05);
+            if (outlineType == ShapeOutlineType::Dashed) {
+                dashes.append(w * 4.0); dashes.append(w * 2.5);
+            } else if (outlineType == ShapeOutlineType::Dotted) {
+                dashes.append(0.01);    dashes.append(w * 2.0);
+            } else { // DashDot
+                dashes.append(w * 4.0); dashes.append(w * 2.0);
+                dashes.append(0.01);    dashes.append(w * 2.0);
+            }
+            ctx.set_stroke_dash_array(dashes);
             ctx.stroke_path(path);
         }
 

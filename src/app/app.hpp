@@ -36,6 +36,7 @@
 #include "ui/views/md_editor_view.hpp"
 #include "ui/shell/app_shell.hpp"
 #include "ui/overlays/overlay_manager.hpp"
+#include "ui/slint/slint_settings_bridge.hpp"
 #include "app/actions/ui_action_registry.hpp"
 #include "ui/framework/ui_animation_manager.hpp"
 #include "ui/framework/ui_overlay_host.hpp"
@@ -69,6 +70,7 @@ public:
 
     // Modularized Overlays & Modals Subsystem
     Folio::OverlayManager overlayManager;
+    Folio::SlintSettingsStudio slintStudio;
     DebugOverlay& devTelemetry = overlayManager.devTelemetry;
     InkingTuningOverlay& tuningStudio = overlayManager.tuningStudio;
     ToolbarDemoOverlay& toolbarDemo = overlayManager.toolbarDemo;
@@ -789,13 +791,17 @@ public:
             devTelemetry.isVisible = !devTelemetry.isVisible;
         }, 61, false, "telemetry", 0, "tools.telemetry", "Tools"));
 
+        reg.RegisterAction(Folio::UIAction("Open Slint Settings & Window Studio", "F4", "🎛", false, true, false, [this]() {
+            slintStudio.Toggle();
+        }, 62, false, "settings", 0, "tools.slint_studio", "Tools"));
+
         reg.RegisterAction(Folio::UIAction("Toggle Inking Tuning Studio", "F5", "⚙", false, true, false, [this]() {
             tuningStudio.isVisible = !tuningStudio.isVisible;
-        }, 62, false, "tuning", 0, "tools.tuning", "Tools"));
+        }, 63, false, "tuning", 0, "tools.tuning", "Tools"));
 
         reg.RegisterAction(Folio::UIAction("Toggle Toolbar Components Demo", "F6", "🎨", false, true, false, [this]() {
             toolbarDemo.isVisible = !toolbarDemo.isVisible;
-        }, 63, false, "demo", 0, "tools.toolbar_demo", "Tools"));
+        }, 64, false, "demo", 0, "tools.toolbar_demo", "Tools"));
     }
 
     /**
@@ -824,7 +830,7 @@ public:
 
         // Developer overlays and diagnostic toggles
         if (key == SDLK_F3) { reg.Execute("tools.telemetry"); return true; }
-        if (key == SDLK_F4) { canvas.devMode = !canvas.devMode; canvas.isDirty = true; return true; }
+        if (key == SDLK_F4) { reg.Execute("tools.slint_studio"); return true; }
         if (key == SDLK_F5) { reg.Execute("tools.tuning"); return true; }
         if (key == SDLK_F6) { reg.Execute("tools.toolbar_demo"); return true; }
         if (key == SDLK_F11) { reg.Execute("view.toggle_fullscreen"); return true; }
@@ -1519,6 +1525,7 @@ public:
                 ribbon.showDemoOverlay = false;
             }
             overlayManager.RenderModalsAndOverlays(canvas, inputManager.stateMachine, windowSM, session, themeManager);
+            slintStudio.Render(window, windowSM, themeManager, canvas, ribbon, inputManager.stateMachine);
 
             // Render modern floating overlays, modals, and toast notification stack
             Folio::UI::UIOverlayHost::Instance().Render(io.DeltaTime);
@@ -1591,6 +1598,8 @@ public:
         if (session.workspace.repository.dbManager) {
             session.workspace.repository.dbManager->Close();
         }
+
+        slintStudio.Shutdown();
 
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplSDL3_Shutdown();

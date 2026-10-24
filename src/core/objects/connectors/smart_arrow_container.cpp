@@ -284,8 +284,19 @@ void SmartArrowObject::Render(BLContext& ctx, const Viewport& /*viewport*/) cons
     if (outlineType == ShapeOutlineType::Solid) {
         ctx.stroke_path(rawPath);
     } else {
-        // Fallback to stroked rawPath for dashed/dotted connector lines
+        BLArray<double> dashes;
+        const double w = (std::max)(effWidth, 0.05);
+        if (outlineType == ShapeOutlineType::Dashed) {
+            dashes.append(w * 4.0); dashes.append(w * 2.5);
+        } else if (outlineType == ShapeOutlineType::Dotted) {
+            dashes.append(0.01);    dashes.append(w * 2.0);
+        } else { // DashDot
+            dashes.append(w * 4.0); dashes.append(w * 2.0);
+            dashes.append(0.01);    dashes.append(w * 2.0);
+        }
+        ctx.set_stroke_dash_array(dashes);
         ctx.stroke_path(rawPath);
+        ctx.set_stroke_dash_array(BLArray<double>());
     }
 
     // Arrowheads (rendered in local line direction angles)

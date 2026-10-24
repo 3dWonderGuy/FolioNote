@@ -51,4 +51,7 @@ imgui.ini
 assets/fonts/segoe*
 assets/fonts/segui*
 
+# Prebuilt Slint C++ SDK Binary Archive
+third_party/slint/
+
 GEMINI.md

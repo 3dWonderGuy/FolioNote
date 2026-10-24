@@ -483,6 +483,38 @@ if(WIN32)
     target_link_libraries(${APP_TARGET} PRIVATE webview::core)
 endif()
 
+# 11b. Parallel Slint Declarative UI Studio Integration (Optional / Auto-detected)
+option(FOLIONOTE_ENABLE_SLINT "Enable parallel Slint UI Studio when Slint C++ SDK is present" ON)
+if(FOLIONOTE_ENABLE_SLINT AND NOT ANDROID)
+    find_package(Slint QUIET PATHS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/slint")
+    if(Slint_FOUND)
+        message(STATUS "Slint C++ SDK found — enabling parallel Slint Settings & Window Studio")
+        target_compile_definitions(${APP_TARGET} PRIVATE FOLIONOTE_HAS_SLINT=1)
+        target_link_libraries(${APP_TARGET} PRIVATE Slint::Slint)
+        slint_target_sources(${APP_TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/slint/settings_studio.slint")
+        if(UNIX AND NOT APPLE)
+            target_link_options(${APP_TARGET} PRIVATE "-Wl,-rpath-link,${CMAKE_CURRENT_SOURCE_DIR}/third_party/slint/lib")
+            set_target_properties(${APP_TARGET} PROPERTIES
+                BUILD_RPATH "$ORIGIN:${CMAKE_CURRENT_SOURCE_DIR}/third_party/slint/lib"
+                INSTALL_RPATH "$ORIGIN:$ORIGIN/../third_party/slint/lib"
+            )
+            # Deploy Slint dynamic shared libraries alongside FolioNote executable
+            file(GLOB SLINT_DEPLOY_LIBS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/slint/lib/lib*.so*")
+            foreach(_slintlib ${SLINT_DEPLOY_LIBS})
+                add_custom_command(
+                    TARGET ${APP_TARGET} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_slintlib}"
+                    "$<TARGET_FILE_DIR:${APP_TARGET}>/"
+                    COMMENT "Deploying Slint runtime library $(notdir ${_slintlib}) to output directory..."
+                )
+            endforeach()
+        endif()
+    else()
+        message(STATUS "Slint C++ SDK not found in third_party/slint — building with native fallback")
+    endif()
+endif()
+
 
 
 set(FOLIO_IO_SOURCES

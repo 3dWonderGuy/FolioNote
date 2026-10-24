@@ -273,7 +273,7 @@ bool GpuInkManager::CreatePipelines() {
     rasterizer.cull_mode         = SDL_GPU_CULLMODE_NONE;
     rasterizer.front_face        = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
     rasterizer.enable_depth_bias = false;
-    rasterizer.enable_depth_clip = false;
+    rasterizer.enable_depth_clip = true;
 
     SDL_GPUMultisampleState multisample = {};
     multisample.sample_count = SDL_GPU_SAMPLECOUNT_1;

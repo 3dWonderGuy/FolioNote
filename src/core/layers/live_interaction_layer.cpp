@@ -404,16 +404,37 @@ void LiveInteractionLayer::RenderMarquee(BLContext& ctx, const Viewport& viewpor
             ctx.save();
             ctx.set_transform(viewport.worldToScreenMatrix);
 
-            BLPath path;
+            const double invScale = 1.0 / std::max(0.01, viewport.GetEffectiveScale());
             const auto& pts = m_activeMarquee.polygonPoints;
-            path.move_to(pts[0].x, pts[0].y);
+
+            BLPath strokePath;
+            strokePath.move_to(pts[0].x, pts[0].y);
             for (size_t i = 1; i < pts.size(); ++i) {
-                path.line_to(pts[i].x, pts[i].y);
+                strokePath.line_to(pts[i].x, pts[i].y);
+            }
+
+            if (pts.size() >= 3) {
+                BLPath fillPath(strokePath);
+                fillPath.close();
+                ctx.set_fill_style(m_activeMarquee.fillColor.a() > 0
+                    ? m_activeMarquee.fillColor
+                    : BLRgba32(0x3B, 0x82, 0xF6, 0x24));
+                ctx.fill_path(fillPath);
+
+                // Subtle closing chord from active tip back to start point
+                BLPath chordPath;
+                chordPath.move_to(pts.back().x, pts.back().y);
+                chordPath.line_to(pts.front().x, pts.front().y);
+                ctx.set_stroke_style(BLRgba32(0x3B, 0x82, 0xF6, 0x70));
+                ctx.set_stroke_width(1.25 * invScale);
+                ctx.stroke_path(chordPath);
             }
 
             ctx.set_stroke_style(m_activeMarquee.strokeColor);
-            ctx.set_stroke_width(0.5);
-            ctx.stroke_path(path);
+            ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
+            ctx.set_stroke_join(BL_STROKE_JOIN_ROUND);
+            ctx.set_stroke_width(std::max(1.5, static_cast<double>(m_activeMarquee.strokeWidthPx)) * invScale);
+            ctx.stroke_path(strokePath);
             ctx.restore();
             return;
         }
@@ -436,15 +457,33 @@ void LiveInteractionLayer::RenderMarquee(BLContext& ctx, const Viewport& viewpor
         ctx.save();
         ctx.set_transform(viewport.worldToScreenMatrix);
 
-        BLPath path;
-        path.move_to(m_internalLassoPoints[0].x, m_internalLassoPoints[0].y);
+        const double invScale = 1.0 / std::max(0.01, viewport.GetEffectiveScale());
+
+        BLPath strokePath;
+        strokePath.move_to(m_internalLassoPoints[0].x, m_internalLassoPoints[0].y);
         for (size_t i = 1; i < m_internalLassoPoints.size(); ++i) {
-            path.line_to(m_internalLassoPoints[i].x, m_internalLassoPoints[i].y);
+            strokePath.line_to(m_internalLassoPoints[i].x, m_internalLassoPoints[i].y);
         }
 
-        ctx.set_stroke_style(BLRgba32(0x3B, 0x82, 0xF6, 0xD0)); // Accent blue
-        ctx.set_stroke_width(0.5);
-        ctx.stroke_path(path);
+        if (m_internalLassoPoints.size() >= 3) {
+            BLPath fillPath(strokePath);
+            fillPath.close();
+            ctx.set_fill_style(BLRgba32(0x3B, 0x82, 0xF6, 0x24)); // Soft translucent blue interior
+            ctx.fill_path(fillPath);
+
+            BLPath chordPath;
+            chordPath.move_to(m_internalLassoPoints.back().x, m_internalLassoPoints.back().y);
+            chordPath.line_to(m_internalLassoPoints.front().x, m_internalLassoPoints.front().y);
+            ctx.set_stroke_style(BLRgba32(0x3B, 0x82, 0xF6, 0x70));
+            ctx.set_stroke_width(1.25 * invScale);
+            ctx.stroke_path(chordPath);
+        }
+
+        ctx.set_stroke_style(BLRgba32(0x3B, 0x82, 0xF6, 0xD8)); // Accent blue
+        ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
+        ctx.set_stroke_join(BL_STROKE_JOIN_ROUND);
+        ctx.set_stroke_width(1.75 * invScale);
+        ctx.stroke_path(strokePath);
 
         ctx.restore();
     }

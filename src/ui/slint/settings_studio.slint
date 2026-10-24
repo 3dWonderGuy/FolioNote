@@ -1,0 +1,954 @@
+import { ScrollView, VerticalBox, HorizontalBox, Slider, CheckBox, Button, ComboBox } from "std-widgets.slint";
+
+component StudioCard inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle: "";
+    in property <bool> dark-mode: true;
+
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: root.dark-mode ? #2a2d37 : #dde1ea;
+    background: root.dark-mode ? #181a21 : #ffffff;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        VerticalLayout {
+            spacing: 3px;
+            Text {
+                text: root.title;
+                font-size: 14px;
+                font-weight: 700;
+                color: root.dark-mode ? #f2f4f8 : #181b22;
+            }
+            if root.subtitle != "" : Text {
+                text: root.subtitle;
+                font-size: 11px;
+                color: root.dark-mode ? #8b92a5 : #646b7d;
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: root.dark-mode ? #242731 : #ebedf2;
+        }
+
+        @children
+    }
+}
+
+component ToggleRow inherits Rectangle {
+    in property <string> label;
+    in property <string> description: "";
+    in-out property <bool> checked;
+    in property <bool> dark-mode: true;
+    callback toggled(bool);
+
+    height: root.description != "" ? 44px : 32px;
+    background: transparent;
+
+    HorizontalLayout {
+        alignment: space-between;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.label;
+                font-size: 13px;
+                font-weight: 500;
+                color: root.dark-mode ? #e6e9f0 : #1e222b;
+            }
+            if root.description != "" : Text {
+                text: root.description;
+                font-size: 11px;
+                color: root.dark-mode ? #82899c : #6b7280;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 24px;
+                border-radius: 12px;
+                background: root.checked ? #e65c14 : (root.dark-mode ? #2d313e : #cbd0dc);
+                animate background { duration: 140ms; }
+
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    y: 3px;
+                    x: root.checked ? 23px : 3px;
+                    background: #ffffff;
+                    animate x { duration: 140ms; }
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.checked = !root.checked;
+                        root.toggled(root.checked);
+                    }
+                }
+            }
+        }
+    }
+}
+
+component MetricBadge inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <color> accent: #e65c14;
+    in property <bool> dark-mode: true;
+
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: root.dark-mode ? #282c37 : #e2e6ef;
+    background: root.dark-mode ? #13151b : #f6f8fb;
+    height: 62px;
+    horizontal-stretch: 1;
+
+    VerticalLayout {
+        padding: 10px;
+        alignment: center;
+        spacing: 4px;
+
+        Text {
+            text: root.label;
+            font-size: 11px;
+            color: root.dark-mode ? #848b9e : #646b7d;
+        }
+        Text {
+            text: root.value;
+            font-size: 15px;
+            font-weight: 700;
+            color: root.accent;
+        }
+    }
+}
+
+component NavTabButton inherits Rectangle {
+    in property <string> label;
+    in property <string> badge: "";
+    in property <bool> active: false;
+    in property <bool> dark-mode: true;
+    callback clicked();
+
+    height: 38px;
+    border-radius: 8px;
+    background: root.active ? #e65c14 : (touch.has-hover ? (root.dark-mode ? #222631 : #e6e9f2) : transparent);
+    animate background { duration: 120ms; }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        alignment: space-between;
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                font-size: 13px;
+                font-weight: root.active ? 700 : 500;
+                color: root.active ? #ffffff : (root.dark-mode ? #cfd4e2 : #252934);
+            }
+        }
+
+        if root.badge != "" : VerticalLayout {
+            alignment: center;
+            Rectangle {
+                border-radius: 5px;
+                background: root.active ? #ffffff33 : (root.dark-mode ? #282c38 : #dde2ed);
+                height: 20px;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.badge;
+                            font-size: 10px;
+                            font-weight: 600;
+                            color: root.active ? #ffffff : (root.dark-mode ? #9ea6ba : #4b5263);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component ActionPillButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> dark-mode: true;
+    callback clicked();
+
+    height: 34px;
+    border-radius: 7px;
+    border-width: root.primary ? 0px : 1px;
+    border-color: root.dark-mode ? #323746 : #cfd5e2;
+    background: root.primary
+        ? (touch.pressed ? #c44a0c : (touch.has-hover ? #f4661b : #e65c14))
+        : (touch.pressed ? (root.dark-mode ? #2c313f : #d6dce8) : (touch.has-hover ? (root.dark-mode ? #252936 : #e8ecf4) : (root.dark-mode ? #1d202a : #f3f5fa)));
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.text;
+                font-size: 12px;
+                font-weight: 600;
+                color: root.primary ? #ffffff : (root.dark-mode ? #e4e8f2 : #1e222d);
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SettingsStudioWindow inherits Window {
+    title: "FolioNote — Slint Settings & Window Manager Studio";
+    preferred-width: 820px;
+    preferred-height: 580px;
+
+    // Navigation & Theme State
+    in-out property <int> active-tab: 0;
+    in-out property <bool> dark-mode: true;
+    in-out property <int> theme-preset-index: 2; // 0=Dark, 1=Light, 2=FolioColor
+    in-out property <bool> invert-canvas: false;
+    in-out property <bool> verbose-logging: false;
+    in-out property <string> ribbon-display-mode: "FullRibbon";
+
+    // Per-Device Default Tools
+    in-out property <string> default-stylus-tool: "Inking";
+    in-out property <string> default-touch-tool: "Panning";
+    in-out property <string> default-mouse-tool: "Selecting";
+
+    // WindowStateManager Telemetry
+    in property <string> window-state-name: "Stable (Active Rendering)";
+    in property <string> previous-state-name: "Stable";
+    in property <int> window-width: 1920;
+    in property <int> window-height: 1080;
+    in property <bool> is-fullscreen: false;
+    in property <bool> is-maximized: false;
+    in property <bool> is-focused: true;
+    in property <int> freeze-frame-counter: 0;
+    in property <bool> canvas-frozen: false;
+
+    // GPU & Inking Engine State
+    in-out property <bool> gpu-enabled: true;
+    in property <bool> gpu-available: true;
+    in property <string> gpu-driver-name: "vulkan";
+    in property <int> gpu-last-vertices: 0;
+    in property <int> gpu-last-triangles: 0;
+    in property <int> gpu-last-draw-calls: 0;
+    in property <int> gpu-vram-kb: 0;
+
+    in-out property <bool> draw-with-touch: false;
+    in-out property <bool> ruler-enabled: false;
+    in-out property <bool> auto-shapes-enabled: false;
+    in-out property <bool> wobble-smoothing-enabled: true;
+    in-out property <bool> kalman-prediction-enabled: true;
+    in-out property <float> eraser-size-mm: 6.0;
+    in-out property <float> pressure-gamma: 1.0;
+
+    // Storage, Memory & Backups
+    in-out property <int> max-loaded-pages: 10;
+    in-out property <int> max-page-versions: 15;
+    in-out property <bool> auto-backup-daily: true;
+    in-out property <bool> auto-backup-weekly: true;
+    in-out property <bool> auto-backup-monthly: true;
+    in property <string> status-message: "Synced with FolioNote C++ Engine";
+
+    // Host C++ Callbacks
+    callback apply-theme-preset(int);
+    callback toggle-invert-canvas(bool);
+    callback toggle-verbose-logging(bool);
+    callback select-ribbon-mode(string);
+    callback select-device-tool(string, string); // (device, tool)
+
+    callback request-toggle-fullscreen();
+    callback request-maximize-window();
+    callback request-restore-window();
+    callback request-trigger-freeze-test();
+
+    callback toggle-gpu-acceleration(bool);
+    callback toggle-draw-with-touch(bool);
+    callback toggle-ruler(bool);
+    callback toggle-auto-shapes(bool);
+    callback toggle-wobble-smoothing(bool);
+    callback toggle-kalman-prediction(bool);
+    callback change-eraser-size(float);
+
+    callback change-max-loaded-pages(int);
+    callback toggle-backup-tier(string, bool);
+    callback save-settings-to-disk();
+    callback close-studio();
+
+    background: root.dark-mode ? #111318 : #f0f2f7;
+
+    VerticalLayout {
+        // Top Studio Header Banner
+        Rectangle {
+            height: 52px;
+            background: root.dark-mode ? #171a22 : #e65c14;
+
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 28px;
+                            height: 28px;
+                            border-radius: 7px;
+                            background: root.dark-mode ? #e65c14 : #ffffff26;
+                            HorizontalLayout {
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "S";
+                                        font-size: 14px;
+                                        font-weight: 800;
+                                        color: #ffffff;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 1px;
+                        Text {
+                            text: "FolioNote Control Center (Slint UI)";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: #ffffff;
+                        }
+                        Text {
+                            text: "Parallel Declarative UI • Live C++20 Bridge to SettingsManager & WindowStateManager";
+                            font-size: 10px;
+                            color: #ffffffcc;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        ActionPillButton {
+                            text: "Save config/settings.json";
+                            primary: root.dark-mode;
+                            dark-mode: root.dark-mode;
+                            clicked => { root.save-settings-to-disk(); }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        ActionPillButton {
+                            text: "Close [F4]";
+                            primary: false;
+                            dark-mode: root.dark-mode;
+                            clicked => { root.close-studio(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Main Body: Left Navigation Rail + Right Scrollable Content
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // Left Navigation Rail
+            Rectangle {
+                width: 215px;
+                background: root.dark-mode ? #15171e : #e9ecf4;
+
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 6px;
+
+                    Text {
+                        text: "STUDIO SECTIONS";
+                        font-size: 10px;
+                        font-weight: 700;
+                        color: root.dark-mode ? #6e7588 : #6c7385;
+                    }
+
+                    NavTabButton {
+                        label: "Appearance & Input";
+                        badge: "UI";
+                        active: root.active-tab == 0;
+                        dark-mode: root.dark-mode;
+                        clicked => { root.active-tab = 0; }
+                    }
+
+                    NavTabButton {
+                        label: "Window State Manager";
+                        badge: root.is-fullscreen ? "FS" : "FSM";
+                        active: root.active-tab == 1;
+                        dark-mode: root.dark-mode;
+                        clicked => { root.active-tab = 1; }
+                    }
+
+                    NavTabButton {
+                        label: "GPU & Inking Engine";
+                        badge: root.gpu-driver-name;
+                        active: root.active-tab == 2;
+                        dark-mode: root.dark-mode;
+                        clicked => { root.active-tab = 2; }
+                    }
+
+                    NavTabButton {
+                        label: "Storage & Backups";
+                        badge: "\{root.max-loaded-pages}p";
+                        active: root.active-tab == 3;
+                        dark-mode: root.dark-mode;
+                        clicked => { root.active-tab = 3; }
+                    }
+
+                    Rectangle { vertical-stretch: 1; background: transparent; }
+
+                    // Mini Live Telemetry Footer inside Sidebar
+                    Rectangle {
+                        border-radius: 8px;
+                        background: root.dark-mode ? #1b1e27 : #dfe4f0;
+                        height: 76px;
+
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 4px;
+                            alignment: center;
+                            Text {
+                                text: "Window FSM: \{root.window-state-name}";
+                                font-size: 10px;
+                                font-weight: 600;
+                                color: root.dark-mode ? #cfd5e4 : #232733;
+                            }
+                            Text {
+                                text: "Viewport: \{root.window-width} × \{root.window-height} px";
+                                font-size: 10px;
+                                color: root.dark-mode ? #8b92a6 : #5b6275;
+                            }
+                            Text {
+                                text: "GPU Backend: \{root.gpu-driver-name} (\{root.gpu-enabled ? "ON" : "OFF"})";
+                                font-size: 10px;
+                                color: root.gpu-enabled ? #22c55e : #f59e0b;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Divider
+            Rectangle {
+                width: 1px;
+                background: root.dark-mode ? #242731 : #d7dce8;
+            }
+
+            // Right Content Area
+            ScrollView {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 16px;
+                    alignment: start;
+
+                    // =====================================================
+                    // TAB 0: APPEARANCE & INPUT DEFAULTS
+                    // =====================================================
+                    if root.active-tab == 0 : VerticalLayout {
+                        spacing: 16px;
+
+                        StudioCard {
+                            title: "Workspace Theme & Canvas Appearance";
+                            subtitle: "Synchronizes immediately with ThemeManager and CanvasEngine";
+                            dark-mode: root.dark-mode;
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                ActionPillButton {
+                                    text: "Folio Signature Orange";
+                                    primary: root.theme-preset-index == 2;
+                                    dark-mode: root.dark-mode;
+                                    clicked => {
+                                        root.theme-preset-index = 2;
+                                        root.dark-mode = false;
+                                        root.apply-theme-preset(2);
+                                    }
+                                }
+                                ActionPillButton {
+                                    text: "Folio Dark Studio";
+                                    primary: root.theme-preset-index == 0;
+                                    dark-mode: root.dark-mode;
+                                    clicked => {
+                                        root.theme-preset-index = 0;
+                                        root.dark-mode = true;
+                                        root.apply-theme-preset(0);
+                                    }
+                                }
+                                ActionPillButton {
+                                    text: "Folio Crisp Light";
+                                    primary: root.theme-preset-index == 1;
+                                    dark-mode: root.dark-mode;
+                                    clicked => {
+                                        root.theme-preset-index = 1;
+                                        root.dark-mode = false;
+                                        root.apply-theme-preset(1);
+                                    }
+                                }
+                            }
+
+                            ToggleRow {
+                                label: "Invert Canvas Paper & Ink Colors (Dark Paper Mode)";
+                                description: "Renders dark slate paper with luminance-inverted ink strokes (Ctrl+I)";
+                                checked <=> root.invert-canvas;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-invert-canvas(v); }
+                            }
+
+                            ToggleRow {
+                                label: "Verbose Engine Diagnostics Logging";
+                                description: "Streams high-frequency [INFO] telemetry to console and log file";
+                                checked <=> root.verbose-logging;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-verbose-logging(v); }
+                            }
+                        }
+
+                        StudioCard {
+                            title: "Ribbon Bar Layout Mode";
+                            subtitle: "Controls top toolbar density across the main workspace";
+                            dark-mode: root.dark-mode;
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                ActionPillButton {
+                                    text: "Full Ribbon";
+                                    primary: root.ribbon-display-mode == "FullRibbon";
+                                    dark-mode: root.dark-mode;
+                                    clicked => {
+                                        root.ribbon-display-mode = "FullRibbon";
+                                        root.select-ribbon-mode("FullRibbon");
+                                    }
+                                }
+                                ActionPillButton {
+                                    text: "Mini Toolbar";
+                                    primary: root.ribbon-display-mode == "MiniToolbar";
+                                    dark-mode: root.dark-mode;
+                                    clicked => {
+                                        root.ribbon-display-mode = "MiniToolbar";
+                                        root.select-ribbon-mode("MiniToolbar");
+                                    }
+                                }
+                                ActionPillButton {
+                                    text: "Collapsed Tabs";
+                                    primary: root.ribbon-display-mode == "Collapsed";
+                                    dark-mode: root.dark-mode;
+                                    clicked => {
+                                        root.ribbon-display-mode = "Collapsed";
+                                        root.select-ribbon-mode("Collapsed");
+                                    }
+                                }
+                                ActionPillButton {
+                                    text: "Focus Hidden";
+                                    primary: root.ribbon-display-mode == "FullyHidden";
+                                    dark-mode: root.dark-mode;
+                                    clicked => {
+                                        root.ribbon-display-mode = "FullyHidden";
+                                        root.select-ribbon-mode("FullyHidden");
+                                    }
+                                }
+                            }
+                        }
+
+                        StudioCard {
+                            title: "Per-Device Default Tool Routing";
+                            subtitle: "Configures InputStateMachine default tool when Stylus, Touch, or Mouse engages";
+                            dark-mode: root.dark-mode;
+
+                            // Stylus Row
+                            HorizontalLayout {
+                                alignment: space-between;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Stylus Digitizer Default:";
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: root.dark-mode ? #e4e7f0 : #1d212b;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    for tool in ["Inking", "Eraser", "Selecting", "Panning"] : ActionPillButton {
+                                        text: tool;
+                                        primary: root.default-stylus-tool == tool;
+                                        dark-mode: root.dark-mode;
+                                        clicked => {
+                                            root.default-stylus-tool = tool;
+                                            root.select-device-tool("Stylus", tool);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Touch Row
+                            HorizontalLayout {
+                                alignment: space-between;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Finger Touch Default:";
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: root.dark-mode ? #e4e7f0 : #1d212b;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    for tool in ["Panning", "Inking", "Selecting", "Eraser"] : ActionPillButton {
+                                        text: tool;
+                                        primary: root.default-touch-tool == tool;
+                                        dark-mode: root.dark-mode;
+                                        clicked => {
+                                            root.default-touch-tool = tool;
+                                            root.select-device-tool("Touch", tool);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Mouse Row
+                            HorizontalLayout {
+                                alignment: space-between;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Mouse Pointer Default:";
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: root.dark-mode ? #e4e7f0 : #1d212b;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    for tool in ["Selecting", "Inking", "Panning", "Eraser"] : ActionPillButton {
+                                        text: tool;
+                                        primary: root.default-mouse-tool == tool;
+                                        dark-mode: root.dark-mode;
+                                        clicked => {
+                                            root.default-mouse-tool = tool;
+                                            root.select-device-tool("Mouse", tool);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // =====================================================
+                    // TAB 1: WINDOW STATE MANAGER
+                    // =====================================================
+                    if root.active-tab == 1 : VerticalLayout {
+                        spacing: 16px;
+
+                        StudioCard {
+                            title: "Live Window State Machine (WindowStateManager)";
+                            subtitle: "Monitors SDL3 window transitions and VSync freeze-frame protection";
+                            dark-mode: root.dark-mode;
+
+                            HorizontalLayout {
+                                spacing: 12px;
+                                MetricBadge {
+                                    label: "Current FSM State";
+                                    value: root.window-state-name;
+                                    accent: root.canvas-frozen ? #f59e0b : #22c55e;
+                                    dark-mode: root.dark-mode;
+                                }
+                                MetricBadge {
+                                    label: "Previous State";
+                                    value: root.previous-state-name;
+                                    accent: #3b82f6;
+                                    dark-mode: root.dark-mode;
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 12px;
+                                MetricBadge {
+                                    label: "Window Dimensions";
+                                    value: "\{root.window-width} × \{root.window-height}";
+                                    accent: #e65c14;
+                                    dark-mode: root.dark-mode;
+                                }
+                                MetricBadge {
+                                    label: "Transition Freeze Counter";
+                                    value: "\{root.freeze-frame-counter} frames";
+                                    accent: root.freeze-frame-counter > 0 ? #f59e0b : #8b92a5;
+                                    dark-mode: root.dark-mode;
+                                }
+                                MetricBadge {
+                                    label: "Focus & Mode";
+                                    value: root.is-fullscreen ? "Fullscreen" : (root.is-maximized ? "Maximized" : "Windowed");
+                                    accent: root.is-focused ? #22c55e : #8b92a5;
+                                    dark-mode: root.dark-mode;
+                                }
+                            }
+                        }
+
+                        StudioCard {
+                            title: "Window Lifecycle & Display Actions";
+                            subtitle: "Dispatch native SDL3 window state transitions from Slint";
+                            dark-mode: root.dark-mode;
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                ActionPillButton {
+                                    text: root.is-fullscreen ? "Exit Fullscreen (F11)" : "Enter Fullscreen (F11)";
+                                    primary: true;
+                                    dark-mode: root.dark-mode;
+                                    clicked => { root.request-toggle-fullscreen(); }
+                                }
+                                ActionPillButton {
+                                    text: "Maximize Window";
+                                    primary: false;
+                                    dark-mode: root.dark-mode;
+                                    clicked => { root.request-maximize-window(); }
+                                }
+                                ActionPillButton {
+                                    text: "Restore Windowed";
+                                    primary: false;
+                                    dark-mode: root.dark-mode;
+                                    clicked => { root.request-restore-window(); }
+                                }
+                                ActionPillButton {
+                                    text: "Test 30-Frame Freeze Guard";
+                                    primary: false;
+                                    dark-mode: root.dark-mode;
+                                    clicked => { root.request-trigger-freeze-test(); }
+                                }
+                            }
+                        }
+                    }
+
+                    // =====================================================
+                    // TAB 2: GPU & INKING ENGINE
+                    // =====================================================
+                    if root.active-tab == 2 : VerticalLayout {
+                        spacing: 16px;
+
+                        StudioCard {
+                            title: "SDL_GPU / GLES Hardware Stroke Rasterizer (GpuInkManager)";
+                            subtitle: "Two-pass stencil-isolated triangle strip renderer with analytical AA";
+                            dark-mode: root.dark-mode;
+
+                            HorizontalLayout {
+                                spacing: 12px;
+                                MetricBadge {
+                                    label: "Active GPU Backend";
+                                    value: root.gpu-driver-name;
+                                    accent: root.gpu-available ? #22c55e : #ef4444;
+                                    dark-mode: root.dark-mode;
+                                }
+                                MetricBadge {
+                                    label: "Last Batch Geometry";
+                                    value: "\{root.gpu-last-vertices} verts / \{root.gpu-last-triangles} tris";
+                                    accent: #3b82f6;
+                                    dark-mode: root.dark-mode;
+                                }
+                                MetricBadge {
+                                    label: "Draw Calls / Buffers";
+                                    value: "\{root.gpu-last-draw-calls} calls (\{root.gpu-vram-kb} KB)";
+                                    accent: #e65c14;
+                                    dark-mode: root.dark-mode;
+                                }
+                            }
+
+                            ToggleRow {
+                                label: "Enable Hardware GPU Ink Acceleration";
+                                description: "Renders Layer 1 baked strokes and Layer 2 live strokes via GpuInkManager";
+                                checked <=> root.gpu-enabled;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-gpu-acceleration(v); }
+                            }
+                        }
+
+                        StudioCard {
+                            title: "Inking Pipeline & Physics Controls";
+                            subtitle: "Live controls bound to InkEngine and SettingsManager::inkingConfig";
+                            dark-mode: root.dark-mode;
+
+                            ToggleRow {
+                                label: "Draw with Finger Touch";
+                                description: "Allows single-finger touch input to draw ink strokes instead of panning";
+                                checked <=> root.draw-with-touch;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-draw-with-touch(v); }
+                            }
+
+                            ToggleRow {
+                                label: "Digital Straightedge Ruler Overlay";
+                                description: "Shows interactive protractor ruler on canvas for snapping straight lines";
+                                checked <=> root.ruler-enabled;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-ruler(v); }
+                            }
+
+                            ToggleRow {
+                                label: "Automatic Geometric Shape Recognition";
+                                description: "Converts held freehand strokes into crisp circles, rectangles, and arrows";
+                                checked <=> root.auto-shapes-enabled;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-auto-shapes(v); }
+                            }
+
+                            ToggleRow {
+                                label: "Velocity-Adaptive Wobble Smoothing Filter";
+                                description: "Suppresses slow-drawing digitizer jitter before spring-mass modeling";
+                                checked <=> root.wobble-smoothing-enabled;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-wobble-smoothing(v); }
+                            }
+
+                            ToggleRow {
+                                label: "Kalman Tip Prediction Mesh";
+                                description: "Projects zero-latency predicted stroke tip onto Layer 2 during fast motion";
+                                checked <=> root.kalman-prediction-enabled;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-kalman-prediction(v); }
+                            }
+                        }
+                    }
+
+                    // =====================================================
+                    // TAB 3: STORAGE & BACKUPS
+                    // =====================================================
+                    if root.active-tab == 3 : VerticalLayout {
+                        spacing: 16px;
+
+                        StudioCard {
+                            title: "Working Set Memory & LRU Page Cache";
+                            subtitle: "Controls maximum simultaneously loaded pages kept in RAM";
+                            dark-mode: root.dark-mode;
+
+                            HorizontalLayout {
+                                alignment: space-between;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Max Active Pages in Memory: \{root.max-loaded-pages} pages";
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: root.dark-mode ? #e4e7f0 : #1d212b;
+                                    }
+                                    Text {
+                                        text: "Unviewed pages beyond this cap are automatically evicted to SQLite";
+                                        font-size: 11px;
+                                        color: root.dark-mode ? #82899c : #6b7280;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    for cap in [5, 10, 20, 50] : ActionPillButton {
+                                        text: "\{cap} Pages";
+                                        primary: root.max-loaded-pages == cap;
+                                        dark-mode: root.dark-mode;
+                                        clicked => {
+                                            root.max-loaded-pages = cap;
+                                            root.change-max-loaded-pages(cap);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        StudioCard {
+                            title: "Grandfather-Father-Son Automated Backups";
+                            subtitle: "Multi-tier rolling snapshot retention for .foliolib notebooks";
+                            dark-mode: root.dark-mode;
+
+                            ToggleRow {
+                                label: "Tier 1: Daily Rolling Snapshots (24h Interval)";
+                                description: "Retains 7 daily incremental archives in isolated backup directory";
+                                checked <=> root.auto-backup-daily;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-backup-tier("daily", v); }
+                            }
+
+                            ToggleRow {
+                                label: "Tier 2: Weekly Rolling Snapshots (7d Interval)";
+                                description: "Retains 4 weekly snapshots for medium-term recovery";
+                                checked <=> root.auto-backup-weekly;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-backup-tier("weekly", v); }
+                            }
+
+                            ToggleRow {
+                                label: "Tier 3: Monthly Archival Snapshots (30d Interval)";
+                                description: "Retains 12 monthly snapshots for long-term notebook history";
+                                checked <=> root.auto-backup-monthly;
+                                dark-mode: root.dark-mode;
+                                toggled(v) => { root.toggle-backup-tier("monthly", v); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom Status Bar
+        Rectangle {
+            height: 30px;
+            background: root.dark-mode ? #15171e : #e3e7f1;
+
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: space-between;
+
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-message;
+                        font-size: 11px;
+                        color: root.dark-mode ? #949cb0 : #4e5566;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Slint 1.18 C++20 Parallel Studio • SDL3 + OpenGL Bridge";
+                        font-size: 11px;
+                        color: root.dark-mode ? #6e7588 : #6c7385;
+                    }
+                }
+            }
+        }
+    }
+}

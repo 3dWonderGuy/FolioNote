@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include "imgui.h"
 #include "app/theme_manager.hpp"
+#include "app/actions/ui_action_registry.hpp"
 #include "ui/imgui_theme.hpp"
 #include "ui/icon_manager.hpp"
 #include <algorithm>
@@ -283,6 +284,9 @@ public:
 
                 if (ImGui::MenuItem("Developer Diagnostics", "F3", outDevTelemetryVisible)) {
                     outDevTelemetryVisible = !outDevTelemetryVisible;
+                }
+                if (ImGui::MenuItem("Slint Settings & Window Studio", "F4")) {
+                    Folio::UIActionRegistry::Instance().Execute("tools.slint_studio");
                 }
                 if (ImGui::MenuItem("Handwriting Tuning Studio", "F5", outTuningStudioVisible)) {
                     outTuningStudioVisible = !outTuningStudioVisible;
