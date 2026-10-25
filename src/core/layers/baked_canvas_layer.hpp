@@ -125,6 +125,7 @@ public:
      * @brief Accesses the world-space bounding box of the last partial rebake damage area.
      */
     [[nodiscard]] const AABB& GetLastRenderedDirtyWorldRegion() const noexcept { return m_lastRenderedDirtyWorldRegion; }
+    [[nodiscard]] const AABB& GetPendingDirtyWorldRegion() const noexcept { return m_dirtyWorldRegion; }
 
     /**
      * @brief Read-only accessor for LayerCompositorManager to blit or upload to OpenGL texture.

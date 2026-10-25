@@ -24,16 +24,20 @@ if(NOT ANDROID)
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 endif()
 
-# --- MSVC PDB / Path Length Fix ---
+# --- MSVC PDB / Path Length Fix & Build Optimizations ---
 if(MSVC)
     set(CMAKE_OBJECT_PATH_MAX 1024)
-    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
     # /FS    — force synchronous PDB writes (needed for parallel builds)
-    # /bigobj — raise COFF section limit from 65,535 to ~16M sections.
-    # /utf-8  — set both source and execution character sets to UTF-8 so that
-    #           std::string and std::filesystem::path handle Unicode/non-ASCII characters seamlessly.
-    add_compile_options(/FS /bigobj /utf-8)
-    add_compile_definitions(NOMINMAX _USE_MATH_DEFINES)
+    # /bigobj — raise COFF section limit from 65,535 to ~16M sections
+    # /utf-8  — set both source and execution character sets to UTF-8
+    # /MP     — multi-processor compilation across source files
+    add_compile_options(/FS /bigobj /utf-8 /MP)
+    add_compile_definitions(
+        NOMINMAX
+        _USE_MATH_DEFINES
+        _CRT_SECURE_NO_WARNINGS
+        _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS
+    )
 endif()
 
 # System OpenGL

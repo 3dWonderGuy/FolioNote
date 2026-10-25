@@ -283,6 +283,13 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
             frameDirtyBox.Merge(m_prevLiveScreenBounds);
         }
 
+        const AABB& bakedPendingWorld = layerCompositor.GetBakedCanvasLayer().GetPendingDirtyWorldRegion();
+        if (bakedPendingWorld.IsValid() && !bakedPendingWorld.IsEmpty()) {
+            BLRect sRect = currentView.WorldToScreenRect(bakedPendingWorld);
+            frameDirtyBox.Merge(sRect.x, sRect.y);
+            frameDirtyBox.Merge(sRect.x + sRect.w, sRect.y + sRect.h);
+        }
+
         const AABB& bakedDirtyWorld = layerCompositor.GetBakedCanvasLayer().GetLastRenderedDirtyWorldRegion();
         if (bakedDirtyWorld.IsValid() && !bakedDirtyWorld.IsEmpty()) {
             BLRect sRect = currentView.WorldToScreenRect(bakedDirtyWorld);
