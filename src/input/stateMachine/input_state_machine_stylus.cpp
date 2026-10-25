@@ -179,7 +179,7 @@ void InputStateMachine::DispatchStylus(CanvasEngine& canvas, DocumentSession& se
         // DRAWING SHAPE (Geometric Vector Shape Drag-Creation)
         // =====================================================================
         case InteractionState::DrawingShape: {
-            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            if (ImGui::GetCurrentContext() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                 canvas.CancelShapeCreation();
                 canvas.ClearSelection(&session);
                 currentAction = InteractionState::Selecting;

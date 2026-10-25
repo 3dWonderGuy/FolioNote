@@ -7,7 +7,8 @@
       1.0
     ],
     "isCanvasInverted": false,
-    "isDarkMode": true
+    "isDarkMode": true,
+    "uiMode": "mobile_slint"
   },
   "backups": {
     "autoBackupDailyEnabled": true,
@@ -66,6 +67,7 @@
     },
     "presets": [
       {
+        "capType": "Round",
         "color": [
           0.09000000357627869,
           0.10000000149011612,
@@ -81,6 +83,7 @@
         "type": "Pen"
       },
       {
+        "capType": "Round",
         "color": [
           0.10000000149011612,
           0.3400000035762787,
@@ -96,6 +99,7 @@
         "type": "Pen"
       },
       {
+        "capType": "Round",
         "color": [
           0.8600000143051147,
           0.15000000596046448,
@@ -111,21 +115,23 @@
         "type": "Pen"
       },
       {
+        "capType": "Round",
         "color": [
-          0.23999999463558197,
-          0.25,
-          0.28999999165534973,
+          0.14000000059604645,
+          0.15000000596046448,
+          0.18000000715255737,
           1.0
         ],
         "id": "pencil_2b",
         "isCustomPreset": false,
         "name": "2B Pencil",
-        "opacity": 0.8999999761581421,
+        "opacity": 0.9599999785423279,
         "strokePattern": "TexturedPencil",
         "thicknessMm": 0.699999988079071,
         "type": "Pencil"
       },
       {
+        "capType": "Chisel",
         "color": [
           0.10000000149011612,
           0.10000000149011612,
@@ -141,6 +147,7 @@
         "type": "Fountain"
       },
       {
+        "capType": "Round",
         "color": [
           0.49000000953674316,
           0.23000000417232513,
@@ -156,6 +163,7 @@
         "type": "Brush"
       },
       {
+        "capType": "Square",
         "color": [
           1.0,
           0.8999999761581421,
@@ -171,6 +179,7 @@
         "type": "Highlighter"
       },
       {
+        "capType": "Square",
         "color": [
           0.05999999865889549,
           0.7300000190734863,
@@ -186,6 +195,7 @@
         "type": "Highlighter"
       },
       {
+        "capType": "Round",
         "color": [
           1.0,
           0.15000000596046448,
@@ -311,8 +321,9 @@
   },
   "session": {
     "lastNotebookGuid": "29a3d5f7-6a5e-4cae-b7d6-0ab84349cc13",
-    "lastPageGuid": "0d3219dd-d95e-4322-8620-873ed180958d",
-    "lastSectionGuid": "e4bbc03e-23ba-4e4b-ab13-16404f1716dc"
+    "lastPageGuid": "251ee763-b71c-4d35-ae72-46bfcd765367",
+    "lastSectionGuid": "7734d0d7-688c-4f35-b730-6d1dbd229694"
   },
+  "ui_mode": "mobile_slint",
   "version": 1
 }

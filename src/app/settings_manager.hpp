@@ -26,6 +26,30 @@ struct RibbonSectionSetting {
     std::vector<std::string> buttons;
 };
 
+/**
+ * @enum UIMode
+ * @brief Selects the primary presentation frontend engine on application startup.
+ */
+enum class UIMode : uint8_t {
+    DesktopImGui = 0, ///< Rich desktop workstation interface with ribbons, title bar, docking, and sidebars.
+    MobileSlint  = 1  ///< Native touch/mobile interface driven completely by Slint directly on SDL3/SDL_GPU.
+};
+
+inline const char* UIModeToString(UIMode mode) noexcept {
+    switch (mode) {
+        case UIMode::MobileSlint:  return "mobile_slint";
+        case UIMode::DesktopImGui:
+        default:                   return "desktop_imgui";
+    }
+}
+
+inline UIMode StringToUIMode(const std::string& str) noexcept {
+    if (str == "mobile_slint" || str == "mobile" || str == "slint") {
+        return UIMode::MobileSlint;
+    }
+    return UIMode::DesktopImGui;
+}
+
 struct PenPreset {
     std::string id;
     std::string name;
@@ -94,6 +118,7 @@ public:
     // Appearance State
     bool isDarkMode = true;
     bool isCanvasInverted = false;
+    UIMode uiMode = UIMode::DesktopImGui; ///< Active UI frontend engine (Desktop ImGui vs. Mobile Slint)
 
     // Diagnostics & Logging State
     bool verboseLogging = false; ///< When true, streams high-frequency [INFO] logs to console/disk; when false, silences them to eliminate console spam.
@@ -425,6 +450,11 @@ public:
                 const auto& jApp = j["appearance"];
                 if (jApp.contains("isDarkMode")) isDarkMode = jApp["isDarkMode"].get<bool>();
                 if (jApp.contains("isCanvasInverted")) isCanvasInverted = jApp["isCanvasInverted"].get<bool>();
+                if (jApp.contains("uiMode")) {
+                    uiMode = StringToUIMode(jApp["uiMode"].get<std::string>());
+                } else if (j.contains("ui_mode")) {
+                    uiMode = StringToUIMode(j["ui_mode"].get<std::string>());
+                }
                 if (jApp.contains("defaultNotebookColor") && jApp["defaultNotebookColor"].is_array() && jApp["defaultNotebookColor"].size() >= 4) {
                     defaultNotebookColor[0] = jApp["defaultNotebookColor"][0].get<float>();
                     defaultNotebookColor[1] = jApp["defaultNotebookColor"][1].get<float>();
@@ -644,8 +674,10 @@ public:
             j["appearance"] = {
                 { "isDarkMode", isDarkMode },
                 { "isCanvasInverted", isCanvasInverted },
+                { "uiMode", UIModeToString(uiMode) },
                 { "defaultNotebookColor", { defaultNotebookColor[0], defaultNotebookColor[1], defaultNotebookColor[2], defaultNotebookColor[3] } }
             };
+            j["ui_mode"] = UIModeToString(uiMode);
 
             // PDF Ingestion section
             j["pdf"] = {

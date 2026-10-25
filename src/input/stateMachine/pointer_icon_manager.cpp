@@ -233,7 +233,7 @@ void PointerIconManager::Apply(bool isOverCanvas, bool imguiHasFocus) {
         targetShape = lockedShape;
     } else if (imguiHasFocus) {
         // ImGui UI chrome (ribbon, navigation panels, dialogs) has priority
-        ImGuiMouseCursor imCursor = ImGui::GetMouseCursor();
+        ImGuiMouseCursor imCursor = ImGui::GetCurrentContext() ? ImGui::GetMouseCursor() : ImGuiMouseCursor_Arrow;
         switch (imCursor) {
             case ImGuiMouseCursor_TextInput:  targetShape = PointerCursorShape::TextInput; break;
             case ImGuiMouseCursor_ResizeAll:  targetShape = PointerCursorShape::ResizeAll; break;
@@ -271,7 +271,7 @@ void PointerIconManager::Apply(bool isOverCanvas, bool imguiHasFocus) {
     }
 
     // Inform ImGui so it doesn't overwrite on its own render pass
-    ImGui::SetMouseCursor(targetImGui);
+    if (ImGui::GetCurrentContext()) { ImGui::SetMouseCursor(targetImGui); }
 
     // Apply native hardware cursor directly via SDL
     SetSdlCursor(targetShape);

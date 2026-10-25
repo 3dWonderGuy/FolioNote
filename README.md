@@ -31,9 +31,14 @@ While the public GitHub repository is being structured for formal issue tracking
 
 ##  Core Features & Technical Highlights
 
-###  Handwriting & Inking Engine
-* **High-Frequency Telemetry:** Ingests hardware digitizer events at 240–480 Hz with sub-frame presentation.
-* **Physics-Based Smoothing:** Customizable pen physics
+### ✒️ Handwriting & Inking Engine (Folio-Sketch + GPU Acceleration)
+* **High-Frequency Telemetry:** Ingests hardware digitizer events at 240–480 Hz with sub-frame presentation, low jitter filtering, and hardware palm rejection.
+* **Folio-Sketch Computational Geometry:** Standalone vector mathematics pipeline generating continuous miter-clipped ribbons, swallowtail pruning, and oriented geometric nib profiles (Round, Square blade, Chisel diamond).
+* **Physics-Based Smoothing & Prediction:** Second-order damped harmonic oscillators (mass-drag-spring differential equations), dynamic velocity-based thinning, and Kalman predictive stroke continuation for near-zero perceived pen latency.
+* **Dual-Tier Hardware-Accelerated Rendering:**
+  * **SDL_GPU Pure GPU Acceleration:** Direct triangle-strip mesh rasterization with subpixel analytical anti-aliasing via modern graphics APIs (Vulkan, Metal, Direct3D 12).
+  * **GLES / Blend2D Dynamic Fallback:** Automatic runtime fallback to OpenGL ES 3.2 or JIT-compiled Blend2D 2D vector software rasterizer on constrained or legacy embedded platforms.
+  * **Physically Textured Graphite:** 2D periodic toroidal noise synthesis for realistic pencil-on-paper tooth texture and contact patches.
 
 ###  Global Instant Search (UNDER DEVELOPMENT)
 * **Embedded SQLite FTS5 Engine:** Full-text search index built directly into the `.notebook` package bundle.
@@ -116,12 +121,15 @@ All core third-party dependencies are vendored directly in `third_party/` to gua
 |---|---|---|
 | **Core Language** | **C++20** (`cxx_std_20`) | RAII lifetime management, concepts, standard `<filesystem>`, `<chrono>`, `<format>`, and zero-cost abstractions across all platforms. |
 | **Windowing & Input** | **SDL3** | Multi-backend window creation, raw hardware digitizer & stylus telemetry (pressure, tilt, distance at 240–480 Hz), multi-touch gestures, and audio. |
+| **GPU Rasterization** | **SDL_GPU** (SDL3) | Modern compute/graphics abstraction driving Vulkan, Metal, and Direct3D 12 pipelines with GLES 3.2 fallback for inking mesh rasterization. |
 | **Image Decoding** | **SDL_image** (SDL3_image) | High-performance image ingestion and decoding supporting PNG, WebP, JPEG, AVIF, TIFF, and BMP formats. |
+| **Inking Engine** | **Folio-Sketch** | Computational 2D vector geometry, ribbon generation, swallowtail pruning, oriented nib profiles (Round/Square/Chisel), and GPU mesh synthesis. |
 | **2D Vector Engine** | **Blend2D** | High-performance 2D vector software rasterizer utilizing dynamic JIT compilation for multithreaded rendering. |
 | **JIT Compiler** | **AsmJit** | Dynamic machine code generation library powering Blend2D's high-speed pipeline compilation on x86/x64 architectures. |
 | **Stroke Physics** | **Google Ink Stroke Modeler** | Physics-based stroke smoothing using mass-drag-spring differential equations, velocity-based line weight modulation, and real-time path prediction. |
 | **Algorithm Toolkit** | **Abseil-cpp** | Foundational Google C++ algorithms, containers, and mathematical primitives powering the Ink Stroke Modeler pipeline. |
 | **UI Framework** | **Dear ImGui (Docking)** | Immediate-mode desktop UI framework powering custom ribbon bars, sidebars, dockable panels, theme styling, and telemetry debug overlays. |
+| **Declarative UI** | **Slint (slint-cpp)** | Reactive declarative UI toolkit powering the modern Settings Studio with tabbed navigation, window state, and inking engine tuning. |
 | **Vector Icons & SVG** | **LunaSVG & PlutoVG** | Resolution-independent SVG parsing and rasterization with OpenGL texture caching for UI ribbons, toolbar icons, and vector exports. |
 | **Database & Search** | **SQLite3 (WAL + FTS5 + JSON1)** | Embedded transactional storage for document hierarchies, table schemas, metadata, and full-text search with BM25 relevance ranking. |
 | **PDF Engine** | **Google PDFium** | High-fidelity native PDF document parser, page renderer, text selection/search engine, and bookmark extraction subsystem. |
@@ -154,18 +162,19 @@ FolioNote/
 │   ├── test_storage.cpp            # SQLite schema migration and .ink binary serialization tests
 │   └── test_thread_pool.cpp        # Concurrency and worker thread pool stress tests
 ├── third_party/                    # Statically linked vendored dependencies
-│   ├── SDL/                        # SDL3 windowing, events, and raw digitizer telemetry
+│   ├── Folio-Sketch/               # Computational vector inking engine & GPU mesh builder
+│   ├── SDL/                        # SDL3 windowing, events, SDL_GPU, and raw digitizer telemetry
 │   ├── SDL_image/                  # SDL3 image format decoding library
 │   ├── abseil-cpp/                 # Google Abseil foundation library
 │   ├── asmjit/                     # Dynamic JIT assembler for Blend2D
 │   ├── blend2d/                    # High-performance 2D vector software rasterizer
 │   ├── freetype/                   # FreeType 2 font engine
 │   ├── imgui/                      # Dear ImGui (Docking branch) immediate-mode UI
-│   ├── ink-stroke-modeler/         # Google Ink physical smoothing and prediction
 │   ├── libvlc/                     # libVLC media player SDK (Windows/Linux playback)
 │   ├── lunasvg/                    # LunaSVG & PlutoVG vector graphics rendering
 │   ├── nlohmann/                   # nlohmann/json modern C++ JSON parser
 │   ├── pdfium/                     # Google PDFium native PDF engine
+│   ├── slint/                      # Slint declarative modern UI C++ toolkit
 │   ├── sqlite3/                    # SQLite3 embedded database (WAL, FTS5, JSON1)
 │   └── webview/                    # Lightweight webview wrapper for web embeds
 └── src/
@@ -188,6 +197,7 @@ FolioNote/
     │   │   ├── library/            # Multi-library discovery (.foliolib), quarantine (.trash), cloning
     │   │   └── session/            # DocumentSession modular facades (navigation, canvas ops, history)
     │   ├── export/                 # Exporters for PDF, SVG, PNG, and portable .fnb packages
+    │   ├── gpu/                    # SDL_GPU and GLES hardware-accelerated inking shaders & pipelines
     │   ├── history/                # Per-page isolated CommandHistory undo/redo stacks
     │   ├── import/                 # Importers for external PDFs, images, and .fnb archives
     │   ├── ink_engine/             # Digitizer stroke smoothing, pressure curves, and spline generation
@@ -211,11 +221,12 @@ FolioNote/
     │   ├── paths/                  # Unicode path math, \\?\ long paths, and OS document roots
     │   ├── storage/                # Crash-resilient atomic persistence (.tmp, fsync), mmap, and logging
     │   └── platform/               # Native OS shell dialogs (Win32, Linux, macOS) & package branding
-    ├── ui/                         # Dear ImGui presentation layer
+    ├── ui/                         # Presentation layer (Dear ImGui + Slint)
     │   ├── components/             # Reusable UI widgets (color wheels, sliders, custom buttons)
     │   ├── framework/              # UI builder, sidebar layout, ribbon toolbar, docking chrome
     │   ├── overlays/               # Floating HUDs, tool pickers, zoom indicators, global search modal
     │   ├── shell/                  # Custom window title bar, status bar, and dialog popups
+    │   ├── slint/                  # Slint declarative Settings Studio UI specifications & bridges
     │   └── views/                  # Canvas viewports, library organizer view, and settings panel
     └── utils/                      # Thread-safe utilities and foundation helpers
         ├── error_codes.hpp         # Standardized error code enumeration and diagnostics

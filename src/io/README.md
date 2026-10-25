@@ -53,35 +53,35 @@ src/io/
 
 | File | Type | Lines | Role & Responsibilities |
 | :--- | :--- | :--- | :--- |
-| [`file_manager.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/facade/file_manager.hpp) | Header | ~250 | Public subsystem facade exposing all operations to application domains (`PageRepository`, `DocumentSession`, `ExportManager`, etc.). Retains backward compatibility for all calls. |
-| [`file_manager.cpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/facade/file_manager.cpp) | Source | ~280 | Implements recursive directory tree cloning (`CopyDirectoryTree`), folder removal (`RemoveDirectoryRecursive`), directory enumeration (`ListEntries`), and equivalence checks. |
+| [`file_manager.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/facade/file_manager.hpp) | Header | ~250 | Public subsystem facade exposing all operations to application domains (`PageRepository`, `DocumentSession`, `ExportManager`, etc.). Retains backward compatibility for all calls. |
+| [`file_manager.cpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/facade/file_manager.cpp) | Source | ~280 | Implements recursive directory tree cloning (`CopyDirectoryTree`), folder removal (`RemoveDirectoryRecursive`), directory enumeration (`ListEntries`), and equivalence checks. |
 
 ### 3.2 Paths & Environmental Abstraction (`src/io/paths/`)
 
 | File | Type | Lines | Role & Responsibilities |
 | :--- | :--- | :--- | :--- |
-| [`path_utils.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/paths/path_utils.hpp) | Header | ~95 | Defines path canonicalization, delimiter normalization (`\` $\rightarrow$ `/`), base name/extension extraction, parent navigation, and UTF-8 $\leftrightarrow$ UTF-16 wide string transformations. |
-| [`path_utils.cpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/paths/path_utils.cpp) | Source | ~215 | Implements NT extended-length prefixing (`\\?\`), trailing separator stripping, multi-segment joins, and read-only attribute clearing on Windows. |
-| [`app_directories.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/paths/app_directories.hpp) | Header | ~85 | Declares resolution methods for application roots (`FolioNote/`), user libraries (`Libraries/`), configuration (`config.json`), cache, exports, and active package roots. |
-| [`app_directories.cpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/paths/app_directories.cpp) | Source | ~225 | Thread-safe resolution of OS folders (`SHGetKnownFolderPath` on Windows, `SDL_GetPrefPath` on Android/POSIX); manages active notebook package relative paths. |
+| [`path_utils.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/paths/path_utils.hpp) | Header | ~95 | Defines path canonicalization, delimiter normalization (`\` $\rightarrow$ `/`), base name/extension extraction, parent navigation, and UTF-8 $\leftrightarrow$ UTF-16 wide string transformations. |
+| [`path_utils.cpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/paths/path_utils.cpp) | Source | ~215 | Implements NT extended-length prefixing (`\\?\`), trailing separator stripping, multi-segment joins, and read-only attribute clearing on Windows. |
+| [`app_directories.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/paths/app_directories.hpp) | Header | ~85 | Declares resolution methods for application roots (`FolioNote/`), user libraries (`Libraries/`), configuration (`config.json`), cache, exports, and active package roots. |
+| [`app_directories.cpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/paths/app_directories.cpp) | Source | ~225 | Thread-safe resolution of OS folders (`SHGetKnownFolderPath` on Windows, `SDL_GetPrefPath` on Android/POSIX); manages active notebook package relative paths. |
 
 ### 3.3 Disk Persistence & Streaming (`src/io/storage/`)
 
 | File | Type | Lines | Role & Responsibilities |
 | :--- | :--- | :--- | :--- |
-| [`file_writer.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/storage/file_writer.hpp) | Header | ~45 | Core atomic persistence contract: `WriteString`, `WriteBuffer`, `CreateParentDirectories`. |
-| [`file_writer.cpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/storage/file_writer.cpp) | Source | ~235 | Two-phase staging execution: stages to `.tmp.<ts>_<rand>`, flushes OS cache (`fflush`), forces physical disk write (`_commit`/`fsync`), verifies byte count, clears readonly attributes, and swaps via `MoveFileExW` / `rename`. Includes retry loops for cloud-synced / antivirus lock contention. |
-| [`file_reader.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/storage/file_reader.hpp) | Header | ~100 | Zero-copy `MemoryMappedView` abstraction, binary and string loading, stream wrapping (`SDL_IOStream`), FNV-1a 64-bit hashing, and fast PDF trailer parsing. |
-| [`file_reader.cpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/storage/file_reader.cpp) | Source | ~395 | Win32 `CreateFileW`/`CreateFileMappingW`/`MapViewOfFile` and POSIX `open`/`mmap` zero-copy memory mapping, FNV-1a hash calculation, and fast PDF page counting. |
-| [`file_logger.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/storage/file_logger.hpp) | Header | ~210 | High-performance thread-safe session logger with size-based log file rotation (`folionote_<session>.log`) and in-memory ring-buffer cache for the in-app debug overlay. |
+| [`file_writer.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/storage/file_writer.hpp) | Header | ~45 | Core atomic persistence contract: `WriteString`, `WriteBuffer`, `CreateParentDirectories`. |
+| [`file_writer.cpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/storage/file_writer.cpp) | Source | ~235 | Two-phase staging execution: stages to `.tmp.<ts>_<rand>`, flushes OS cache (`fflush`), forces physical disk write (`_commit`/`fsync`), verifies byte count, clears readonly attributes, and swaps via `MoveFileExW` / `rename`. Includes retry loops for cloud-synced / antivirus lock contention. |
+| [`file_reader.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/storage/file_reader.hpp) | Header | ~100 | Zero-copy `MemoryMappedView` abstraction, binary and string loading, stream wrapping (`SDL_IOStream`), FNV-1a 64-bit hashing, and fast PDF trailer parsing. |
+| [`file_reader.cpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/storage/file_reader.cpp) | Source | ~395 | Win32 `CreateFileW`/`CreateFileMappingW`/`MapViewOfFile` and POSIX `open`/`mmap` zero-copy memory mapping, FNV-1a hash calculation, and fast PDF page counting. |
+| [`file_logger.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/storage/file_logger.hpp) | Header | ~210 | High-performance thread-safe session logger with size-based log file rotation (`folionote_<session>.log`) and in-memory ring-buffer cache for the in-app debug overlay. |
 
 ### 3.4 Platform Shell & OS Integrations (`src/io/platform/`)
 
 | File | Type | Lines | Role & Responsibilities |
 | :--- | :--- | :--- | :--- |
-| [`system_dialogs.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/platform/system_dialogs.hpp) | Header | ~40 | Modal file picker dialogs (`ShowOpenFileDialog`, `ShowSaveFileDialog`) and external application launching (`OpenWithDefaultApp`). |
-| [`system_dialogs.cpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/platform/system_dialogs.cpp) | Source | ~190 | Native OS implementations: Win32 `GetOpenFileNameW` / `ShellExecuteW`, macOS AppleScript `choose file`, and Linux `zenity` / `kdialog`. |
-| [`package_marker.hpp`](file:///c:/SoftwareDevelopment/FolioNote/src/io/platform/package_marker.hpp) | Header | ~150 | Windows Explorer folder package customizer: generates hidden/system `desktop.ini`, applies `FILE_ATTRIBUTE_READONLY` on directory packages, and broadcasts `SHChangeNotify` so `.notebook` packages render with custom icons. |
+| [`system_dialogs.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/platform/system_dialogs.hpp) | Header | ~40 | Modal file picker dialogs (`ShowOpenFileDialog`, `ShowSaveFileDialog`) and external application launching (`OpenWithDefaultApp`). |
+| [`system_dialogs.cpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/platform/system_dialogs.cpp) | Source | ~190 | Native OS implementations: Win32 `GetOpenFileNameW` / `ShellExecuteW`, macOS AppleScript `choose file`, and Linux `zenity` / `kdialog`. |
+| [`package_marker.hpp`](file:///home/odysseus/Documents/GitHub/FolioNote/src/io/platform/package_marker.hpp) | Header | ~150 | Windows Explorer folder package customizer: generates hidden/system `desktop.ini`, applies `FILE_ATTRIBUTE_READONLY` on directory packages, and broadcasts `SHChangeNotify` so `.notebook` packages render with custom icons. |
 
 ---
 

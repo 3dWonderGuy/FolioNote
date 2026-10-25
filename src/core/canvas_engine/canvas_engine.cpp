@@ -3,20 +3,24 @@
 #include "core/document/document_session.hpp"
 #include "core/gpu/gpu_ink_manager.hpp"
 #include "utils/logger.hpp"
-#include <folio_sketch/ink_generator.hpp>
+#include "core/ink_engine/ink_engine.hpp"
 #include <algorithm>
 #include <cmath>
 
-void CanvasEngine::Init(int initialW, int initialH, float displayDpi) {
+void CanvasEngine::Init(int initialW, int initialH, float displayDpi, bool createGlTexture) {
     transform.SetDPI(displayDpi);
     Folio::GpuInkManager::Instance().Init();
 
-    glGenTextures(1, &glTexture);
-    glBindTexture(GL_TEXTURE_2D, glTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (createGlTexture) {
+        glGenTextures(1, &glTexture);
+        glBindTexture(GL_TEXTURE_2D, glTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    } else {
+        glTexture = 0;
+    }
 
     Resize(initialW, initialH);
 }
@@ -36,8 +40,10 @@ void CanvasEngine::Resize(int width, int height) {
 
     compositeSurface.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
 
-    glBindTexture(GL_TEXTURE_2D, glTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, allocatedCapacityW, allocatedCapacityH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    if (glTexture != 0) {
+        glBindTexture(GL_TEXTURE_2D, glTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, allocatedCapacityW, allocatedCapacityH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    }
 #else
     if (viewportW > allocatedCapacityW || viewportH > allocatedCapacityH) {
         allocatedCapacityW = std::max(allocatedCapacityW * 2, viewportW);
@@ -48,8 +54,10 @@ void CanvasEngine::Resize(int width, int height) {
 
         compositeSurface.create(allocatedCapacityW, allocatedCapacityH, BL_FORMAT_PRGB32);
 
-        glBindTexture(GL_TEXTURE_2D, glTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, allocatedCapacityW, allocatedCapacityH, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+        if (glTexture != 0) {
+            glBindTexture(GL_TEXTURE_2D, glTexture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, allocatedCapacityW, allocatedCapacityH, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+        }
     }
 #endif
 
@@ -216,16 +224,42 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         InkGenerator::SetDebugCapture(true);
     }
 
-    if (devMode || debugShowInkWireframe) {
-        liveLayer.SetCustomFeedbackRenderer([this, &visibleBakedObjects](BLContext& ctx, const Viewport& vp) {
+    const bool drawBlend2DRuler = (glTexture == 0 && ruler.IsEnabled());
+    if (devMode || debugShowInkWireframe || drawBlend2DRuler) {
+        liveLayer.SetCustomFeedbackRenderer([this, &visibleBakedObjects, drawBlend2DRuler](BLContext& ctx, const Viewport& vp) {
+            if (drawBlend2DRuler) {
+                ctx.save();
+                ctx.set_transform(vp.worldToScreenMatrix);
+                Point2D c = ruler.GetCenter();
+                double L = ruler.GetLengthMm();
+                double W = ruler.GetWidthMm();
+                ctx.translate(c.x, c.y);
+                ctx.rotate(ruler.GetAngleRad());
+                ctx.set_fill_style(BLRgba32(0x1E, 0x29, 0x3B, 0xB8));
+                ctx.fill_round_rect(BLRoundRect(-L * 0.5, -W * 0.5, L, W, 3.0));
+                ctx.set_stroke_style(BLRgba32(0x38, 0xBD, 0xF8, 0xE0));
+                ctx.set_stroke_width(0.6);
+                ctx.stroke_round_rect(BLRoundRect(-L * 0.5, -W * 0.5, L, W, 3.0));
+                ctx.set_stroke_style(BLRgba32(0xCB, 0xD5, 0xE1, 0xCC));
+                ctx.set_stroke_width(0.25);
+                for (double x = -L * 0.5 + 5.0; x <= L * 0.5 - 5.0; x += 5.0) {
+                    bool isCm = (std::abs(std::fmod(x + L * 0.5, 10.0)) < 0.1);
+                    double tickH = isCm ? 5.0 : 2.8;
+                    ctx.stroke_line(x, -W * 0.5, x, -W * 0.5 + tickH);
+                    ctx.stroke_line(x,  W * 0.5, x,  W * 0.5 - tickH);
+                }
+                ctx.set_fill_style(BLRgba32(0x0F, 0x17, 0x2A, 0xE8));
+                ctx.fill_circle(0.0, 0.0, 11.0);
+                ctx.set_stroke_style(BLRgba32(0x38, 0xBD, 0xF8, 0xFF));
+                ctx.set_stroke_width(0.5);
+                ctx.stroke_circle(0.0, 0.0, 11.0);
+                ctx.restore();
+            }
             if (devMode) {
                 RenderDevModeAABBs(ctx, visibleBakedObjects, transform);
             }
             if (debugShowInkWireframe) {
-                ctx.save();
-                ctx.set_transform(vp.worldToScreenMatrix);
-                InkGenerator::RenderDebugOverlay(ctx, InkGenerator::GetLastDebugInfo(), vp.GetEffectiveScale());
-                ctx.restore();
+                // InkGenerator::RenderDebugOverlay was removed in latest Folio-Sketch.
             }
         });
     } else {
@@ -274,13 +308,11 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     }
 
     BLContext compCtx(compositeSurface);
-    if (!canUsePartialUpload) {
-        compCtx.clear_all();
-    }
-    
     if (canUsePartialUpload) {
+        compCtx.clip_to_rect(BLRectI(dirtyX, dirtyY, dirtyW, dirtyH));
         Folio::GpuInkManager::Instance().SetActiveClipRect(dirtyX, dirtyY, dirtyW, dirtyH);
     } else {
+        compCtx.clear_all();
         Folio::GpuInkManager::Instance().SetActiveClipRect(0, 0, viewportW, viewportH);
     }
 
@@ -309,54 +341,64 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         }
     }
 
-    BLImageData imgData;
-    compositeSurface.get_data(&imgData);
-    glBindTexture(GL_TEXTURE_2D, glTexture);
-
     if (canUsePartialUpload) {
         lastUploadedBytes = static_cast<size_t>(dirtyW) * static_cast<size_t>(dirtyH) * 4;
         lastUploadWasPartial = true;
+        lastDirtyX = dirtyX;
+        lastDirtyY = dirtyY;
         lastDirtyW = dirtyW;
         lastDirtyH = dirtyH;
-#if defined(__ANDROID__)
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
-        glPixelStorei(GL_UNPACK_SKIP_PIXELS, dirtyX);
-        glPixelStorei(GL_UNPACK_SKIP_ROWS, dirtyY);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, dirtyX, dirtyY, dirtyW, dirtyH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-#else
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
-        glPixelStorei(GL_UNPACK_SKIP_PIXELS, dirtyX);
-        glPixelStorei(GL_UNPACK_SKIP_ROWS, dirtyY);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, dirtyX, dirtyY, dirtyW, dirtyH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-#endif
     } else {
         lastUploadedBytes = static_cast<size_t>(viewportW) * static_cast<size_t>(viewportH) * 4;
         lastUploadWasPartial = false;
+        lastDirtyX = 0;
+        lastDirtyY = 0;
         lastDirtyW = viewportW;
         lastDirtyH = viewportH;
+    }
+
+    if (glTexture != 0) {
+        BLImageData imgData;
+        compositeSurface.get_data(&imgData);
+        glBindTexture(GL_TEXTURE_2D, glTexture);
+
+        if (canUsePartialUpload) {
 #if defined(__ANDROID__)
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+            glPixelStorei(GL_UNPACK_SKIP_PIXELS, dirtyX);
+            glPixelStorei(GL_UNPACK_SKIP_ROWS, dirtyY);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, dirtyX, dirtyY, dirtyW, dirtyH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+            glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 #else
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+            glPixelStorei(GL_UNPACK_SKIP_PIXELS, dirtyX);
+            glPixelStorei(GL_UNPACK_SKIP_ROWS, dirtyY);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, dirtyX, dirtyY, dirtyW, dirtyH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+            glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 #endif
+        } else {
+#if defined(__ANDROID__)
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+#else
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(imgData.stride / 4));
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, viewportW, viewportH, GL_BGRA, GL_UNSIGNED_BYTE, imgData.pixel_data);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+#endif
+        }
     }
 
     m_prevLiveScreenBounds = currLiveBounds;

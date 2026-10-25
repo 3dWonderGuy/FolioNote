@@ -731,12 +731,12 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
 
         InfillStyle infill;
         infill.type           = ToInfillType(fillType);
-        infill.primaryColor   = fillColor;
-        infill.secondaryColor = secondaryFillColor;
+        infill.primaryColor   = ToColorRgba(fillColor);
+        infill.secondaryColor = ToColorRgba(secondaryFillColor);
         infill.outlineWidthMm = strokeWidth / scaleFactor;
-        infill.bounds         = BLBox(worldX, worldY, worldX + worldWidth, worldY + worldHeight);
+        infill.bounds         = Folio::BoundingBox2D(worldX, worldY, worldX + worldWidth, worldY + worldHeight);
 
-        InkGenerator::FillInfill(ctx, path, infill);
+        RenderShapeInfill(ctx, path, infill);
 
         ctx.restore();
     }

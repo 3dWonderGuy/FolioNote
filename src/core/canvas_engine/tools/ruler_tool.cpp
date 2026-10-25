@@ -132,7 +132,7 @@ void RulerTool::RenderImGui(const CanvasTransform& transform,
                             const ImVec2& canvasOrigin,
                             const ImVec2& canvasSize,
                             bool isDarkMode) {
-    if (!m_enabled) {
+    if (!m_enabled || !ImGui::GetCurrentContext()) {
         m_dragMode = DragMode::None;
         return;
     }

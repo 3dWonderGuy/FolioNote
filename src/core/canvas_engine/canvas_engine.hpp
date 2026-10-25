@@ -180,6 +180,8 @@ public:
     // Telemetry: Actual PCIe texture upload metrics for diagnostics and overlays
     size_t lastUploadedBytes = 0;
     bool lastUploadWasPartial = false;
+    int lastDirtyX = 0;
+    int lastDirtyY = 0;
     int lastDirtyW = 0;
     int lastDirtyH = 0;
     double pcieBandwidthMBps = 0.0;
@@ -204,7 +206,7 @@ public:
     int allocatedCapacityW = 0;
     int allocatedCapacityH = 0;
 
-    void Init(int initialW, int initialH, float displayDpi = 96.0f);
+    void Init(int initialW, int initialH, float displayDpi = 96.0f, bool createGlTexture = true);
     void Resize(int width, int height);
     void SetDPI(float dpi) noexcept;
     void Pan(double screenDx, double screenDy) noexcept;

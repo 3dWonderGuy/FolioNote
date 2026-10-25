@@ -129,7 +129,7 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
                 canvas.isDirty = true;
             } else if ((stateMachine.GetActiveDeviceTool() == InteractionState::Selecting ||
                         stateMachine.currentAction == InteractionState::Selecting) &&
-                       !ImGui::GetIO().WantCaptureKeyboard) {
+                       !(ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureKeyboard)) {
                 auto activePage = session.GetActivePage();
                 if (activePage) {
                     // Check if a TextBoxObject is currently selected: typing activates editing on it!
@@ -217,7 +217,7 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
                 canvas.isDirty = true;
             } else if ((stateMachine.GetActiveDeviceTool() == InteractionState::Selecting ||
                         stateMachine.currentAction == InteractionState::Selecting) &&
-                       !ImGui::GetIO().WantCaptureKeyboard) {
+                       !(ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureKeyboard)) {
                 // If a TextBoxObject is selected and user hits Backspace, Enter, or navigation key, activate editor
                 if (event.key.key == SDLK_BACKSPACE || event.key.key == SDLK_DELETE ||
                     event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) {
@@ -315,10 +315,12 @@ void InputManager::ProcessEvent(const SDL_Event& event, CanvasEngine& canvas, Do
     }
 
     bool imguiHasFocus = false;
-    if (isOverOverlayOrWidget) {
-        imguiHasFocus = !isCanvasDragging;
-    } else {
-        imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !(wasCanvasImageHovered || stateMachine.isPdfCanvasHovered) && !isCanvasDragging);
+    if (g) {
+        if (isOverOverlayOrWidget) {
+            imguiHasFocus = !isCanvasDragging;
+        } else {
+            imguiHasFocus = (ImGui::GetIO().WantCaptureMouse && !(wasCanvasImageHovered || stateMachine.isPdfCanvasHovered) && !isCanvasDragging);
+        }
     }
     
     // Diagnostic log for genuine physical mouse clicks (excluding synthetic SDL touch/pen mouse events)

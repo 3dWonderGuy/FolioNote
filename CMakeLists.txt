@@ -14,6 +14,9 @@ if(NOT WIN32 AND NOT ANDROID)
     set(CMAKE_MAKE_PROGRAM "/usr/bin/ninja" CACHE FILEPATH "Path to ninja build program" FORCE)
 endif()
 
+# --- Global Compile Definitions for Inking / Blend2D Integration ---
+add_compile_definitions(BLEND2D_H=1 BL_PATH_H=1)
+
 # --- Output directory configuration ---
 if(NOT ANDROID)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
@@ -491,7 +494,13 @@ if(FOLIONOTE_ENABLE_SLINT AND NOT ANDROID)
         message(STATUS "Slint C++ SDK found — enabling parallel Slint Settings & Window Studio")
         target_compile_definitions(${APP_TARGET} PRIVATE FOLIONOTE_HAS_SLINT=1)
         target_link_libraries(${APP_TARGET} PRIVATE Slint::Slint)
-        slint_target_sources(${APP_TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/slint/settings_studio.slint")
+        slint_target_sources(${APP_TARGET}
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/slint/settings_studio.slint"
+        )
+        slint_target_sources(${APP_TARGET}
+            NAMESPACE "MobileSlint"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/slint/mobile/mobile_shell.slint"
+        )
         if(UNIX AND NOT APPLE)
             target_link_options(${APP_TARGET} PRIVATE "-Wl,-rpath-link,${CMAKE_CURRENT_SOURCE_DIR}/third_party/slint/lib")
             set_target_properties(${APP_TARGET} PROPERTIES
@@ -714,6 +723,7 @@ if(NOT ANDROID AND FOLIONOTE_BUILD_TESTS)
     )
 
     target_link_libraries(test_physics_model PRIVATE
+        blend2d::blend2d
         FolioSketch::FolioSketch
         SDL3::SDL3
         OpenGL::GL

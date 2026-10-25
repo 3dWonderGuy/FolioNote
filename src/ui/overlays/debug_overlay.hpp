@@ -7,7 +7,7 @@
 #include "app/settings_manager.hpp"
 #include "io/storage/file_logger.hpp"
 #include "core/document/document_session.hpp"
-#include <folio_sketch/ink_generator.hpp>
+#include "core/ink_engine/ink_engine.hpp"
 #include <deque>
 #include <string>
 #include <algorithm>

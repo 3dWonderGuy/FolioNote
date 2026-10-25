@@ -61,6 +61,7 @@ void FormatMmSs(double sec, char* buf, size_t bufSize) {
 
 void AudioOverlayUI::Render(AudioObject& audio, const CanvasTransform& transform,
                             const ImVec2& canvasOrigin, std::function<void()> onDirty) {
+    if (!ImGui::GetCurrentContext()) return;
     // Poll the underlying playback engine for updated progress
     audio.UpdateProgress();
 

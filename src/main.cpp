@@ -42,6 +42,8 @@
 
 
 #include "app/app.hpp"
+#include "app/settings_manager.hpp"
+#include "ui/slint/mobile/slint_mobile_app.hpp"
 #include <SDL3/SDL_main.h>
 
 #include "utils/printer_installer.hpp"
@@ -175,20 +177,40 @@ int main(int argc, char* argv[])
 
     int exitCode = 0;
     try {
-        Application app;
-        if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
-            std::cerr << "[FolioNote] Initialization failed: " << SDL_GetError() << std::endl;
+        SettingsManager::Instance().Load();
+        const auto uiMode = SettingsManager::Instance().uiMode;
+        if (uiMode == UIMode::MobileSlint) {
+            std::cout << "[FolioNote] Launching in Mobile Slint Shell mode...\n";
+            Folio::SlintMobileApplication mobileApp;
+            if (!mobileApp.Init("FolioNote (Slint Shell)", 1100, 780, initialImportPath)) {
+                std::cerr << "[FolioNote] Mobile shell initialization failed: " << SDL_GetError() << std::endl;
 #if defined(_WIN32)
-            if (hSingleInstanceMutex) {
-                CloseHandle(hSingleInstanceMutex);
-            }
-            CoUninitialize();
+                if (hSingleInstanceMutex) {
+                    CloseHandle(hSingleInstanceMutex);
+                }
+                CoUninitialize();
 #endif
-            return -1;
-        }
+                return -1;
+            }
+            mobileApp.Run();
+            mobileApp.Shutdown();
+        } else {
+            std::cout << "[FolioNote] Launching in Desktop ImGui Shell mode...\n";
+            Application app;
+            if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
+                std::cerr << "[FolioNote] Initialization failed: " << SDL_GetError() << std::endl;
+#if defined(_WIN32)
+                if (hSingleInstanceMutex) {
+                    CloseHandle(hSingleInstanceMutex);
+                }
+                CoUninitialize();
+#endif
+                return -1;
+            }
 
-        app.Run();
-        app.Shutdown();
+            app.Run();
+            app.Shutdown();
+        }
     } catch (const std::exception& e) {
 #if defined(__ANDROID__)
         __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "Fatal unhandled exception: %s", e.what());

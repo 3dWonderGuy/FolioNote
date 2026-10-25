@@ -791,9 +791,13 @@ public:
             devTelemetry.isVisible = !devTelemetry.isVisible;
         }, 61, false, "telemetry", 0, "tools.telemetry", "Tools"));
 
-        reg.RegisterAction(Folio::UIAction("Open Slint Settings & Window Studio", "F4", "🎛", false, true, false, [this]() {
-            slintStudio.Toggle();
-        }, 62, false, "settings", 0, "tools.slint_studio", "Tools"));
+        reg.RegisterAction(Folio::UIAction("Switch UI Shell (Desktop <-> Mobile)", "F4", "🔄", false, true, false, [this]() {
+            auto& sm = SettingsManager::Instance();
+            sm.uiMode = (sm.uiMode == UIMode::DesktopImGui) ? UIMode::MobileSlint : UIMode::DesktopImGui;
+            sm.SaveSettings();
+            LOG_INFO(General, "F4: Switched UI mode in settings.json to " + std::string(UIModeToString(sm.uiMode)) + ". Exiting for shell switch...");
+            this->running = false;
+        }, 62, false, "settings", 0, "tools.switch_ui_shell", "Tools"));
 
         reg.RegisterAction(Folio::UIAction("Toggle Inking Tuning Studio", "F5", "⚙", false, true, false, [this]() {
             tuningStudio.isVisible = !tuningStudio.isVisible;
@@ -830,7 +834,7 @@ public:
 
         // Developer overlays and diagnostic toggles
         if (key == SDLK_F3) { reg.Execute("tools.telemetry"); return true; }
-        if (key == SDLK_F4) { reg.Execute("tools.slint_studio"); return true; }
+        if (key == SDLK_F4) { reg.Execute("tools.switch_ui_shell"); return true; }
         if (key == SDLK_F5) { reg.Execute("tools.tuning"); return true; }
         if (key == SDLK_F6) { reg.Execute("tools.toolbar_demo"); return true; }
         if (key == SDLK_F11) { reg.Execute("view.toggle_fullscreen"); return true; }

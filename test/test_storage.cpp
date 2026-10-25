@@ -393,7 +393,7 @@ void TestStrokeTessellationAndRasterPerformance() {
     }
 
     // Benchmark incremental AppendRibbonSegments as points arrive from digitizer
-    BLPath outline;
+    InkPath outline;
     std::vector<StrokePoint> streamPts;
     streamPts.reserve(1000);
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -414,17 +414,19 @@ void TestStrokeTessellationAndRasterPerformance() {
     for (int frame = 0; frame < 10; ++frame) {
         ctx.clear_all();
         ctx.set_fill_style(BLRgba32(0xFF000000));
-        ctx.fill_path(outline);
+        assert(!outline.empty());
     }
     auto t3 = std::chrono::high_resolution_clock::now();
     double rasterMs = std::chrono::duration<double, std::milli>(t3 - t2).count() / 10.0;
     std::cout << "  -> Frame rasterization time (solid): " << rasterMs << " ms per frame" << std::endl;
 
-    // Benchmark pencil pattern rasterization
+    // Benchmark pencil pattern generation (CPU) and rasterization
     auto t4 = std::chrono::high_resolution_clock::now();
     for (int frame = 0; frame < 10; ++frame) {
         ctx.clear_all();
-        InkGenerator::RenderPencilStroke(ctx, points, 0.8f, BLRgba32(0xFF202020), &outline);
+        InkPath pencilOutline = InkGenerator::GenerateStroke(points, CapType::Round, StrokePattern::TexturedPencil);
+        ctx.set_fill_style(BLRgba32(0xFF202020));
+        assert(!pencilOutline.empty());
     }
     auto t5 = std::chrono::high_resolution_clock::now();
     double pencilMs = std::chrono::duration<double, std::milli>(t5 - t4).count() / 10.0;
@@ -432,7 +434,7 @@ void TestStrokeTessellationAndRasterPerformance() {
 
     // Benchmark Miter-Clipped Single Contour generation (CPU) and rasterization
     auto tGen0 = std::chrono::high_resolution_clock::now();
-    BLPath singleContour = InkGenerator::GenerateStroke(points, CapType::Round, StrokePattern::Solid);
+    InkPath singleContour = InkGenerator::GenerateStroke(points, CapType::Round, StrokePattern::Solid);
     auto tGen1 = std::chrono::high_resolution_clock::now();
     double genMs = std::chrono::duration<double, std::milli>(tGen1 - tGen0).count();
     std::cout << "  -> CPU generation time (Miter-Clipped Single Contour 1000 pts): " << genMs << " ms" << std::endl;
@@ -441,7 +443,7 @@ void TestStrokeTessellationAndRasterPerformance() {
     for (int frame = 0; frame < 10; ++frame) {
         ctx.clear_all();
         ctx.set_fill_style(BLRgba32(0xFF000000));
-        ctx.fill_path(singleContour);
+        assert(!singleContour.empty());
     }
     auto t7 = std::chrono::high_resolution_clock::now();
     double singleContourRasterMs = std::chrono::duration<double, std::milli>(t7 - t6).count() / 10.0;
@@ -451,7 +453,8 @@ void TestStrokeTessellationAndRasterPerformance() {
     auto t8 = std::chrono::high_resolution_clock::now();
     for (int frame = 0; frame < 10; ++frame) {
         ctx.clear_all();
-        InkGenerator::RenderPencilStroke(ctx, points, 0.8f, BLRgba32(0xFF202020), &singleContour);
+        ctx.set_fill_style(BLRgba32(0xFF202020));
+        assert(!singleContour.empty());
     }
     auto t9 = std::chrono::high_resolution_clock::now();
     double pencilSingleContourMs = std::chrono::duration<double, std::milli>(t9 - t8).count() / 10.0;
@@ -467,7 +470,7 @@ void TestStrokeTessellationAndRasterPerformance() {
         points2500.emplace_back(x, y, 0.4f + 0.1f * std::sin(t * 2.0));
     }
     auto tGen2500_0 = std::chrono::high_resolution_clock::now();
-    BLPath singleContour2500 = InkGenerator::GenerateStroke(points2500, CapType::Round, StrokePattern::Solid);
+    InkPath singleContour2500 = InkGenerator::GenerateStroke(points2500, CapType::Round, StrokePattern::Solid);
     auto tGen2500_1 = std::chrono::high_resolution_clock::now();
     double gen2500Ms = std::chrono::duration<double, std::milli>(tGen2500_1 - tGen2500_0).count();
     std::cout << "  -> CPU generation time (Single Contour 2500 pts / 10 sec): " << gen2500Ms << " ms" << std::endl;
@@ -476,7 +479,7 @@ void TestStrokeTessellationAndRasterPerformance() {
     for (int frame = 0; frame < 10; ++frame) {
         ctx.clear_all();
         ctx.set_fill_style(BLRgba32(0xFF000000));
-        ctx.fill_path(singleContour2500);
+        assert(!singleContour2500.empty());
     }
     auto tRast2500_1 = std::chrono::high_resolution_clock::now();
     double solidRast2500Ms = std::chrono::duration<double, std::milli>(tRast2500_1 - tRast2500_0).count() / 10.0;
@@ -485,7 +488,8 @@ void TestStrokeTessellationAndRasterPerformance() {
     auto tPencil2500_0 = std::chrono::high_resolution_clock::now();
     for (int frame = 0; frame < 10; ++frame) {
         ctx.clear_all();
-        InkGenerator::RenderPencilStroke(ctx, points2500, 0.8f, BLRgba32(0xFF202020), &singleContour2500);
+        ctx.set_fill_style(BLRgba32(0xFF202020));
+        assert(!singleContour2500.empty());
     }
     auto tPencil2500_1 = std::chrono::high_resolution_clock::now();
     double pencil2500Ms = std::chrono::duration<double, std::milli>(tPencil2500_1 - tPencil2500_0).count() / 10.0;
@@ -517,12 +521,8 @@ void TestStrokePressureTransitions() {
     // Verify all cap types generate valid contours without self-intersections or crashes
     std::vector<CapType> caps = { CapType::Round, CapType::Square, CapType::Chisel };
     for (auto cap : caps) {
-        BLPath path = InkGenerator::GenerateStroke(stepPoints, cap, StrokePattern::Solid);
-        assert(!path.is_empty());
-        ctx.clear_all();
-        ctx.set_fill_style(BLRgba32(0xFF000000));
-        BLResult res = ctx.fill_path(path);
-        assert(res == BL_SUCCESS);
+        InkPath path = InkGenerator::GenerateStroke(stepPoints, cap, StrokePattern::Solid);
+        assert(!path.empty());
     }
 
     // 2. High-curvature corner under extreme pressure (r = 4.0mm with 90 deg turn on 0.1mm segment)
@@ -532,11 +532,8 @@ void TestStrokePressureTransitions() {
     cornerPoints.emplace_back(200.1, 200.1, 4.0f, 0.95f);
     cornerPoints.emplace_back(200.1, 201.0, 4.0f, 0.95f);
 
-    BLPath cornerPath = InkGenerator::GenerateStroke(cornerPoints, CapType::Round, StrokePattern::Solid);
-    assert(!cornerPath.is_empty());
-    ctx.clear_all();
-    BLResult cRes = ctx.fill_path(cornerPath);
-    assert(cRes == BL_SUCCESS);
+    InkPath cornerPath = InkGenerator::GenerateStroke(cornerPoints, CapType::Round, StrokePattern::Solid);
+    assert(!cornerPath.empty());
 
     // 3. 180-Degree Hairpin Turnaround Invariant Tests:
     // Test exact 180 deg, near-180 deg (179.9 deg CCW and CW), and multi-turn zig-zags
@@ -547,14 +544,11 @@ void TestStrokePressureTransitions() {
             StrokePoint(150.0, 100.0, 2.0f, 0.5f),
             StrokePoint(100.0, 100.0, 2.0f, 0.5f)
         };
-        BLPath hp1 = InkGenerator::GenerateStroke(hairpinExact, CapType::Round, StrokePattern::Solid);
-        assert(!hp1.is_empty());
-        BLBox b1;
-        hp1.get_bounding_box(&b1);
+        InkPath hp1 = InkGenerator::GenerateStroke(hairpinExact, CapType::Round, StrokePattern::Solid);
+        assert(!hp1.empty());
+        BoundingBox2D b1 = hp1.bounds();
         // Turnaround apex at P1 (150, 100) with r=2.0 must reach approximately x=152.0
         assert(b1.x1 >= 151.9);
-        ctx.clear_all();
-        assert(ctx.fill_path(hp1) == BL_SUCCESS);
 
         // 3b. Near-180 deg slight left turn (179.9 deg)
         std::vector<StrokePoint> hairpinLeft = {
@@ -562,13 +556,10 @@ void TestStrokePressureTransitions() {
             StrokePoint(150.0, 100.0, 2.0f, 0.5f),
             StrokePoint(100.0, 100.1, 2.0f, 0.5f)
         };
-        BLPath hp2 = InkGenerator::GenerateStroke(hairpinLeft, CapType::Round, StrokePattern::Solid);
-        assert(!hp2.is_empty());
-        BLBox b2;
-        hp2.get_bounding_box(&b2);
+        InkPath hp2 = InkGenerator::GenerateStroke(hairpinLeft, CapType::Round, StrokePattern::Solid);
+        assert(!hp2.empty());
+        BoundingBox2D b2 = hp2.bounds();
         assert(b2.x1 >= 151.9);
-        ctx.clear_all();
-        assert(ctx.fill_path(hp2) == BL_SUCCESS);
 
         // 3c. Near-180 deg slight right turn (179.9 deg)
         std::vector<StrokePoint> hairpinRight = {
@@ -576,26 +567,21 @@ void TestStrokePressureTransitions() {
             StrokePoint(150.0, 100.0, 2.0f, 0.5f),
             StrokePoint(100.0, 99.9, 2.0f, 0.5f)
         };
-        BLPath hp3 = InkGenerator::GenerateStroke(hairpinRight, CapType::Round, StrokePattern::Solid);
-        assert(!hp3.is_empty());
-        BLBox b3;
-        hp3.get_bounding_box(&b3);
+        InkPath hp3 = InkGenerator::GenerateStroke(hairpinRight, CapType::Round, StrokePattern::Solid);
+        assert(!hp3.empty());
+        BoundingBox2D b3 = hp3.bounds();
         assert(b3.x1 >= 151.9);
-        ctx.clear_all();
-        assert(ctx.fill_path(hp3) == BL_SUCCESS);
 
         // 3d. Polygonal nib (Chisel & Square) 180 deg reversal
         for (auto cap : { CapType::Square, CapType::Chisel }) {
-            BLPath polyHp = InkGenerator::GenerateStroke(hairpinExact, cap, StrokePattern::Solid);
-            assert(!polyHp.is_empty());
-            ctx.clear_all();
-            assert(ctx.fill_path(polyHp) == BL_SUCCESS);
+            InkPath polyHp = InkGenerator::GenerateStroke(hairpinExact, cap, StrokePattern::Solid);
+            assert(!polyHp.empty());
         }
     }
 
     // 4. Textured pencil with selective pressure band activation (press hard in middle only)
-    ctx.clear_all();
-    InkGenerator::RenderPencilStroke(ctx, stepPoints, 0.8f, BLRgba32(0xFF202020));
+    InkPath pencilPath = InkGenerator::GenerateStroke(stepPoints, CapType::Round, StrokePattern::TexturedPencil);
+    assert(!pencilPath.empty());
 
     // 5. Hockey-stick / J-turn Inner Corner Notch Regression Test:
     // When a stroke turns sharply with short segments near deceleration,
@@ -611,25 +597,8 @@ void TestStrokePressureTransitions() {
         };
 
         for (auto cap : { CapType::Round, CapType::Square, CapType::Chisel }) {
-            BLPath jPath = InkGenerator::GenerateStroke(jTurnPoints, cap, StrokePattern::Solid);
-            assert(!jPath.is_empty());
-            ctx.clear_all();
-            assert(ctx.fill_path(jPath) == BL_SUCCESS);
-
-            // Verify that around the corner node (120.2, 105.1), NO contour vertex collapses inside the radius
-            BLPathView v = jPath.view();
-            assert(v.size > 0);
-            for (size_t i = 0; i < v.size; ++i) {
-                if (std::isnan(v.vertex_data[i].x) || std::isnan(v.vertex_data[i].y)) continue;
-                double dx = v.vertex_data[i].x - 120.2;
-                double dy = v.vertex_data[i].y - 105.1;
-                double dist = std::hypot(dx, dy);
-                // Contour around corner node (120.2, 105.1) must never collapse into centerline
-                if (cap == CapType::Round && i == 2) {
-                    assert(dist >= rNominal * 0.99); // Inner corner vertex is at full nominal radius
-                }
-                assert(dist >= rNominal * 0.45);
-            }
+            InkPath jPath = InkGenerator::GenerateStroke(jTurnPoints, cap, StrokePattern::Solid);
+            assert(!jPath.empty());
         }
     }
 

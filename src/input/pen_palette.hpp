@@ -50,7 +50,7 @@ struct PenTool {
         BLRgba32 effectiveColor = color;
         float clampedOpacity = std::clamp(opacity, 0.0f, 1.0f);
         effectiveColor.setA(static_cast<uint32_t>(static_cast<float>(color.a()) * clampedOpacity + 0.5f));
-        return StrokeStyle{ baseSize, capType, strokePattern, effectiveColor, isPressureEnabled, isTiltEnabled, isFlowSimEnabled };
+        return StrokeStyle{ baseSize, capType, strokePattern, ToColorRgba(effectiveColor), isPressureEnabled, isTiltEnabled, isFlowSimEnabled };
     }
 };
 

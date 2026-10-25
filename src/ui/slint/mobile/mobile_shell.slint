@@ -1,0 +1,1604 @@
+// FolioNote Mobile & Tablet Ribbon Shell
+// Touch-first, responsive interface with full Legacy Ribbon parity (Home, Insert, Draw, View, Shapes)
+// and 1:1 physical-pixel (1phx) zero-offset GPU/Blend2D canvas integration.
+
+import { Button, ScrollView } from "std-widgets.slint";
+
+export struct PageInfo {
+    title: string,
+    guid: string,
+    is_active: bool,
+}
+
+export struct SectionInfo {
+    title: string,
+    guid: string,
+    color_hex: string,
+    is_active: bool,
+}
+
+component RibbonTabButton inherits Rectangle {
+    in property <string> label: "Draw";
+    in property <bool> is_active: false;
+    in property <bool> is_accent: false;
+    callback clicked();
+
+    height: 32px;
+    min-width: 64px;
+    preferred-width: txt.preferred-width + 24px;
+    border-radius: 6px;
+    background: is_active ? #2563EB : (is_accent ? #1E3A8A90 : (touch.has-hover ? #33415590 : transparent));
+    border-width: is_active ? 1px : 0px;
+    border-color: #60A5FA;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    txt := Text {
+        text: root.label;
+        font-size: 13px;
+        font-weight: root.is_active ? 700 : 600;
+        color: root.is_active ? #FFFFFF : #CBD5E1;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component RibbonLargeButton inherits Rectangle {
+    in property <string> icon: "✏";
+    in property <string> label: "Tool";
+    in property <bool> is_selected: false;
+    in property <color> active_color: #2563EB;
+    in property <length> btn_width: 54px;
+    callback clicked();
+
+    width: root.btn_width;
+    height: 54px;
+    border-radius: 8px;
+    background: is_selected ? active_color : (touch.pressed ? #334155 : (touch.has-hover ? #1E293B : #0F172A90));
+    border-width: is_selected ? 1.5px : 1px;
+    border-color: is_selected ? #93C5FD : #33415580;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    VerticalLayout {
+        padding-top: 5px;
+        padding-bottom: 4px;
+        padding-left: 2px;
+        padding-right: 2px;
+        spacing: 2px;
+        alignment: center;
+
+        Text {
+            text: root.icon;
+            font-size: 17px;
+            color: root.is_selected ? #FFFFFF : #F1F5F9;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            font-size: 10px;
+            font-weight: root.is_selected ? 700 : 500;
+            color: root.is_selected ? #FFFFFF : #94A3B8;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+component RibbonPillButton inherits Rectangle {
+    in property <string> label: "1.0";
+    in property <bool> is_selected: false;
+    in property <length> pill_width: 38px;
+    callback clicked();
+
+    width: root.pill_width;
+    height: 24px;
+    border-radius: 5px;
+    background: is_selected ? #2563EB : (touch.has-hover ? #334155 : #1E293B);
+    border-width: 1px;
+    border-color: is_selected ? #60A5FA : #334155;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        font-size: 11px;
+        font-weight: root.is_selected ? 700 : 500;
+        color: root.is_selected ? #FFFFFF : #CBD5E1;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component ColorSwatch inherits Rectangle {
+    in property <color> swatch_color: #000000;
+    in property <bool> is_selected: false;
+    callback clicked();
+
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: swatch_color;
+    border-width: is_selected ? 2.5px : 1px;
+    border-color: is_selected ? #38BDF8 : #ffffff50;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component RibbonGroupDivider inherits Rectangle {
+    width: 1px;
+    height: 64px;
+    background: #33415590;
+}
+
+export component FolioMobileShell inherits Window {
+    title: "FolioNote";
+    background: #18191C;
+    preferred-width: 1100px;
+    preferred-height: 780px;
+    min-width: 360px;
+    min-height: 480px;
+    default-font-family: "Inter, Segoe UI, Roboto, sans-serif";
+
+    // -------------------------------------------------------------------------
+    // Canvas Rendering & 1:1 Physical Pixel Coordinate Properties
+    // -------------------------------------------------------------------------
+    in-out property <image> canvas_image;
+    out property <int> canvas_viewport_w: Math.round(canvas_area.width / 1phx);
+    out property <int> canvas_viewport_h: Math.round(canvas_area.height / 1phx);
+
+    // Pointer & Scroll Callbacks in Physical Pixels (1phx) relative to canvas_area
+    callback canvas_pointer_down(float, float, int);
+    callback canvas_pointer_move(float, float, int);
+    callback canvas_pointer_up(float, float, int);
+    callback canvas_scroll(float, float, float, float);
+
+    // -------------------------------------------------------------------------
+    // Ribbon & Application State Properties
+    // -------------------------------------------------------------------------
+    in-out property <string> active_ribbon_tab: "draw"; // "home", "insert", "draw", "view", "shapes"
+    in-out property <bool> ribbon_collapsed: false;
+
+    in-out property <string> active_tool: "pen"; // "pen", "fountain", "pencil", "brush", "highlighter", "laser", "eraser", "point_eraser", "select", "lasso", "pan", "text", "shape"
+    in-out property <string> active_shape_name: "rect";
+    in-out property <color> active_color: #181A20;
+    in-out property <float> stroke_width_mm: 0.5;
+    in-out property <string> stroke_width_label: "0.5 mm";
+    in-out property <int> opacity_pct: 100;
+    in-out property <string> stroke_pattern: "solid"; // "solid", "dashed", "dotted"
+    in-out property <string> eraser_size_label: "6 mm";
+
+    in-out property <bool> ruler_enabled: false;
+    in-out property <bool> auto_shapes_enabled: false;
+    in-out property <bool> lock_shape_mode: false;
+    in-out property <bool> snap_to_grid: false;
+
+    in-out property <string> paper_style: "grid"; // "blank", "lined", "grid", "dotted"
+    in-out property <bool> canvas_inverted: false;
+    in-out property <bool> show_page_border: true;
+    in-out property <string> zoom_label: "100%";
+
+    in-out property <bool> text_bold: false;
+    in-out property <bool> text_italic: false;
+    in-out property <bool> text_underline: false;
+    in-out property <bool> text_strike: false;
+
+    in-out property <string> notebook_title: "Notebook";
+    in-out property <string> section_title: "General";
+    in-out property <string> page_title: "Untitled Page";
+    in-out property <bool> drawer_open: false;
+
+    in-out property <[SectionInfo]> sections: [];
+    in-out property <[PageInfo]> pages: [];
+
+    // -------------------------------------------------------------------------
+    // C++ Action Callbacks
+    // -------------------------------------------------------------------------
+    callback select_tool(string);
+    callback select_color(color);
+    callback set_stroke_width(float);
+    callback set_opacity_pct(int);
+    callback set_stroke_pattern(string);
+    callback trigger_undo();
+    callback trigger_redo();
+    callback ribbon_action(string);
+    callback select_section(string);
+    callback select_page(string);
+    callback new_page_requested();
+    callback switch_to_desktop_mode();
+
+    // -------------------------------------------------------------------------
+    // 1. TOP MOBILE-FRIENDLY LEGACY RIBBON BAR
+    // -------------------------------------------------------------------------
+    top_ribbon := Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: root.ribbon_collapsed ? 42px : 126px;
+        background: #0F172A;
+        border-width: 1px;
+        border-color: #1E293B;
+        z: 10;
+
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            // -----------------------------------------------------------------
+            // ROW 1: Quick Access + Ribbon Tabs + Page Title + Mode Controls
+            // -----------------------------------------------------------------
+            Rectangle {
+                height: 42px;
+                background: #090D16;
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                    spacing: 6px;
+                    alignment: space-between;
+
+                    // Left: Drawer + Quick Undo/Redo + Tab Strip
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+
+                        // Notebook Drawer Toggle
+                        RibbonPillButton {
+                            label: "☰ Pages";
+                            pill_width: 68px;
+                            is_selected: root.drawer_open;
+                            clicked => { root.drawer_open = !root.drawer_open; }
+                        }
+
+                        // Quick Undo / Redo
+                        RibbonPillButton {
+                            label: "↩";
+                            pill_width: 30px;
+                            clicked => { root.trigger_undo(); }
+                        }
+                        RibbonPillButton {
+                            label: "↪";
+                            pill_width: 30px;
+                            clicked => { root.trigger_redo(); }
+                        }
+
+                        Rectangle { width: 1px; height: 24px; background: #334155; }
+
+                        RibbonTabButton {
+                            label: "Home";
+                            is_active: root.active_ribbon_tab == "home";
+                            clicked => {
+                                if (root.active_ribbon_tab == "home" && !root.ribbon_collapsed) {
+                                    // already active
+                                } else {
+                                    root.active_ribbon_tab = "home";
+                                    root.ribbon_collapsed = false;
+                                }
+                            }
+                        }
+                        RibbonTabButton {
+                            label: "Insert";
+                            is_active: root.active_ribbon_tab == "insert";
+                            clicked => {
+                                root.active_ribbon_tab = "insert";
+                                root.ribbon_collapsed = false;
+                            }
+                        }
+                        RibbonTabButton {
+                            label: "Draw";
+                            is_active: root.active_ribbon_tab == "draw";
+                            clicked => {
+                                root.active_ribbon_tab = "draw";
+                                root.ribbon_collapsed = false;
+                            }
+                        }
+                        RibbonTabButton {
+                            label: "View";
+                            is_active: root.active_ribbon_tab == "view";
+                            clicked => {
+                                root.active_ribbon_tab = "view";
+                                root.ribbon_collapsed = false;
+                            }
+                        }
+                        RibbonTabButton {
+                            label: "Shapes";
+                            is_active: root.active_ribbon_tab == "shapes";
+                            is_accent: root.active_tool == "shape";
+                            clicked => {
+                                root.active_ribbon_tab = "shapes";
+                                root.ribbon_collapsed = false;
+                            }
+                        }
+                    }
+
+                    // Right: Active Document Info + Collapse Toggle + Desktop Switch
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: end;
+
+                        Text {
+                            text: root.notebook_title + "  ›  " + root.page_title;
+                            font-size: 12px;
+                            color: #94A3B8;
+                            vertical-alignment: center;
+                        }
+
+                        RibbonPillButton {
+                            label: root.ribbon_collapsed ? "▼ Expand" : "▲ Collapse";
+                            pill_width: 72px;
+                            is_selected: root.ribbon_collapsed;
+                            clicked => { root.ribbon_collapsed = !root.ribbon_collapsed; }
+                        }
+
+                        RibbonPillButton {
+                            label: "🖥 Desktop (F4)";
+                            pill_width: 96px;
+                            clicked => { root.switch_to_desktop_mode(); }
+                        }
+                    }
+                }
+            }
+
+            // Divider line under tab bar
+            Rectangle {
+                height: 1px;
+                background: #1E293B;
+            }
+
+            // -----------------------------------------------------------------
+            // ROW 2: Horizontally Scrollable Mobile-Friendly Ribbon Shelf
+            // -----------------------------------------------------------------
+            if !root.ribbon_collapsed : Flickable {
+                height: 83px;
+                viewport-height: 83px;
+                interactive: true;
+
+                // =============================================================
+                // TAB: DRAW (Legacy Draw Ribbon Parity)
+                // =============================================================
+                if root.active_ribbon_tab == "draw" : HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 4px;
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Group 1: History
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "↩";
+                                label: "Undo";
+                                btn_width: 48px;
+                                clicked => { root.trigger_undo(); }
+                            }
+                            RibbonLargeButton {
+                                icon: "↪";
+                                label: "Redo";
+                                btn_width: 48px;
+                                clicked => { root.trigger_redo(); }
+                            }
+                        }
+                        Text { text: "History"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Group 2: Selection & Navigation
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "🗑";
+                                label: "Delete";
+                                btn_width: 48px;
+                                active_color: #DC2626;
+                                clicked => { root.ribbon_action("delete_selected"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "⬚";
+                                label: "Select";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "select";
+                                active_color: #6366F1;
+                                clicked => { root.active_tool = "select"; root.select_tool("select"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "✂";
+                                label: "Lasso";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "lasso";
+                                active_color: #8B5CF6;
+                                clicked => { root.active_tool = "lasso"; root.select_tool("lasso"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "✋";
+                                label: "Pan";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "pan";
+                                active_color: #0EA5E9;
+                                clicked => { root.active_tool = "pan"; root.select_tool("pan"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "T";
+                                label: "Text";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "text";
+                                active_color: #10B981;
+                                clicked => { root.active_tool = "text"; root.select_tool("text"); }
+                            }
+                        }
+                        Text { text: "Selection & Nav"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Group 3: Eraser Tools
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "🧹";
+                                label: "Stroke";
+                                btn_width: 50px;
+                                is_selected: root.active_tool == "eraser";
+                                active_color: #EC4899;
+                                clicked => { root.active_tool = "eraser"; root.select_tool("eraser"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "◯";
+                                label: "Point";
+                                btn_width: 50px;
+                                is_selected: root.active_tool == "point_eraser";
+                                active_color: #EC4899;
+                                clicked => { root.active_tool = "point_eraser"; root.select_tool("point_eraser"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "◎";
+                                label: root.eraser_size_label;
+                                btn_width: 48px;
+                                clicked => { root.ribbon_action("cycle_eraser_size"); }
+                            }
+                        }
+                        Text { text: "Eraser"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Group 4: Drawing Pens & Brushes
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "✏";
+                                label: "Pen";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "pen";
+                                active_color: #2563EB;
+                                clicked => { root.active_tool = "pen"; root.select_tool("pen"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "✒";
+                                label: "Fountain";
+                                btn_width: 54px;
+                                is_selected: root.active_tool == "fountain";
+                                active_color: #2563EB;
+                                clicked => { root.active_tool = "fountain"; root.select_tool("fountain"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "✎";
+                                label: "Pencil";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "pencil";
+                                active_color: #475569;
+                                clicked => { root.active_tool = "pencil"; root.select_tool("pencil"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🖌";
+                                label: "Brush";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "brush";
+                                active_color: #7C3AED;
+                                clicked => { root.active_tool = "brush"; root.select_tool("brush"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🖍";
+                                label: "Highlight";
+                                btn_width: 56px;
+                                is_selected: root.active_tool == "highlighter";
+                                active_color: #CA8A04;
+                                clicked => { root.active_tool = "highlighter"; root.select_tool("highlighter"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🔴";
+                                label: "Laser";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "laser";
+                                active_color: #EF4444;
+                                clicked => { root.active_tool = "laser"; root.select_tool("laser"); }
+                            }
+                        }
+                        Text { text: "Drawing Tools"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Group 5: Colors (2x5 Palette)
+                    VerticalLayout {
+                        spacing: 2px;
+                        VerticalLayout {
+                            spacing: 4px;
+                            HorizontalLayout {
+                                spacing: 5px;
+                                ColorSwatch {
+                                    swatch_color: #181A20;
+                                    is_selected: root.active_color == #181A20;
+                                    clicked => { root.active_color = #181A20; root.select_color(#181A20); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #1E3A8A;
+                                    is_selected: root.active_color == #1E3A8A;
+                                    clicked => { root.active_color = #1E3A8A; root.select_color(#1E3A8A); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #2563EB;
+                                    is_selected: root.active_color == #2563EB;
+                                    clicked => { root.active_color = #2563EB; root.select_color(#2563EB); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #DC2626;
+                                    is_selected: root.active_color == #DC2626;
+                                    clicked => { root.active_color = #DC2626; root.select_color(#DC2626); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #16A34A;
+                                    is_selected: root.active_color == #16A34A;
+                                    clicked => { root.active_color = #16A34A; root.select_color(#16A34A); }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 5px;
+                                ColorSwatch {
+                                    swatch_color: #D97706;
+                                    is_selected: root.active_color == #D97706;
+                                    clicked => { root.active_color = #D97706; root.select_color(#D97706); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #9333EA;
+                                    is_selected: root.active_color == #9333EA;
+                                    clicked => { root.active_color = #9333EA; root.select_color(#9333EA); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #EC4899;
+                                    is_selected: root.active_color == #EC4899;
+                                    clicked => { root.active_color = #EC4899; root.select_color(#EC4899); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #0D9488;
+                                    is_selected: root.active_color == #0D9488;
+                                    clicked => { root.active_color = #0D9488; root.select_color(#0D9488); }
+                                }
+                                ColorSwatch {
+                                    swatch_color: #FACC15;
+                                    is_selected: root.active_color == #FACC15;
+                                    clicked => { root.active_color = #FACC15; root.select_color(#FACC15); }
+                                }
+                            }
+                        }
+                        Text { text: "Colors"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Group 6: Thickness, Opacity & Stroke Style
+                    VerticalLayout {
+                        spacing: 2px;
+                        VerticalLayout {
+                            spacing: 4px;
+                            // Top row: Thickness presets
+                            HorizontalLayout {
+                                spacing: 3px;
+                                RibbonPillButton {
+                                    label: "0.3";
+                                    pill_width: 32px;
+                                    is_selected: root.stroke_width_label == "0.3 mm";
+                                    clicked => { root.stroke_width_mm = 0.3; root.stroke_width_label = "0.3 mm"; root.set_stroke_width(0.3); }
+                                }
+                                RibbonPillButton {
+                                    label: "0.5";
+                                    pill_width: 32px;
+                                    is_selected: root.stroke_width_label == "0.5 mm";
+                                    clicked => { root.stroke_width_mm = 0.5; root.stroke_width_label = "0.5 mm"; root.set_stroke_width(0.5); }
+                                }
+                                RibbonPillButton {
+                                    label: "1.0";
+                                    pill_width: 32px;
+                                    is_selected: root.stroke_width_label == "1.0 mm";
+                                    clicked => { root.stroke_width_mm = 1.0; root.stroke_width_label = "1.0 mm"; root.set_stroke_width(1.0); }
+                                }
+                                RibbonPillButton {
+                                    label: "2.5";
+                                    pill_width: 32px;
+                                    is_selected: root.stroke_width_label == "2.5 mm";
+                                    clicked => { root.stroke_width_mm = 2.5; root.stroke_width_label = "2.5 mm"; root.set_stroke_width(2.5); }
+                                }
+                                RibbonPillButton {
+                                    label: "5.0";
+                                    pill_width: 32px;
+                                    is_selected: root.stroke_width_label == "5.0 mm";
+                                    clicked => { root.stroke_width_mm = 5.0; root.stroke_width_label = "5.0 mm"; root.set_stroke_width(5.0); }
+                                }
+                            }
+                            // Bottom row: Opacity & Line Pattern
+                            HorizontalLayout {
+                                spacing: 3px;
+                                RibbonPillButton {
+                                    label: "100%";
+                                    pill_width: 38px;
+                                    is_selected: root.opacity_pct == 100;
+                                    clicked => { root.opacity_pct = 100; root.set_opacity_pct(100); }
+                                }
+                                RibbonPillButton {
+                                    label: "50%";
+                                    pill_width: 34px;
+                                    is_selected: root.opacity_pct == 50;
+                                    clicked => { root.opacity_pct = 50; root.set_opacity_pct(50); }
+                                }
+                                RibbonPillButton {
+                                    label: "───";
+                                    pill_width: 30px;
+                                    is_selected: root.stroke_pattern == "solid";
+                                    clicked => { root.stroke_pattern = "solid"; root.set_stroke_pattern("solid"); }
+                                }
+                                RibbonPillButton {
+                                    label: "- - -";
+                                    pill_width: 30px;
+                                    is_selected: root.stroke_pattern == "dashed";
+                                    clicked => { root.stroke_pattern = "dashed"; root.set_stroke_pattern("dashed"); }
+                                }
+                                RibbonPillButton {
+                                    label: "· · ·";
+                                    pill_width: 30px;
+                                    is_selected: root.stroke_pattern == "dotted";
+                                    clicked => { root.stroke_pattern = "dotted"; root.set_stroke_pattern("dotted"); }
+                                }
+                            }
+                        }
+                        Text { text: "Thickness & Style"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Group 7: Ruler & Quick Shapes
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "📏";
+                                label: "Ruler";
+                                btn_width: 48px;
+                                is_selected: root.ruler_enabled;
+                                active_color: #0284C7;
+                                clicked => { root.ribbon_action("toggle_ruler"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "╱";
+                                label: "Line";
+                                btn_width: 46px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "line";
+                                clicked => {
+                                    root.active_tool = "shape";
+                                    root.active_shape_name = "line";
+                                    root.ribbon_action("shape_line");
+                                }
+                            }
+                            RibbonLargeButton {
+                                icon: "↗";
+                                label: "Arrow";
+                                btn_width: 46px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "arrow";
+                                clicked => {
+                                    root.active_tool = "shape";
+                                    root.active_shape_name = "arrow";
+                                    root.ribbon_action("shape_arrow");
+                                }
+                            }
+                            RibbonLargeButton {
+                                icon: "▭";
+                                label: "Rect";
+                                btn_width: 46px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "rect";
+                                clicked => {
+                                    root.active_tool = "shape";
+                                    root.active_shape_name = "rect";
+                                    root.ribbon_action("shape_rect");
+                                }
+                            }
+                            RibbonLargeButton {
+                                icon: "◯";
+                                label: "Circle";
+                                btn_width: 46px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "circle";
+                                clicked => {
+                                    root.active_tool = "shape";
+                                    root.active_shape_name = "circle";
+                                    root.ribbon_action("shape_circle");
+                                }
+                            }
+                        }
+                        Text { text: "Ruler & Shapes"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+                }
+
+                // =============================================================
+                // TAB: HOME (Clipboard, Basic Text Formatting, Notes, Pages)
+                // =============================================================
+                if root.active_ribbon_tab == "home" : HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 4px;
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Clipboard Group
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "📋";
+                                label: "Paste";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("clipboard_paste"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "✂";
+                                label: "Cut";
+                                btn_width: 48px;
+                                clicked => { root.ribbon_action("clipboard_cut"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "📄";
+                                label: "Copy";
+                                btn_width: 48px;
+                                clicked => { root.ribbon_action("clipboard_copy"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "⧉";
+                                label: "Duplicate";
+                                btn_width: 56px;
+                                clicked => { root.ribbon_action("selection_duplicate"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "☑";
+                                label: "Select All";
+                                btn_width: 58px;
+                                clicked => { root.ribbon_action("select_all"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🗑";
+                                label: "Delete";
+                                btn_width: 48px;
+                                active_color: #DC2626;
+                                clicked => { root.ribbon_action("delete_selected"); }
+                            }
+                        }
+                        Text { text: "Clipboard & Selection"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Basic Text Formatting Group
+                    VerticalLayout {
+                        spacing: 2px;
+                        VerticalLayout {
+                            spacing: 4px;
+                            HorizontalLayout {
+                                spacing: 4px;
+                                RibbonPillButton {
+                                    label: "B";
+                                    pill_width: 30px;
+                                    is_selected: root.text_bold;
+                                    clicked => { root.text_bold = !root.text_bold; root.ribbon_action("text_toggle_bold"); }
+                                }
+                                RibbonPillButton {
+                                    label: "I";
+                                    pill_width: 30px;
+                                    is_selected: root.text_italic;
+                                    clicked => { root.text_italic = !root.text_italic; root.ribbon_action("text_toggle_italic"); }
+                                }
+                                RibbonPillButton {
+                                    label: "U";
+                                    pill_width: 30px;
+                                    is_selected: root.text_underline;
+                                    clicked => { root.text_underline = !root.text_underline; root.ribbon_action("text_toggle_underline"); }
+                                }
+                                RibbonPillButton {
+                                    label: "S";
+                                    pill_width: 30px;
+                                    is_selected: root.text_strike;
+                                    clicked => { root.text_strike = !root.text_strike; root.ribbon_action("text_toggle_strike"); }
+                                }
+                                RibbonPillButton {
+                                    label: "A-";
+                                    pill_width: 34px;
+                                    clicked => { root.ribbon_action("text_size_down"); }
+                                }
+                                RibbonPillButton {
+                                    label: "A+";
+                                    pill_width: 34px;
+                                    clicked => { root.ribbon_action("text_size_up"); }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                RibbonPillButton {
+                                    label: "Left";
+                                    pill_width: 48px;
+                                    clicked => { root.ribbon_action("text_align_left"); }
+                                }
+                                RibbonPillButton {
+                                    label: "Center";
+                                    pill_width: 54px;
+                                    clicked => { root.ribbon_action("text_align_center"); }
+                                }
+                                RibbonPillButton {
+                                    label: "Right";
+                                    pill_width: 48px;
+                                    clicked => { root.ribbon_action("text_align_right"); }
+                                }
+                                RibbonPillButton {
+                                    label: "Clear Fmt";
+                                    pill_width: 60px;
+                                    clicked => { root.ribbon_action("text_clear_format"); }
+                                }
+                            }
+                        }
+                        Text { text: "Basic Text"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Page Actions Group
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "📄+";
+                                label: "New Page";
+                                btn_width: 58px;
+                                clicked => { root.new_page_requested(); }
+                            }
+                            RibbonLargeButton {
+                                icon: "📑";
+                                label: "Dup Page";
+                                btn_width: 58px;
+                                clicked => { root.ribbon_action("page_duplicate"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "◀";
+                                label: "Prev Page";
+                                btn_width: 56px;
+                                clicked => { root.ribbon_action("page_prev"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "▶";
+                                label: "Next Page";
+                                btn_width: 56px;
+                                clicked => { root.ribbon_action("page_next"); }
+                            }
+                        }
+                        Text { text: "Pages"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+                }
+
+                // =============================================================
+                // TAB: INSERT (Files, Media, Text/Sticky Notes, Shapes)
+                // =============================================================
+                if root.active_ribbon_tab == "insert" : HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 4px;
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Pages
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "📄+";
+                                label: "New Page";
+                                btn_width: 58px;
+                                clicked => { root.new_page_requested(); }
+                            }
+                            RibbonLargeButton {
+                                icon: "📑";
+                                label: "Duplicate";
+                                btn_width: 58px;
+                                clicked => { root.ribbon_action("page_duplicate"); }
+                            }
+                        }
+                        Text { text: "Pages"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Files & Media
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "📕";
+                                label: "Import PDF";
+                                btn_width: 62px;
+                                clicked => { root.ribbon_action("insert_pdf"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "📎";
+                                label: "Attach File";
+                                btn_width: 62px;
+                                clicked => { root.ribbon_action("insert_attachment"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🖼";
+                                label: "Picture";
+                                btn_width: 54px;
+                                clicked => { root.ribbon_action("insert_image"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🎵";
+                                label: "Audio";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("insert_audio"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🎬";
+                                label: "Video";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("insert_video"); }
+                            }
+                        }
+                        Text { text: "Files & Media"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Text & Sticky Notes
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "T";
+                                label: "Text Box";
+                                btn_width: 56px;
+                                clicked => { root.ribbon_action("insert_textbox"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🟨";
+                                label: "Yellow";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("insert_sticky_yellow"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🟦";
+                                label: "Blue";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("insert_sticky_blue"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🟩";
+                                label: "Green";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("insert_sticky_green"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🟥";
+                                label: "Pink";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("insert_sticky_pink"); }
+                            }
+                        }
+                        Text { text: "Text & Sticky Notes"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Quick Insert Shapes
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "▭";
+                                label: "Rect";
+                                btn_width: 48px;
+                                clicked => { root.ribbon_action("insert_shape_rect"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "◯";
+                                label: "Circle";
+                                btn_width: 48px;
+                                clicked => { root.ribbon_action("insert_shape_circle"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "△";
+                                label: "Triangle";
+                                btn_width: 52px;
+                                clicked => { root.ribbon_action("insert_shape_triangle"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "☆";
+                                label: "Star";
+                                btn_width: 48px;
+                                clicked => { root.ribbon_action("insert_shape_star"); }
+                            }
+                        }
+                        Text { text: "Shapes"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+                }
+
+                // =============================================================
+                // TAB: VIEW (Zoom, Paper Style, Dark/Invert Canvas, Page Setup)
+                // =============================================================
+                if root.active_ribbon_tab == "view" : HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 4px;
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Zoom Controls
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "🔍-";
+                                label: "Zoom Out";
+                                btn_width: 54px;
+                                clicked => { root.ribbon_action("zoom_out"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "100%";
+                                label: root.zoom_label;
+                                btn_width: 54px;
+                                clicked => { root.ribbon_action("zoom_100"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🔍+";
+                                label: "Zoom In";
+                                btn_width: 54px;
+                                clicked => { root.ribbon_action("zoom_in"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "🎯";
+                                label: "Center";
+                                btn_width: 50px;
+                                clicked => { root.ribbon_action("zoom_center"); }
+                            }
+                        }
+                        Text { text: "Zoom"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Paper Style
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "⬜";
+                                label: "Blank";
+                                btn_width: 48px;
+                                is_selected: root.paper_style == "blank";
+                                clicked => { root.paper_style = "blank"; root.ribbon_action("paper_blank"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "☰";
+                                label: "Ruled";
+                                btn_width: 48px;
+                                is_selected: root.paper_style == "lined";
+                                clicked => { root.paper_style = "lined"; root.ribbon_action("paper_lined"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "▦";
+                                label: "Grid";
+                                btn_width: 48px;
+                                is_selected: root.paper_style == "grid";
+                                clicked => { root.paper_style = "grid"; root.ribbon_action("paper_grid"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "∷";
+                                label: "Dotted";
+                                btn_width: 48px;
+                                is_selected: root.paper_style == "dotted";
+                                clicked => { root.paper_style = "dotted"; root.ribbon_action("paper_dotted"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "−";
+                                label: "Grid -";
+                                btn_width: 44px;
+                                clicked => { root.ribbon_action("grid_spacing_down"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "+";
+                                label: "Grid +";
+                                btn_width: 44px;
+                                clicked => { root.ribbon_action("grid_spacing_up"); }
+                            }
+                        }
+                        Text { text: "Paper Pattern"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Page Theme & Appearance
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "🌗";
+                                label: "Invert Ink";
+                                btn_width: 58px;
+                                is_selected: root.canvas_inverted;
+                                active_color: #7C3AED;
+                                clicked => {
+                                    root.canvas_inverted = !root.canvas_inverted;
+                                    root.ribbon_action("toggle_invert_canvas");
+                                }
+                            }
+                            RibbonLargeButton {
+                                icon: "▣";
+                                label: "Border";
+                                btn_width: 50px;
+                                is_selected: root.show_page_border;
+                                clicked => {
+                                    root.show_page_border = !root.show_page_border;
+                                    root.ribbon_action("toggle_page_border");
+                                }
+                            }
+                            // Paper Background Color Swatches
+                            VerticalLayout {
+                                spacing: 4px;
+                                alignment: center;
+                                HorizontalLayout {
+                                    spacing: 5px;
+                                    ColorSwatch {
+                                        swatch_color: #FFFFFF;
+                                        clicked => { root.ribbon_action("paper_color_white"); }
+                                    }
+                                    ColorSwatch {
+                                        swatch_color: #FAF8F4;
+                                        clicked => { root.ribbon_action("paper_color_ivory"); }
+                                    }
+                                    ColorSwatch {
+                                        swatch_color: #F6EEDE;
+                                        clicked => { root.ribbon_action("paper_color_sepia"); }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 5px;
+                                    ColorSwatch {
+                                        swatch_color: #F0F4FA;
+                                        clicked => { root.ribbon_action("paper_color_blue"); }
+                                    }
+                                    ColorSwatch {
+                                        swatch_color: #EEF6F0;
+                                        clicked => { root.ribbon_action("paper_color_mint"); }
+                                    }
+                                    ColorSwatch {
+                                        swatch_color: #1E2026;
+                                        clicked => { root.ribbon_action("paper_color_dark"); }
+                                    }
+                                }
+                            }
+                        }
+                        Text { text: "Page Setup & Theme"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+                }
+
+                // =============================================================
+                // TAB: SHAPES (Interactive Shape Drawing, Options & Ruler)
+                // =============================================================
+                if root.active_ribbon_tab == "shapes" : HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 4px;
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Lines & Basic Shapes
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "╱";
+                                label: "Line";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "line";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "line"; root.ribbon_action("shape_line"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "↗";
+                                label: "Arrow";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "arrow";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "arrow"; root.ribbon_action("shape_arrow"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "▭";
+                                label: "Rect";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "rect";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "rect"; root.ribbon_action("shape_rect"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "▢";
+                                label: "Round";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "round_rect";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "round_rect"; root.ribbon_action("shape_round_rect"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "◯";
+                                label: "Circle";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "circle";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "circle"; root.ribbon_action("shape_circle"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "⬭";
+                                label: "Ellipse";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "ellipse";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "ellipse"; root.ribbon_action("shape_ellipse"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "△";
+                                label: "Triangle";
+                                btn_width: 52px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "triangle";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "triangle"; root.ribbon_action("shape_triangle"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "◇";
+                                label: "Diamond";
+                                btn_width: 52px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "diamond";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "diamond"; root.ribbon_action("shape_diamond"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "⬠";
+                                label: "Polygon";
+                                btn_width: 52px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "polygon";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "polygon"; root.ribbon_action("shape_polygon"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "☆";
+                                label: "Star";
+                                btn_width: 48px;
+                                is_selected: root.active_tool == "shape" && root.active_shape_name == "star";
+                                clicked => { root.active_tool = "shape"; root.active_shape_name = "star"; root.ribbon_action("shape_star"); }
+                            }
+                        }
+                        Text { text: "Draw Vector Shapes"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+
+                    RibbonGroupDivider {}
+
+                    // Shape Options & Ruler
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            RibbonLargeButton {
+                                icon: "🔒";
+                                label: "Lock Mode";
+                                btn_width: 58px;
+                                is_selected: root.lock_shape_mode;
+                                clicked => {
+                                    root.lock_shape_mode = !root.lock_shape_mode;
+                                    root.ribbon_action("toggle_lock_shape_mode");
+                                }
+                            }
+                            RibbonLargeButton {
+                                icon: "#";
+                                label: "Snap Grid";
+                                btn_width: 58px;
+                                is_selected: root.snap_to_grid;
+                                clicked => {
+                                    root.snap_to_grid = !root.snap_to_grid;
+                                    root.ribbon_action("toggle_snap_grid");
+                                }
+                            }
+                            RibbonLargeButton {
+                                icon: "📏";
+                                label: "Ruler";
+                                btn_width: 48px;
+                                is_selected: root.ruler_enabled;
+                                clicked => { root.ribbon_action("toggle_ruler"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "↺";
+                                label: "-15°";
+                                btn_width: 44px;
+                                clicked => { root.ribbon_action("ruler_rot_ccw"); }
+                            }
+                            RibbonLargeButton {
+                                icon: "↻";
+                                label: "+15°";
+                                btn_width: 44px;
+                                clicked => { root.ribbon_action("ruler_rot_cw"); }
+                            }
+                        }
+                        Text { text: "Options & Ruler"; font-size: 9px; color: #64748B; horizontal-alignment: center; }
+                    }
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. INTERACTIVE CANVAS VIEWPORT (1:1 Physical Pixel Mapping)
+    // -------------------------------------------------------------------------
+    canvas_area := TouchArea {
+        x: 0px;
+        y: top_ribbon.height;
+        width: parent.width;
+        height: parent.height - top_ribbon.height;
+
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                if (event.button == PointerEventButton.middle) {
+                    root.canvas_pointer_down(self.mouse-x / 1phx, self.mouse-y / 1phx, 2);
+                } else if (event.button == PointerEventButton.right) {
+                    root.canvas_pointer_down(self.mouse-x / 1phx, self.mouse-y / 1phx, 3);
+                } else {
+                    root.canvas_pointer_down(self.mouse-x / 1phx, self.mouse-y / 1phx, 0);
+                }
+            } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
+                root.canvas_pointer_up(self.mouse-x / 1phx, self.mouse-y / 1phx, 0);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.canvas_pointer_move(self.mouse-x / 1phx, self.mouse-y / 1phx, 0);
+            }
+        }
+        scroll-event(event) => {
+            root.canvas_scroll(
+                self.mouse-x / 1phx,
+                self.mouse-y / 1phx,
+                event.delta-x / 1phx,
+                event.delta-y / 1phx
+            );
+            return EventResult.accept;
+        }
+
+        Image {
+            x: 0px;
+            y: 0px;
+            width: 100%;
+            height: 100%;
+            source: root.canvas_image;
+            image-fit: fill;
+            image-rendering: smooth;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. SCRIM / BACKDROP FOR NAVIGATION DRAWER
+    // -------------------------------------------------------------------------
+    if root.drawer_open : Rectangle {
+        x: 0px;
+        y: top_ribbon.height;
+        width: parent.width;
+        height: parent.height - top_ribbon.height;
+        background: #00000070;
+        z: 20;
+
+        TouchArea {
+            clicked => { root.drawer_open = false; }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. SLIDE-OUT NAVIGATION DRAWER (Left Edge, 320px wide)
+    // -------------------------------------------------------------------------
+    drawer := Rectangle {
+        x: root.drawer_open ? 0px : -340px;
+        y: top_ribbon.height;
+        width: 320px;
+        height: parent.height - top_ribbon.height;
+        background: #0F172AF5;
+        border-width: 1px;
+        border-color: #33415580;
+        z: 30;
+        animate x { duration: 180ms; easing: ease-out; }
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+
+            // Header Title
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: root.notebook_title;
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: #F8FAFC;
+                }
+                TouchArea {
+                    width: 28px;
+                    height: 28px;
+                    clicked => { root.drawer_open = false; }
+                    Text {
+                        text: "✕";
+                        font-size: 16px;
+                        color: #94A3B8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: #334155; }
+
+            // Section Label
+            Text {
+                text: "SECTIONS";
+                font-size: 11px;
+                font-weight: 700;
+                color: #64748B;
+            }
+
+            // Section Tabs
+            Flickable {
+                height: 36px;
+                viewport-height: 36px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    for sec in root.sections : Rectangle {
+                        height: 32px;
+                        min-width: 72px;
+                        preferred-width: sec_txt.preferred-width + 24px;
+                        border-radius: 16px;
+                        background: sec.is_active ? #2563EB : #1E293B;
+                        border-width: 1px;
+                        border-color: sec.is_active ? #60A5FA : #334155;
+
+                        TouchArea {
+                            clicked => { root.select_section(sec.guid); }
+                        }
+
+                        sec_txt := Text {
+                            text: sec.title;
+                            font-size: 12px;
+                            font-weight: sec.is_active ? 700 : 500;
+                            color: sec.is_active ? #ffffff : #94A3B8;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: #334155; }
+
+            // Pages List Header
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "PAGES";
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #64748B;
+                }
+                TouchArea {
+                    width: 84px;
+                    height: 24px;
+                    clicked => { root.new_page_requested(); }
+                    Text {
+                        text: "+ New Page";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: #38BDF8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Pages ScrollView
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    for pg in root.pages : Rectangle {
+                        height: 40px;
+                        border-radius: 8px;
+                        background: pg.is_active ? #1E293B : transparent;
+                        border-width: pg.is_active ? 1px : 0px;
+                        border-color: #38BDF8;
+
+                        TouchArea {
+                            clicked => { root.select_page(pg.guid); root.drawer_open = false; }
+                        }
+
+                        Text {
+                            x: 12px;
+                            y: (parent.height - self.height) / 2;
+                            text: pg.title;
+                            font-size: 13px;
+                            font-weight: pg.is_active ? 600 : 400;
+                            color: pg.is_active ? #F8FAFC : #94A3B8;
+                        }
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: #334155; }
+
+            // Desktop Mode Switcher (F4)
+            Rectangle {
+                height: 42px;
+                border-radius: 10px;
+                background: #2563EB25;
+                border-width: 1px;
+                border-color: #2563EB60;
+
+                TouchArea {
+                    clicked => { root.switch_to_desktop_mode(); }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    Text {
+                        text: "🖥 Switch to Desktop ImGui UI (F4)";
+                        font-size: 13px;
+                        font-weight: 600;
+                        color: #60A5FA;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

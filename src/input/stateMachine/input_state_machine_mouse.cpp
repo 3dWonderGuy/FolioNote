@@ -339,7 +339,7 @@ void InputStateMachine::DispatchMouse(CanvasEngine& canvas, DocumentSession& ses
     }
     else if (currentAction == InteractionState::DrawingShape) {
         pointerIcons.SetHoverShape(FolioInput::PointerCursorShape::Crosshair);
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (ImGui::GetCurrentContext() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             pointerIcons.Unlock(FolioInput::CursorLockReason::ShapeDrawing);
             canvas.CancelShapeCreation();
             canvas.ClearSelection(&session);

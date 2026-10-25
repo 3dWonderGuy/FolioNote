@@ -135,6 +135,10 @@ public:
         }
     }
 
+    [[nodiscard]] constexpr float GetDPI() const noexcept {
+        return static_cast<float>(pixelsPerMm * 25.4);
+    }
+
     [[nodiscard]] constexpr double GetEffectiveScale() const noexcept {
         return pixelsPerMm * zoom;
     }
