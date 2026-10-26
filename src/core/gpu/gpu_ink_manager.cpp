@@ -141,6 +141,14 @@ void GpuInkManager::Shutdown() {
     m_textureWidth = 0;
     m_textureHeight = 0;
 
+    if (m_pipelinePencilSkirt) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelinePencilSkirt);
+        m_pipelinePencilSkirt = nullptr;
+    }
+    if (m_pipelinePencilCore) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelinePencilCore);
+        m_pipelinePencilCore = nullptr;
+    }
     if (m_pipelineAdditive) {
         SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineAdditive);
         m_pipelineAdditive = nullptr;
@@ -164,6 +172,10 @@ void GpuInkManager::Shutdown() {
     if (m_pipelineNormal) {
         SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineNormal);
         m_pipelineNormal = nullptr;
+    }
+    if (m_fragmentShaderPencil) {
+        SDL_ReleaseGPUShader(m_device, m_fragmentShaderPencil);
+        m_fragmentShaderPencil = nullptr;
     }
     if (m_fragmentShader) {
         SDL_ReleaseGPUShader(m_device, m_fragmentShader);
@@ -220,9 +232,21 @@ bool GpuInkManager::CreatePipelines() {
     fragInfo.num_storage_textures = 0;
     fragInfo.num_samplers         = 0;
 
-    m_vertexShader   = SDL_CreateGPUShader(m_device, &vertInfo);
-    m_fragmentShader = SDL_CreateGPUShader(m_device, &fragInfo);
-    if (!m_vertexShader || !m_fragmentShader) {
+    SDL_GPUShaderCreateInfo fragInfoPencil = {};
+    fragInfoPencil.entrypoint           = "main";
+    fragInfoPencil.stage                = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    fragInfoPencil.format               = SDL_GPU_SHADERFORMAT_SPIRV;
+    fragInfoPencil.code                 = GpuShaders::kInkStrokePencilFragSpirv;
+    fragInfoPencil.code_size            = sizeof(GpuShaders::kInkStrokePencilFragSpirv);
+    fragInfoPencil.num_uniform_buffers  = 0;
+    fragInfoPencil.num_storage_buffers  = 0;
+    fragInfoPencil.num_storage_textures = 0;
+    fragInfoPencil.num_samplers         = 0;
+
+    m_vertexShader         = SDL_CreateGPUShader(m_device, &vertInfo);
+    m_fragmentShader       = SDL_CreateGPUShader(m_device, &fragInfo);
+    m_fragmentShaderPencil = SDL_CreateGPUShader(m_device, &fragInfoPencil);
+    if (!m_vertexShader || !m_fragmentShader || !m_fragmentShaderPencil) {
         SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] SDL_CreateGPUShader failed: %s", SDL_GetError());
         return false;
     }
@@ -311,7 +335,8 @@ bool GpuInkManager::CreatePipelines() {
     }
 
     auto makePipeline = [&](const SDL_GPUColorTargetBlendState& blendState,
-                            const SDL_GPUDepthStencilState& dsState) -> SDL_GPUGraphicsPipeline* {
+                            const SDL_GPUDepthStencilState& dsState,
+                            SDL_GPUShader* pipeFrag = nullptr) -> SDL_GPUGraphicsPipeline* {
         SDL_GPUColorTargetDescription colorDesc[1] = {};
         colorDesc[0].format      = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
         colorDesc[0].blend_state = blendState;
@@ -328,7 +353,7 @@ bool GpuInkManager::CreatePipelines() {
 
         SDL_GPUGraphicsPipelineCreateInfo pipeInfo = {};
         pipeInfo.vertex_shader       = m_vertexShader;
-        pipeInfo.fragment_shader     = m_fragmentShader;
+        pipeInfo.fragment_shader     = (pipeFrag != nullptr) ? pipeFrag : m_fragmentShader;
         pipeInfo.vertex_input_state  = vertexInput;
         pipeInfo.primitive_type      = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         pipeInfo.rasterizer_state    = rasterizer;
@@ -367,13 +392,17 @@ bool GpuInkManager::CreatePipelines() {
     m_pipelineMultiplyCore  = makePipeline(blendMultiply, dsReplace);
     m_pipelineMultiplySkirt = makePipeline(blendMultiply, dsKeep);
     m_pipelineAdditive      = makePipeline(blendAdditive, dsDisabled);
+    m_pipelinePencilCore    = makePipeline(blendMultiply, dsReplace, m_fragmentShaderPencil);
+    m_pipelinePencilSkirt   = makePipeline(blendMultiply, dsKeep,    m_fragmentShaderPencil);
 
     return m_pipelineNormal != nullptr &&
            m_pipelineNormalCore != nullptr &&
            m_pipelineNormalSkirt != nullptr &&
            m_pipelineMultiplyCore != nullptr &&
            m_pipelineMultiplySkirt != nullptr &&
-           m_pipelineAdditive != nullptr;
+           m_pipelineAdditive != nullptr &&
+           m_pipelinePencilCore != nullptr &&
+           m_pipelinePencilSkirt != nullptr;
 }
 
 bool GpuInkManager::EnsureCanvasTexture(uint32_t width, uint32_t height) {
@@ -523,7 +552,8 @@ void GpuInkManager::SubmitMesh(const InkMesh& mesh,
                                float scalePxPerMm,
                                float opacity,
                                BlendMode blendMode,
-                               uint32_t strokeId) {
+                               uint32_t strokeId,
+                               bool isPencil) {
     if (mesh.empty()) return;
 
     if (!m_initialized && !m_initAttempted) {
@@ -564,7 +594,36 @@ void GpuInkManager::SubmitMesh(const InkMesh& mesh,
     const bool isSemiTransparent = (blendMode == BlendMode::Multiply) ||
                                    (blendMode == BlendMode::Normal && (opacity < 0.999f || hasVertexAlpha));
 
-    if (blendMode == BlendMode::Additive) {
+    if (isPencil) {
+        if (coreIndices > 0 && coreIndices < totalIndices) {
+            DrawCommand cmdCore;
+            cmdCore.vertexOffset = static_cast<int32_t>(baseVertex);
+            cmdCore.indexOffset  = baseIndex;
+            cmdCore.indexCount   = coreIndices;
+            cmdCore.pipeline     = PipelineType::PencilCore;
+            cmdCore.strokeId     = sid;
+            cmdCore.uniforms     = uniforms;
+            m_drawCommands.push_back(cmdCore);
+
+            DrawCommand cmdSkirt;
+            cmdSkirt.vertexOffset = static_cast<int32_t>(baseVertex);
+            cmdSkirt.indexOffset  = baseIndex + coreIndices;
+            cmdSkirt.indexCount   = totalIndices - coreIndices;
+            cmdSkirt.pipeline     = PipelineType::PencilSkirt;
+            cmdSkirt.strokeId     = sid;
+            cmdSkirt.uniforms     = uniforms;
+            m_drawCommands.push_back(cmdSkirt);
+        } else {
+            DrawCommand cmd;
+            cmd.vertexOffset = static_cast<int32_t>(baseVertex);
+            cmd.indexOffset  = baseIndex;
+            cmd.indexCount   = totalIndices;
+            cmd.pipeline     = PipelineType::PencilCore;
+            cmd.strokeId     = sid;
+            cmd.uniforms     = uniforms;
+            m_drawCommands.push_back(cmd);
+        }
+    } else if (blendMode == BlendMode::Additive) {
         DrawCommand cmd;
         cmd.vertexOffset = static_cast<int32_t>(baseVertex);
         cmd.indexOffset  = baseIndex;
@@ -859,6 +918,14 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
             case PipelineType::Additive:
                 wantPipe = m_pipelineAdditive;
                 break;
+            case PipelineType::PencilCore:
+                wantPipe = m_pipelinePencilCore;
+                usesStencil = true;
+                break;
+            case PipelineType::PencilSkirt:
+                wantPipe = m_pipelinePencilSkirt;
+                usesStencil = true;
+                break;
         }
 
         if (wantPipe != currentPipe) {
@@ -1033,6 +1100,53 @@ bool GpuInkManager::InitGlesFallback() {
     m_glesLocTransform0 = glGetUniformLocation(m_glesProgram, "uTransform0");
     m_glesLocTransform1 = glGetUniformLocation(m_glesProgram, "uTransform1");
     m_glesLocParams     = glGetUniformLocation(m_glesProgram, "uParams");
+
+    // Build GLES Pencil Program with procedural grain
+    const char* fPencilShaderSrc =
+        "#version 300 es\n"
+        "precision highp float;\n"
+        "in vec4 vColor;\n"
+        "in vec2 vEdgeParams;\n"
+        "out vec4 fragColor;\n"
+        "float hash(vec2 p) {\n"
+        "    p = fract(p * vec2(123.34, 456.21));\n"
+        "    p += dot(p, p + 45.32);\n"
+        "    return fract(p.x * p.y);\n"
+        "}\n"
+        "void main() {\n"
+        "    float edgeDist = abs(vEdgeParams.x);\n"
+        "    float radiusPx = max(vEdgeParams.y, 0.5);\n"
+        "    float edgeAlpha = 1.0;\n"
+        "    if (edgeDist > 1.0) {\n"
+        "        float skirtDistPx = (edgeDist - 1.0) * radiusPx;\n"
+        "        float u = clamp(skirtDistPx / 3.0, 0.0, 1.0);\n"
+        "        edgeAlpha = clamp(1.0 - u * u * (3.0 - 2.0 * u), 0.0, 1.0);\n"
+        "    }\n"
+        "    float grain = hash(gl_FragCoord.xy);\n"
+        "    float grainMask = smoothstep(0.12, 0.88, grain + (vColor.a * 0.4 - 0.2));\n"
+        "    float finalAlpha = vColor.a * edgeAlpha * grainMask;\n"
+        "    if (finalAlpha < 0.002) discard;\n"
+        "    fragColor = vec4(vColor.rgb, finalAlpha);\n"
+        "}\n";
+
+    GLuint vertPencil = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertPencil, 1, &vShaderSrc, nullptr);
+    glCompileShader(vertPencil);
+
+    GLuint fragPencil = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragPencil, 1, &fPencilShaderSrc, nullptr);
+    glCompileShader(fragPencil);
+
+    m_glesProgramPencil = glCreateProgram();
+    glAttachShader(m_glesProgramPencil, vertPencil);
+    glAttachShader(m_glesProgramPencil, fragPencil);
+    glLinkProgram(m_glesProgramPencil);
+    glDeleteShader(vertPencil);
+    glDeleteShader(fragPencil);
+
+    m_glesLocPencilTransform0 = glGetUniformLocation(m_glesProgramPencil, "uTransform0");
+    m_glesLocPencilTransform1 = glGetUniformLocation(m_glesProgramPencil, "uTransform1");
+    m_glesLocPencilParams     = glGetUniformLocation(m_glesProgramPencil, "uParams");
 
     // Generate dynamic VAO, VBO, IBO
     glGenVertexArrays(1, &m_glesVao);
@@ -1213,10 +1327,10 @@ bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surf
             case PipelineType::NormalOpaque:
             case PipelineType::NormalCore:
             case PipelineType::NormalSkirt:
-                glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-                break;
             case PipelineType::MultiplyCore:
             case PipelineType::MultiplySkirt:
+            case PipelineType::PencilCore:
+            case PipelineType::PencilSkirt:
                 glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
                 break;
             case PipelineType::Additive:
@@ -1224,9 +1338,14 @@ bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surf
                 break;
         }
 
+        const bool isPencil = (dc.pipeline == PipelineType::PencilCore || dc.pipeline == PipelineType::PencilSkirt);
+        uint32_t activeProg = isPencil ? m_glesProgramPencil : m_glesProgram;
+        glUseProgram(activeProg);
+
         // Stencil test configuration for semi-transparent strokes
         bool usesStencil = (dc.pipeline == PipelineType::NormalCore || dc.pipeline == PipelineType::NormalSkirt ||
-                            dc.pipeline == PipelineType::MultiplyCore || dc.pipeline == PipelineType::MultiplySkirt);
+                            dc.pipeline == PipelineType::MultiplyCore || dc.pipeline == PipelineType::MultiplySkirt ||
+                            dc.pipeline == PipelineType::PencilCore || dc.pipeline == PipelineType::PencilSkirt);
 
         if (usesStencil) {
             if (!hasLastStrokeId || dc.strokeId != lastStrokeId) {
@@ -1239,7 +1358,7 @@ bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surf
                 hasLastStrokeId = true;
             }
 
-            if (dc.pipeline == PipelineType::NormalCore || dc.pipeline == PipelineType::MultiplyCore) {
+            if (dc.pipeline == PipelineType::NormalCore || dc.pipeline == PipelineType::MultiplyCore || dc.pipeline == PipelineType::PencilCore) {
                 // Pass 1: Solid core ribbon stamps stencil reference (GL_REPLACE)
                 glStencilFunc(GL_NOTEQUAL, currentStencilRef, 0xFF);
                 glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
@@ -1256,9 +1375,13 @@ bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surf
             glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
         }
 
-        glUniform4fv(m_glesLocTransform0, 1, dc.uniforms.transform0);
-        glUniform4fv(m_glesLocTransform1, 1, dc.uniforms.transform1);
-        glUniform4fv(m_glesLocParams, 1, dc.uniforms.params);
+        int32_t loc0 = isPencil ? m_glesLocPencilTransform0 : m_glesLocTransform0;
+        int32_t loc1 = isPencil ? m_glesLocPencilTransform1 : m_glesLocTransform1;
+        int32_t locP = isPencil ? m_glesLocPencilParams : m_glesLocParams;
+
+        glUniform4fv(loc0, 1, dc.uniforms.transform0);
+        glUniform4fv(loc1, 1, dc.uniforms.transform1);
+        glUniform4fv(locP, 1, dc.uniforms.params);
 
         // Draw primitives: in our batching, stagedIndices offsets already incorporate base index
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(dc.indexCount), GL_UNSIGNED_INT,

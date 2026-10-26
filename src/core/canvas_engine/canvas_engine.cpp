@@ -169,7 +169,7 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
         needsFullRebake = false;
     }
 
-    if (!isDirty && !layerCompositor.GetBakedCanvasLayer().IsDirty() && !layerCompositor.GetLiveInteractionLayer().HasActiveInteraction()) {
+    if (!isDirty && !layerCompositor.GetBakedCanvasLayer().IsDirty() && !layerCompositor.GetLiveInteractionLayer().HasActiveInteraction() && !shapeCreation.isDragging && !(shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
         double dtClamped = std::clamp(deltaTime, 0.001, 0.1);
         pcieWindowElapsedSec += dtClamped;
         if (pcieWindowElapsedSec >= 0.25) {
@@ -225,8 +225,12 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     }
 
     const bool drawBlend2DRuler = (glTexture == 0 && ruler.IsEnabled());
-    if (devMode || debugShowInkWireframe || drawBlend2DRuler) {
-        liveLayer.SetCustomFeedbackRenderer([this, &visibleBakedObjects, drawBlend2DRuler](BLContext& ctx, const Viewport& vp) {
+    const bool isDrawingShape = shapeCreation.isDragging || (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1);
+    if (devMode || debugShowInkWireframe || drawBlend2DRuler || isDrawingShape) {
+        liveLayer.SetCustomFeedbackRenderer([this, &visibleBakedObjects, drawBlend2DRuler, isDrawingShape](BLContext& ctx, const Viewport& vp) {
+            if (isDrawingShape) {
+                RenderShapePreview(ctx, vp);
+            }
             if (drawBlend2DRuler) {
                 ctx.save();
                 ctx.set_transform(vp.worldToScreenMatrix);
@@ -274,7 +278,7 @@ void CanvasEngine::Render(const std::vector<std::shared_ptr<CanvasObject>>& visi
     bool canUsePartialUpload = false;
     int dirtyX = 0, dirtyY = 0, dirtyW = 0, dirtyH = 0;
 
-    if (!wasFullRebake && !layerCompositor.GetBakedCanvasLayer().IsFullRebakePending()) {
+    if (!wasFullRebake && !layerCompositor.GetBakedCanvasLayer().IsFullRebakePending() && !isDrawingShape) {
         AABB frameDirtyBox;
         if (currLiveBounds.IsValid() && !currLiveBounds.IsEmpty()) {
             frameDirtyBox.Merge(currLiveBounds);

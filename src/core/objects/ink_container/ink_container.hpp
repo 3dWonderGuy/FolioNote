@@ -81,7 +81,7 @@ struct Stroke {
      */
     [[nodiscard]] const Folio::InkMesh& EnsureMeshCache() const {
         if (meshCache.empty() && !points.empty()) {
-            Folio::InkEngine::BuildStrokeMesh(points, capType, Folio::PackGpuColor(color), meshCache);
+            Folio::InkEngine::BuildStrokeMesh(points, capType, Folio::PackGpuColor(color), meshCache, 3.7795f, strokePattern);
         }
         return meshCache;
     }

@@ -104,7 +104,8 @@ public:
                     float scalePxPerMm,
                     float opacity = 1.0f,
                     BlendMode blendMode = BlendMode::Normal,
-                    uint32_t strokeId = 0);
+                    uint32_t strokeId = 0,
+                    bool isPencil = false);
 
     /**
      * @brief Queries whether any stroke meshes are queued in the current batch.
@@ -176,7 +177,9 @@ private:
         NormalSkirt,
         MultiplyCore,
         MultiplySkirt,
-        Additive
+        Additive,
+        PencilCore,
+        PencilSkirt
     };
 
     struct DrawCommand {
@@ -201,12 +204,15 @@ private:
     SDL_GPUDevice*           m_device                = nullptr;
     SDL_GPUShader*           m_vertexShader          = nullptr;
     SDL_GPUShader*           m_fragmentShader        = nullptr;
+    SDL_GPUShader*           m_fragmentShaderPencil  = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineNormal        = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineNormalCore    = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineNormalSkirt   = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineMultiplyCore  = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineMultiplySkirt = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelineAdditive      = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelinePencilCore    = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelinePencilSkirt   = nullptr;
 
     SDL_GPUTextureFormat     m_depthStencilFormat  = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUTexture*          m_depthStencilTexture = nullptr;
@@ -232,15 +238,19 @@ private:
     std::vector<DrawCommand> m_drawCommands;
 
     // Direct OpenGL ES fallback state
-    bool     m_glesInitialized   = false;
-    uint32_t m_glesProgram       = 0;
-    uint32_t m_glesVao           = 0;
-    uint32_t m_glesVbo           = 0;
-    uint32_t m_glesIbo           = 0;
-    int32_t  m_glesLocTransform0 = -1;
-    int32_t  m_glesLocTransform1 = -1;
-    int32_t  m_glesLocParams     = -1;
-    uint32_t m_glesFbo           = 0;
+    bool     m_glesInitialized          = false;
+    uint32_t m_glesProgram              = 0;
+    uint32_t m_glesProgramPencil        = 0;
+    uint32_t m_glesVao                  = 0;
+    uint32_t m_glesVbo                  = 0;
+    uint32_t m_glesIbo                  = 0;
+    int32_t  m_glesLocTransform0        = -1;
+    int32_t  m_glesLocTransform1        = -1;
+    int32_t  m_glesLocParams            = -1;
+    int32_t  m_glesLocPencilTransform0  = -1;
+    int32_t  m_glesLocPencilTransform1  = -1;
+    int32_t  m_glesLocPencilParams      = -1;
+    uint32_t m_glesFbo                  = 0;
     uint32_t m_glesCanvasTex     = 0;
     uint32_t m_glesRboDepthStencil = 0;
     uint32_t m_glesTexWidth      = 0;

@@ -612,7 +612,7 @@ std::shared_ptr<CanvasObject> BinarySerializer::DeserializeObject(ByteReader& re
                 if (ink->isHighlighter) {
                     stroke.capType = CapType::Square;
                 }
-                Folio::InkEngine::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache);
+                Folio::InkEngine::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache, 3.7795f, stroke.strokePattern);
             }
             ink->strokes.push_back(std::move(stroke));
         }

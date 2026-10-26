@@ -53,7 +53,8 @@ AABB LiveInteractionLayer::GetInteractionScreenBounds(const Viewport& viewport) 
     }
 
     if (m_customRenderer != nullptr) {
-        return viewport.bounds;
+        BLRect r = viewport.WorldToScreenRect(viewport.bounds);
+        return AABB(r.x, r.y, r.x + r.w, r.y + r.h);
     }
 
     const double effectiveScale = viewport.GetEffectiveScale();
@@ -193,16 +194,17 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
 
         if (gpu.IsEnabled()) {
             const float effectiveScale = static_cast<float>(viewport.GetEffectiveScale());
+            const bool isPencil = (activeStyle.pattern == StrokePattern::TexturedPencil);
             gpu.BeginBatch();
 
             const auto& liveMesh = m_inkEngine.GetLiveMesh();
             if (!liveMesh.empty()) {
-                gpu.SubmitMesh(liveMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1);
+                gpu.SubmitMesh(liveMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1, isPencil);
             }
 
             const auto& predMesh = m_inkEngine.GetPredictedMesh();
             if (!predMesh.empty()) {
-                gpu.SubmitMesh(predMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1);
+                gpu.SubmitMesh(predMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1, isPencil);
             }
 
             if (gpu.HasPendingDraws()) {

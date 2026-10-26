@@ -80,7 +80,7 @@ void CanvasEngine::OnShapeDrawMove(float screenX, float screenY, DocumentSession
     if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
         double d = std::hypot(shapeCreation.currentWorld.x - shapeCreation.ellipseCenter.x,
                               shapeCreation.currentWorld.y - shapeCreation.ellipseCenter.y);
-        shapeCreation.ellipseMinorRadius = std::clamp(d, 1.0, std::max(2.0, shapeCreation.ellipseMajorRadius));
+        shapeCreation.ellipseMinorRadius = std::max(0.5, d);
         isDirty = true;
         return;
     }
@@ -302,6 +302,119 @@ std::shared_ptr<CanvasObject> CanvasEngine::OnShapeDrawUp(DocumentSession* sessi
     }
 
     return shp;
+}
+
+void CanvasEngine::RenderShapePreview(BLContext& ctx, const Viewport& viewport) const {
+    if (!shapeCreation.isDragging && !(shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1)) {
+        return;
+    }
+
+    ctx.save();
+    ctx.set_transform(viewport.worldToScreenMatrix);
+
+    double dragDist = std::hypot(shapeCreation.currentWorld.x - shapeCreation.startWorld.x,
+                                 shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+
+    if (shapeCreation.shapeType == Folio::ShapeType::Line ||
+        shapeCreation.shapeType == Folio::ShapeType::LineArrow) {
+        Folio::SmartArrowObject previewArrow(
+            shapeCreation.startWorld.x, shapeCreation.startWorld.y,
+            shapeCreation.currentWorld.x, shapeCreation.currentWorld.y
+        );
+        previewArrow.strokeColor = shapeCreation.defaultOutlineColor;
+        previewArrow.strokeWidth = shapeCreation.defaultStrokeWidth;
+        previewArrow.outlineType = shapeCreation.defaultOutlineType;
+        previewArrow.connectorStyle = shapeCreation.defaultConnectorStyle;
+        previewArrow.startArrow = Folio::ArrowHeadType::None;
+        previewArrow.endArrow = (shapeCreation.shapeType == Folio::ShapeType::LineArrow)
+                                  ? shapeCreation.defaultEndArrow
+                                  : Folio::ArrowHeadType::None;
+        previewArrow.UpdateBounds();
+        previewArrow.Render(ctx, viewport);
+        ctx.restore();
+        return;
+    }
+
+    if (shapeCreation.shapeType == Folio::ShapeType::Ellipse && shapeCreation.ellipseStep == 1) {
+        double rx = shapeCreation.ellipseMajorRadius;
+        double ry = shapeCreation.ellipseMinorRadius;
+        if (rx < 0.1) rx = 5.0;
+        if (ry < 0.1) ry = 5.0;
+        double cx = shapeCreation.ellipseCenter.x;
+        double cy = shapeCreation.ellipseCenter.y;
+
+        Folio::ShapeObject previewShape(Folio::ShapeType::Ellipse, cx - rx, cy - ry, rx * 2.0, ry * 2.0);
+        previewShape.fillType = shapeCreation.defaultFillType;
+        previewShape.fillColor = shapeCreation.defaultFillColor;
+        previewShape.outlineType = shapeCreation.defaultOutlineType;
+        previewShape.strokeColor = shapeCreation.defaultOutlineColor;
+        previewShape.strokeWidth = shapeCreation.defaultStrokeWidth;
+        previewShape.UpdateBounds();
+        previewShape.Render(ctx, viewport);
+        ctx.restore();
+        return;
+    }
+
+    if (dragDist < 0.1) {
+        ctx.restore();
+        return;
+    }
+
+    double minX = 0.0, minY = 0.0, w = 0.0, h = 0.0;
+    if (shapeCreation.shapeType == Folio::ShapeType::Circle ||
+        shapeCreation.shapeType == Folio::ShapeType::Ellipse) {
+        double r = dragDist;
+        w = r * 2.0;
+        h = r * 2.0;
+        minX = shapeCreation.startWorld.x - r;
+        minY = shapeCreation.startWorld.y - r;
+    } else if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
+               shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
+        double r = dragDist;
+        w = r * 2.0;
+        h = r * 2.0;
+        minX = shapeCreation.startWorld.x - r;
+        minY = shapeCreation.startWorld.y - r;
+    } else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
+               shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
+               shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
+               shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
+        minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+        w = std::max(0.5, std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x));
+        double rawH = std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+        if (rawH < 4.0) {
+            h = 20.0;
+            minY = shapeCreation.startWorld.y - 10.0;
+        } else {
+            minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+            h = std::max(0.5, rawH);
+        }
+    } else {
+        minX = std::min(shapeCreation.startWorld.x, shapeCreation.currentWorld.x);
+        minY = std::min(shapeCreation.startWorld.y, shapeCreation.currentWorld.y);
+        w = std::abs(shapeCreation.currentWorld.x - shapeCreation.startWorld.x);
+        h = std::abs(shapeCreation.currentWorld.y - shapeCreation.startWorld.y);
+    }
+
+    Folio::ShapeObject previewShape(shapeCreation.shapeType, minX, minY, w, h);
+    previewShape.fillType = shapeCreation.defaultFillType;
+    previewShape.fillColor = shapeCreation.defaultFillColor;
+    previewShape.outlineType = shapeCreation.defaultOutlineType;
+    previewShape.strokeColor = shapeCreation.defaultOutlineColor;
+    previewShape.strokeWidth = shapeCreation.defaultStrokeWidth;
+    if (shapeCreation.shapeType == Folio::ShapeType::Hexagon ||
+        shapeCreation.shapeType == Folio::ShapeType::RegularPolygon) {
+        previewShape.param1 = static_cast<double>(shapeCreation.polygonSides);
+    } else if (shapeCreation.shapeType == Folio::ShapeType::SineWave ||
+               shapeCreation.shapeType == Folio::ShapeType::SquareWave ||
+               shapeCreation.shapeType == Folio::ShapeType::TriangleWave ||
+               shapeCreation.shapeType == Folio::ShapeType::RightTriangleWave) {
+        previewShape.param1 = 3.0;
+        previewShape.param2 = 0.0;
+    }
+    previewShape.UpdateBounds();
+    previewShape.Render(ctx, viewport);
+    ctx.restore();
 }
 
 std::shared_ptr<Folio::ShapeObject> CanvasEngine::GetSelectedShape(DocumentSession* session) const {

@@ -309,6 +309,7 @@ public:
     void OnShapeDrawDown(float screenX, float screenY, DocumentSession* session = nullptr);
     void OnShapeDrawMove(float screenX, float screenY, DocumentSession* session = nullptr);
     std::shared_ptr<CanvasObject> OnShapeDrawUp(DocumentSession* session);
+    void RenderShapePreview(BLContext& ctx, const Viewport& viewport) const;
 
     std::shared_ptr<Folio::ShapeObject> GetSelectedShape(DocumentSession* session) const;
     std::shared_ptr<Folio::SmartArrowObject> GetSelectedConnector(DocumentSession* session) const;

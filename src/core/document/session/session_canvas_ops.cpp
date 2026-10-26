@@ -186,7 +186,7 @@ void DocumentSession::CommitStroke(std::vector<Segment1D>&& segments, const PenT
         stroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
     }
 
-    Folio::InkEngine::BuildStrokeMesh(stroke.points, tool.capType, Folio::PackGpuColor(tool.color), stroke.meshCache);
+    Folio::InkEngine::BuildStrokeMesh(stroke.points, tool.capType, Folio::PackGpuColor(tool.color), stroke.meshCache, 3.7795f, tool.strokePattern);
     stroke.segments = std::move(segments);
     container->AddStroke(stroke);
 
