@@ -498,6 +498,7 @@ if(FOLIONOTE_ENABLE_SLINT AND NOT ANDROID)
         message(STATUS "Slint C++ SDK found — enabling parallel Slint Settings & Window Studio")
         target_compile_definitions(${APP_TARGET} PRIVATE FOLIONOTE_HAS_SLINT=1)
         target_link_libraries(${APP_TARGET} PRIVATE Slint::Slint)
+        set_target_properties(${APP_TARGET} PROPERTIES SLINT_EMBED_RESOURCES "embed-files")
         slint_target_sources(${APP_TARGET}
             "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/slint/settings_studio.slint"
         )

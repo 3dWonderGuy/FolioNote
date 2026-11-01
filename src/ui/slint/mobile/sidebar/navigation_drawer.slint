@@ -1,0 +1,191 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Slide-Out Navigation Drawer for Notebooks, Sections & Pages Navigation.
+
+import { ScrollView } from "std-widgets.slint";
+import { PageInfo, SectionInfo } from "../types.slint";
+
+export component NavigationDrawer inherits Rectangle {
+    in-out property <bool> drawer_open: false;
+    in property <string> notebook_title: "Notebook";
+    in property <[SectionInfo]> sections: [];
+    in property <[PageInfo]> pages: [];
+
+    callback close_drawer();
+    callback select_section(string);
+    callback select_page(string);
+    callback new_page_requested();
+    callback switch_to_desktop();
+
+    background: #15161CEE;
+    border-width: 1px;
+    border-color: #262933;
+    z: 30;
+    animate x { duration: 180ms; easing: ease-out; }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        // Header Title & Close Button
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: root.notebook_title;
+                font-size: 17px;
+                font-weight: 700;
+                color: #F8FAFC;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                width: 28px;
+                height: 28px;
+                clicked => { root.close_drawer(); }
+                Text {
+                    text: "✕";
+                    font-size: 15px;
+                    color: #8E98A8;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: #262933; }
+
+        // Section Tabs Header
+        Text {
+            text: "SECTIONS";
+            font-size: 11px;
+            font-weight: 700;
+            color: #6E7687;
+        }
+
+        // Section Tabs Horizontal Scroller
+        Flickable {
+            height: 36px;
+            content-height: 36px;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for sec in root.sections : Rectangle {
+                    height: 32px;
+                    min-width: 70px;
+                    preferred-width: sec_txt.preferred-width + 24px;
+                    border-radius: 6px;
+                    background: sec.is_active ? #EA580C : #21232B;
+                    border-width: 1px;
+                    border-color: sec.is_active ? #F97316 : #2D303B;
+
+                    TouchArea {
+                        clicked => { root.select_section(sec.guid); }
+                    }
+
+                    sec_txt := Text {
+                        text: sec.title;
+                        font-size: 12px;
+                        font-weight: sec.is_active ? 700 : 500;
+                        color: sec.is_active ? #FFFFFF : #94A3B8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: #262933; }
+
+        // Pages List Header
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: "PAGES";
+                font-size: 11px;
+                font-weight: 700;
+                color: #6E7687;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                width: 88px;
+                height: 24px;
+                clicked => { root.new_page_requested(); }
+                Text {
+                    text: "+ New Page";
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: #EA580C;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Pages ScrollView
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+                for pg in root.pages : Rectangle {
+                    height: 38px;
+                    border-radius: 6px;
+                    background: pg.is_active ? #252834 : (touch_pg.has-hover ? #1E2028 : transparent);
+                    border-width: pg.is_active ? 1px : 0px;
+                    border-color: #3A3E4E;
+
+                    touch_pg := TouchArea {
+                        clicked => {
+                            root.select_page(pg.guid);
+                            root.close_drawer();
+                        }
+                    }
+
+                    // Active left indicator strip
+                    if pg.is_active : Rectangle {
+                        x: 0px;
+                        y: 6px;
+                        width: 3px;
+                        height: parent.height - 12px;
+                        border-radius: 1.5px;
+                        background: #EA580C;
+                    }
+
+                    Text {
+                        x: 14px;
+                        y: (parent.height - self.height) / 2;
+                        text: pg.title;
+                        font-size: 13px;
+                        font-weight: pg.is_active ? 600 : 400;
+                        color: pg.is_active ? #FFFFFF : #94A3B8;
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: #262933; }
+
+        // Desktop Mode Switcher Button
+        Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: touch_dt.has-hover ? #2A2D38 : #21232B;
+            border-width: 1px;
+            border-color: touch_dt.has-hover ? #EA580C80 : #2E313E;
+
+            touch_dt := TouchArea {
+                clicked => { root.switch_to_desktop(); }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: "Switch to Desktop UI (F4)";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #E2E8F0;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

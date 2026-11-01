@@ -1,0 +1,150 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Shapes Ribbon Tab: Parametric Vector Geometry, Precision Stencils & Ruler Controls.
+
+import { RibbonLargeButton, RibbonGroupDivider } from "../components/ribbon_buttons.slint";
+
+export component RibbonTabShapes inherits HorizontalLayout {
+    in-out property <string> active_tool: "pen";
+    in-out property <string> active_shape_name: "rect";
+    in-out property <bool> lock_shape_mode: false;
+    in-out property <bool> snap_to_grid: false;
+    in-out property <bool> ruler_enabled: false;
+
+    callback ribbon_action(string);
+
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 6px;
+    padding-bottom: 4px;
+    spacing: 8px;
+    alignment: start;
+
+    // Lines & Basic Shapes
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "╱";
+                label: "Line";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "line";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "line"; root.ribbon_action("shape_line"); }
+            }
+            RibbonLargeButton {
+                icon: "↗";
+                label: "Arrow";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "arrow";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "arrow"; root.ribbon_action("shape_arrow"); }
+            }
+            RibbonLargeButton {
+                icon: "▭";
+                label: "Rect";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "rect";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "rect"; root.ribbon_action("shape_rect"); }
+            }
+            RibbonLargeButton {
+                icon: "▢";
+                label: "Round";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "round_rect";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "round_rect"; root.ribbon_action("shape_round_rect"); }
+            }
+            RibbonLargeButton {
+                icon: "○";
+                label: "Circle";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "circle";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "circle"; root.ribbon_action("shape_circle"); }
+            }
+            RibbonLargeButton {
+                icon: "⬭";
+                label: "Ellipse";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "ellipse";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "ellipse"; root.ribbon_action("shape_ellipse"); }
+            }
+            RibbonLargeButton {
+                icon: "△";
+                label: "Triangle";
+                btn_width: 48px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "triangle";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "triangle"; root.ribbon_action("shape_triangle"); }
+            }
+            RibbonLargeButton {
+                icon: "◇";
+                label: "Diamond";
+                btn_width: 48px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "diamond";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "diamond"; root.ribbon_action("shape_diamond"); }
+            }
+            RibbonLargeButton {
+                icon: "⬠";
+                label: "Polygon";
+                btn_width: 48px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "polygon";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "polygon"; root.ribbon_action("shape_polygon"); }
+            }
+            RibbonLargeButton {
+                icon: "☆";
+                label: "Star";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "star";
+                clicked => { root.active_tool = "shape"; root.active_shape_name = "star"; root.ribbon_action("shape_star"); }
+            }
+        }
+        Text { text: "Vector Geometry"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Shape Options & Ruler
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "Lock";
+                label: "Lock Mode";
+                btn_width: 54px;
+                is_selected: root.lock_shape_mode;
+                clicked => {
+                    root.lock_shape_mode = !root.lock_shape_mode;
+                    root.ribbon_action("toggle_lock_shape_mode");
+                }
+            }
+            RibbonLargeButton {
+                icon: "#";
+                label: "Snap Grid";
+                btn_width: 52px;
+                is_selected: root.snap_to_grid;
+                clicked => {
+                    root.snap_to_grid = !root.snap_to_grid;
+                    root.ribbon_action("toggle_snap_grid");
+                }
+            }
+            RibbonLargeButton {
+                icon: "📐";
+                label: "Ruler";
+                btn_width: 48px;
+                is_selected: root.ruler_enabled;
+                clicked => { root.ribbon_action("toggle_ruler"); }
+            }
+            RibbonLargeButton {
+                icon: "↺";
+                label: "-15°";
+                btn_width: 44px;
+                clicked => { root.ribbon_action("ruler_rot_ccw"); }
+            }
+            RibbonLargeButton {
+                icon: "↻";
+                label: "+15°";
+                btn_width: 44px;
+                clicked => { root.ribbon_action("ruler_rot_cw"); }
+            }
+        }
+        Text { text: "Options & Ruler"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+}

@@ -1,0 +1,242 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Top Header Row: Main Menu Button, Drawer Toggle, Quick Actions, Tab Strip, Document Info & Shell Switcher.
+
+import { RibbonTabButton, RibbonPillButton } from "../components/ribbon_buttons.slint";
+
+export component RibbonHeader inherits Rectangle {
+    in-out property <string> active_tab: "draw";
+    in-out property <bool> ribbon_collapsed: false;
+    in-out property <bool> drawer_open: false;
+    in-out property <bool> main_menu_open: false;
+    in property <string> active_tool: "pen";
+    in property <string> notebook_title: "Notebook";
+    in property <string> page_title: "Untitled Page";
+
+    callback toggle_main_menu();
+    callback toggle_drawer();
+    callback trigger_undo();
+    callback trigger_redo();
+    callback select_tab(string);
+    callback toggle_collapse();
+    callback switch_to_desktop();
+
+    height: 40px;
+    background: #131418;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 1px;
+        padding-bottom: 1px;
+        spacing: 8px;
+        alignment: space-between;
+
+        // Left: Main Menu (Very Left Corner) + Drawer + Quick Undo/Redo + Tab Strip
+        HorizontalLayout {
+            spacing: 5px;
+            alignment: start;
+
+            // Main Menu / Hub Button (Very Left Corner)
+            Rectangle {
+                width: 82px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 7px;
+                background: root.main_menu_open
+                    ? @linear-gradient(135deg, #F97316 0%, #EA580C 100%)
+                    : (touch_menu.pressed ? #262A36 : (touch_menu.has-hover ? #212530 : #1A1D26));
+                border-width: 1px;
+                border-color: root.main_menu_open ? #FB923C : (touch_menu.has-hover ? #FFFFFF22 : #FFFFFF12);
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
+
+                touch_menu := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.toggle_main_menu(); }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+
+                    Image {
+                        source: @image-url("../icons/menu-grid.svg");
+                        width: 14px;
+                        height: 14px;
+                        colorize: root.main_menu_open ? #FFFFFF : #F97316;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    Text {
+                        text: "Menu";
+                        font-size: 12px;
+                        font-weight: 700;
+                        color: root.main_menu_open ? #FFFFFF : #F1F5F9;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Notebook Pages Drawer Toggle
+            Rectangle {
+                width: 78px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 7px;
+                background: root.drawer_open
+                    ? #232836
+                    : (touch_drawer.pressed ? #252834 : (touch_drawer.has-hover ? #1F222D : #181A22));
+                border-width: 1px;
+                border-color: root.drawer_open ? #F9731680 : (touch_drawer.has-hover ? #FFFFFF1F : #FFFFFF0F);
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
+
+                touch_drawer := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.toggle_drawer(); }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+
+                    Image {
+                        source: @image-url("../icons/sidebar.svg");
+                        width: 14px;
+                        height: 14px;
+                        colorize: root.drawer_open ? #F97316 : #94A3B8;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    Text {
+                        text: "Pages";
+                        font-size: 12px;
+                        font-weight: root.drawer_open ? 700 : 600;
+                        color: root.drawer_open ? #F8FAFC : #CBD5E1;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Quick Undo / Redo
+            RibbonPillButton {
+                label: "↶";
+                pill_width: 32px;
+                clicked => { root.trigger_undo(); }
+            }
+            RibbonPillButton {
+                label: "↷";
+                pill_width: 32px;
+                clicked => { root.trigger_redo(); }
+            }
+
+            Rectangle {
+                width: 1px;
+                height: 22px;
+                background: #282B35;
+                y: (parent.height - self.height) / 2;
+            }
+
+            RibbonTabButton {
+                label: "Home";
+                is_active: root.active_tab == "home" && !root.main_menu_open;
+                clicked => {
+                    root.main_menu_open = false;
+                    root.select_tab("home");
+                }
+            }
+            RibbonTabButton {
+                label: "Insert";
+                is_active: root.active_tab == "insert" && !root.main_menu_open;
+                clicked => {
+                    root.main_menu_open = false;
+                    root.select_tab("insert");
+                }
+            }
+            RibbonTabButton {
+                label: "Draw";
+                is_active: root.active_tab == "draw" && !root.main_menu_open;
+                clicked => {
+                    root.main_menu_open = false;
+                    root.select_tab("draw");
+                }
+            }
+            RibbonTabButton {
+                label: "View";
+                is_active: root.active_tab == "view" && !root.main_menu_open;
+                clicked => {
+                    root.main_menu_open = false;
+                    root.select_tab("view");
+                }
+            }
+            RibbonTabButton {
+                label: "Shapes";
+                is_active: root.active_tab == "shapes" && !root.main_menu_open;
+                is_accent: root.active_tool == "shape";
+                clicked => {
+                    root.main_menu_open = false;
+                    root.select_tab("shapes");
+                }
+            }
+        }
+
+        // Right: Active Document Info + Collapse Toggle + Desktop Switch
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+
+            Text {
+                text: root.notebook_title + "  ›  " + root.page_title;
+                font-size: 12px;
+                color: #8E98A8;
+                vertical-alignment: center;
+            }
+
+            RibbonPillButton {
+                label: root.ribbon_collapsed ? "Show Ribbon ˅" : "Hide Ribbon ˄";
+                pill_width: 100px;
+                is_selected: root.ribbon_collapsed;
+                clicked => { root.toggle_collapse(); }
+            }
+
+            // Desktop UI Switcher with Monitor Icon
+            Rectangle {
+                width: 118px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 7px;
+                background: touch_desktop.pressed ? #252834 : (touch_desktop.has-hover ? #1F222D : #181A22);
+                border-width: 1px;
+                border-color: touch_desktop.has-hover ? #FFFFFF1F : #FFFFFF0F;
+                animate background { duration: 150ms; }
+                animate border-color { duration: 150ms; }
+
+                touch_desktop := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.switch_to_desktop(); }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+
+                    Image {
+                        source: @image-url("../icons/monitor.svg");
+                        width: 13px;
+                        height: 13px;
+                        colorize: touch_desktop.has-hover ? #E2E8F0 : #94A3B8;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    Text {
+                        text: "Desktop (F4)";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: touch_desktop.has-hover ? #F8FAFC : #CBD5E1;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

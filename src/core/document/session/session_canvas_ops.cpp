@@ -146,7 +146,7 @@ void DocumentSession::CommitStroke(FinishedStrokeData&& data, const PenTool& too
         return;
     }
 
-    activePage->AddObject(container);
+    activePage->AddObject(container, true);
     RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(container));
     activePage->isModified = true;
     NotifyPageModified(activePage);
@@ -208,7 +208,7 @@ void DocumentSession::CommitStroke(std::vector<Segment1D>&& segments, const PenT
         return;
     }
 
-    activePage->AddObject(container);
+    activePage->AddObject(container, true);
     RecordHistoryCommand(activePage, std::make_unique<Folio::AddObjectCommand>(container));
     activePage->isModified = true;
     NotifyPageModified(activePage);

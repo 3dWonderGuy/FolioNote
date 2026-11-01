@@ -1,0 +1,394 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Draw Ribbon Tab: Pens, Nibs, Erasers, Palettes, Thickness, Ruler and Quick Geometry.
+
+import { RibbonLargeButton, RibbonPillButton, ColorSwatch, RibbonGroupDivider } from "../components/ribbon_buttons.slint";
+
+export component RibbonTabDraw inherits HorizontalLayout {
+    in-out property <string> active_tool: "pen";
+    in-out property <color> active_color: #181A20;
+    in-out property <float> stroke_width_mm: 0.5;
+    in-out property <string> stroke_width_label: "0.5 mm";
+    in-out property <int> opacity_pct: 100;
+    in-out property <string> stroke_pattern: "solid";
+    in-out property <string> eraser_size_label: "6 mm";
+    in-out property <bool> ruler_enabled: false;
+    in-out property <string> active_shape_name: "rect";
+
+    callback select_tool(string);
+    callback select_color(color);
+    callback set_stroke_width(float);
+    callback set_opacity_pct(int);
+    callback set_stroke_pattern(string);
+    callback trigger_undo();
+    callback trigger_redo();
+    callback ribbon_action(string);
+
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 6px;
+    padding-bottom: 4px;
+    spacing: 8px;
+    alignment: start;
+
+    // Group 1: History
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "↶";
+                label: "Undo";
+                btn_width: 46px;
+                clicked => { root.trigger_undo(); }
+            }
+            RibbonLargeButton {
+                icon: "↷";
+                label: "Redo";
+                btn_width: 46px;
+                clicked => { root.trigger_redo(); }
+            }
+        }
+        Text { text: "History"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Group 2: Selection & Navigation
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "⌫";
+                label: "Delete";
+                btn_width: 48px;
+                clicked => { root.ribbon_action("delete_selected"); }
+            }
+            RibbonLargeButton {
+                icon: "⬚";
+                label: "Select";
+                btn_width: 48px;
+                is_selected: root.active_tool == "select";
+                clicked => { root.active_tool = "select"; root.select_tool("select"); }
+            }
+            RibbonLargeButton {
+                icon: "⟲";
+                label: "Lasso";
+                btn_width: 48px;
+                is_selected: root.active_tool == "lasso";
+                clicked => { root.active_tool = "lasso"; root.select_tool("lasso"); }
+            }
+            RibbonLargeButton {
+                icon: "✋";
+                label: "Pan";
+                btn_width: 46px;
+                is_selected: root.active_tool == "pan";
+                clicked => { root.active_tool = "pan"; root.select_tool("pan"); }
+            }
+            RibbonLargeButton {
+                icon: "T";
+                label: "Text";
+                btn_width: 46px;
+                is_selected: root.active_tool == "text";
+                clicked => { root.active_tool = "text"; root.select_tool("text"); }
+            }
+        }
+        Text { text: "Select & Edit"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Group 3: Eraser Tools
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "⌫";
+                label: "Stroke";
+                btn_width: 48px;
+                is_selected: root.active_tool == "eraser";
+                clicked => { root.active_tool = "eraser"; root.select_tool("eraser"); }
+            }
+            RibbonLargeButton {
+                icon: "○";
+                label: "Point";
+                btn_width: 48px;
+                is_selected: root.active_tool == "point_eraser";
+                clicked => { root.active_tool = "point_eraser"; root.select_tool("point_eraser"); }
+            }
+            RibbonLargeButton {
+                icon: "⌧";
+                label: root.eraser_size_label;
+                btn_width: 48px;
+                clicked => { root.ribbon_action("cycle_eraser_size"); }
+            }
+        }
+        Text { text: "Erasers"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Group 4: Drawing Pens & Brushes
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "✒";
+                label: "Pen";
+                btn_width: 48px;
+                is_selected: root.active_tool == "pen";
+                tool_color: root.active_tool == "pen" ? root.active_color : transparent;
+                clicked => { root.active_tool = "pen"; root.select_tool("pen"); }
+            }
+            RibbonLargeButton {
+                icon: "🖋";
+                label: "Fountain";
+                btn_width: 52px;
+                is_selected: root.active_tool == "fountain";
+                tool_color: root.active_tool == "fountain" ? root.active_color : transparent;
+                clicked => { root.active_tool = "fountain"; root.select_tool("fountain"); }
+            }
+            RibbonLargeButton {
+                icon: "✎";
+                label: "Pencil";
+                btn_width: 48px;
+                is_selected: root.active_tool == "pencil";
+                tool_color: root.active_tool == "pencil" ? root.active_color : transparent;
+                clicked => { root.active_tool = "pencil"; root.select_tool("pencil"); }
+            }
+            RibbonLargeButton {
+                icon: "🖌";
+                label: "Brush";
+                btn_width: 48px;
+                is_selected: root.active_tool == "brush";
+                tool_color: root.active_tool == "brush" ? root.active_color : transparent;
+                clicked => { root.active_tool = "brush"; root.select_tool("brush"); }
+            }
+            RibbonLargeButton {
+                icon: "Highlight";
+                label: "Highlighter";
+                btn_width: 66px;
+                is_selected: root.active_tool == "highlighter";
+                tool_color: root.active_tool == "highlighter" ? #FACC15 : transparent;
+                clicked => { root.active_tool = "highlighter"; root.select_tool("highlighter"); }
+            }
+            RibbonLargeButton {
+                icon: "●";
+                label: "Laser";
+                btn_width: 48px;
+                is_selected: root.active_tool == "laser";
+                tool_color: root.active_tool == "laser" ? #EF4444 : transparent;
+                clicked => { root.active_tool = "laser"; root.select_tool("laser"); }
+            }
+        }
+        Text { text: "Inking Tools"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Group 5: Colors (2x5 Swatches)
+    VerticalLayout {
+        spacing: 2px;
+        VerticalLayout {
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 5px;
+                ColorSwatch {
+                    swatch_color: #181A20;
+                    is_selected: root.active_color == #181A20;
+                    clicked => { root.active_color = #181A20; root.select_color(#181A20); }
+                }
+                ColorSwatch {
+                    swatch_color: #1E3A8A;
+                    is_selected: root.active_color == #1E3A8A;
+                    clicked => { root.active_color = #1E3A8A; root.select_color(#1E3A8A); }
+                }
+                ColorSwatch {
+                    swatch_color: #2563EB;
+                    is_selected: root.active_color == #2563EB;
+                    clicked => { root.active_color = #2563EB; root.select_color(#2563EB); }
+                }
+                ColorSwatch {
+                    swatch_color: #DC2626;
+                    is_selected: root.active_color == #DC2626;
+                    clicked => { root.active_color = #DC2626; root.select_color(#DC2626); }
+                }
+                ColorSwatch {
+                    swatch_color: #16A34A;
+                    is_selected: root.active_color == #16A34A;
+                    clicked => { root.active_color = #16A34A; root.select_color(#16A34A); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 5px;
+                ColorSwatch {
+                    swatch_color: #EA580C;
+                    is_selected: root.active_color == #EA580C;
+                    clicked => { root.active_color = #EA580C; root.select_color(#EA580C); }
+                }
+                ColorSwatch {
+                    swatch_color: #9333EA;
+                    is_selected: root.active_color == #9333EA;
+                    clicked => { root.active_color = #9333EA; root.select_color(#9333EA); }
+                }
+                ColorSwatch {
+                    swatch_color: #DB2777;
+                    is_selected: root.active_color == #DB2777;
+                    clicked => { root.active_color = #DB2777; root.select_color(#DB2777); }
+                }
+                ColorSwatch {
+                    swatch_color: #0D9488;
+                    is_selected: root.active_color == #0D9488;
+                    clicked => { root.active_color = #0D9488; root.select_color(#0D9488); }
+                }
+                ColorSwatch {
+                    swatch_color: #EAB308;
+                    is_selected: root.active_color == #EAB308;
+                    clicked => { root.active_color = #EAB308; root.select_color(#EAB308); }
+                }
+            }
+        }
+        Text { text: "Palette"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Group 6: Thickness, Opacity & Stroke Style
+    VerticalLayout {
+        spacing: 2px;
+        VerticalLayout {
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 3px;
+                RibbonPillButton {
+                    label: "0.3";
+                    pill_width: 32px;
+                    is_selected: root.stroke_width_label == "0.3 mm";
+                    clicked => { root.stroke_width_mm = 0.3; root.stroke_width_label = "0.3 mm"; root.set_stroke_width(0.3); }
+                }
+                RibbonPillButton {
+                    label: "0.5";
+                    pill_width: 32px;
+                    is_selected: root.stroke_width_label == "0.5 mm";
+                    clicked => { root.stroke_width_mm = 0.5; root.stroke_width_label = "0.5 mm"; root.set_stroke_width(0.5); }
+                }
+                RibbonPillButton {
+                    label: "1.0";
+                    pill_width: 32px;
+                    is_selected: root.stroke_width_label == "1.0 mm";
+                    clicked => { root.stroke_width_mm = 1.0; root.stroke_width_label = "1.0 mm"; root.set_stroke_width(1.0); }
+                }
+                RibbonPillButton {
+                    label: "2.5";
+                    pill_width: 32px;
+                    is_selected: root.stroke_width_label == "2.5 mm";
+                    clicked => { root.stroke_width_mm = 2.5; root.stroke_width_label = "2.5 mm"; root.set_stroke_width(2.5); }
+                }
+                RibbonPillButton {
+                    label: "5.0";
+                    pill_width: 32px;
+                    is_selected: root.stroke_width_label == "5.0 mm";
+                    clicked => { root.stroke_width_mm = 5.0; root.stroke_width_label = "5.0 mm"; root.set_stroke_width(5.0); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 3px;
+                RibbonPillButton {
+                    label: "100%";
+                    pill_width: 38px;
+                    is_selected: root.opacity_pct == 100;
+                    clicked => { root.opacity_pct = 100; root.set_opacity_pct(100); }
+                }
+                RibbonPillButton {
+                    label: "50%";
+                    pill_width: 34px;
+                    is_selected: root.opacity_pct == 50;
+                    clicked => { root.opacity_pct = 50; root.set_opacity_pct(50); }
+                }
+                RibbonPillButton {
+                    label: "──";
+                    pill_width: 30px;
+                    is_selected: root.stroke_pattern == "solid";
+                    clicked => { root.stroke_pattern = "solid"; root.set_stroke_pattern("solid"); }
+                }
+                RibbonPillButton {
+                    label: "- -";
+                    pill_width: 30px;
+                    is_selected: root.stroke_pattern == "dashed";
+                    clicked => { root.stroke_pattern = "dashed"; root.set_stroke_pattern("dashed"); }
+                }
+                RibbonPillButton {
+                    label: "· ·";
+                    pill_width: 30px;
+                    is_selected: root.stroke_pattern == "dotted";
+                    clicked => { root.stroke_pattern = "dotted"; root.set_stroke_pattern("dotted"); }
+                }
+            }
+        }
+        Text { text: "Stroke & Style"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Group 7: Ruler & Quick Shapes
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "📐";
+                label: "Ruler";
+                btn_width: 48px;
+                is_selected: root.ruler_enabled;
+                clicked => { root.ribbon_action("toggle_ruler"); }
+            }
+            RibbonLargeButton {
+                icon: "╱";
+                label: "Line";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "line";
+                clicked => {
+                    root.active_tool = "shape";
+                    root.active_shape_name = "line";
+                    root.ribbon_action("shape_line");
+                }
+            }
+            RibbonLargeButton {
+                icon: "↗";
+                label: "Arrow";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "arrow";
+                clicked => {
+                    root.active_tool = "shape";
+                    root.active_shape_name = "arrow";
+                    root.ribbon_action("shape_arrow");
+                }
+            }
+            RibbonLargeButton {
+                icon: "▭";
+                label: "Rect";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "rect";
+                clicked => {
+                    root.active_tool = "shape";
+                    root.active_shape_name = "rect";
+                    root.ribbon_action("shape_rect");
+                }
+            }
+            RibbonLargeButton {
+                icon: "○";
+                label: "Circle";
+                btn_width: 46px;
+                is_selected: root.active_tool == "shape" && root.active_shape_name == "circle";
+                clicked => {
+                    root.active_tool = "shape";
+                    root.active_shape_name = "circle";
+                    root.ribbon_action("shape_circle");
+                }
+            }
+        }
+        Text { text: "Geometry"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+}

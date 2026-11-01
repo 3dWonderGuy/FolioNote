@@ -2442,6 +2442,40 @@ private:
             }
 
             case SettingsSubCategory::Appearance: {
+                // UI Shell Frontend Engine Configuration
+                ImGui::PushFont(FolioTheme::FontNavBoldLarge);
+                ImGui::TextColored(theme.colorText, "UI Shell & Presentation Mode");
+                ImGui::PopFont();
+                ImGui::TextColored(theme.colorTextMuted, "Select between Desktop Workstation (Dear ImGui) and Mobile / Touch Shell (Slint)");
+                ImGui::Dummy(ImVec2(0.0f, 4.0f));
+
+                auto& smShell = SettingsManager::Instance();
+                bool isMobileMode = (smShell.uiMode == UIMode::MobileSlint);
+                if (ImGui::RadioButton("Desktop Workstation (Dear ImGui)", !isMobileMode)) {
+                    if (smShell.uiMode != UIMode::DesktopImGui) {
+                        smShell.uiMode = UIMode::DesktopImGui;
+                        smShell.Save();
+                    }
+                }
+                ImGui::SameLine(0.0f, 24.0f);
+                if (ImGui::RadioButton("Mobile & Tablet Touch Shell (Slint)", isMobileMode)) {
+                    if (smShell.uiMode != UIMode::MobileSlint) {
+                        smShell.uiMode = UIMode::MobileSlint;
+                        smShell.Save();
+                        Folio::UIActionRegistry::Instance().Execute("tools.switch_ui_shell");
+                    }
+                }
+
+                if (!isMobileMode) {
+                    ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                    if (ImGui::Button("Switch to Mobile Touch Shell Now", ImVec2(250.0f, 32.0f))) {
+                        smShell.uiMode = UIMode::MobileSlint;
+                        smShell.Save();
+                        Folio::UIActionRegistry::Instance().Execute("tools.switch_ui_shell");
+                    }
+                }
+
+                ImGui::Dummy(ImVec2(0.0f, 14.0f));
                 ImGui::PushFont(FolioTheme::FontNavBoldLarge);
                 ImGui::TextColored(theme.colorText, "Theme Preset");
                 ImGui::PopFont();

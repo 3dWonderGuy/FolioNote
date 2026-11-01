@@ -1,0 +1,158 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Insert Ribbon Tab: Media, Attachments, Sticky Notes, and Object Embeds.
+
+import { RibbonLargeButton, RibbonGroupDivider } from "../components/ribbon_buttons.slint";
+
+export component RibbonTabInsert inherits HorizontalLayout {
+    callback ribbon_action(string);
+    callback new_page_requested();
+
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 6px;
+    padding-bottom: 4px;
+    spacing: 8px;
+    alignment: start;
+
+    // Pages
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "+";
+                label: "New Page";
+                btn_width: 56px;
+                clicked => { root.new_page_requested(); }
+            }
+            RibbonLargeButton {
+                icon: "❐";
+                label: "Duplicate";
+                btn_width: 56px;
+                clicked => { root.ribbon_action("page_duplicate"); }
+            }
+        }
+        Text { text: "Pages"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Files & Media
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "PDF";
+                label: "Import PDF";
+                btn_width: 58px;
+                clicked => { root.ribbon_action("insert_pdf"); }
+            }
+            RibbonLargeButton {
+                icon: "📎";
+                label: "Attach File";
+                btn_width: 58px;
+                clicked => { root.ribbon_action("insert_attachment"); }
+            }
+            RibbonLargeButton {
+                icon: "Image";
+                label: "Picture";
+                btn_width: 52px;
+                clicked => { root.ribbon_action("insert_image"); }
+            }
+            RibbonLargeButton {
+                icon: "Audio";
+                label: "Audio Track";
+                btn_width: 58px;
+                clicked => { root.ribbon_action("insert_audio"); }
+            }
+            RibbonLargeButton {
+                icon: "Video";
+                label: "Web Embed";
+                btn_width: 58px;
+                clicked => { root.ribbon_action("insert_video"); }
+            }
+        }
+        Text { text: "Files & Media"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Text & Sticky Notes
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "T";
+                label: "Text Box";
+                btn_width: 52px;
+                clicked => { root.ribbon_action("insert_textbox"); }
+            }
+            RibbonLargeButton {
+                icon: "■";
+                label: "Yellow";
+                btn_width: 48px;
+                tool_color: #EAB308;
+                clicked => { root.ribbon_action("insert_sticky_yellow"); }
+            }
+            RibbonLargeButton {
+                icon: "■";
+                label: "Blue";
+                btn_width: 48px;
+                tool_color: #38BDF8;
+                clicked => { root.ribbon_action("insert_sticky_blue"); }
+            }
+            RibbonLargeButton {
+                icon: "■";
+                label: "Green";
+                btn_width: 48px;
+                tool_color: #4ADE80;
+                clicked => { root.ribbon_action("insert_sticky_green"); }
+            }
+            RibbonLargeButton {
+                icon: "■";
+                label: "Pink";
+                btn_width: 48px;
+                tool_color: #F472B6;
+                clicked => { root.ribbon_action("insert_sticky_pink"); }
+            }
+        }
+        Text { text: "Notes & Sticky"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Quick Insert Shapes
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "▭";
+                label: "Rect";
+                btn_width: 46px;
+                clicked => { root.ribbon_action("insert_shape_rect"); }
+            }
+            RibbonLargeButton {
+                icon: "○";
+                label: "Circle";
+                btn_width: 46px;
+                clicked => { root.ribbon_action("insert_shape_circle"); }
+            }
+            RibbonLargeButton {
+                icon: "△";
+                label: "Triangle";
+                btn_width: 48px;
+                clicked => { root.ribbon_action("insert_shape_triangle"); }
+            }
+            RibbonLargeButton {
+                icon: "☆";
+                label: "Star";
+                btn_width: 46px;
+                clicked => { root.ribbon_action("insert_shape_star"); }
+            }
+        }
+        Text { text: "Shapes"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+}

@@ -1,0 +1,1814 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Modern Mobile & Tablet Main Menu / Hub Page (Notebooks, Library, Settings, Info & Export).
+
+import { NotebookItem, LibraryFolderItem } from "../types.slint";
+import { ScrollView } from "std-widgets.slint";
+
+component ModernToggle inherits Rectangle {
+    in-out property <bool> checked: false;
+    callback toggled();
+
+    width: 46px;
+    height: 26px;
+    border-radius: 13px;
+    background: root.checked ? #EA580C : (touch.has-hover ? #2C303E : #222530);
+    border-width: 1px;
+    border-color: root.checked ? #F97316 : #FFFFFF18;
+    animate background { duration: 160ms; easing: ease-out; }
+
+    Rectangle {
+        x: root.checked ? 23px : 3px;
+        y: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: #FFFFFF;
+        drop-shadow-blur: 4px;
+        drop-shadow-offset-y: 1px;
+        drop-shadow-color: #00000060;
+        animate x { duration: 160ms; easing: ease-out; }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+}
+
+component SegmentedPill inherits Rectangle {
+    in property <string> label: "Option";
+    in property <bool> selected: false;
+    in property <length> pill_width: 68px;
+    callback clicked();
+
+    width: root.pill_width;
+    height: 28px;
+    border-radius: 6px;
+    background: root.selected ? #EA580C : (touch.has-hover ? #252936 : transparent);
+    border-width: root.selected ? 1px : 0px;
+    border-color: #F97316;
+    animate background { duration: 140ms; easing: ease-out; }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        font-size: 12px;
+        font-weight: root.selected ? 700 : 500;
+        color: root.selected ? #FFFFFF : (touch.has-hover ? #E2E8F0 : #94A3B8);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component ColorPresetSwatch inherits Rectangle {
+    in property <color> swatch_color: #EA580C;
+    in property <bool> selected: false;
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background: root.swatch_color;
+    border-width: root.selected ? 2.5px : 1px;
+    border-color: root.selected ? #FFFFFF : #FFFFFF30;
+
+    if root.selected : Rectangle {
+        x: 5px;
+        y: 5px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        border-width: 1.5px;
+        border-color: #00000050;
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component HubNavItem inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <string> badge_text: "";
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 44px;
+    border-radius: 10px;
+    background: root.active
+        ? @linear-gradient(90deg, #EA580C28 0%, #EA580C0A 100%)
+        : (touch.has-hover ? #FFFFFF0A : transparent);
+    border-width: 1px;
+    border-color: root.active ? #EA580C55 : (touch.has-hover ? #FFFFFF12 : transparent);
+    animate background { duration: 150ms; easing: ease-out; }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    // Left active accent bar
+    if root.active : Rectangle {
+        x: 0px;
+        y: 11px;
+        width: 3px;
+        height: 22px;
+        border-radius: 1.5px;
+        background: #F97316;
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 12px;
+        alignment: space-between;
+
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+
+            Image {
+                width: 18px;
+                height: 18px;
+                y: (parent.height - self.height) / 2;
+                source: root.icon;
+                colorize: root.active ? #F97316 : (touch.has-hover ? #E2E8F0 : #8E98A8);
+            }
+
+            Text {
+                text: root.label;
+                font-size: 13px;
+                font-weight: root.active ? 700 : 500;
+                color: root.active ? #F8FAFC : (touch.has-hover ? #E2E8F0 : #94A3B8);
+                vertical-alignment: center;
+            }
+        }
+
+        if root.badge_text != "" : Rectangle {
+            width: 26px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 6px;
+            background: root.active ? #EA580C35 : #1E212B;
+            border-width: 1px;
+            border-color: root.active ? #F9731660 : #FFFFFF12;
+
+            Text {
+                text: root.badge_text;
+                font-size: 11px;
+                font-weight: 700;
+                color: root.active ? #F97316 : #94A3B8;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component BentoStatCard inherits Rectangle {
+    in property <string> overline;
+    in property <string> value;
+    in property <string> subtext;
+    in property <color> accent: #F97316;
+
+    height: 84px;
+    horizontal-stretch: 1;
+    border-radius: 12px;
+    background: @linear-gradient(180deg, #191C26 0%, #14161E 100%);
+    border-width: 1px;
+    border-color: #FFFFFF12;
+
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        spacing: 4px;
+        alignment: center;
+
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 3px;
+                background: root.accent;
+            }
+
+            Text {
+                text: root.overline;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.8px;
+                color: #6E7687;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: root.value;
+            font-size: 16px;
+            font-weight: 800;
+            color: #F8FAFC;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.subtext;
+            font-size: 11px;
+            color: #8E98A8;
+            overflow: elide;
+        }
+    }
+}
+
+export component MainMenuPage inherits Rectangle {
+    in-out property <string> active_category: "notebooks"; // "notebooks", "library", "settings", "info"
+    in-out property <bool> show_new_notebook_dialog: false;
+    in-out property <string> new_notebook_title: "";
+    in-out property <color> new_notebook_color: #EA580C;
+
+    in property <string> notebook_title: "Notebook";
+    in property <string> library_root_path: "";
+    in property <[NotebookItem]> notebooks: [];
+    in property <[LibraryFolderItem]> libraries: [];
+
+    in-out property <bool> dynamic_pressure: true;
+    in-out property <string> ink_smoothing: "medium";
+    in-out property <bool> palm_rejection: true;
+    in-out property <bool> canvas_inverted: false;
+    in-out property <bool> show_page_border: true;
+    in-out property <string> paper_style: "grid";
+
+    callback close_main_menu();
+    callback select_notebook(string);
+    callback create_notebook(string, color);
+    callback delete_notebook(string);
+    callback switch_to_desktop();
+    callback export_pdf();
+    callback export_images();
+    callback toggle_dynamic_pressure();
+    callback toggle_palm_rejection();
+    callback set_ink_smoothing(string);
+    callback toggle_invert_canvas();
+    callback toggle_page_border();
+    callback set_paper_style(string);
+
+    background: @linear-gradient(160deg, #12141C 0%, #0D0E13 100%);
+    z: 50;
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        // =====================================================================
+        // TOP APP BAR: Sleek Glass Header with Back Button, Brand & Status
+        // =====================================================================
+        Rectangle {
+            height: 60px;
+            background: @linear-gradient(180deg, #171922 0%, #12141B 100%);
+
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 14px;
+                alignment: space-between;
+
+                // Left: Back to Canvas + Brand Title
+                HorizontalLayout {
+                    spacing: 14px;
+                    alignment: start;
+
+                    // Modern Back to Canvas Pill Button
+                    Rectangle {
+                        width: 152px;
+                        height: 38px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 9px;
+                        background: touch_back.has-hover
+                            ? @linear-gradient(135deg, #F97316 0%, #EA580C 100%)
+                            : #1E212B;
+                        border-width: 1px;
+                        border-color: touch_back.has-hover ? #FB923C : #FFFFFF1A;
+                        animate background { duration: 150ms; easing: ease-out; }
+
+                        touch_back := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.close_main_menu(); }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 14px;
+                            spacing: 8px;
+                            alignment: center;
+
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("../icons/arrow-left.svg");
+                                colorize: touch_back.has-hover ? #FFFFFF : #F97316;
+                            }
+
+                            Text {
+                                text: "Back to Canvas";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: #F8FAFC;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 1px;
+                        height: 26px;
+                        background: #FFFFFF14;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    // Brand Icon + Title
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+
+                        Rectangle {
+                            width: 34px;
+                            height: 34px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 9px;
+                            background: @linear-gradient(135deg, #EA580C30 0%, #EA580C10 100%);
+                            border-width: 1px;
+                            border-color: #EA580C50;
+
+                            Image {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: 18px;
+                                height: 18px;
+                                source: @image-url("../icons/menu-grid.svg");
+                                colorize: #F97316;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 1px;
+
+                            Text {
+                                text: "FolioNote Hub";
+                                font-size: 15px;
+                                font-weight: 800;
+                                color: #F8FAFC;
+                            }
+                            Text {
+                                text: "Workspace, Library & Preferences";
+                                font-size: 11px;
+                                color: #8E98A8;
+                            }
+                        }
+                    }
+                }
+
+                // Right: Active Notebook Pill & Desktop Mode Switcher
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+
+                    // Active Notebook Status Chip
+                    Rectangle {
+                        height: 36px;
+                        preferred-width: nb_row.preferred-width + 24px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 8px;
+                        background: #171A23;
+                        border-width: 1px;
+                        border-color: #FFFFFF12;
+
+                        nb_row := HorizontalLayout {
+                            x: 12px;
+                            height: parent.height;
+                            spacing: 8px;
+                            alignment: center;
+
+                            Rectangle {
+                                width: 7px;
+                                height: 7px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 3.5px;
+                                background: #22C55E;
+                            }
+
+                            Image {
+                                width: 14px;
+                                height: 14px;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("../icons/book.svg");
+                                colorize: #94A3B8;
+                            }
+
+                            Text {
+                                text: root.notebook_title;
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: #E2E8F0;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Switch to Desktop UI Button
+                    Rectangle {
+                        width: 138px;
+                        height: 36px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 8px;
+                        background: touch_dt.has-hover ? #252936 : #1C1F2A;
+                        border-width: 1px;
+                        border-color: touch_dt.has-hover ? #EA580C80 : #FFFFFF16;
+                        animate background { duration: 150ms; easing: ease-out; }
+
+                        touch_dt := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.switch_to_desktop(); }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 7px;
+                            alignment: center;
+
+                            Image {
+                                width: 15px;
+                                height: 15px;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("../icons/monitor.svg");
+                                colorize: touch_dt.has-hover ? #F97316 : #94A3B8;
+                            }
+
+                            Text {
+                                text: "Desktop UI (F4)";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: #F1F5F9;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Hairline separator
+        Rectangle {
+            height: 1px;
+            background: #FFFFFF12;
+        }
+
+        // =====================================================================
+        // MAIN BODY: Modern Left Navigation Rail + Right Bento Content Area
+        // =====================================================================
+        HorizontalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            // -----------------------------------------------------------------
+            // LEFT NAVIGATION RAIL
+            // -----------------------------------------------------------------
+            Rectangle {
+                width: 224px;
+                background: #111319;
+
+                VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 18px;
+                    padding-bottom: 18px;
+                    spacing: 6px;
+                    alignment: space-between;
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        alignment: start;
+
+                        Text {
+                            text: "  WORKSPACE";
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 1.1px;
+                            color: #64748B;
+                        }
+
+                        HubNavItem {
+                            icon: @image-url("../icons/book.svg");
+                            label: "Notebooks";
+                            badge_text: root.notebooks.length;
+                            active: root.active_category == "notebooks";
+                            clicked => { root.active_category = "notebooks"; }
+                        }
+
+                        HubNavItem {
+                            icon: @image-url("../icons/folder-library.svg");
+                            label: "Libraries";
+                            badge_text: root.libraries.length;
+                            active: root.active_category == "library";
+                            clicked => { root.active_category = "library"; }
+                        }
+
+                        Rectangle {
+                            height: 10px;
+                        }
+
+                        Text {
+                            text: "  SYSTEM & TOOLS";
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 1.1px;
+                            color: #64748B;
+                        }
+
+                        HubNavItem {
+                            icon: @image-url("../icons/settings.svg");
+                            label: "Preferences";
+                            active: root.active_category == "settings";
+                            clicked => { root.active_category = "settings"; }
+                        }
+
+                        HubNavItem {
+                            icon: @image-url("../icons/info-export.svg");
+                            label: "Info & Export";
+                            active: root.active_category == "info";
+                            clicked => { root.active_category = "info"; }
+                        }
+                    }
+
+                    // Bottom Telemetry Status Card inside Sidebar
+                    Rectangle {
+                        height: 68px;
+                        border-radius: 10px;
+                        background: #161922;
+                        border-width: 1px;
+                        border-color: #FFFFFF0F;
+
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 4px;
+                            alignment: center;
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 6px;
+                                    height: 6px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 3px;
+                                    background: #22C55E;
+                                }
+
+                                Text {
+                                    text: "120Hz Ink Pipeline";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: #E2E8F0;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: "Decoupled UI · Blend2D Core";
+                                font-size: 10px;
+                                color: #6E7687;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Vertical hairline divider
+            Rectangle {
+                width: 1px;
+                background: #FFFFFF10;
+            }
+
+            // -----------------------------------------------------------------
+            // RIGHT CONTENT VIEWPORT
+            // -----------------------------------------------------------------
+            ScrollView {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    padding-top: 24px;
+                    padding-bottom: 32px;
+                    spacing: 20px;
+                    alignment: start;
+
+                    // =========================================================
+                    // TAB 1: NOTEBOOKS MANAGEMENT
+                    // =========================================================
+                    if root.active_category == "notebooks" : VerticalLayout {
+                        spacing: 18px;
+
+                        // Header Row + Primary Action Button
+                        HorizontalLayout {
+                            alignment: space-between;
+
+                            VerticalLayout {
+                                spacing: 4px;
+                                Text {
+                                    text: "Notebooks";
+                                    font-size: 22px;
+                                    font-weight: 800;
+                                    color: #F8FAFC;
+                                }
+                                Text {
+                                    text: "Select a notebook to switch your active workspace or create a new journal package.";
+                                    font-size: 13px;
+                                    color: #8E98A8;
+                                }
+                            }
+
+                            // "+ New Notebook" Button
+                            Rectangle {
+                                width: 148px;
+                                height: 40px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 9px;
+                                background: root.show_new_notebook_dialog
+                                    ? #252834
+                                    : (touch_new_nb.has-hover
+                                        ? @linear-gradient(135deg, #FB923C 0%, #EA580C 100%)
+                                        : @linear-gradient(135deg, #F97316 0%, #EA580C 100%));
+                                border-width: 1px;
+                                border-color: root.show_new_notebook_dialog ? #FFFFFF20 : #FB923C80;
+
+                                touch_new_nb := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        root.show_new_notebook_dialog = !root.show_new_notebook_dialog;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: center;
+
+                                    if !root.show_new_notebook_dialog : Image {
+                                        width: 15px;
+                                        height: 15px;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("../icons/plus.svg");
+                                        colorize: #FFFFFF;
+                                    }
+
+                                    Text {
+                                        text: root.show_new_notebook_dialog ? "Cancel" : "New Notebook";
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                        color: #FFFFFF;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bento Summary Row
+                        HorizontalLayout {
+                            spacing: 14px;
+
+                            BentoStatCard {
+                                overline: "ACTIVE WORKSPACE";
+                                value: root.notebook_title;
+                                subtext: "Currently open on canvas";
+                                accent: #22C55E;
+                            }
+
+                            BentoStatCard {
+                                overline: "LOADED PACKAGES";
+                                value: root.notebooks.length + " Notebooks";
+                                subtext: "Indexed in active library";
+                                accent: #F97316;
+                            }
+
+                            BentoStatCard {
+                                overline: "STORAGE ENGINE";
+                                value: "SQLite + .ink";
+                                subtext: "Zero-loss vector persistence";
+                                accent: #38BDF8;
+                            }
+                        }
+
+                        // Inline New Notebook Studio Card
+                        if root.show_new_notebook_dialog : Rectangle {
+                            border-radius: 12px;
+                            background: @linear-gradient(180deg, #1C202B 0%, #161922 100%);
+                            border-width: 1px;
+                            border-color: #EA580C80;
+                            drop-shadow-blur: 16px;
+                            drop-shadow-offset-y: 4px;
+                            drop-shadow-color: #00000050;
+
+                            VerticalLayout {
+                                padding: 20px;
+                                spacing: 16px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text {
+                                            text: "Create New Notebook Package";
+                                            font-size: 15px;
+                                            font-weight: 700;
+                                            color: #F8FAFC;
+                                        }
+                                        Text {
+                                            text: "Initializes a new .notebook directory with SQLite hierarchy and a default section.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 16px;
+                                    alignment: space-between;
+
+                                    // Notebook Title Input Box
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        height: 40px;
+                                        border-radius: 8px;
+                                        background: #111319;
+                                        border-width: 1px;
+                                        border-color: txt_input.has-focus ? #F97316 : #FFFFFF1F;
+
+                                        if root.new_notebook_title == "" : Text {
+                                            x: 12px;
+                                            y: (parent.height - self.height) / 2;
+                                            text: "Enter notebook title (e.g. Linear Algebra, Design Notes)...";
+                                            font-size: 13px;
+                                            color: #64748B;
+                                        }
+
+                                        txt_input := TextInput {
+                                            x: 12px;
+                                            y: (parent.height - self.height) / 2;
+                                            width: parent.width - 24px;
+                                            text <=> root.new_notebook_title;
+                                            font-size: 13px;
+                                            color: #F8FAFC;
+                                            accepted => {
+                                                root.create_notebook(
+                                                    root.new_notebook_title != "" ? root.new_notebook_title : "Untitled Notebook",
+                                                    root.new_notebook_color
+                                                );
+                                                root.new_notebook_title = "";
+                                                root.show_new_notebook_dialog = false;
+                                            }
+                                        }
+                                    }
+
+                                    // 8 Curated Color Swatches
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        alignment: center;
+
+                                        ColorPresetSwatch {
+                                            swatch_color: #EA580C;
+                                            selected: root.new_notebook_color == #EA580C;
+                                            clicked => { root.new_notebook_color = #EA580C; }
+                                        }
+                                        ColorPresetSwatch {
+                                            swatch_color: #2563EB;
+                                            selected: root.new_notebook_color == #2563EB;
+                                            clicked => { root.new_notebook_color = #2563EB; }
+                                        }
+                                        ColorPresetSwatch {
+                                            swatch_color: #16A34A;
+                                            selected: root.new_notebook_color == #16A34A;
+                                            clicked => { root.new_notebook_color = #16A34A; }
+                                        }
+                                        ColorPresetSwatch {
+                                            swatch_color: #9333EA;
+                                            selected: root.new_notebook_color == #9333EA;
+                                            clicked => { root.new_notebook_color = #9333EA; }
+                                        }
+                                        ColorPresetSwatch {
+                                            swatch_color: #DC2626;
+                                            selected: root.new_notebook_color == #DC2626;
+                                            clicked => { root.new_notebook_color = #DC2626; }
+                                        }
+                                        ColorPresetSwatch {
+                                            swatch_color: #D97706;
+                                            selected: root.new_notebook_color == #D97706;
+                                            clicked => { root.new_notebook_color = #D97706; }
+                                        }
+                                        ColorPresetSwatch {
+                                            swatch_color: #0D9488;
+                                            selected: root.new_notebook_color == #0D9488;
+                                            clicked => { root.new_notebook_color = #0D9488; }
+                                        }
+                                        ColorPresetSwatch {
+                                            swatch_color: #475569;
+                                            selected: root.new_notebook_color == #475569;
+                                            clicked => { root.new_notebook_color = #475569; }
+                                        }
+                                    }
+
+                                    // Create Action Button
+                                    Rectangle {
+                                        width: 132px;
+                                        height: 40px;
+                                        border-radius: 8px;
+                                        background: touch_create_btn.has-hover ? #FB923C : #EA580C;
+
+                                        touch_create_btn := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                root.create_notebook(
+                                                    root.new_notebook_title != "" ? root.new_notebook_title : "Untitled Notebook",
+                                                    root.new_notebook_color
+                                                );
+                                                root.new_notebook_title = "";
+                                                root.show_new_notebook_dialog = false;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "Create & Open";
+                                            font-size: 13px;
+                                            font-weight: 700;
+                                            color: #FFFFFF;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section Header for Notebook List
+                        Text {
+                            text: "ALL NOTEBOOKS (" + root.notebooks.length + ")";
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 0.9px;
+                            color: #64748B;
+                        }
+
+                        // Modern Notebook Cards
+                        for nb in root.notebooks : Rectangle {
+                            height: 78px;
+                            border-radius: 12px;
+                            background: nb.is_active
+                                ? @linear-gradient(90deg, #EA580C1C 0%, #171A24 45%)
+                                : (touch_nb_card.has-hover ? #1B1F2B : #151821);
+                            border-width: 1px;
+                            border-color: nb.is_active ? #EA580C80 : (touch_nb_card.has-hover ? #FFFFFF24 : #FFFFFF10);
+                            animate background { duration: 150ms; easing: ease-out; }
+
+                            touch_nb_card := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.select_notebook(nb.guid);
+                                    root.close_main_menu();
+                                }
+                            }
+
+                            // Left Accent Indicator Bar
+                            Rectangle {
+                                x: 0px;
+                                y: 12px;
+                                width: 4px;
+                                height: parent.height - 24px;
+                                border-radius: 2px;
+                                background: nb.is_active ? #F97316 : #475569;
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                spacing: 16px;
+                                alignment: space-between;
+
+                                HorizontalLayout {
+                                    spacing: 14px;
+                                    alignment: start;
+
+                                    // Rounded Icon Container
+                                    Rectangle {
+                                        width: 46px;
+                                        height: 46px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 11px;
+                                        background: nb.is_active ? #EA580C28 : #1E222E;
+                                        border-width: 1px;
+                                        border-color: nb.is_active ? #F9731650 : #FFFFFF10;
+
+                                        Image {
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            width: 22px;
+                                            height: 22px;
+                                            source: @image-url("../icons/book.svg");
+                                            colorize: nb.is_active ? #F97316 : #94A3B8;
+                                        }
+                                    }
+
+                                    // Notebook Title + Metadata Chips
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 5px;
+
+                                        HorizontalLayout {
+                                            spacing: 10px;
+                                            alignment: start;
+
+                                            Text {
+                                                text: nb.title;
+                                                font-size: 16px;
+                                                font-weight: 700;
+                                                color: nb.is_active ? #FFFFFF : #F1F5F9;
+                                                vertical-alignment: center;
+                                            }
+
+                                            if nb.is_active : Rectangle {
+                                                height: 20px;
+                                                width: 74px;
+                                                y: (parent.height - self.height) / 2;
+                                                border-radius: 10px;
+                                                background: #22C55E20;
+                                                border-width: 1px;
+                                                border-color: #22C55E60;
+
+                                                HorizontalLayout {
+                                                    spacing: 5px;
+                                                    alignment: center;
+
+                                                    Rectangle {
+                                                        width: 5px;
+                                                        height: 5px;
+                                                        y: (parent.height - self.height) / 2;
+                                                        border-radius: 2.5px;
+                                                        background: #22C55E;
+                                                    }
+
+                                                    Text {
+                                                        text: "ACTIVE";
+                                                        font-size: 9px;
+                                                        font-weight: 800;
+                                                        letter-spacing: 0.6px;
+                                                        color: #4ADE80;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            alignment: start;
+
+                                            Text {
+                                                text: nb.section_count + " Sections  ·  " + nb.page_count + " Pages";
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                color: #94A3B8;
+                                            }
+
+                                            Text {
+                                                text: "·  " + nb.path;
+                                                font-size: 11px;
+                                                color: #64748B;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Right Action Pill Button
+                                Rectangle {
+                                    width: 96px;
+                                    height: 34px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 8px;
+                                    background: nb.is_active
+                                        ? #EA580C
+                                        : (touch_nb_card.has-hover ? #282D3C : #1F2330);
+                                    border-width: 1px;
+                                    border-color: nb.is_active ? #F97316 : #FFFFFF14;
+
+                                    Text {
+                                        text: nb.is_active ? "Continue →" : "Open";
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        color: #FFFFFF;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // =========================================================
+                    // TAB 2: LIBRARIES & STORAGE REPOSITORIES
+                    // =========================================================
+                    if root.active_category == "library" : VerticalLayout {
+                        spacing: 18px;
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: "Libraries & Storage";
+                                font-size: 22px;
+                                font-weight: 800;
+                                color: #F8FAFC;
+                            }
+                            Text {
+                                text: "FolioNote organizes notebook packages inside structured Library bundles.";
+                                font-size: 13px;
+                                color: #8E98A8;
+                            }
+                        }
+
+                        // Primary Storage Engine Overview Card
+                        Rectangle {
+                            border-radius: 12px;
+                            background: @linear-gradient(180deg, #191C26 0%, #14161E 100%);
+                            border-width: 1px;
+                            border-color: #FFFFFF14;
+
+                            VerticalLayout {
+                                padding: 20px;
+                                spacing: 12px;
+
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 42px;
+                                        height: 42px;
+                                        border-radius: 10px;
+                                        background: #EA580C22;
+                                        border-width: 1px;
+                                        border-color: #EA580C50;
+
+                                        Image {
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            width: 20px;
+                                            height: 20px;
+                                            source: @image-url("../icons/folder-library.svg");
+                                            colorize: #F97316;
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 2px;
+
+                                        Text {
+                                            text: "Workspace Root Directory";
+                                            font-size: 15px;
+                                            font-weight: 700;
+                                            color: #F8FAFC;
+                                        }
+                                        Text {
+                                            text: root.library_root_path;
+                                            font-size: 12px;
+                                            color: #94A3B8;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    height: 1px;
+                                    background: #FFFFFF0F;
+                                }
+
+                                Text {
+                                    text: "Each .notebook package stores its section/page hierarchy in an ACID-compliant SQLite 3 database (structure.db) and serializes page strokes into zero-loss binary vector .ink files.";
+                                    font-size: 12px;
+                                    color: #8E98A8;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "REGISTERED LIBRARY BUNDLES (" + root.libraries.length + ")";
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 0.9px;
+                            color: #64748B;
+                        }
+
+                        for lib in root.libraries : Rectangle {
+                            height: 68px;
+                            border-radius: 12px;
+                            background: #151821;
+                            border-width: 1px;
+                            border-color: #FFFFFF12;
+
+                            HorizontalLayout {
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                alignment: space-between;
+
+                                HorizontalLayout {
+                                    spacing: 14px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 40px;
+                                        height: 40px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 10px;
+                                        background: #1E222E;
+                                        border-width: 1px;
+                                        border-color: #FFFFFF10;
+
+                                        Image {
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            width: 18px;
+                                            height: 18px;
+                                            source: @image-url("../icons/folder-library.svg");
+                                            colorize: #F97316;
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 3px;
+
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            alignment: start;
+
+                                            Text {
+                                                text: lib.name;
+                                                font-size: 15px;
+                                                font-weight: 700;
+                                                color: #F8FAFC;
+                                            }
+
+                                            if lib.is_default : Rectangle {
+                                                width: 64px;
+                                                height: 18px;
+                                                y: (parent.height - self.height) / 2;
+                                                border-radius: 9px;
+                                                background: #EA580C25;
+                                                border-width: 1px;
+                                                border-color: #EA580C60;
+
+                                                Text {
+                                                    text: "PRIMARY";
+                                                    font-size: 9px;
+                                                    font-weight: 800;
+                                                    color: #F97316;
+                                                    horizontal-alignment: center;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                        }
+
+                                        Text {
+                                            text: lib.notebook_count + " Notebooks  ·  " + lib.path;
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 92px;
+                                    height: 28px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 14px;
+                                    background: #22C55E1A;
+                                    border-width: 1px;
+                                    border-color: #22C55E50;
+
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        alignment: center;
+
+                                        Rectangle {
+                                            width: 6px;
+                                            height: 6px;
+                                            y: (parent.height - self.height) / 2;
+                                            border-radius: 3px;
+                                            background: #22C55E;
+                                        }
+
+                                        Text {
+                                            text: "Mounted";
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                            color: #4ADE80;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // =========================================================
+                    // TAB 3: PREFERENCES & INKING SETTINGS
+                    // =========================================================
+                    if root.active_category == "settings" : VerticalLayout {
+                        spacing: 18px;
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: "Preferences & Inking";
+                                font-size: 22px;
+                                font-weight: 800;
+                                color: #F8FAFC;
+                            }
+                            Text {
+                                text: "Customize stylus dynamics, stroke stabilization, canvas appearance, and UI shell mode.";
+                                font-size: 13px;
+                                color: #8E98A8;
+                            }
+                        }
+
+                        // Card 1: Stylus & Inking Physics
+                        Rectangle {
+                            border-radius: 12px;
+                            background: #151821;
+                            border-width: 1px;
+                            border-color: #FFFFFF12;
+
+                            VerticalLayout {
+                                padding: 20px;
+                                spacing: 16px;
+
+                                Text {
+                                    text: "STYLUS & INKING PHYSICS";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 0.9px;
+                                    color: #F97316;
+                                }
+
+                                // Row 1: Dynamic Pressure
+                                HorizontalLayout {
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text {
+                                            text: "Dynamic Stylus Pressure Sensitivity";
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            color: #F1F5F9;
+                                        }
+                                        Text {
+                                            text: "Modulate stroke width in real time using hardware stylus pressure curves.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+
+                                    ModernToggle {
+                                        y: (parent.height - self.height) / 2;
+                                        checked <=> root.dynamic_pressure;
+                                        toggled => { root.toggle_dynamic_pressure(); }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #FFFFFF0D; }
+
+                                // Row 2: Palm Rejection
+                                HorizontalLayout {
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text {
+                                            text: "Hardware Palm Rejection & Touch Filtering";
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            color: #F1F5F9;
+                                        }
+                                        Text {
+                                            text: "Reserve single-finger touch for panning/gestures while stylus inks on the page.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+
+                                    ModernToggle {
+                                        y: (parent.height - self.height) / 2;
+                                        checked <=> root.palm_rejection;
+                                        toggled => { root.toggle_palm_rejection(); }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #FFFFFF0D; }
+
+                                // Row 3: Stroke Smoothing Stabilizer
+                                HorizontalLayout {
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text {
+                                            text: "Spring-Mass Stroke Stabilizer";
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            color: #F1F5F9;
+                                        }
+                                        Text {
+                                            text: "Adjust physical spring-damper smoothing applied to live ink trajectories.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        height: 34px;
+                                        width: 216px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 8px;
+                                        background: #101218;
+                                        border-width: 1px;
+                                        border-color: #FFFFFF12;
+
+                                        HorizontalLayout {
+                                            padding: 3px;
+                                            spacing: 3px;
+
+                                            SegmentedPill {
+                                                label: "Low";
+                                                pill_width: 68px;
+                                                selected: root.ink_smoothing == "low";
+                                                clicked => {
+                                                    root.ink_smoothing = "low";
+                                                    root.set_ink_smoothing("low");
+                                                }
+                                            }
+                                            SegmentedPill {
+                                                label: "Medium";
+                                                pill_width: 68px;
+                                                selected: root.ink_smoothing == "medium";
+                                                clicked => {
+                                                    root.ink_smoothing = "medium";
+                                                    root.set_ink_smoothing("medium");
+                                                }
+                                            }
+                                            SegmentedPill {
+                                                label: "High";
+                                                pill_width: 68px;
+                                                selected: root.ink_smoothing == "high";
+                                                clicked => {
+                                                    root.ink_smoothing = "high";
+                                                    root.set_ink_smoothing("high");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 2: Canvas & Paper Appearance
+                        Rectangle {
+                            border-radius: 12px;
+                            background: #151821;
+                            border-width: 1px;
+                            border-color: #FFFFFF12;
+
+                            VerticalLayout {
+                                padding: 20px;
+                                spacing: 16px;
+
+                                Text {
+                                    text: "CANVAS & PAPER APPEARANCE";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 0.9px;
+                                    color: #F97316;
+                                }
+
+                                // Row 1: Invert Canvas Ink
+                                HorizontalLayout {
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text {
+                                            text: "Invert Canvas Mode (Dark Paper + Luminance Ink)";
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            color: #F1F5F9;
+                                        }
+                                        Text {
+                                            text: "Renders dark slate paper while automatically inverting ink luminance for night study.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+
+                                    ModernToggle {
+                                        y: (parent.height - self.height) / 2;
+                                        checked <=> root.canvas_inverted;
+                                        toggled => { root.toggle_invert_canvas(); }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #FFFFFF0D; }
+
+                                // Row 2: Show Page Border
+                                HorizontalLayout {
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text {
+                                            text: "Show Page Boundary Frame";
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            color: #F1F5F9;
+                                        }
+                                        Text {
+                                            text: "Display crisp document boundary margins on the infinite canvas.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+
+                                    ModernToggle {
+                                        y: (parent.height - self.height) / 2;
+                                        checked <=> root.show_page_border;
+                                        toggled => { root.toggle_page_border(); }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #FFFFFF0D; }
+
+                                // Row 3: Paper Pattern Selector
+                                HorizontalLayout {
+                                    alignment: space-between;
+
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text {
+                                            text: "Active Page Rule Pattern";
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            color: #F1F5F9;
+                                        }
+                                        Text {
+                                            text: "Switch background ruling geometry for the current page.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        height: 34px;
+                                        width: 286px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 8px;
+                                        background: #101218;
+                                        border-width: 1px;
+                                        border-color: #FFFFFF12;
+
+                                        HorizontalLayout {
+                                            padding: 3px;
+                                            spacing: 3px;
+
+                                            SegmentedPill {
+                                                label: "Grid";
+                                                pill_width: 68px;
+                                                selected: root.paper_style == "grid";
+                                                clicked => {
+                                                    root.paper_style = "grid";
+                                                    root.set_paper_style("grid");
+                                                }
+                                            }
+                                            SegmentedPill {
+                                                label: "Ruled";
+                                                pill_width: 68px;
+                                                selected: root.paper_style == "lined";
+                                                clicked => {
+                                                    root.paper_style = "lined";
+                                                    root.set_paper_style("lined");
+                                                }
+                                            }
+                                            SegmentedPill {
+                                                label: "Dotted";
+                                                pill_width: 68px;
+                                                selected: root.paper_style == "dotted";
+                                                clicked => {
+                                                    root.paper_style = "dotted";
+                                                    root.set_paper_style("dotted");
+                                                }
+                                            }
+                                            SegmentedPill {
+                                                label: "Blank";
+                                                pill_width: 68px;
+                                                selected: root.paper_style == "blank";
+                                                clicked => {
+                                                    root.paper_style = "blank";
+                                                    root.set_paper_style("blank");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 3: Presentation Shell Switcher
+                        Rectangle {
+                            border-radius: 12px;
+                            background: #151821;
+                            border-width: 1px;
+                            border-color: #FFFFFF12;
+
+                            HorizontalLayout {
+                                padding: 20px;
+                                alignment: space-between;
+
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text {
+                                        text: "Desktop Workstation UI Mode";
+                                        font-size: 15px;
+                                        font-weight: 700;
+                                        color: #F8FAFC;
+                                    }
+                                    Text {
+                                        text: "Switch from the Mobile Touch Slint shell to the full Desktop ImGui workstation interface.";
+                                        font-size: 12px;
+                                        color: #8E98A8;
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 184px;
+                                    height: 38px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 8px;
+                                    background: touch_shell_sw.has-hover ? #EA580C : #222634;
+                                    border-width: 1px;
+                                    border-color: touch_shell_sw.has-hover ? #F97316 : #FFFFFF1A;
+                                    animate background { duration: 150ms; easing: ease-out; }
+
+                                    touch_shell_sw := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.switch_to_desktop(); }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        alignment: center;
+
+                                        Image {
+                                            width: 15px;
+                                            height: 15px;
+                                            y: (parent.height - self.height) / 2;
+                                            source: @image-url("../icons/monitor.svg");
+                                            colorize: #FFFFFF;
+                                        }
+
+                                        Text {
+                                            text: "Switch to Desktop UI";
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            color: #FFFFFF;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // =========================================================
+                    // TAB 4: DOCUMENT INFO & EXPORT
+                    // =========================================================
+                    if root.active_category == "info" : VerticalLayout {
+                        spacing: 18px;
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: "Document Info & Export";
+                                font-size: 22px;
+                                font-weight: 800;
+                                color: #F8FAFC;
+                            }
+                            Text {
+                                text: "Review active document telemetry or export your notes to standard formats.";
+                                font-size: 13px;
+                                color: #8E98A8;
+                            }
+                        }
+
+                        // Active Document Telemetry Card
+                        Rectangle {
+                            border-radius: 12px;
+                            background: @linear-gradient(180deg, #191C26 0%, #14161E 100%);
+                            border-width: 1px;
+                            border-color: #FFFFFF14;
+
+                            VerticalLayout {
+                                padding: 20px;
+                                spacing: 10px;
+
+                                Text {
+                                    text: "ACTIVE DOCUMENT PACKAGE";
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    letter-spacing: 0.9px;
+                                    color: #F97316;
+                                }
+
+                                Text {
+                                    text: root.notebook_title;
+                                    font-size: 18px;
+                                    font-weight: 800;
+                                    color: #F8FAFC;
+                                }
+
+                                Text {
+                                    text: "Library Root: " + root.library_root_path;
+                                    font-size: 12px;
+                                    color: #94A3B8;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: "Rendering Engine: Blend2D 2D Vector Rasterizer + Folio-Sketch Curvature Mesh Builder + Slint Declarative Touch Shell.";
+                                    font-size: 12px;
+                                    color: #6E7687;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "EXPORT & IMPORT ACTIONS";
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 0.9px;
+                            color: #64748B;
+                        }
+
+                        // Export Action Cards Row
+                        HorizontalLayout {
+                            spacing: 16px;
+
+                            // Card A: PDF Document
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 96px;
+                                border-radius: 12px;
+                                background: touch_exp_pdf.has-hover ? #1C202C : #151821;
+                                border-width: 1px;
+                                border-color: touch_exp_pdf.has-hover ? #EA580C80 : #FFFFFF12;
+                                animate background { duration: 150ms; easing: ease-out; }
+
+                                touch_exp_pdf := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.export_pdf(); }
+                                }
+
+                                HorizontalLayout {
+                                    padding: 18px;
+                                    spacing: 14px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 48px;
+                                        height: 48px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 12px;
+                                        background: #EA580C22;
+                                        border-width: 1px;
+                                        border-color: #EA580C50;
+
+                                        Image {
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            width: 22px;
+                                            height: 22px;
+                                            source: @image-url("../icons/file-pdf.svg");
+                                            colorize: #F97316;
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 4px;
+
+                                        Text {
+                                            text: "PDF Document (.pdf)";
+                                            font-size: 15px;
+                                            font-weight: 700;
+                                            color: #F8FAFC;
+                                        }
+                                        Text {
+                                            text: "Import or export high-resolution vector PDF pages.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Card B: PNG Raster Image
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 96px;
+                                border-radius: 12px;
+                                background: touch_exp_png.has-hover ? #1C202C : #151821;
+                                border-width: 1px;
+                                border-color: touch_exp_png.has-hover ? #EA580C80 : #FFFFFF12;
+                                animate background { duration: 150ms; easing: ease-out; }
+
+                                touch_exp_png := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.export_images(); }
+                                }
+
+                                HorizontalLayout {
+                                    padding: 18px;
+                                    spacing: 14px;
+                                    alignment: start;
+
+                                    Rectangle {
+                                        width: 48px;
+                                        height: 48px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 12px;
+                                        background: #38BDF820;
+                                        border-width: 1px;
+                                        border-color: #38BDF850;
+
+                                        Image {
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            width: 22px;
+                                            height: 22px;
+                                            source: @image-url("../icons/image.svg");
+                                            colorize: #38BDF8;
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 4px;
+
+                                        Text {
+                                            text: "Raster Image (.png)";
+                                            font-size: 15px;
+                                            font-weight: 700;
+                                            color: #F8FAFC;
+                                        }
+                                        Text {
+                                            text: "Export current canvas page as a crisp PNG image.";
+                                            font-size: 12px;
+                                            color: #8E98A8;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

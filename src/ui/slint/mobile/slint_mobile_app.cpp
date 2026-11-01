@@ -1,4 +1,5 @@
 #include "ui/slint/mobile/slint_mobile_app.hpp"
+#include "app/actions/ui_action_registry.hpp"
 #include "app/window_state_manager.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
 #include "core/objects/text/text_box.hpp"
@@ -95,8 +96,8 @@ void SlintMobileApplication::SyncAndRenderCanvas(bool forceImmediate) {
     auto& s = *m_impl->shell;
 
     const uint64_t nowNs = SDL_GetTicksNS();
-    if (!forceImmediate && m_lastRenderTicksNs != 0 && (nowNs - m_lastRenderTicksNs) < 4000000ULL) {
-        // Coalesce sub-4ms pointer moves (~250Hz cap) so rapid events batch cleanly
+    if (!forceImmediate && m_lastRenderTicksNs != 0 && (nowNs - m_lastRenderTicksNs) < 8000000ULL) {
+        // Coalesce sub-8ms pointer moves (~120Hz cap) so rapid digitizer events batch cleanly
         return;
     }
 
@@ -321,6 +322,7 @@ bool SlintMobileApplication::Init(const std::string& title, int width, int heigh
 
         // 1:1 Physical Pixel Pointer & Scroll Events
         sh->on_canvas_pointer_down([this](float x, float y, int buttonId) {
+            m_isActivelyInking = true;
             EnsureCanvasViewportMatch();
 
             // Middle-mouse button (buttonId == 2) or explicit Pan tool -> Panning
@@ -451,6 +453,7 @@ bool SlintMobileApplication::Init(const std::string& title, int width, int heigh
         });
 
         sh->on_canvas_pointer_up([this](float x, float y, int buttonId) {
+            m_isActivelyInking = false;
             if (m_isPanning) {
                 m_isPanning = false;
                 SyncAndRenderCanvas(true);
@@ -557,19 +560,107 @@ bool SlintMobileApplication::Init(const std::string& title, int width, int heigh
             }
         });
 
+        // ---------------------------------------------------------------------
+        // Main Menu / Hub Handlers & Actions
+        // ---------------------------------------------------------------------
+        sh->on_toggle_main_menu([this]() {
+            UpdateSlintNavigationModel();
+        });
+
+        sh->on_select_notebook([this](slint::SharedString guid) {
+            LOG_INFO(General, "Slint Hub: Opening notebook " + std::string(guid.data()));
+            if (m_session.OpenNotebook(guid.data())) {
+                auto newNb = m_session.GetActiveNotebook();
+                if (newNb) {
+                    auto activeSec = newNb->GetActiveSection();
+                    if (activeSec && !activeSec->pages.empty()) {
+                        m_session.NavigateToPage(activeSec->pages.front()->guid);
+                    }
+                }
+                m_canvas.needsFullRebake = true;
+                m_canvas.isDirty = true;
+                UpdateSlintNavigationModel();
+                SyncAndRenderCanvas(true);
+            }
+        });
+
+        sh->on_create_notebook([this](slint::SharedString name, slint::Color col) {
+            std::string nbName = name.data();
+            LOG_INFO(General, "Slint Hub: Creating notebook '" + nbName + "'");
+            auto newNb = m_session.CreateNotebook(nbName);
+            if (newNb) {
+                m_session.OpenNotebook(newNb->guid);
+                auto activeSec = newNb->GetActiveSection();
+                if (activeSec && !activeSec->pages.empty()) {
+                    m_session.NavigateToPage(activeSec->pages.front()->guid);
+                }
+                m_canvas.needsFullRebake = true;
+                m_canvas.isDirty = true;
+                UpdateSlintNavigationModel();
+                SyncAndRenderCanvas(true);
+            }
+        });
+
+        sh->on_delete_notebook([this](slint::SharedString guid) {
+            LOG_INFO(General, "Slint Hub: Request to delete/close notebook " + std::string(guid.data()));
+        });
+
+        sh->on_export_pdf([this]() {
+            m_canvas.OpenPdfFileDialog(nullptr, &m_session);
+        });
+
+        sh->on_export_images([this]() {
+            LOG_INFO(General, "Slint Hub: Exporting images...");
+        });
+
+        sh->on_toggle_dynamic_pressure([this]() {
+            auto& cfg = SettingsManager::Instance().inkingConfig;
+            cfg.usePressure = !cfg.usePressure;
+            m_canvas.GetInkEngine().SetConfig(cfg);
+            SettingsManager::Instance().SaveSettings();
+        });
+
+        sh->on_toggle_palm_rejection([this]() {
+            auto& sm = SettingsManager::Instance();
+            sm.drawWithTouch = !sm.drawWithTouch;
+            sm.SaveSettings();
+        });
+
+        sh->on_set_ink_smoothing([this](slint::SharedString lvl) {
+            std::string s = lvl.data();
+            auto& cfg = SettingsManager::Instance().inkingConfig;
+            if (s == "low") {
+                cfg.google_spring_mass_constant = 0.005f;
+                cfg.google_drag_constant = 40.0f;
+            } else if (s == "high") {
+                cfg.google_spring_mass_constant = 0.0001f;
+                cfg.google_drag_constant = 150.0f;
+            } else {
+                cfg.google_spring_mass_constant = 0.0005f;
+                cfg.google_drag_constant = 72.0f;
+            }
+            m_canvas.GetInkEngine().SetConfig(cfg);
+            SettingsManager::Instance().SaveSettings();
+        });
+
         sh->on_switch_to_desktop_mode([this]() {
             auto& sm = SettingsManager::Instance();
             sm.uiMode = UIMode::DesktopImGui;
             sm.SaveSettings();
-            LOG_INFO(General, "Switching UI mode to DesktopImGui. Exiting application...");
+            LOG_INFO(General, "Switching UI mode to DesktopImGui...");
             slint::quit_event_loop();
         });
 
         // Initialize document navigation sidebar models
         UpdateSlintNavigationModel();
 
-        // 120Hz (8ms) background timer for animations, async dialogs, and resize detection
-        m_impl->renderTimer.start(slint::TimerMode::Repeated, std::chrono::milliseconds(8), [this]() {
+        // Passive background timer (~30Hz / 33ms) for canvas resize detection, dirty state synchronization and async session events.
+        // Pauses during active inking to completely detach high-frequency inking from the rest of the UI.
+        m_impl->renderTimer.start(slint::TimerMode::Repeated, std::chrono::milliseconds(33), [this]() {
+            if (m_isActivelyInking) {
+                // Inking events drive canvas redraw directly; leave UI thread unimpeded.
+                return;
+            }
             SyncAndRenderCanvas(false);
         });
 
@@ -589,6 +680,14 @@ void SlintMobileApplication::HandleRibbonAction(const std::string& action) {
 #if defined(FOLIONOTE_HAS_SLINT)
     if (!m_impl->shell.has_value()) return;
     auto& sh = *m_impl->shell;
+
+    // 0. Dispatch through universal UIActionRegistry for custom and registered actions
+    if (Folio::UIActionRegistry::Instance().Execute(action)) {
+        m_canvas.needsFullRebake = true;
+        m_canvas.isDirty = true;
+        SyncAndRenderCanvas(true);
+        return;
+    }
 
     // -------------------------------------------------------------------------
     // 1. ERASER & SELECTION ACTIONS
@@ -995,6 +1094,48 @@ void SlintMobileApplication::UpdateSlintNavigationModel() {
         auto pgModel = std::make_shared<slint::VectorModel<MobileSlint::PageInfo>>(pgList);
         sh->set_pages(pgModel);
     }
+
+    // Populate notebooks list for Main Menu / Hub
+    std::vector<MobileSlint::NotebookItem> nbList;
+    for (const auto& n : m_session.workspace.notebooks) {
+        if (!n) continue;
+        int secCount = static_cast<int>(n->sections.size());
+        int pgCount = 0;
+        for (const auto& s : n->sections) {
+            if (s) pgCount += static_cast<int>(s->pages.size());
+        }
+        nbList.push_back(MobileSlint::NotebookItem{
+            slint::SharedString(n->name.c_str()),
+            slint::SharedString(n->guid.c_str()),
+            slint::SharedString("#EA580C"),
+            secCount,
+            pgCount,
+            (nb && nb->guid == n->guid),
+            slint::SharedString(n->filePath.c_str())
+        });
+    }
+    auto nbModel = std::make_shared<slint::VectorModel<MobileSlint::NotebookItem>>(nbList);
+    sh->set_notebooks(nbModel);
+
+    // Populate libraries list
+    std::vector<MobileSlint::LibraryFolderItem> libList;
+    std::filesystem::path appRoot(m_session.workspace.workspaceDirectory);
+    std::filesystem::path defaultLib = appRoot / "Libraries" / "Default";
+    libList.push_back(MobileSlint::LibraryFolderItem{
+        slint::SharedString("Default Library"),
+        slint::SharedString(defaultLib.string().c_str()),
+        static_cast<int>(m_session.workspace.notebooks.size()),
+        true
+    });
+    auto libModel = std::make_shared<slint::VectorModel<MobileSlint::LibraryFolderItem>>(libList);
+    sh->set_libraries(libModel);
+    sh->set_library_root_path(slint::SharedString(m_session.workspace.workspaceDirectory.c_str()));
+
+    // Synchronize settings
+    sh->set_dynamic_pressure(SettingsManager::Instance().inkingConfig.usePressure);
+    sh->set_palm_rejection(!SettingsManager::Instance().drawWithTouch);
+    sh->set_canvas_inverted(m_canvas.inkColorInverted);
+    sh->set_show_page_border(m_canvas.showPageBorder);
 #endif
 }
 

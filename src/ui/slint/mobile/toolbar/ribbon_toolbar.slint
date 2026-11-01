@@ -1,0 +1,162 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Master Ribbon Toolbar Component for Mobile & Tablet Touch Shell.
+
+import { RibbonHeader } from "ribbon_header.slint";
+import { RibbonTabDraw } from "ribbon_tab_draw.slint";
+import { RibbonTabHome } from "ribbon_tab_home.slint";
+import { RibbonTabInsert } from "ribbon_tab_insert.slint";
+import { RibbonTabView } from "ribbon_tab_view.slint";
+import { RibbonTabShapes } from "ribbon_tab_shapes.slint";
+
+export component RibbonToolbar inherits Rectangle {
+    in-out property <string> active_tab: "draw";
+    in-out property <bool> ribbon_collapsed: false;
+    in-out property <bool> drawer_open: false;
+    in-out property <bool> main_menu_open: false;
+
+    in-out property <string> active_tool: "pen";
+    in-out property <color> active_color: #181A20;
+    in-out property <float> stroke_width_mm: 0.5;
+    in-out property <string> stroke_width_label: "0.5 mm";
+    in-out property <int> opacity_pct: 100;
+    in-out property <string> stroke_pattern: "solid";
+    in-out property <string> eraser_size_label: "6 mm";
+    in-out property <bool> ruler_enabled: false;
+    in-out property <string> active_shape_name: "rect";
+    in-out property <bool> lock_shape_mode: false;
+    in-out property <bool> snap_to_grid: false;
+
+    in-out property <bool> text_bold: false;
+    in-out property <bool> text_italic: false;
+    in-out property <bool> text_underline: false;
+    in-out property <bool> text_strike: false;
+
+    in-out property <string> zoom_label: "100%";
+    in-out property <string> paper_style: "grid";
+    in-out property <bool> canvas_inverted: false;
+    in-out property <bool> show_page_border: true;
+
+    in property <string> notebook_title: "Notebook";
+    in property <string> page_title: "Untitled Page";
+
+    callback toggle_main_menu();
+    callback toggle_drawer();
+    callback trigger_undo();
+    callback trigger_redo();
+    callback switch_to_desktop();
+    callback select_tool(string);
+    callback select_color(color);
+    callback set_stroke_width(float);
+    callback set_opacity_pct(int);
+    callback set_stroke_pattern(string);
+    callback ribbon_action(string);
+    callback new_page_requested();
+
+    width: 100%;
+    height: root.ribbon_collapsed ? 40px : 126px;
+    background: #18191E;
+    z: 10;
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        // ROW 1: Ribbon Header (Navigation, Tabs, Doc Title, Collapse/Desktop Switch)
+        RibbonHeader {
+            active_tab <=> root.active_tab;
+            ribbon_collapsed <=> root.ribbon_collapsed;
+            drawer_open <=> root.drawer_open;
+            main_menu_open <=> root.main_menu_open;
+            active_tool: root.active_tool;
+            notebook_title: root.notebook_title;
+            page_title: root.page_title;
+
+            toggle_main_menu => { root.toggle_main_menu(); }
+            toggle_drawer => { root.toggle_drawer(); }
+            trigger_undo => { root.trigger_undo(); }
+            trigger_redo => { root.trigger_redo(); }
+            select_tab(tab) => {
+                root.active_tab = tab;
+                root.ribbon_collapsed = false;
+            }
+            toggle_collapse => { root.ribbon_collapsed = !root.ribbon_collapsed; }
+            switch_to_desktop => { root.switch_to_desktop(); }
+        }
+
+        // Divider Line
+        Rectangle {
+            height: 1px;
+            background: #262933;
+        }
+
+        // ROW 2: Horizontally Scrollable Active Tab Shelf
+        if !root.ribbon_collapsed : Flickable {
+            height: 85px;
+            content-height: 85px;
+            interactive: true;
+
+            if root.active_tab == "draw" : RibbonTabDraw {
+                active_tool <=> root.active_tool;
+                active_color <=> root.active_color;
+                stroke_width_mm <=> root.stroke_width_mm;
+                stroke_width_label <=> root.stroke_width_label;
+                opacity_pct <=> root.opacity_pct;
+                stroke_pattern <=> root.stroke_pattern;
+                eraser_size_label <=> root.eraser_size_label;
+                ruler_enabled <=> root.ruler_enabled;
+                active_shape_name <=> root.active_shape_name;
+
+                select_tool(t) => { root.select_tool(t); }
+                select_color(c) => { root.select_color(c); }
+                set_stroke_width(w) => { root.set_stroke_width(w); }
+                set_opacity_pct(p) => { root.set_opacity_pct(p); }
+                set_stroke_pattern(pat) => { root.set_stroke_pattern(pat); }
+                trigger_undo => { root.trigger_undo(); }
+                trigger_redo => { root.trigger_redo(); }
+                ribbon_action(act) => { root.ribbon_action(act); }
+            }
+
+            if root.active_tab == "home" : RibbonTabHome {
+                text_bold <=> root.text_bold;
+                text_italic <=> root.text_italic;
+                text_underline <=> root.text_underline;
+                text_strike <=> root.text_strike;
+
+                ribbon_action(act) => { root.ribbon_action(act); }
+                new_page_requested => { root.new_page_requested(); }
+            }
+
+            if root.active_tab == "insert" : RibbonTabInsert {
+                ribbon_action(act) => { root.ribbon_action(act); }
+                new_page_requested => { root.new_page_requested(); }
+            }
+
+            if root.active_tab == "view" : RibbonTabView {
+                zoom_label <=> root.zoom_label;
+                paper_style <=> root.paper_style;
+                canvas_inverted <=> root.canvas_inverted;
+                show_page_border <=> root.show_page_border;
+
+                ribbon_action(act) => { root.ribbon_action(act); }
+            }
+
+            if root.active_tab == "shapes" : RibbonTabShapes {
+                active_tool <=> root.active_tool;
+                active_shape_name <=> root.active_shape_name;
+                lock_shape_mode <=> root.lock_shape_mode;
+                snap_to_grid <=> root.snap_to_grid;
+                ruler_enabled <=> root.ruler_enabled;
+
+                ribbon_action(act) => { root.ribbon_action(act); }
+            }
+        }
+    }
+
+    // Bottom border line
+    Rectangle {
+        y: parent.height - 1px;
+        width: 100%;
+        height: 1px;
+        background: #262933;
+    }
+}

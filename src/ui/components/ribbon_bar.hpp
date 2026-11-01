@@ -3692,6 +3692,19 @@ public:
                         false, ImVec2(80.0f, 58.0f));
                     sec.Render();
                 }
+
+                // SUBSECTION 4: UI Shell Frontend (Touch / Mobile Switcher)
+                {
+                    FolioUI::ToolbarSectionBuilder sec("grp_view_shell", "UI Shell", theme, isMini);
+                    sec.AddLargeButton("btn_mobile_shell", 0, "Mobile UI",
+                        "Switch to Mobile & Touch Shell (Slint): Touch-first UI optimized for tablets and mobile devices",
+                        false,
+                        [&]() {
+                            Folio::UIActionRegistry::Instance().Execute("tools.switch_ui_shell");
+                        },
+                        false, ImVec2(76.0f, 58.0f));
+                    sec.Render();
+                }
             }
             else if (activeTab == RibbonTab::ShapeFormat) {
                 auto selectedShape = canvas.GetSelectedShape(currentSession);

@@ -59,6 +59,7 @@ private:
     bool m_isDraggingRuler = false;
     Point2D m_rulerDragOffsetWorld{0.0, 0.0};
 
+    bool m_isActivelyInking = false;
     uint64_t m_lastRenderTicksNs = 0;
 };
 

@@ -1,0 +1,170 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// View Ribbon Tab: Zoom, Canvas Styles, Grid Spacing, Inversion & Paper Themes.
+
+import { RibbonLargeButton, ColorSwatch, RibbonGroupDivider } from "../components/ribbon_buttons.slint";
+
+export component RibbonTabView inherits HorizontalLayout {
+    in-out property <string> zoom_label: "100%";
+    in-out property <string> paper_style: "grid";
+    in-out property <bool> canvas_inverted: false;
+    in-out property <bool> show_page_border: true;
+
+    callback ribbon_action(string);
+
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 6px;
+    padding-bottom: 4px;
+    spacing: 8px;
+    alignment: start;
+
+    // Zoom Controls
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "-";
+                label: "Zoom Out";
+                btn_width: 50px;
+                clicked => { root.ribbon_action("zoom_out"); }
+            }
+            RibbonLargeButton {
+                icon: "100%";
+                label: root.zoom_label;
+                btn_width: 50px;
+                clicked => { root.ribbon_action("zoom_100"); }
+            }
+            RibbonLargeButton {
+                icon: "+";
+                label: "Zoom In";
+                btn_width: 50px;
+                clicked => { root.ribbon_action("zoom_in"); }
+            }
+            RibbonLargeButton {
+                icon: "Fit";
+                label: "Center";
+                btn_width: 48px;
+                clicked => { root.ribbon_action("zoom_center"); }
+            }
+        }
+        Text { text: "Zoom"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Paper Style
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "□";
+                label: "Blank";
+                btn_width: 46px;
+                is_selected: root.paper_style == "blank";
+                clicked => { root.paper_style = "blank"; root.ribbon_action("paper_blank"); }
+            }
+            RibbonLargeButton {
+                icon: "≡";
+                label: "Ruled";
+                btn_width: 46px;
+                is_selected: root.paper_style == "lined";
+                clicked => { root.paper_style = "lined"; root.ribbon_action("paper_lined"); }
+            }
+            RibbonLargeButton {
+                icon: "▦";
+                label: "Grid";
+                btn_width: 46px;
+                is_selected: root.paper_style == "grid";
+                clicked => { root.paper_style = "grid"; root.ribbon_action("paper_grid"); }
+            }
+            RibbonLargeButton {
+                icon: "∷";
+                label: "Dotted";
+                btn_width: 46px;
+                is_selected: root.paper_style == "dotted";
+                clicked => { root.paper_style = "dotted"; root.ribbon_action("paper_dotted"); }
+            }
+            RibbonLargeButton {
+                icon: "−";
+                label: "Grid -";
+                btn_width: 44px;
+                clicked => { root.ribbon_action("grid_spacing_down"); }
+            }
+            RibbonLargeButton {
+                icon: "+";
+                label: "Grid +";
+                btn_width: 44px;
+                clicked => { root.ribbon_action("grid_spacing_up"); }
+            }
+        }
+        Text { text: "Paper Pattern"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Page Theme & Appearance
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "◐";
+                label: "Invert Canvas";
+                btn_width: 72px;
+                is_selected: root.canvas_inverted;
+                clicked => {
+                    root.canvas_inverted = !root.canvas_inverted;
+                    root.ribbon_action("toggle_invert_canvas");
+                }
+            }
+            RibbonLargeButton {
+                icon: "▣";
+                label: "Border";
+                btn_width: 48px;
+                is_selected: root.show_page_border;
+                clicked => {
+                    root.show_page_border = !root.show_page_border;
+                    root.ribbon_action("toggle_page_border");
+                }
+            }
+            // Paper Background Color Swatches
+            VerticalLayout {
+                spacing: 4px;
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 5px;
+                    ColorSwatch {
+                        swatch_color: #FFFFFF;
+                        clicked => { root.ribbon_action("paper_color_white"); }
+                    }
+                    ColorSwatch {
+                        swatch_color: #FAF8F4;
+                        clicked => { root.ribbon_action("paper_color_ivory"); }
+                    }
+                    ColorSwatch {
+                        swatch_color: #F6EEDE;
+                        clicked => { root.ribbon_action("paper_color_sepia"); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 5px;
+                    ColorSwatch {
+                        swatch_color: #F0F4FA;
+                        clicked => { root.ribbon_action("paper_color_blue"); }
+                    }
+                    ColorSwatch {
+                        swatch_color: #EEF6F0;
+                        clicked => { root.ribbon_action("paper_color_mint"); }
+                    }
+                    ColorSwatch {
+                        swatch_color: #1E2026;
+                        clicked => { root.ribbon_action("paper_color_dark"); }
+                    }
+                }
+            }
+        }
+        Text { text: "Page Theme"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+}

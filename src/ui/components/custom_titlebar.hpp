@@ -285,8 +285,8 @@ public:
                 if (ImGui::MenuItem("Developer Diagnostics", "F3", outDevTelemetryVisible)) {
                     outDevTelemetryVisible = !outDevTelemetryVisible;
                 }
-                if (ImGui::MenuItem("Slint Settings & Window Studio", "F4")) {
-                    Folio::UIActionRegistry::Instance().Execute("tools.slint_studio");
+                if (ImGui::MenuItem("Switch UI Shell (Desktop <-> Mobile)", "F4")) {
+                    Folio::UIActionRegistry::Instance().Execute("tools.switch_ui_shell");
                 }
                 if (ImGui::MenuItem("Handwriting Tuning Studio", "F5", outTuningStudioVisible)) {
                     outTuningStudioVisible = !outTuningStudioVisible;

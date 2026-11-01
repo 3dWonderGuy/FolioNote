@@ -177,39 +177,63 @@ int main(int argc, char* argv[])
 
     int exitCode = 0;
     try {
-        SettingsManager::Instance().Load();
-        const auto uiMode = SettingsManager::Instance().uiMode;
-        if (uiMode == UIMode::MobileSlint) {
-            std::cout << "[FolioNote] Launching in Mobile Slint Shell mode...\n";
-            Folio::SlintMobileApplication mobileApp;
-            if (!mobileApp.Init("FolioNote (Slint Shell)", 1100, 780, initialImportPath)) {
-                std::cerr << "[FolioNote] Mobile shell initialization failed: " << SDL_GetError() << std::endl;
+        bool continueRunning = true;
+        while (continueRunning) {
+            continueRunning = false;
+            SettingsManager::Instance().Load();
+            const auto uiMode = SettingsManager::Instance().uiMode;
+            if (uiMode == UIMode::MobileSlint) {
+#if defined(FOLIONOTE_HAS_SLINT)
+                std::cout << "[FolioNote] Launching in Mobile Slint Shell mode...\n";
+                Folio::SlintMobileApplication mobileApp;
+                if (!mobileApp.Init("FolioNote (Slint Shell)", 1100, 780, initialImportPath)) {
+                    std::cerr << "[FolioNote] Mobile shell initialization failed: " << SDL_GetError() << std::endl;
 #if defined(_WIN32)
-                if (hSingleInstanceMutex) {
-                    CloseHandle(hSingleInstanceMutex);
-                }
-                CoUninitialize();
+                    if (hSingleInstanceMutex) {
+                        CloseHandle(hSingleInstanceMutex);
+                    }
+                    CoUninitialize();
 #endif
-                return -1;
-            }
-            mobileApp.Run();
-            mobileApp.Shutdown();
-        } else {
-            std::cout << "[FolioNote] Launching in Desktop ImGui Shell mode...\n";
-            Application app;
-            if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
-                std::cerr << "[FolioNote] Initialization failed: " << SDL_GetError() << std::endl;
-#if defined(_WIN32)
-                if (hSingleInstanceMutex) {
-                    CloseHandle(hSingleInstanceMutex);
+                    return -1;
                 }
-                CoUninitialize();
-#endif
-                return -1;
-            }
+                mobileApp.Run();
+                mobileApp.Shutdown();
 
-            app.Run();
-            app.Shutdown();
+                // If user switched UI mode, transition to next shell seamlessly
+                if (SettingsManager::Instance().uiMode != UIMode::MobileSlint) {
+                    continueRunning = true;
+                    continue;
+                }
+#else
+                std::cout << "[FolioNote] Slint is not enabled in this build, falling back to Desktop ImGui Shell mode...\n";
+                SettingsManager::Instance().uiMode = UIMode::DesktopImGui;
+                SettingsManager::Instance().Save();
+                continueRunning = true;
+                continue;
+#endif
+            } else {
+                std::cout << "[FolioNote] Launching in Desktop ImGui Shell mode...\n";
+                Application app;
+                if (!app.Init("FolioNote", 1920, 1080, initialImportPath)) {
+                    std::cerr << "[FolioNote] Initialization failed: " << SDL_GetError() << std::endl;
+#if defined(_WIN32)
+                    if (hSingleInstanceMutex) {
+                        CloseHandle(hSingleInstanceMutex);
+                    }
+                    CoUninitialize();
+#endif
+                    return -1;
+                }
+
+                app.Run();
+                app.Shutdown();
+
+                // If user switched UI mode, transition to next shell seamlessly
+                if (SettingsManager::Instance().uiMode != UIMode::DesktopImGui) {
+                    continueRunning = true;
+                    continue;
+                }
+            }
         }
     } catch (const std::exception& e) {
 #if defined(__ANDROID__)

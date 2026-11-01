@@ -1,0 +1,40 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Shared data structures and models for FolioNote Mobile Slint Shell.
+
+export struct PageInfo {
+    title: string,
+    guid: string,
+    is_active: bool,
+}
+
+export struct SectionInfo {
+    title: string,
+    guid: string,
+    color_hex: string,
+    is_active: bool,
+}
+
+export struct NotebookItem {
+    title: string,
+    guid: string,
+    color_hex: string,
+    section_count: int,
+    page_count: int,
+    is_active: bool,
+    path: string,
+}
+
+export struct LibraryFolderItem {
+    name: string,
+    path: string,
+    notebook_count: int,
+    is_default: bool,
+}
+
+export struct CustomButtonAction {
+    id: string,
+    label: string,
+    icon: string,
+    tooltip: string,
+    is_active: bool,
+}

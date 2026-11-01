@@ -1,0 +1,172 @@
+// Copyright (c) 2026 FolioNote Project. All rights reserved.
+// Home Ribbon Tab: Clipboard, Selection, Basic Text and Page Orchestration.
+
+import { RibbonLargeButton, RibbonPillButton, RibbonGroupDivider } from "../components/ribbon_buttons.slint";
+
+export component RibbonTabHome inherits HorizontalLayout {
+    in-out property <bool> text_bold: false;
+    in-out property <bool> text_italic: false;
+    in-out property <bool> text_underline: false;
+    in-out property <bool> text_strike: false;
+
+    callback ribbon_action(string);
+    callback new_page_requested();
+
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 6px;
+    padding-bottom: 4px;
+    spacing: 8px;
+    alignment: start;
+
+    // Clipboard Group
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "⎘";
+                label: "Paste";
+                btn_width: 48px;
+                clicked => { root.ribbon_action("clipboard_paste"); }
+            }
+            RibbonLargeButton {
+                icon: "✂";
+                label: "Cut";
+                btn_width: 46px;
+                clicked => { root.ribbon_action("clipboard_cut"); }
+            }
+            RibbonLargeButton {
+                icon: "❐";
+                label: "Copy";
+                btn_width: 46px;
+                clicked => { root.ribbon_action("clipboard_copy"); }
+            }
+            RibbonLargeButton {
+                icon: "⧉";
+                label: "Duplicate";
+                btn_width: 54px;
+                clicked => { root.ribbon_action("selection_duplicate"); }
+            }
+            RibbonLargeButton {
+                icon: "✓";
+                label: "Select All";
+                btn_width: 56px;
+                clicked => { root.ribbon_action("select_all"); }
+            }
+            RibbonLargeButton {
+                icon: "⌫";
+                label: "Delete";
+                btn_width: 46px;
+                clicked => { root.ribbon_action("delete_selected"); }
+            }
+        }
+        Text { text: "Clipboard & Selection"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Basic Text Formatting Group
+    VerticalLayout {
+        spacing: 2px;
+        VerticalLayout {
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 3px;
+                RibbonPillButton {
+                    label: "B";
+                    pill_width: 28px;
+                    is_selected: root.text_bold;
+                    clicked => { root.text_bold = !root.text_bold; root.ribbon_action("text_toggle_bold"); }
+                }
+                RibbonPillButton {
+                    label: "I";
+                    pill_width: 28px;
+                    is_selected: root.text_italic;
+                    clicked => { root.text_italic = !root.text_italic; root.ribbon_action("text_toggle_italic"); }
+                }
+                RibbonPillButton {
+                    label: "U";
+                    pill_width: 28px;
+                    is_selected: root.text_underline;
+                    clicked => { root.text_underline = !root.text_underline; root.ribbon_action("text_toggle_underline"); }
+                }
+                RibbonPillButton {
+                    label: "S";
+                    pill_width: 28px;
+                    is_selected: root.text_strike;
+                    clicked => { root.text_strike = !root.text_strike; root.ribbon_action("text_toggle_strike"); }
+                }
+                RibbonPillButton {
+                    label: "A-";
+                    pill_width: 32px;
+                    clicked => { root.ribbon_action("text_size_down"); }
+                }
+                RibbonPillButton {
+                    label: "A+";
+                    pill_width: 32px;
+                    clicked => { root.ribbon_action("text_size_up"); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 3px;
+                RibbonPillButton {
+                    label: "Left";
+                    pill_width: 42px;
+                    clicked => { root.ribbon_action("text_align_left"); }
+                }
+                RibbonPillButton {
+                    label: "Center";
+                    pill_width: 50px;
+                    clicked => { root.ribbon_action("text_align_center"); }
+                }
+                RibbonPillButton {
+                    label: "Right";
+                    pill_width: 42px;
+                    clicked => { root.ribbon_action("text_align_right"); }
+                }
+                RibbonPillButton {
+                    label: "Clear";
+                    pill_width: 46px;
+                    clicked => { root.ribbon_action("text_clear_format"); }
+                }
+            }
+        }
+        Text { text: "Typography"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+
+    RibbonGroupDivider {}
+
+    // Page Actions Group
+    VerticalLayout {
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 3px;
+            RibbonLargeButton {
+                icon: "+";
+                label: "New Page";
+                btn_width: 56px;
+                clicked => { root.new_page_requested(); }
+            }
+            RibbonLargeButton {
+                icon: "❐";
+                label: "Dup Page";
+                btn_width: 56px;
+                clicked => { root.ribbon_action("page_duplicate"); }
+            }
+            RibbonLargeButton {
+                icon: "◀";
+                label: "Prev Page";
+                btn_width: 54px;
+                clicked => { root.ribbon_action("page_prev"); }
+            }
+            RibbonLargeButton {
+                icon: "▶";
+                label: "Next Page";
+                btn_width: 54px;
+                clicked => { root.ribbon_action("page_next"); }
+            }
+        }
+        Text { text: "Pages"; font-size: 9px; color: #6E7687; horizontal-alignment: center; }
+    }
+}

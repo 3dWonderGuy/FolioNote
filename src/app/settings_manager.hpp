@@ -118,7 +118,11 @@ public:
     // Appearance State
     bool isDarkMode = true;
     bool isCanvasInverted = false;
+#if defined(__ANDROID__)
+    UIMode uiMode = UIMode::MobileSlint; ///< Active UI frontend engine (defaults to Mobile Slint on Android)
+#else
     UIMode uiMode = UIMode::DesktopImGui; ///< Active UI frontend engine (Desktop ImGui vs. Mobile Slint)
+#endif
 
     // Diagnostics & Logging State
     bool verboseLogging = false; ///< When true, streams high-frequency [INFO] logs to console/disk; when false, silences them to eliminate console spam.
