@@ -118,10 +118,10 @@ public:
     // Appearance State
     bool isDarkMode = true;
     bool isCanvasInverted = false;
-#if defined(__ANDROID__)
-    UIMode uiMode = UIMode::MobileSlint; ///< Active UI frontend engine (defaults to Mobile Slint on Android)
+#if defined(FOLIONOTE_HAS_SLINT) && !defined(__ANDROID__)
+    UIMode uiMode = UIMode::MobileSlint; ///< Active UI frontend engine (defaults to Mobile Slint when Slint is compiled)
 #else
-    UIMode uiMode = UIMode::DesktopImGui; ///< Active UI frontend engine (Desktop ImGui vs. Mobile Slint)
+    UIMode uiMode = UIMode::DesktopImGui; ///< Active UI frontend engine (Desktop ImGui fallback)
 #endif
 
     // Diagnostics & Logging State
@@ -386,35 +386,35 @@ public:
                 // Inking Physics & Smoothing Tuning
                 if (jInking.contains("physics") && jInking["physics"].is_object()) {
                     const auto& jp = jInking["physics"];
-                    if (jp.contains("springMassConstant")) inkingConfig.google_spring_mass_constant = jp["springMassConstant"].get<float>();
-                    if (jp.contains("dragConstant")) inkingConfig.google_drag_constant = jp["dragConstant"].get<float>();
-                    if (jp.contains("enablePrediction")) inkingConfig.google_enable_prediction = jp["enablePrediction"].get<bool>();
-                    if (jp.contains("useStrokeNormalProjection")) inkingConfig.google_use_stroke_normal_projection = jp["useStrokeNormalProjection"].get<bool>();
-                    if (jp.contains("minOutputRate")) inkingConfig.google_min_output_rate = jp["minOutputRate"].get<float>();
-                    if (jp.contains("endOfStrokeStoppingDistance")) inkingConfig.google_end_of_stroke_stopping_distance = jp["endOfStrokeStoppingDistance"].get<float>();
-                    if (jp.contains("endOfStrokeMaxIterations")) inkingConfig.google_end_of_stroke_max_iterations = jp["endOfStrokeMaxIterations"].get<int>();
-                    if (jp.contains("enableAngleUpsampling")) inkingConfig.google_enable_angle_upsampling = jp["enableAngleUpsampling"].get<bool>();
-                    if (jp.contains("maxEstimatedAngleRad")) inkingConfig.google_max_estimated_angle_rad = jp["maxEstimatedAngleRad"].get<float>();
-                    if (jp.contains("loopMitigationEnable")) inkingConfig.google_loop_mitigation_enable = jp["loopMitigationEnable"].get<bool>();
-                    if (jp.contains("loopSpeedLowerBound")) inkingConfig.google_loop_speed_lower_bound = jp["loopSpeedLowerBound"].get<float>();
-                    if (jp.contains("loopSpeedUpperBound")) inkingConfig.google_loop_speed_upper_bound = jp["loopSpeedUpperBound"].get<float>();
-                    if (jp.contains("loopStrengthAtLowerSpeed")) inkingConfig.google_loop_strength_at_lower_speed = jp["loopStrengthAtLowerSpeed"].get<float>();
-                    if (jp.contains("loopStrengthAtUpperSpeed")) inkingConfig.google_loop_strength_at_upper_speed = jp["loopStrengthAtUpperSpeed"].get<float>();
-                    if (jp.contains("loopMinSpeedWindow")) inkingConfig.google_loop_min_speed_window_s = jp["loopMinSpeedWindow"].get<float>();
-                    if (jp.contains("wobbleEnable")) inkingConfig.google_wobble_enable = jp["wobbleEnable"].get<bool>();
-                    if (jp.contains("wobbleTimeout")) inkingConfig.google_wobble_timeout_s = jp["wobbleTimeout"].get<float>();
-                    if (jp.contains("wobbleSpeedFloor")) inkingConfig.google_wobble_speed_floor = jp["wobbleSpeedFloor"].get<float>();
-                    if (jp.contains("wobbleSpeedCeiling")) inkingConfig.google_wobble_speed_ceiling = jp["wobbleSpeedCeiling"].get<float>();
-                    if (jp.contains("usePressure")) inkingConfig.usePressure = jp["usePressure"].get<bool>();
-                    if (jp.contains("useVelocity")) inkingConfig.useVelocity = jp["useVelocity"].get<bool>();
-                    if (jp.contains("widthSmoothing")) inkingConfig.dynamicWidthSmoothing = jp["widthSmoothing"].get<float>();
-                    if (jp.contains("minWidthMultiplier")) inkingConfig.minWidthMultiplier = jp["minWidthMultiplier"].get<float>();
-                    if (jp.contains("maxWidthMultiplier")) inkingConfig.maxWidthMultiplier = jp["maxWidthMultiplier"].get<float>();
-                    if (jp.contains("velocityThinningMaxSpeed")) inkingConfig.velocityThinningMaxSpeed = jp["velocityThinningMaxSpeed"].get<float>();
-                    if (jp.contains("enablePressureCurve")) inkingConfig.enablePressureCurve = jp["enablePressureCurve"].get<bool>();
-                    if (jp.contains("pressureGamma")) inkingConfig.pressureGamma = jp["pressureGamma"].get<float>();
-                    if (jp.contains("pressureDeadzoneMin")) inkingConfig.pressureDeadzoneMin = jp["pressureDeadzoneMin"].get<float>();
-                    if (jp.contains("pressureSaturationMax")) inkingConfig.pressureSaturationMax = jp["pressureSaturationMax"].get<float>();
+                    if (jp.contains("springMassConstant")) inkingConfig.physics.springMassConstant = jp["springMassConstant"].get<float>();
+                    if (jp.contains("dragConstant")) inkingConfig.physics.dragConstant = jp["dragConstant"].get<float>();
+                    if (jp.contains("enablePrediction")) inkingConfig.prediction.enable = jp["enablePrediction"].get<bool>();
+                    if (jp.contains("useStrokeNormalProjection")) inkingConfig.physics.useStrokeNormalProjection = jp["useStrokeNormalProjection"].get<bool>();
+                    if (jp.contains("minOutputRate")) inkingConfig.physics.minOutputRateHz = jp["minOutputRate"].get<float>();
+                    if (jp.contains("endOfStrokeStoppingDistance")) inkingConfig.physics.endOfStrokeStoppingDistanceMm = jp["endOfStrokeStoppingDistance"].get<float>();
+                    if (jp.contains("endOfStrokeMaxIterations")) inkingConfig.physics.endOfStrokeMaxIterations = jp["endOfStrokeMaxIterations"].get<int>();
+                    if (jp.contains("enableAngleUpsampling")) inkingConfig.physics.enableAngleUpsampling = jp["enableAngleUpsampling"].get<bool>();
+                    if (jp.contains("maxEstimatedAngleRad")) inkingConfig.physics.maxEstimatedAngleRad = jp["maxEstimatedAngleRad"].get<float>();
+                    if (jp.contains("loopMitigationEnable")) inkingConfig.filters.enableLoopMitigation = jp["loopMitigationEnable"].get<bool>();
+                    if (jp.contains("loopSpeedLowerBound")) inkingConfig.filters.loopSpeedLowerBound = jp["loopSpeedLowerBound"].get<float>();
+                    if (jp.contains("loopSpeedUpperBound")) inkingConfig.filters.loopSpeedUpperBound = jp["loopSpeedUpperBound"].get<float>();
+                    if (jp.contains("loopStrengthAtLowerSpeed")) inkingConfig.filters.loopStrengthAtLowerSpeed = jp["loopStrengthAtLowerSpeed"].get<float>();
+                    if (jp.contains("loopStrengthAtUpperSpeed")) inkingConfig.filters.loopStrengthAtUpperSpeed = jp["loopStrengthAtUpperSpeed"].get<float>();
+                    if (jp.contains("loopMinSpeedWindow")) inkingConfig.filters.loopMinSpeedWindowSec = jp["loopMinSpeedWindow"].get<float>();
+                    if (jp.contains("wobbleEnable")) inkingConfig.filters.enableWobble = jp["wobbleEnable"].get<bool>();
+                    if (jp.contains("wobbleTimeout")) inkingConfig.filters.wobbleTimeoutSec = jp["wobbleTimeout"].get<float>();
+                    if (jp.contains("wobbleSpeedFloor")) inkingConfig.filters.wobbleSpeedFloor = jp["wobbleSpeedFloor"].get<float>();
+                    if (jp.contains("wobbleSpeedCeiling")) inkingConfig.filters.wobbleSpeedCeiling = jp["wobbleSpeedCeiling"].get<float>();
+                    if (jp.contains("usePressure")) inkingConfig.dynamics.usePressure = jp["usePressure"].get<bool>();
+                    if (jp.contains("useVelocity")) inkingConfig.dynamics.useVelocity = jp["useVelocity"].get<bool>();
+                    if (jp.contains("widthSmoothing")) inkingConfig.dynamics.widthSmoothingEma = jp["widthSmoothing"].get<float>();
+                    if (jp.contains("minWidthMultiplier")) inkingConfig.dynamics.minWidthMultiplier = jp["minWidthMultiplier"].get<float>();
+                    if (jp.contains("maxWidthMultiplier")) inkingConfig.dynamics.maxWidthMultiplier = jp["maxWidthMultiplier"].get<float>();
+                    if (jp.contains("velocityThinningMaxSpeed")) inkingConfig.dynamics.velocityThinningMaxSpeed = jp["velocityThinningMaxSpeed"].get<float>();
+                    if (jp.contains("enablePressureCurve")) inkingConfig.calibration.enablePressureCurve = jp["enablePressureCurve"].get<bool>();
+                    if (jp.contains("pressureGamma")) inkingConfig.calibration.pressureGamma = jp["pressureGamma"].get<float>();
+                    if (jp.contains("pressureDeadzoneMin")) inkingConfig.calibration.pressureDeadzoneMin = jp["pressureDeadzoneMin"].get<float>();
+                    if (jp.contains("pressureSaturationMax")) inkingConfig.calibration.pressureSaturationMax = jp["pressureSaturationMax"].get<float>();
                 }
             }
 
@@ -459,6 +459,10 @@ public:
                 } else if (j.contains("ui_mode")) {
                     uiMode = StringToUIMode(j["ui_mode"].get<std::string>());
                 }
+#if !defined(FOLIONOTE_HAS_SLINT) || defined(__ANDROID__)
+                // Automatically force Desktop ImGui on platforms where Slint runtime is not present
+                uiMode = UIMode::DesktopImGui;
+#endif
                 if (jApp.contains("defaultNotebookColor") && jApp["defaultNotebookColor"].is_array() && jApp["defaultNotebookColor"].size() >= 4) {
                     defaultNotebookColor[0] = jApp["defaultNotebookColor"][0].get<float>();
                     defaultNotebookColor[1] = jApp["defaultNotebookColor"][1].get<float>();
@@ -609,35 +613,35 @@ public:
             }
 
             nlohmann::json jPhysics = {
-                { "springMassConstant", inkingConfig.google_spring_mass_constant },
-                { "dragConstant", inkingConfig.google_drag_constant },
-                { "enablePrediction", inkingConfig.google_enable_prediction },
-                { "useStrokeNormalProjection", inkingConfig.google_use_stroke_normal_projection },
-                { "minOutputRate", inkingConfig.google_min_output_rate },
-                { "endOfStrokeStoppingDistance", inkingConfig.google_end_of_stroke_stopping_distance },
-                { "endOfStrokeMaxIterations", inkingConfig.google_end_of_stroke_max_iterations },
-                { "enableAngleUpsampling", inkingConfig.google_enable_angle_upsampling },
-                { "maxEstimatedAngleRad", inkingConfig.google_max_estimated_angle_rad },
-                { "loopMitigationEnable", inkingConfig.google_loop_mitigation_enable },
-                { "loopSpeedLowerBound", inkingConfig.google_loop_speed_lower_bound },
-                { "loopSpeedUpperBound", inkingConfig.google_loop_speed_upper_bound },
-                { "loopStrengthAtLowerSpeed", inkingConfig.google_loop_strength_at_lower_speed },
-                { "loopStrengthAtUpperSpeed", inkingConfig.google_loop_strength_at_upper_speed },
-                { "loopMinSpeedWindow", inkingConfig.google_loop_min_speed_window_s },
-                { "wobbleEnable", inkingConfig.google_wobble_enable },
-                { "wobbleTimeout", inkingConfig.google_wobble_timeout_s },
-                { "wobbleSpeedFloor", inkingConfig.google_wobble_speed_floor },
-                { "wobbleSpeedCeiling", inkingConfig.google_wobble_speed_ceiling },
-                { "usePressure", inkingConfig.usePressure },
-                { "useVelocity", inkingConfig.useVelocity },
-                { "widthSmoothing", inkingConfig.dynamicWidthSmoothing },
-                { "minWidthMultiplier", inkingConfig.minWidthMultiplier },
-                { "maxWidthMultiplier", inkingConfig.maxWidthMultiplier },
-                { "velocityThinningMaxSpeed", inkingConfig.velocityThinningMaxSpeed },
-                { "enablePressureCurve", inkingConfig.enablePressureCurve },
-                { "pressureGamma", inkingConfig.pressureGamma },
-                { "pressureDeadzoneMin", inkingConfig.pressureDeadzoneMin },
-                { "pressureSaturationMax", inkingConfig.pressureSaturationMax }
+                { "springMassConstant", inkingConfig.physics.springMassConstant },
+                { "dragConstant", inkingConfig.physics.dragConstant },
+                { "enablePrediction", inkingConfig.prediction.enable },
+                { "useStrokeNormalProjection", inkingConfig.physics.useStrokeNormalProjection },
+                { "minOutputRate", inkingConfig.physics.minOutputRateHz },
+                { "endOfStrokeStoppingDistance", inkingConfig.physics.endOfStrokeStoppingDistanceMm },
+                { "endOfStrokeMaxIterations", inkingConfig.physics.endOfStrokeMaxIterations },
+                { "enableAngleUpsampling", inkingConfig.physics.enableAngleUpsampling },
+                { "maxEstimatedAngleRad", inkingConfig.physics.maxEstimatedAngleRad },
+                { "loopMitigationEnable", inkingConfig.filters.enableLoopMitigation },
+                { "loopSpeedLowerBound", inkingConfig.filters.loopSpeedLowerBound },
+                { "loopSpeedUpperBound", inkingConfig.filters.loopSpeedUpperBound },
+                { "loopStrengthAtLowerSpeed", inkingConfig.filters.loopStrengthAtLowerSpeed },
+                { "loopStrengthAtUpperSpeed", inkingConfig.filters.loopStrengthAtUpperSpeed },
+                { "loopMinSpeedWindow", inkingConfig.filters.loopMinSpeedWindowSec },
+                { "wobbleEnable", inkingConfig.filters.enableWobble },
+                { "wobbleTimeout", inkingConfig.filters.wobbleTimeoutSec },
+                { "wobbleSpeedFloor", inkingConfig.filters.wobbleSpeedFloor },
+                { "wobbleSpeedCeiling", inkingConfig.filters.wobbleSpeedCeiling },
+                { "usePressure", inkingConfig.dynamics.usePressure },
+                { "useVelocity", inkingConfig.dynamics.useVelocity },
+                { "widthSmoothing", inkingConfig.dynamics.widthSmoothingEma },
+                { "minWidthMultiplier", inkingConfig.dynamics.minWidthMultiplier },
+                { "maxWidthMultiplier", inkingConfig.dynamics.maxWidthMultiplier },
+                { "velocityThinningMaxSpeed", inkingConfig.dynamics.velocityThinningMaxSpeed },
+                { "enablePressureCurve", inkingConfig.calibration.enablePressureCurve },
+                { "pressureGamma", inkingConfig.calibration.pressureGamma },
+                { "pressureDeadzoneMin", inkingConfig.calibration.pressureDeadzoneMin },
+                { "pressureSaturationMax", inkingConfig.calibration.pressureSaturationMax }
             };
 
             // Inking section

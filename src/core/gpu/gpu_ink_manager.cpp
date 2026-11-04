@@ -544,7 +544,53 @@ void GpuInkManager::BeginBatch() noexcept {
     m_stagedVertices.clear();
     m_stagedIndices.clear();
     m_drawCommands.clear();
+    m_stagedCapsules.clear();
+    m_capsuleDrawCommands.clear();
     m_nextAutoStrokeId = 1;
+}
+
+void GpuInkManager::SubmitCapsules(std::span<const CapsuleInstance> capsules,
+                                   const BLMatrix2D& worldToScreen,
+                                   float scalePxPerMm,
+                                   float opacity,
+                                   BlendMode blendMode,
+                                   uint32_t strokeId,
+                                   bool isPencil) {
+    if (capsules.empty()) return;
+
+    if (!m_initialized && !m_initAttempted) {
+        Init();
+    }
+    if (!IsEnabled()) return;
+
+    if (strokeId == 0) {
+        strokeId = m_nextAutoStrokeId++;
+    }
+
+    CapsuleDrawCommand cmd;
+    cmd.capsuleOffset = static_cast<uint32_t>(m_stagedCapsules.size());
+    cmd.capsuleCount  = static_cast<uint32_t>(capsules.size());
+    cmd.blendMode     = blendMode;
+    cmd.strokeId      = strokeId;
+    cmd.isPencil      = isPencil;
+
+    cmd.uniforms.transform0[0] = static_cast<float>(worldToScreen.m00);
+    cmd.uniforms.transform0[1] = static_cast<float>(worldToScreen.m01);
+    cmd.uniforms.transform0[2] = static_cast<float>(worldToScreen.m10);
+    cmd.uniforms.transform0[3] = static_cast<float>(worldToScreen.m11);
+
+    cmd.uniforms.transform1[0] = static_cast<float>(worldToScreen.m20);
+    cmd.uniforms.transform1[1] = static_cast<float>(worldToScreen.m21);
+    cmd.uniforms.transform1[2] = static_cast<float>(m_textureWidth > 0 ? m_textureWidth : 1920.0f);
+    cmd.uniforms.transform1[3] = static_cast<float>(m_textureHeight > 0 ? m_textureHeight : 1080.0f);
+
+    cmd.uniforms.params[0] = std::max(0.01f, scalePxPerMm);
+    cmd.uniforms.params[1] = std::clamp(opacity, 0.0f, 1.0f);
+    cmd.uniforms.params[2] = 0.5f;
+    cmd.uniforms.params[3] = 0.0f;
+
+    m_stagedCapsules.insert(m_stagedCapsules.end(), capsules.begin(), capsules.end());
+    m_capsuleDrawCommands.push_back(cmd);
 }
 
 void GpuInkManager::SubmitMesh(const InkMesh& mesh,
@@ -680,7 +726,8 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
                                    int clipY,
                                    int clipW,
                                    int clipH) {
-    if (m_drawCommands.empty() || m_stagedVertices.empty() || m_stagedIndices.empty()) {
+    if ((m_drawCommands.empty() && m_capsuleDrawCommands.empty()) ||
+        (m_stagedVertices.empty() && m_stagedCapsules.empty())) {
         BeginBatch();
         return false;
     }
@@ -712,25 +759,48 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
             clipY = m_activeClipY;
             clipW = m_activeClipW;
             clipH = m_activeClipH;
-        } else if (!m_stagedVertices.empty()) {
-            // Compute tight screen-space bounding rect of staged vertices
+        } else {
             float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
-            for (const auto& dc : m_drawCommands) {
-                float m00 = dc.uniforms.transform0[0];
-                float m01 = dc.uniforms.transform0[1];
-                float m10 = dc.uniforms.transform0[2];
-                float m11 = dc.uniforms.transform0[3];
-                float m20 = dc.uniforms.transform1[0];
-                float m21 = dc.uniforms.transform1[1];
-                for (uint32_t i = 0; i < dc.indexCount; ++i) {
-                    uint32_t idx = m_stagedIndices[dc.indexOffset + i];
-                    const auto& v = m_stagedVertices[dc.vertexOffset + idx];
-                    float sx = m00 * v.x + m10 * v.y + m20;
-                    float sy = m01 * v.x + m11 * v.y + m21;
-                    minX = std::min(minX, sx);
-                    minY = std::min(minY, sy);
-                    maxX = std::max(maxX, sx);
-                    maxY = std::max(maxY, sy);
+            if (!m_stagedVertices.empty()) {
+                for (const auto& dc : m_drawCommands) {
+                    float m00 = dc.uniforms.transform0[0];
+                    float m01 = dc.uniforms.transform0[1];
+                    float m10 = dc.uniforms.transform0[2];
+                    float m11 = dc.uniforms.transform0[3];
+                    float m20 = dc.uniforms.transform1[0];
+                    float m21 = dc.uniforms.transform1[1];
+                    for (uint32_t i = 0; i < dc.indexCount; ++i) {
+                        uint32_t idx = m_stagedIndices[dc.indexOffset + i];
+                        const auto& v = m_stagedVertices[dc.vertexOffset + idx];
+                        float sx = m00 * v.x + m10 * v.y + m20;
+                        float sy = m01 * v.x + m11 * v.y + m21;
+                        minX = std::min(minX, sx);
+                        minY = std::min(minY, sy);
+                        maxX = std::max(maxX, sx);
+                        maxY = std::max(maxY, sy);
+                    }
+                }
+            }
+            if (!m_stagedCapsules.empty()) {
+                for (const auto& cdc : m_capsuleDrawCommands) {
+                    float m00 = cdc.uniforms.transform0[0];
+                    float m01 = cdc.uniforms.transform0[1];
+                    float m10 = cdc.uniforms.transform0[2];
+                    float m11 = cdc.uniforms.transform0[3];
+                    float m20 = cdc.uniforms.transform1[0];
+                    float m21 = cdc.uniforms.transform1[1];
+                    for (uint32_t i = 0; i < cdc.capsuleCount; ++i) {
+                        const auto& cap = m_stagedCapsules[cdc.capsuleOffset + i];
+                        float r = std::max(cap.radii.x, cap.radii.y) * cdc.uniforms.params[0] + 6.0f;
+                        float sAx = m00 * cap.pointA.x + m10 * cap.pointA.y + m20;
+                        float sAy = m01 * cap.pointA.x + m11 * cap.pointA.y + m21;
+                        float sBx = m00 * cap.pointB.x + m10 * cap.pointB.y + m20;
+                        float sBy = m01 * cap.pointB.x + m11 * cap.pointB.y + m21;
+                        minX = std::min({minX, sAx - r, sBx - r});
+                        minY = std::min({minY, sAy - r, sBy - r});
+                        maxX = std::max({maxX, sAx + r, sBx + r});
+                        maxY = std::max({maxY, sAy + r, sBy + r});
+                    }
                 }
             }
             if (minX <= maxX && minY <= maxY) {
@@ -1178,6 +1248,136 @@ bool GpuInkManager::InitGlesFallback() {
     glGenTextures(1, &m_glesCanvasTex);
     glGenRenderbuffers(1, &m_glesRboDepthStencil);
 
+    // Build GLES Capsule SDF Program & Buffers
+    const char* vCapsuleShaderSrc =
+        "#version 300 es\n"
+        "precision highp float;\n"
+        "layout(location = 0) in vec2 aQuadPos;\n"
+        "layout(location = 1) in vec2 aPointA;\n"
+        "layout(location = 2) in vec2 aPointB;\n"
+        "layout(location = 3) in vec2 aRadii;\n"
+        "layout(location = 4) in vec4 aColor;\n"
+        "uniform vec4 uTransform0;\n"
+        "uniform vec4 uTransform1;\n"
+        "uniform vec4 uParams;\n"
+        "out vec2 vWorldPos;\n"
+        "flat out vec2 vPointA;\n"
+        "flat out vec2 vPointB;\n"
+        "flat out vec2 vRadii;\n"
+        "flat out vec4 vColor;\n"
+        "void main() {\n"
+        "    vec2 delta = aPointB - aPointA;\n"
+        "    float segLen = length(delta);\n"
+        "    vec2 u = (segLen > 1e-5) ? (delta / segLen) : vec2(1.0, 0.0);\n"
+        "    vec2 n = vec2(-u.y, u.x);\n"
+        "    float padWorld = 2.0 / max(uParams.x, 1e-4);\n"
+        "    float maxR = max(aRadii.x, aRadii.y) + padWorld;\n"
+        "    vec2 mid = 0.5 * (aPointA + aPointB);\n"
+        "    float halfSpanU = 0.5 * segLen + maxR;\n"
+        "    vec2 worldPos = mid + u * (aQuadPos.x * halfSpanU) + n * (aQuadPos.y * maxR);\n"
+        "    vec2 screenPos = vec2(\n"
+        "        uTransform0.x * worldPos.x + uTransform0.z * worldPos.y + uTransform1.x,\n"
+        "        uTransform0.y * worldPos.x + uTransform0.w * worldPos.y + uTransform1.y\n"
+        "    );\n"
+        "    vec2 ndc = vec2(\n"
+        "        (screenPos.x / uTransform1.z) * 2.0 - 1.0,\n"
+        "        1.0 - (screenPos.y / uTransform1.w) * 2.0\n"
+        "    );\n"
+        "    gl_Position = vec4(ndc, 0.0, 1.0);\n"
+        "    vWorldPos = worldPos;\n"
+        "    vPointA   = aPointA;\n"
+        "    vPointB   = aPointB;\n"
+        "    vRadii    = aRadii;\n"
+        "    vColor    = aColor;\n"
+        "}\n";
+
+    const char* fCapsuleShaderSrc =
+        "#version 300 es\n"
+        "precision highp float;\n"
+        "in vec2 vWorldPos;\n"
+        "flat in vec2 vPointA;\n"
+        "flat in vec2 vPointB;\n"
+        "flat in vec2 vRadii;\n"
+        "flat in vec4 vColor;\n"
+        "uniform vec4 uTransform0;\n"
+        "uniform vec4 uTransform1;\n"
+        "uniform vec4 uParams;\n"
+        "out vec4 fragColor;\n"
+        "void main() {\n"
+        "    vec2 ab = vPointB - vPointA;\n"
+        "    float lenSq = dot(ab, ab);\n"
+        "    float t = (lenSq > 1e-8) ? clamp(dot(vWorldPos - vPointA, ab) / lenSq, 0.0, 1.0) : 0.0;\n"
+        "    vec2 closestPt = vPointA + t * ab;\n"
+        "    float dist = length(vWorldPos - closestPt);\n"
+        "    float r = mix(vRadii.x, vRadii.y, t);\n"
+        "    float sdfWorld = r - dist;\n"
+        "    float fw = fwidth(dist - r);\n"
+        "    float aaWidthWorld = (fw > 1e-6 && fw < 4.0 / max(uParams.x, 1e-4)) ? fw : (1.0 / max(uParams.x, 1e-4));\n"
+        "    float edgeAlpha = smoothstep(-0.5 * aaWidthWorld, 0.5 * aaWidthWorld, sdfWorld);\n"
+        "    if (edgeAlpha <= 0.0) discard;\n"
+        "    float alpha = edgeAlpha * uParams.y;\n"
+        "    fragColor = vec4(vColor.rgb * alpha, vColor.a * alpha);\n"
+        "}\n";
+
+    GLuint vertCapsule = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertCapsule, 1, &vCapsuleShaderSrc, nullptr);
+    glCompileShader(vertCapsule);
+
+    GLuint fragCapsule = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragCapsule, 1, &fCapsuleShaderSrc, nullptr);
+    glCompileShader(fragCapsule);
+
+    m_glesProgramCapsule = glCreateProgram();
+    glAttachShader(m_glesProgramCapsule, vertCapsule);
+    glAttachShader(m_glesProgramCapsule, fragCapsule);
+    glLinkProgram(m_glesProgramCapsule);
+    glDeleteShader(vertCapsule);
+    glDeleteShader(fragCapsule);
+
+    m_glesLocCapsuleTransform0 = glGetUniformLocation(m_glesProgramCapsule, "uTransform0");
+    m_glesLocCapsuleTransform1 = glGetUniformLocation(m_glesProgramCapsule, "uTransform1");
+    m_glesLocCapsuleParams     = glGetUniformLocation(m_glesProgramCapsule, "uParams");
+
+    static constexpr float kUnitQuad[12] = {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f, -1.0f,
+         1.0f,  1.0f,
+        -1.0f,  1.0f
+    };
+    glGenVertexArrays(1, &m_glesCapsuleVao);
+    glGenBuffers(1, &m_glesCapsuleQuadVbo);
+    glGenBuffers(1, &m_glesCapsuleInstanceVbo);
+
+    glBindVertexArray(m_glesCapsuleVao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_glesCapsuleQuadVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(kUnitQuad), kUnitQuad, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    glVertexAttribDivisor(0, 0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_glesCapsuleInstanceVbo);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(offsetof(CapsuleInstance, pointA)));
+    glVertexAttribDivisor(1, 1);
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(offsetof(CapsuleInstance, pointB)));
+    glVertexAttribDivisor(2, 1);
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(offsetof(CapsuleInstance, radii)));
+    glVertexAttribDivisor(3, 1);
+
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(offsetof(CapsuleInstance, colorRgba)));
+    glVertexAttribDivisor(4, 1);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
     m_glesInitialized = true;
     SDL_LogInfo(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager GLES] Initialized OpenGL ES 3.2 fallback pipeline successfully");
     return true;
@@ -1214,6 +1414,22 @@ void GpuInkManager::ShutdownGlesFallback() {
         glDeleteProgram(m_glesProgram);
         m_glesProgram = 0;
     }
+    if (m_glesProgramCapsule) {
+        glDeleteProgram(m_glesProgramCapsule);
+        m_glesProgramCapsule = 0;
+    }
+    if (m_glesCapsuleInstanceVbo) {
+        glDeleteBuffers(1, &m_glesCapsuleInstanceVbo);
+        m_glesCapsuleInstanceVbo = 0;
+    }
+    if (m_glesCapsuleQuadVbo) {
+        glDeleteBuffers(1, &m_glesCapsuleQuadVbo);
+        m_glesCapsuleQuadVbo = 0;
+    }
+    if (m_glesCapsuleVao) {
+        glDeleteVertexArrays(1, &m_glesCapsuleVao);
+        m_glesCapsuleVao = 0;
+    }
 
     m_glesTexWidth = 0;
     m_glesTexHeight = 0;
@@ -1221,7 +1437,7 @@ void GpuInkManager::ShutdownGlesFallback() {
 }
 
 bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surfH, int rx, int ry, int rw, int rh) {
-    if (!m_glesInitialized || m_drawCommands.empty()) {
+    if (!m_glesInitialized || (m_drawCommands.empty() && m_capsuleDrawCommands.empty())) {
         BeginBatch();
         return false;
     }
@@ -1385,6 +1601,43 @@ bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surf
         // Draw primitives: in our batching, stagedIndices offsets already incorporate base index
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(dc.indexCount), GL_UNSIGNED_INT,
                        reinterpret_cast<const void*>(static_cast<uintptr_t>(dc.indexOffset * sizeof(uint32_t))));
+    }
+
+    if (!m_capsuleDrawCommands.empty() && m_glesProgramCapsule && m_glesCapsuleVao) {
+        glBindVertexArray(m_glesCapsuleVao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_glesCapsuleInstanceVbo);
+        glBufferData(GL_ARRAY_BUFFER, m_stagedCapsules.size() * sizeof(CapsuleInstance), m_stagedCapsules.data(), GL_STREAM_DRAW);
+
+        glUseProgram(m_glesProgramCapsule);
+        if (prevCullFace) glDisable(GL_CULL_FACE);
+        if (prevDepthTest) glDisable(GL_DEPTH_TEST);
+        glDisable(GL_STENCIL_TEST);
+        glEnable(GL_BLEND);
+
+        for (const auto& cdc : m_capsuleDrawCommands) {
+            if (cdc.capsuleCount == 0) continue;
+
+            if (cdc.blendMode == BlendMode::Multiply) {
+                glBlendFuncSeparate(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+            } else if (cdc.blendMode == BlendMode::Additive) {
+                glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
+            } else {
+                glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            }
+
+            glUniform4fv(m_glesLocCapsuleTransform0, 1, cdc.uniforms.transform0);
+            glUniform4fv(m_glesLocCapsuleTransform1, 1, cdc.uniforms.transform1);
+            glUniform4fv(m_glesLocCapsuleParams, 1, cdc.uniforms.params);
+
+            uintptr_t baseOffset = static_cast<uintptr_t>(cdc.capsuleOffset * sizeof(CapsuleInstance));
+            glBindBuffer(GL_ARRAY_BUFFER, m_glesCapsuleInstanceVbo);
+            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(baseOffset + offsetof(CapsuleInstance, pointA)));
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(baseOffset + offsetof(CapsuleInstance, pointB)));
+            glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(baseOffset + offsetof(CapsuleInstance, radii)));
+            glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(CapsuleInstance), reinterpret_cast<const void*>(baseOffset + offsetof(CapsuleInstance, colorRgba)));
+
+            glDrawArraysInstanced(GL_TRIANGLES, 0, 6, static_cast<GLsizei>(cdc.capsuleCount));
+        }
     }
 
     // Read back composited region into target surface

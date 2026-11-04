@@ -38,8 +38,8 @@
 #include <blend2d/blend2d.h>
 #include "core/gpu/gpu_ink_manager.hpp"
 #include "input/pen_palette.hpp"
-#include "folio_sketch/ink_mesh.hpp"
-#include "folio_sketch/ink_stroke_data.hpp"
+#include <folio_sketch/gpu/ink_mesh.hpp>
+#include <folio_sketch/core/ink_stroke_data.hpp>
 
 namespace {
 
@@ -158,7 +158,7 @@ std::vector<SyntheticStroke> GenerateWorkload(const TierConfig& tier, uint32_t s
         }
 
         // Direct mesh construction (zero BLPath overhead)
-        Folio::InkMeshBuilder::BuildSolidMesh(
+        Folio::BuildStrokeMesh(
             stroke.points,
             stroke.capType,
             stroke.packedColor,

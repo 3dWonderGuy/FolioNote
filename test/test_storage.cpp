@@ -392,19 +392,18 @@ void TestStrokeTessellationAndRasterPerformance() {
         points.emplace_back(x, y, 0.4f + 0.1f * std::sin(t * 2.0));
     }
 
-    // Benchmark incremental AppendRibbonSegments as points arrive from digitizer
+    // Benchmark GenerateStroke on points arriving from digitizer
     InkPath outline;
     std::vector<StrokePoint> streamPts;
     streamPts.reserve(1000);
     auto t0 = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < points.size(); ++i) {
-        size_t prevSize = streamPts.size();
         streamPts.push_back(points[i]);
-        InkGenerator::AppendRibbonSegments(outline, streamPts, prevSize, CapType::Round, StrokePattern::Solid);
     }
+    outline = InkGenerator::GenerateStroke(streamPts, CapType::Round, StrokePattern::Solid);
     auto t1 = std::chrono::high_resolution_clock::now();
     double appendMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    std::cout << "  -> Incremental append 1000 points: " << appendMs << " ms" << std::endl;
+    std::cout << "  -> Vector generation 1000 points: " << appendMs << " ms" << std::endl;
 
     // Benchmark fill_path rasterization in 1920x1080 surface
     BLImage img(1920, 1080, BL_FORMAT_PRGB32);

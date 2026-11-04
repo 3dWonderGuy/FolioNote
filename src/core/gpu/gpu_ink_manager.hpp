@@ -108,9 +108,20 @@ public:
                     bool isPencil = false);
 
     /**
-     * @brief Queries whether any stroke meshes are queued in the current batch.
+     * @brief Appends GPU Capsule SDF instances to the current GPU batch.
      */
-    [[nodiscard]] bool HasPendingDraws() const noexcept { return !m_drawCommands.empty(); }
+    void SubmitCapsules(std::span<const CapsuleInstance> capsules,
+                        const BLMatrix2D& worldToScreen,
+                        float scalePxPerMm,
+                        float opacity = 1.0f,
+                        BlendMode blendMode = BlendMode::Normal,
+                        uint32_t strokeId = 0,
+                        bool isPencil = false);
+
+    /**
+     * @brief Queries whether any stroke meshes or capsule instances are queued in the current batch.
+     */
+    [[nodiscard]] bool HasPendingDraws() const noexcept { return !m_drawCommands.empty() || !m_capsuleDrawCommands.empty(); }
 
     /**
      * @brief Executes all queued GPU mesh draws onto a Blend2D `BLImage` surface within `[clipX, clipY, clipW, clipH]`.
@@ -237,19 +248,38 @@ private:
     std::vector<uint32_t>    m_stagedIndices;
     std::vector<DrawCommand> m_drawCommands;
 
+    struct CapsuleDrawCommand {
+        uint32_t capsuleOffset = 0;
+        uint32_t capsuleCount  = 0;
+        BlendMode blendMode    = BlendMode::Normal;
+        uint32_t strokeId      = 0;
+        bool isPencil          = false;
+        GpuStrokeUniforms uniforms;
+    };
+
+    std::vector<CapsuleInstance>    m_stagedCapsules;
+    std::vector<CapsuleDrawCommand> m_capsuleDrawCommands;
+
     // Direct OpenGL ES fallback state
     bool     m_glesInitialized          = false;
     uint32_t m_glesProgram              = 0;
     uint32_t m_glesProgramPencil        = 0;
+    uint32_t m_glesProgramCapsule       = 0;
     uint32_t m_glesVao                  = 0;
     uint32_t m_glesVbo                  = 0;
     uint32_t m_glesIbo                  = 0;
+    uint32_t m_glesCapsuleVao           = 0;
+    uint32_t m_glesCapsuleQuadVbo       = 0;
+    uint32_t m_glesCapsuleInstanceVbo   = 0;
     int32_t  m_glesLocTransform0        = -1;
     int32_t  m_glesLocTransform1        = -1;
     int32_t  m_glesLocParams            = -1;
     int32_t  m_glesLocPencilTransform0  = -1;
     int32_t  m_glesLocPencilTransform1  = -1;
     int32_t  m_glesLocPencilParams      = -1;
+    int32_t  m_glesLocCapsuleTransform0 = -1;
+    int32_t  m_glesLocCapsuleTransform1 = -1;
+    int32_t  m_glesLocCapsuleParams     = -1;
     uint32_t m_glesFbo                  = 0;
     uint32_t m_glesCanvasTex     = 0;
     uint32_t m_glesRboDepthStencil = 0;

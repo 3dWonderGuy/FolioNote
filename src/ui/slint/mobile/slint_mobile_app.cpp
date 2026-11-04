@@ -1,4 +1,7 @@
 #include "ui/slint/mobile/slint_mobile_app.hpp"
+
+#if defined(FOLIONOTE_HAS_SLINT)
+
 #include "app/actions/ui_action_registry.hpp"
 #include "app/window_state_manager.hpp"
 #include "core/clipboard/clipboard_manager.hpp"
@@ -615,7 +618,7 @@ bool SlintMobileApplication::Init(const std::string& title, int width, int heigh
 
         sh->on_toggle_dynamic_pressure([this]() {
             auto& cfg = SettingsManager::Instance().inkingConfig;
-            cfg.usePressure = !cfg.usePressure;
+            cfg.dynamics.usePressure = !cfg.dynamics.usePressure;
             m_canvas.GetInkEngine().SetConfig(cfg);
             SettingsManager::Instance().SaveSettings();
         });
@@ -630,14 +633,14 @@ bool SlintMobileApplication::Init(const std::string& title, int width, int heigh
             std::string s = lvl.data();
             auto& cfg = SettingsManager::Instance().inkingConfig;
             if (s == "low") {
-                cfg.google_spring_mass_constant = 0.005f;
-                cfg.google_drag_constant = 40.0f;
+                cfg.physics.springMassConstant = 0.005f;
+                cfg.physics.dragConstant = 40.0f;
             } else if (s == "high") {
-                cfg.google_spring_mass_constant = 0.0001f;
-                cfg.google_drag_constant = 150.0f;
+                cfg.physics.springMassConstant = 0.0001f;
+                cfg.physics.dragConstant = 150.0f;
             } else {
-                cfg.google_spring_mass_constant = 0.0005f;
-                cfg.google_drag_constant = 72.0f;
+                cfg.physics.springMassConstant = 0.0005f;
+                cfg.physics.dragConstant = 72.0f;
             }
             m_canvas.GetInkEngine().SetConfig(cfg);
             SettingsManager::Instance().SaveSettings();
@@ -1132,7 +1135,7 @@ void SlintMobileApplication::UpdateSlintNavigationModel() {
     sh->set_library_root_path(slint::SharedString(m_session.workspace.workspaceDirectory.c_str()));
 
     // Synchronize settings
-    sh->set_dynamic_pressure(SettingsManager::Instance().inkingConfig.usePressure);
+    sh->set_dynamic_pressure(SettingsManager::Instance().inkingConfig.dynamics.usePressure);
     sh->set_palm_rejection(!SettingsManager::Instance().drawWithTouch);
     sh->set_canvas_inverted(m_canvas.inkColorInverted);
     sh->set_show_page_border(m_canvas.showPageBorder);
@@ -1167,3 +1170,5 @@ void SlintMobileApplication::Shutdown() {
 }
 
 } // namespace Folio
+
+#endif // FOLIONOTE_HAS_SLINT

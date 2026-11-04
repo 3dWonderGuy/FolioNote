@@ -268,8 +268,12 @@ void InkContainer::BakeTransform() {
 
         stroke.baseWidthMm *= static_cast<float>(scaleFactor);
 
+        stroke.outlinePath.reset();
+        stroke.capsules.clear();
         if (!stroke.points.empty()) {
-            Folio::InkEngine::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache, 3.7795f, stroke.strokePattern);
+            Folio::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache, 3.7795f, stroke.strokePattern);
+            Folio::InkPath path = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
+            ToBLPath(path, stroke.outlinePath);
         } else {
             stroke.meshCache.clear();
         }
@@ -320,6 +324,12 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
                                        : stroke.blendMode;
 
         if (useGpuBatch && !stroke.points.empty()) {
+            const auto& caps = stroke.EnsureCapsules();
+            if (!caps.empty()) {
+                const bool isPencil = (stroke.penType == PenType::Pencil || stroke.strokePattern == StrokePattern::TexturedPencil);
+                gpu.SubmitCapsules(caps, combinedMatrix, effectiveScale, combinedOpacity, effectiveBlend, currentStrokeId++, isPencil);
+                continue;
+            }
             const auto& mesh = stroke.EnsureMeshCache();
             if (!mesh.empty()) {
                 const bool isPencil = (stroke.penType == PenType::Pencil || stroke.strokePattern == StrokePattern::TexturedPencil);
@@ -342,7 +352,10 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
         renderColor.setA(static_cast<uint32_t>(std::round(static_cast<float>(renderColor.a()) * combinedOpacity)));
 
         ctx.set_fill_style(renderColor);
-        if (stroke.segments.size() == 1) {
+        const auto& outline = stroke.EnsureOutlinePath();
+        if (!outline.is_empty()) {
+            ctx.fill_path(outline);
+        } else if (stroke.segments.size() == 1) {
             ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
             ctx.set_stroke_width(stroke.segments[0].width);
             ctx.stroke_line(stroke.segments[0].p0.x, stroke.segments[0].p0.y,
@@ -449,7 +462,11 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                     newStroke.points.push_back(makePointWithTelemetry(s.p1.x, s.p1.y, s.width * 0.5f));
                 }
 
-                Folio::InkEngine::BuildStrokeMesh(newStroke.points, newStroke.capType, Folio::PackGpuColor(newStroke.color), newStroke.meshCache, 3.7795f, newStroke.strokePattern);
+                Folio::BuildStrokeMesh(newStroke.points, newStroke.capType, Folio::PackGpuColor(newStroke.color), newStroke.meshCache, 3.7795f, newStroke.strokePattern);
+                newStroke.outlinePath.reset();
+                newStroke.capsules.clear();
+                Folio::InkPath newOutline = Folio::InkEngine::BuildStrokeOutline(newStroke.points, newStroke.capType, newStroke.strokePattern);
+                ToBLPath(newOutline, newStroke.outlinePath);
                 newStrokes.push_back(std::move(newStroke));
             }
         } else {

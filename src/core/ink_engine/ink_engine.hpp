@@ -47,6 +47,123 @@ inline BLRgba32 ToBLRgba32(ColorRgba c) noexcept {
 }
 
 /**
+ * @brief Converts Folio::InkPath to Blend2D BLPath.
+ */
+inline void ToBLPath(const InkPath& path, BLPath& dst) {
+    dst.clear();
+    size_t ptIdx = 0;
+    const auto& points = path.points();
+    for (PathVerb verb : path.verbs()) {
+        switch (verb) {
+            case PathVerb::MoveTo:
+                if (ptIdx < points.size()) {
+                    dst.move_to(points[ptIdx].x, points[ptIdx].y);
+                    ptIdx++;
+                }
+                break;
+            case PathVerb::LineTo:
+                if (ptIdx < points.size()) {
+                    dst.line_to(points[ptIdx].x, points[ptIdx].y);
+                    ptIdx++;
+                }
+                break;
+            case PathVerb::CubicTo:
+                if (ptIdx + 2 < points.size()) {
+                    dst.cubic_to(points[ptIdx].x, points[ptIdx].y,
+                                 points[ptIdx + 1].x, points[ptIdx + 1].y,
+                                 points[ptIdx + 2].x, points[ptIdx + 2].y);
+                    ptIdx += 3;
+                }
+                break;
+            case PathVerb::Close:
+                dst.close();
+                break;
+        }
+    }
+}
+
+inline BLPath ToBLPath(const InkPath& path) {
+    BLPath dst;
+    ToBLPath(path, dst);
+    return dst;
+}
+
+/**
+ * @brief Compatibility stroke mesh builder for FolioNote.
+ */
+inline void BuildStrokeMesh(std::span<const StrokePoint> points,
+                            CapType capType,
+                            uint32_t colorRgba,
+                            InkMesh& outMesh,
+                            float scale = 3.7795f,
+                            StrokePattern pattern = StrokePattern::Solid) {
+    (void)capType;
+    (void)scale;
+    (void)pattern;
+    outMesh.clear();
+    const size_t n = points.size();
+    if (n == 0) return;
+
+    if (n == 1) {
+        const auto& p = points[0];
+        const float x = static_cast<float>(p.x);
+        const float y = static_cast<float>(p.y);
+        const float r = p.r > 0.0f ? p.r : 0.5f;
+        constexpr int steps = 16;
+        const uint32_t cIdx = static_cast<uint32_t>(outMesh.vertices.size());
+        outMesh.vertices.push_back(InkVertex{x, y, 0.0f, r, colorRgba});
+        for (int i = 0; i <= steps; ++i) {
+            float th = static_cast<float>(i) * (6.28318530718f / static_cast<float>(steps));
+            outMesh.vertices.push_back(InkVertex{x + std::cos(th) * r, y + std::sin(th) * r, 1.0f, r, colorRgba});
+        }
+        for (int i = 0; i < steps; ++i) {
+            outMesh.indices.push_back(cIdx);
+            outMesh.indices.push_back(cIdx + 1 + i);
+            outMesh.indices.push_back(cIdx + 1 + ((i + 1) % steps));
+        }
+        outMesh.coreIndexCount = static_cast<uint32_t>(outMesh.indices.size());
+        return;
+    }
+
+    outMesh.vertices.reserve(n * 4);
+    outMesh.indices.reserve(n * 6);
+
+    for (size_t i = 0; i < n; ++i) {
+        float r = points[i].r > 0.0f ? points[i].r : 0.5f;
+        float nx = 0.0f, ny = 1.0f;
+        if (i + 1 < n) {
+            float dx = static_cast<float>(points[i + 1].x - points[i].x);
+            float dy = static_cast<float>(points[i + 1].y - points[i].y);
+            float len = std::hypot(dx, dy);
+            if (len > 1e-4f) { nx = -dy / len; ny = dx / len; }
+        } else if (i > 0) {
+            float dx = static_cast<float>(points[i].x - points[i - 1].x);
+            float dy = static_cast<float>(points[i].y - points[i - 1].y);
+            float len = std::hypot(dx, dy);
+            if (len > 1e-4f) { nx = -dy / len; ny = dx / len; }
+        }
+        float x = static_cast<float>(points[i].x);
+        float y = static_cast<float>(points[i].y);
+        outMesh.vertices.push_back(InkVertex{x + nx * r, y + ny * r, 1.0f, r, colorRgba});
+        outMesh.vertices.push_back(InkVertex{x - nx * r, y - ny * r, -1.0f, r, colorRgba});
+    }
+
+    for (size_t i = 0; i + 1 < n; ++i) {
+        uint32_t v0 = static_cast<uint32_t>(i * 2);
+        uint32_t v1 = v0 + 1;
+        uint32_t v2 = v0 + 2;
+        uint32_t v3 = v0 + 3;
+        outMesh.indices.push_back(v0);
+        outMesh.indices.push_back(v1);
+        outMesh.indices.push_back(v2);
+        outMesh.indices.push_back(v2);
+        outMesh.indices.push_back(v1);
+        outMesh.indices.push_back(v3);
+    }
+    outMesh.coreIndexCount = static_cast<uint32_t>(outMesh.indices.size());
+}
+
+/**
  * @brief Tiled hatching pattern generator for shape infill rendering.
  */
 inline BLPattern CreateHatchPattern(InfillType type,
@@ -121,42 +238,15 @@ inline BLPattern CreateHatchPattern(InfillType type,
 inline void RenderShapeInfill(BLContext& ctx, const BLPath& region, const InfillStyle& style) {
     if (style.type == InfillType::None || region.is_empty()) return;
 
-    BLBox b = BLBox(style.bounds.x0, style.bounds.y0, style.bounds.x1, style.bounds.y1);
-    if (b.x1 <= b.x0 || b.y1 <= b.y0) {
-        region.get_bounding_box(&b);
-    }
+    BLBox b;
+    region.get_bounding_box(&b);
     const double w = b.x1 - b.x0;
     const double h = b.y1 - b.y0;
 
-    BLRgba32 primary = ToBLRgba32(style.primaryColor);
-    BLRgba32 secondary = ToBLRgba32(style.secondaryColor);
+    BLRgba32 fillCol = ToBLRgba32(style.color);
 
     if (style.type == InfillType::Solid) {
-        primary.setA(255);
-        ctx.set_fill_style(primary);
-        ctx.fill_path(region);
-    } else if (style.type == InfillType::SemiTransparent) {
-        if (primary.a() > 180 || primary.a() == 0) primary.setA(90);
-        ctx.set_fill_style(primary);
-        ctx.fill_path(region);
-    } else if (style.type == InfillType::LinearGradient) {
-        BLLinearGradientValues vals{ b.x0, b.y0, b.x1, b.y1 };
-        BLGradient grad(vals, BL_EXTEND_MODE_PAD);
-        grad.add_stop(0.0, primary);
-        grad.add_stop(1.0, secondary);
-        ctx.set_fill_style(grad);
-        ctx.fill_path(region);
-    } else if (style.type == InfillType::RadialGradient) {
-        BLRadialGradientValues vals{
-            b.x0 + w * 0.5,
-            b.y0 + h * 0.5,
-            0.0, 0.0,
-            (std::max)(w, h) * 0.5
-        };
-        BLGradient grad(vals, BL_EXTEND_MODE_PAD);
-        grad.add_stop(0.0, primary);
-        grad.add_stop(1.0, secondary);
-        ctx.set_fill_style(grad);
+        ctx.set_fill_style(fillCol);
         ctx.fill_path(region);
     } else if (style.type >= InfillType::HatchDiagonal &&
                style.type <= InfillType::HatchDots) {
@@ -177,8 +267,7 @@ inline void RenderShapeInfill(BLContext& ctx, const BLPath& region, const Infill
             dynamicSpacing = basePitch * 2.0;
         }
 
-        primary.setA(255);
-        BLPattern hatch = CreateHatchPattern(style.type, primary, effWidth, dynamicSpacing);
+        BLPattern hatch = CreateHatchPattern(style.type, fillCol, effWidth, dynamicSpacing);
         ctx.set_fill_style(hatch);
         ctx.fill_path(region);
     }
@@ -191,22 +280,26 @@ using Folio::ColorRgba;
 using Folio::Point2D;
 using Folio::StrokePoint;
 using Folio::StylusInputPoint;
-using Folio::StylusTelemetry;
 using Folio::Segment1D;
 using Folio::InkVertex;
 using Folio::InkMesh;
 using Folio::PackGpuColor;
 using Folio::ToColorRgba;
 using Folio::ToBLRgba32;
+using Folio::ToBLPath;
+using Folio::BuildStrokeMesh;
 using Folio::RenderShapeInfill;
 using Folio::FinishedStrokeData;
+using Folio::CapsuleVec2;
+using Folio::CapsuleInstance;
+using Folio::CapsuleBuilder;
+using Folio::PackPremultipliedGpuColor;
 
 using Folio::CapType;
 using Folio::StrokePattern;
 using Folio::InfillType;
 using Folio::InfillStyle;
 using Folio::StrokeStyle;
-using Folio::SplineMode;
 using Folio::InkingConfig;
 using Folio::InkingTuningConfig;
 
@@ -220,7 +313,6 @@ using Folio::InkGenerator;
 using Folio::InkMeshBuilder;
 using Folio::InkEngine;
 using Folio::StrokeCollisionEngine;
+using Folio::StrokeSlicer;
 using Folio::StrokeWidthEvaluator;
 using Folio::StrokePostProcessor;
-using Folio::StrokeTopology;
-using Folio::StrokeAnalysisResult;

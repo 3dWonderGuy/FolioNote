@@ -122,10 +122,10 @@ enum class ShapeOutlineType : uint8_t {
  */
 [[nodiscard]] constexpr InfillType ToInfillType(ShapeFillType fillType) noexcept {
     switch (fillType) {
-        case ShapeFillType::Solid:           return InfillType::Solid;
-        case ShapeFillType::SemiTransparent: return InfillType::SemiTransparent;
-        case ShapeFillType::LinearGradient:  return InfillType::LinearGradient;
-        case ShapeFillType::RadialGradient:  return InfillType::RadialGradient;
+        case ShapeFillType::Solid:
+        case ShapeFillType::SemiTransparent:
+        case ShapeFillType::LinearGradient:
+        case ShapeFillType::RadialGradient:  return InfillType::Solid;
         case ShapeFillType::HatchDiagonal:   return InfillType::HatchDiagonal;
         case ShapeFillType::HatchCross:      return InfillType::HatchCross;
         case ShapeFillType::HatchHorizontal: return InfillType::HatchHorizontal;

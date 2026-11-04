@@ -730,11 +730,13 @@ void ShapeObject::Render(BLContext& ctx, const Viewport& viewport) const {
         double scaleFactor = (det > 1e-6) ? std::sqrt(det) : 1.0;
 
         InfillStyle infill;
-        infill.type           = ToInfillType(fillType);
-        infill.primaryColor   = ToColorRgba(fillColor);
-        infill.secondaryColor = ToColorRgba(secondaryFillColor);
+        infill.type = ToInfillType(fillType);
+        BLRgba32 effCol = fillColor;
+        if (fillType == ShapeFillType::SemiTransparent) {
+            if (effCol.a() > 180 || effCol.a() == 0) effCol.setA(90);
+        }
+        infill.color          = ToColorRgba(effCol);
         infill.outlineWidthMm = strokeWidth / scaleFactor;
-        infill.bounds         = Folio::BoundingBox2D(worldX, worldY, worldX + worldWidth, worldY + worldHeight);
 
         RenderShapeInfill(ctx, path, infill);
 

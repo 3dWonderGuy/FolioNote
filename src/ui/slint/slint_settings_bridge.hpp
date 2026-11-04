@@ -454,14 +454,14 @@ private:
         });
 
         win.on_toggle_wobble_smoothing([this, &canvas](bool enabled) {
-            SettingsManager::Instance().inkingConfig.google_wobble_enable = enabled;
+            SettingsManager::Instance().inkingConfig.filters.enableWobble = enabled;
             canvas.GetInkEngine().SetConfig(SettingsManager::Instance().inkingConfig);
             m_lastStatusMessage = enabled ? "Wobble smoothing filter enabled" : "Wobble smoothing filter disabled";
             if (m_adapter) m_adapter->m_needsRedraw = true;
         });
 
         win.on_toggle_kalman_prediction([this, &canvas](bool enabled) {
-            SettingsManager::Instance().inkingConfig.google_enable_prediction = enabled;
+            SettingsManager::Instance().inkingConfig.prediction.enable = enabled;
             canvas.GetInkEngine().SetConfig(SettingsManager::Instance().inkingConfig);
             m_lastStatusMessage = enabled ? "Kalman tip prediction enabled" : "Kalman tip prediction disabled";
             if (m_adapter) m_adapter->m_needsRedraw = true;
@@ -553,8 +553,8 @@ private:
         win.set_draw_with_touch(ribbon.drawWithTouch);
         win.set_ruler_enabled(canvas.ruler.IsEnabled());
         win.set_auto_shapes_enabled(ribbon.autoShapesEnabled);
-        win.set_wobble_smoothing_enabled(sm.inkingConfig.google_wobble_enable);
-        win.set_kalman_prediction_enabled(sm.inkingConfig.google_enable_prediction);
+        win.set_wobble_smoothing_enabled(sm.inkingConfig.filters.enableWobble);
+        win.set_kalman_prediction_enabled(sm.inkingConfig.prediction.enable);
 
         win.set_max_loaded_pages(static_cast<int>(sm.maxLoadedPages));
         win.set_auto_backup_daily(sm.autoBackupDailyEnabled);

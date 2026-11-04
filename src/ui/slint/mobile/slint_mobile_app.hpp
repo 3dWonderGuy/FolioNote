@@ -20,6 +20,8 @@
 
 namespace Folio {
 
+#if defined(FOLIONOTE_HAS_SLINT)
+
 class SlintMobileApplication {
 public:
     SlintMobileApplication();
@@ -62,5 +64,22 @@ private:
     bool m_isActivelyInking = false;
     uint64_t m_lastRenderTicksNs = 0;
 };
+
+#else
+
+// Lightweight stub for platforms where Slint C++ SDK is not compiled (Windows CI, Android)
+class SlintMobileApplication {
+public:
+    SlintMobileApplication() = default;
+    ~SlintMobileApplication() = default;
+
+    bool Init(const std::string& /*title*/, int /*width*/, int /*height*/, const std::string& /*initialImportPath*/ = "") {
+        return false;
+    }
+    void Run() {}
+    void Shutdown() {}
+};
+
+#endif
 
 } // namespace Folio

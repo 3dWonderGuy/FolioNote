@@ -187,7 +187,7 @@ void LiveInteractionLayer::Render(BLContext& ctx, const Viewport& viewport) {
  * - Priority 2: Fallback for borrowed spans / raw points with round caps & round joins.
  */
 void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& viewport) {
-    // 1. Primary Vector Inking Engine: SDL_GPU Hardware Triangle Mesh & Modeled Ribbon
+    // 1. Primary Vector Inking Engine: Hardware-accelerated GPU capsules or fast zero-stall CPU stream
     if (m_inkEngine.IsStrokeActive()) {
         const auto& activeStyle = m_inkEngine.GetActiveStyle();
         auto& gpu = GpuInkManager::Instance();
@@ -197,14 +197,14 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
             const bool isPencil = (activeStyle.pattern == StrokePattern::TexturedPencil);
             gpu.BeginBatch();
 
-            const auto& liveMesh = m_inkEngine.GetLiveMesh();
-            if (!liveMesh.empty()) {
-                gpu.SubmitMesh(liveMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1, isPencil);
+            const auto& liveCaps = m_inkEngine.GetLiveCapsules();
+            if (!liveCaps.empty()) {
+                gpu.SubmitCapsules(liveCaps, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1, isPencil);
             }
 
-            const auto& predMesh = m_inkEngine.GetPredictedMesh();
-            if (!predMesh.empty()) {
-                gpu.SubmitMesh(predMesh, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1, isPencil);
+            const auto& predCaps = m_inkEngine.GetPredictedCapsules();
+            if (!predCaps.empty()) {
+                gpu.SubmitCapsules(predCaps, viewport.worldToScreenMatrix, effectiveScale, 1.0f, m_activeStrokeBlendMode, 1, isPencil);
             }
 
             if (gpu.HasPendingDraws()) {
@@ -220,6 +220,79 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
                 }
                 return;
             }
+        }
+
+        // Fast CPU Fallback: Zero-allocation capsule/quad streaming (prevents O(N^2) contour stalls during drawing)
+        const auto& pts = m_inkEngine.GetLiveModeledPoints();
+        if (!pts.empty()) {
+            ctx.save();
+            ctx.set_transform(viewport.worldToScreenMatrix);
+
+            BLCompOp compOp = (m_activeStrokeBlendMode == BlendMode::Multiply)
+                                  ? BL_COMP_OP_MULTIPLY
+                                  : BL_COMP_OP_SRC_OVER;
+            ctx.set_comp_op(compOp);
+            ctx.set_stroke_caps(BL_STROKE_CAP_ROUND);
+            ctx.set_stroke_join(BL_STROKE_JOIN_ROUND);
+            ctx.set_stroke_style(ToBLRgba32(activeStyle.color));
+            ctx.set_fill_style(ToBLRgba32(activeStyle.color));
+
+            if (pts.size() == 1) {
+                float r = pts[0].r > 0.0f ? pts[0].r : (activeStyle.baseWidth * 0.5f);
+                ctx.fill_circle(pts[0].x, pts[0].y, r);
+            } else {
+                for (size_t i = 1; i < pts.size(); ++i) {
+                    const auto& p0 = pts[i - 1];
+                    const auto& p1 = pts[i];
+                    float r0 = p0.r > 0.0f ? p0.r : (activeStyle.baseWidth * 0.5f);
+                    float r1 = p1.r > 0.0f ? p1.r : (activeStyle.baseWidth * 0.5f);
+                    double dx = p1.x - p0.x;
+                    double dy = p1.y - p0.y;
+                    double len = std::hypot(dx, dy);
+                    if (len > 1e-4) {
+                        double nx = -dy / len;
+                        double ny = dx / len;
+                        BLPath segPath;
+                        segPath.move_to(p0.x + nx * r0, p0.y + ny * r0);
+                        segPath.line_to(p1.x + nx * r1, p1.y + ny * r1);
+                        segPath.line_to(p1.x - nx * r1, p1.y - ny * r1);
+                        segPath.line_to(p0.x - nx * r0, p0.y - ny * r0);
+                        segPath.close();
+                        ctx.fill_path(segPath);
+                    }
+                    ctx.fill_circle(p0.x, p0.y, r0);
+                }
+                ctx.fill_circle(pts.back().x, pts.back().y, pts.back().r > 0.0f ? pts.back().r : (activeStyle.baseWidth * 0.5f));
+            }
+
+            const auto& predPts = m_inkEngine.GetPredictedPoints();
+            if (!predPts.empty() && predPts.size() >= 2) {
+                for (size_t i = 1; i < predPts.size(); ++i) {
+                    const auto& p0 = predPts[i - 1];
+                    const auto& p1 = predPts[i];
+                    float r0 = p0.r > 0.0f ? p0.r : (activeStyle.baseWidth * 0.5f);
+                    float r1 = p1.r > 0.0f ? p1.r : (activeStyle.baseWidth * 0.5f);
+                    double dx = p1.x - p0.x;
+                    double dy = p1.y - p0.y;
+                    double len = std::hypot(dx, dy);
+                    if (len > 1e-4) {
+                        double nx = -dy / len;
+                        double ny = dx / len;
+                        BLPath segPath;
+                        segPath.move_to(p0.x + nx * r0, p0.y + ny * r0);
+                        segPath.line_to(p1.x + nx * r1, p1.y + ny * r1);
+                        segPath.line_to(p1.x - nx * r1, p1.y - ny * r1);
+                        segPath.line_to(p0.x - nx * r0, p0.y - ny * r0);
+                        segPath.close();
+                        ctx.fill_path(segPath);
+                    }
+                    ctx.fill_circle(p0.x, p0.y, r0);
+                }
+                ctx.fill_circle(predPts.back().x, predPts.back().y, predPts.back().r > 0.0f ? predPts.back().r : (activeStyle.baseWidth * 0.5f));
+            }
+
+            ctx.restore();
+            return;
         }
         return;
     }
