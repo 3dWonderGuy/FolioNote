@@ -553,8 +553,8 @@ inline std::shared_ptr<InkContainer> ParseIsfToInkContainer(const uint8_t* isfDa
                         }
                     }
 
-                    // Build GPU triangle mesh
-                    Folio::BuildStrokeMesh(s.points, CapType::Round, Folio::PackGpuColor(s.color), s.meshCache);
+                    // Build GPU Capsule SDF instances
+                    s.EnsureCapsules();
 
                     inkContainer->AddStroke(s);
                 }

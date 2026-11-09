@@ -151,6 +151,7 @@ public:
     // Telemetry queries
     [[nodiscard]] uint32_t GetLastVertexCount() const noexcept { return m_lastVertexCount; }
     [[nodiscard]] uint32_t GetLastTriangleCount() const noexcept { return m_lastTriangleCount; }
+    [[nodiscard]] uint32_t GetLastCapsuleCount() const noexcept { return m_lastCapsuleCount; }
     [[nodiscard]] uint32_t GetLastDrawCallCount() const noexcept { return m_lastDrawCallCount; }
 
     // Memory footprint queries (bytes)
@@ -205,6 +206,7 @@ private:
     bool CreatePipelines();
     bool EnsureCanvasTexture(uint32_t width, uint32_t height);
     bool EnsureGeometryBuffers(uint32_t vertexBytes, uint32_t indexBytes);
+    bool EnsureCapsuleBuffers(uint32_t capsuleBytes);
     bool EnsureImageTransferBuffers(uint32_t byteSize);
 
     // Direct OpenGL ES fallback pipeline
@@ -224,6 +226,18 @@ private:
     SDL_GPUGraphicsPipeline* m_pipelineAdditive      = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelinePencilCore    = nullptr;
     SDL_GPUGraphicsPipeline* m_pipelinePencilSkirt   = nullptr;
+
+    SDL_GPUShader*           m_capsuleVertexShader         = nullptr;
+    SDL_GPUShader*           m_capsuleFragmentShader       = nullptr;
+    SDL_GPUShader*           m_capsulePencilFragmentShader = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineCapsuleNormal       = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineCapsuleMultiply     = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineCapsuleAdditive     = nullptr;
+    SDL_GPUGraphicsPipeline* m_pipelineCapsulePencil       = nullptr;
+
+    SDL_GPUBuffer*           m_capsuleBuffer    = nullptr;
+    SDL_GPUTransferBuffer*   m_capsuleTransfer  = nullptr;
+    uint32_t                 m_capsuleCapacity  = 0;
 
     SDL_GPUTextureFormat     m_depthStencilFormat  = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUTexture*          m_depthStencilTexture = nullptr;
@@ -297,6 +311,7 @@ private:
     int      m_activeClipH       = -1;
     uint32_t m_lastVertexCount   = 0;
     uint32_t m_lastTriangleCount = 0;
+    uint32_t m_lastCapsuleCount  = 0;
     uint32_t m_lastDrawCallCount = 0;
 };
 

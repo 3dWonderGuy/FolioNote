@@ -186,6 +186,44 @@ void GpuInkManager::Shutdown() {
         m_vertexShader = nullptr;
     }
 
+    if (m_pipelineCapsulePencil) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineCapsulePencil);
+        m_pipelineCapsulePencil = nullptr;
+    }
+    if (m_pipelineCapsuleAdditive) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineCapsuleAdditive);
+        m_pipelineCapsuleAdditive = nullptr;
+    }
+    if (m_pipelineCapsuleMultiply) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineCapsuleMultiply);
+        m_pipelineCapsuleMultiply = nullptr;
+    }
+    if (m_pipelineCapsuleNormal) {
+        SDL_ReleaseGPUGraphicsPipeline(m_device, m_pipelineCapsuleNormal);
+        m_pipelineCapsuleNormal = nullptr;
+    }
+    if (m_capsulePencilFragmentShader) {
+        SDL_ReleaseGPUShader(m_device, m_capsulePencilFragmentShader);
+        m_capsulePencilFragmentShader = nullptr;
+    }
+    if (m_capsuleFragmentShader) {
+        SDL_ReleaseGPUShader(m_device, m_capsuleFragmentShader);
+        m_capsuleFragmentShader = nullptr;
+    }
+    if (m_capsuleVertexShader) {
+        SDL_ReleaseGPUShader(m_device, m_capsuleVertexShader);
+        m_capsuleVertexShader = nullptr;
+    }
+    if (m_capsuleTransfer) {
+        SDL_ReleaseGPUTransferBuffer(m_device, m_capsuleTransfer);
+        m_capsuleTransfer = nullptr;
+    }
+    if (m_capsuleBuffer) {
+        SDL_ReleaseGPUBuffer(m_device, m_capsuleBuffer);
+        m_capsuleBuffer = nullptr;
+    }
+    m_capsuleCapacity = 0;
+
     SDL_DestroyGPUDevice(m_device);
     m_device = nullptr;
     m_initialized = false;
@@ -395,7 +433,116 @@ bool GpuInkManager::CreatePipelines() {
     m_pipelinePencilCore    = makePipeline(blendMultiply, dsReplace, m_fragmentShaderPencil);
     m_pipelinePencilSkirt   = makePipeline(blendMultiply, dsKeep,    m_fragmentShaderPencil);
 
-    return m_pipelineNormal != nullptr &&
+    // -------------------------------------------------------------------------
+    // Capsule SDF Hardware Pipeline
+    // -------------------------------------------------------------------------
+    SDL_GPUShaderCreateInfo capVertInfo = {};
+    capVertInfo.entrypoint           = "main";
+    capVertInfo.stage                = SDL_GPU_SHADERSTAGE_VERTEX;
+    capVertInfo.format               = SDL_GPU_SHADERFORMAT_SPIRV;
+    capVertInfo.code                 = GpuShaders::kCapsuleVertSpirv;
+    capVertInfo.code_size            = sizeof(GpuShaders::kCapsuleVertSpirv);
+    capVertInfo.num_uniform_buffers  = 1;
+
+    SDL_GPUShaderCreateInfo capFragInfo = {};
+    capFragInfo.entrypoint           = "main";
+    capFragInfo.stage                = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    capFragInfo.format               = SDL_GPU_SHADERFORMAT_SPIRV;
+    capFragInfo.code                 = GpuShaders::kCapsuleFragSpirv;
+    capFragInfo.code_size            = sizeof(GpuShaders::kCapsuleFragSpirv);
+
+    SDL_GPUShaderCreateInfo capPencilFragInfo = capFragInfo;
+    capPencilFragInfo.code      = GpuShaders::kCapsulePencilFragSpirv;
+    capPencilFragInfo.code_size = sizeof(GpuShaders::kCapsulePencilFragSpirv);
+
+    m_capsuleVertexShader         = SDL_CreateGPUShader(m_device, &capVertInfo);
+    m_capsuleFragmentShader       = SDL_CreateGPUShader(m_device, &capFragInfo);
+    m_capsulePencilFragmentShader = SDL_CreateGPUShader(m_device, &capPencilFragInfo);
+
+    if (!m_capsuleVertexShader || !m_capsuleFragmentShader || !m_capsulePencilFragmentShader) {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GpuInkManager] Failed to create capsule shaders: %s", SDL_GetError());
+        return false;
+    }
+
+    // Capsule Vertex Buffer Descriptions:
+    // Slot 0: Per-instance CapsuleInstance attributes (pitch = 32 bytes)
+    // Procedural quad vertices [-1, 1]^2 are computed via gl_VertexIndex in the vertex shader.
+    SDL_GPUVertexBufferDescription capVbufDesc[1] = {};
+    capVbufDesc[0].slot               = 0;
+    capVbufDesc[0].pitch              = sizeof(CapsuleInstance);
+    capVbufDesc[0].input_rate         = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+    capVbufDesc[0].instance_step_rate = 0;
+
+    SDL_GPUVertexAttribute capVattrs[5] = {};
+    // loc 0: aPointA (float2)
+    capVattrs[0].buffer_slot = 0;
+    capVattrs[0].location    = 0;
+    capVattrs[0].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    capVattrs[0].offset      = offsetof(CapsuleInstance, pointA);
+
+    // loc 1: aPointB (float2)
+    capVattrs[1].buffer_slot = 0;
+    capVattrs[1].location    = 1;
+    capVattrs[1].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    capVattrs[1].offset      = offsetof(CapsuleInstance, pointB);
+
+    // loc 2: aRadii (float2)
+    capVattrs[2].buffer_slot = 0;
+    capVattrs[2].location    = 2;
+    capVattrs[2].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+    capVattrs[2].offset      = offsetof(CapsuleInstance, radii);
+
+    // loc 3: aColor (ubyte4_norm)
+    capVattrs[3].buffer_slot = 0;
+    capVattrs[3].location    = 3;
+    capVattrs[3].format      = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM;
+    capVattrs[3].offset      = offsetof(CapsuleInstance, colorRgba);
+
+    // loc 4: aAlphaFade (float)
+    capVattrs[4].buffer_slot = 0;
+    capVattrs[4].location    = 4;
+    capVattrs[4].format      = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT;
+    capVattrs[4].offset      = offsetof(CapsuleInstance, alphaFade);
+
+    SDL_GPUVertexInputState capVertexInput = {};
+    capVertexInput.num_vertex_buffers         = 1;
+    capVertexInput.vertex_buffer_descriptions = capVbufDesc;
+    capVertexInput.num_vertex_attributes      = 5;
+    capVertexInput.vertex_attributes          = capVattrs;
+
+    auto makeCapsulePipeline = [&](const SDL_GPUColorTargetBlendState& bState, SDL_GPUShader* fragShader) -> SDL_GPUGraphicsPipeline* {
+        SDL_GPUColorTargetDescription cDesc[1] = {};
+        cDesc[0].format      = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+        cDesc[0].blend_state = bState;
+
+        SDL_GPUGraphicsPipelineTargetInfo tInfo = {};
+        tInfo.num_color_targets         = 1;
+        tInfo.color_target_descriptions = cDesc;
+        tInfo.has_depth_stencil_target  = false;
+
+        SDL_GPUGraphicsPipelineCreateInfo pInfo = {};
+        pInfo.vertex_shader       = m_capsuleVertexShader;
+        pInfo.fragment_shader     = fragShader;
+        pInfo.vertex_input_state  = capVertexInput;
+        pInfo.primitive_type      = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pInfo.rasterizer_state    = rasterizer;
+        pInfo.multisample_state   = multisample;
+        pInfo.depth_stencil_state = dsDisabled;
+        pInfo.target_info         = tInfo;
+
+        return SDL_CreateGPUGraphicsPipeline(m_device, &pInfo);
+    };
+
+    m_pipelineCapsuleNormal   = makeCapsulePipeline(blendNormal,   m_capsuleFragmentShader);
+    m_pipelineCapsuleMultiply = makeCapsulePipeline(blendMultiply, m_capsuleFragmentShader);
+    m_pipelineCapsuleAdditive = makeCapsulePipeline(blendAdditive, m_capsuleFragmentShader);
+    m_pipelineCapsulePencil   = makeCapsulePipeline(blendNormal,   m_capsulePencilFragmentShader);
+
+    return m_pipelineCapsuleNormal != nullptr &&
+           m_pipelineCapsuleMultiply != nullptr &&
+           m_pipelineCapsuleAdditive != nullptr &&
+           m_pipelineCapsulePencil != nullptr &&
+           m_pipelineNormal != nullptr &&
            m_pipelineNormalCore != nullptr &&
            m_pipelineNormalSkirt != nullptr &&
            m_pipelineMultiplyCore != nullptr &&
@@ -465,6 +612,9 @@ bool GpuInkManager::EnsureCanvasTexture(uint32_t width, uint32_t height) {
 }
 
 bool GpuInkManager::EnsureGeometryBuffers(uint32_t vertexBytes, uint32_t indexBytes) {
+    if (vertexBytes == 0 && indexBytes == 0) {
+        return true;
+    }
     if (vertexBytes > m_vertexCapacity || !m_vertexBuffer || !m_vertexTransfer) {
         uint32_t newCap = std::max({vertexBytes, m_vertexCapacity * 2u, 65536u * static_cast<uint32_t>(sizeof(InkVertex))});
         if (m_vertexBuffer) SDL_ReleaseGPUBuffer(m_device, m_vertexBuffer);
@@ -509,6 +659,36 @@ bool GpuInkManager::EnsureGeometryBuffers(uint32_t vertexBytes, uint32_t indexBy
         m_indexCapacity = newCap;
     }
 
+    return true;
+}
+
+bool GpuInkManager::EnsureCapsuleBuffers(uint32_t capsuleBytes) {
+    if (capsuleBytes == 0) {
+        return true;
+    }
+    if (m_capsuleBuffer && m_capsuleTransfer && m_capsuleCapacity >= capsuleBytes) {
+        return true;
+    }
+
+    uint32_t newCap = std::max({capsuleBytes, m_capsuleCapacity * 2u, 65536u * static_cast<uint32_t>(sizeof(CapsuleInstance))});
+    if (m_capsuleBuffer) SDL_ReleaseGPUBuffer(m_device, m_capsuleBuffer);
+    if (m_capsuleTransfer) SDL_ReleaseGPUTransferBuffer(m_device, m_capsuleTransfer);
+
+    SDL_GPUBufferCreateInfo bufInfo = {};
+    bufInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+    bufInfo.size  = newCap;
+    m_capsuleBuffer = SDL_CreateGPUBuffer(m_device, &bufInfo);
+
+    SDL_GPUTransferBufferCreateInfo tInfo = {};
+    tInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tInfo.size  = newCap;
+    m_capsuleTransfer = SDL_CreateGPUTransferBuffer(m_device, &tInfo);
+
+    if (!m_capsuleBuffer || !m_capsuleTransfer) {
+        m_capsuleCapacity = 0;
+        return false;
+    }
+    m_capsuleCapacity = newCap;
     return true;
 }
 
@@ -839,32 +1019,48 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
 
     const uint32_t vtxBytes = static_cast<uint32_t>(m_stagedVertices.size() * sizeof(InkVertex));
     const uint32_t idxBytes = static_cast<uint32_t>(m_stagedIndices.size() * sizeof(uint32_t));
+    const uint32_t capBytes = static_cast<uint32_t>(m_stagedCapsules.size() * sizeof(CapsuleInstance));
     const uint32_t regionRowBytes = static_cast<uint32_t>(rw) * 4u;
     const uint32_t regionTotalBytes = regionRowBytes * static_cast<uint32_t>(rh);
 
     if (!EnsureCanvasTexture(static_cast<uint32_t>(surfW), static_cast<uint32_t>(surfH)) ||
         !EnsureGeometryBuffers(vtxBytes, idxBytes) ||
+        !EnsureCapsuleBuffers(capBytes) ||
         !EnsureImageTransferBuffers(regionTotalBytes)) {
         BeginBatch();
         return false;
     }
 
-    // 1. Map & copy vertex, index, and backdrop sub-rect into GPU upload transfer buffers
-    void* vtxPtr = SDL_MapGPUTransferBuffer(m_device, m_vertexTransfer, true);
-    if (!vtxPtr) {
-        BeginBatch();
-        return false;
+    // 1. Map & copy vertex, index, capsule, and backdrop sub-rect into GPU upload transfer buffers
+    if (vtxBytes > 0 && m_vertexTransfer) {
+        void* vtxPtr = SDL_MapGPUTransferBuffer(m_device, m_vertexTransfer, true);
+        if (!vtxPtr) {
+            BeginBatch();
+            return false;
+        }
+        std::memcpy(vtxPtr, m_stagedVertices.data(), vtxBytes);
+        SDL_UnmapGPUTransferBuffer(m_device, m_vertexTransfer);
     }
-    std::memcpy(vtxPtr, m_stagedVertices.data(), vtxBytes);
-    SDL_UnmapGPUTransferBuffer(m_device, m_vertexTransfer);
 
-    void* idxPtr = SDL_MapGPUTransferBuffer(m_device, m_indexTransfer, true);
-    if (!idxPtr) {
-        BeginBatch();
-        return false;
+    if (idxBytes > 0 && m_indexTransfer) {
+        void* idxPtr = SDL_MapGPUTransferBuffer(m_device, m_indexTransfer, true);
+        if (!idxPtr) {
+            BeginBatch();
+            return false;
+        }
+        std::memcpy(idxPtr, m_stagedIndices.data(), idxBytes);
+        SDL_UnmapGPUTransferBuffer(m_device, m_indexTransfer);
     }
-    std::memcpy(idxPtr, m_stagedIndices.data(), idxBytes);
-    SDL_UnmapGPUTransferBuffer(m_device, m_indexTransfer);
+
+    if (capBytes > 0 && m_capsuleTransfer) {
+        void* capPtr = SDL_MapGPUTransferBuffer(m_device, m_capsuleTransfer, true);
+        if (!capPtr) {
+            BeginBatch();
+            return false;
+        }
+        std::memcpy(capPtr, m_stagedCapsules.data(), capBytes);
+        SDL_UnmapGPUTransferBuffer(m_device, m_capsuleTransfer);
+    }
 
     void* imgUpPtr = SDL_MapGPUTransferBuffer(m_device, m_imageUploadTransfer, true);
     if (!imgUpPtr) {
@@ -889,13 +1085,23 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
 
     SDL_GPUCopyPass* copyIn = SDL_BeginGPUCopyPass(cmdBuf);
 
-    SDL_GPUTransferBufferLocation vtxLoc = { m_vertexTransfer, 0 };
-    SDL_GPUBufferRegion vtxReg = { m_vertexBuffer, 0, vtxBytes };
-    SDL_UploadToGPUBuffer(copyIn, &vtxLoc, &vtxReg, true);
+    if (vtxBytes > 0 && m_vertexBuffer && m_vertexTransfer) {
+        SDL_GPUTransferBufferLocation vtxLoc = { m_vertexTransfer, 0 };
+        SDL_GPUBufferRegion vtxReg = { m_vertexBuffer, 0, vtxBytes };
+        SDL_UploadToGPUBuffer(copyIn, &vtxLoc, &vtxReg, true);
+    }
 
-    SDL_GPUTransferBufferLocation idxLoc = { m_indexTransfer, 0 };
-    SDL_GPUBufferRegion idxReg = { m_indexBuffer, 0, idxBytes };
-    SDL_UploadToGPUBuffer(copyIn, &idxLoc, &idxReg, true);
+    if (idxBytes > 0 && m_indexBuffer && m_indexTransfer) {
+        SDL_GPUTransferBufferLocation idxLoc = { m_indexTransfer, 0 };
+        SDL_GPUBufferRegion idxReg = { m_indexBuffer, 0, idxBytes };
+        SDL_UploadToGPUBuffer(copyIn, &idxLoc, &idxReg, true);
+    }
+
+    if (capBytes > 0 && m_capsuleBuffer && m_capsuleTransfer) {
+        SDL_GPUTransferBufferLocation capLoc = { m_capsuleTransfer, 0 };
+        SDL_GPUBufferRegion capReg = { m_capsuleBuffer, 0, capBytes };
+        SDL_UploadToGPUBuffer(copyIn, &capLoc, &capReg, true);
+    }
 
     SDL_GPUTextureTransferInfo texUpInfo = {};
     texUpInfo.transfer_buffer = m_imageUploadTransfer;
@@ -914,7 +1120,7 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
     SDL_UploadToGPUTexture(copyIn, &texUpInfo, &texRegion, false);
     SDL_EndGPUCopyPass(copyIn);
 
-    // 3. Execute hardware rasterization pass for all staged InkMesh batches
+    // 3. Execute hardware rasterization pass for all staged batches
     SDL_GPUColorTargetInfo colorTarget = {};
     colorTarget.texture     = m_canvasTexture;
     colorTarget.load_op     = SDL_GPU_LOADOP_LOAD;
@@ -948,85 +1154,116 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
     SDL_Rect scissor = { rx, ry, rw, rh };
     SDL_SetGPUScissor(renderPass, &scissor);
 
-    SDL_GPUBufferBinding vtxBind = { m_vertexBuffer, 0 };
-    SDL_GPUBufferBinding idxBind = { m_indexBuffer, 0 };
-    SDL_BindGPUVertexBuffers(renderPass, 0, &vtxBind, 1);
-    SDL_BindGPUIndexBuffer(renderPass, &idxBind, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    if (!m_drawCommands.empty() && m_vertexBuffer && m_indexBuffer) {
+        SDL_GPUBufferBinding vtxBind = { m_vertexBuffer, 0 };
+        SDL_GPUBufferBinding idxBind = { m_indexBuffer, 0 };
+        SDL_BindGPUVertexBuffers(renderPass, 0, &vtxBind, 1);
+        SDL_BindGPUIndexBuffer(renderPass, &idxBind, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
-    uint8_t currentStencilRef = 0;
-    uint32_t lastStrokeId = 0;
-    bool hasLastStrokeId = false;
-    SDL_GPUGraphicsPipeline* currentPipe = nullptr;
+        uint8_t currentStencilRef = 0;
+        uint32_t lastStrokeId = 0;
+        bool hasLastStrokeId = false;
+        SDL_GPUGraphicsPipeline* currentPipe = nullptr;
 
-    for (auto& dc : m_drawCommands) {
-        dc.uniforms.transform1[2] = static_cast<float>(surfW);
-        dc.uniforms.transform1[3] = static_cast<float>(surfH);
+        for (auto& dc : m_drawCommands) {
+            dc.uniforms.transform1[2] = static_cast<float>(surfW);
+            dc.uniforms.transform1[3] = static_cast<float>(surfH);
 
-        SDL_GPUGraphicsPipeline* wantPipe = m_pipelineNormal;
-        bool usesStencil = false;
+            SDL_GPUGraphicsPipeline* wantPipe = m_pipelineNormal;
+            bool usesStencil = false;
 
-        switch (dc.pipeline) {
-            case PipelineType::NormalOpaque:
-                wantPipe = m_pipelineNormal;
-                break;
-            case PipelineType::NormalCore:
-                wantPipe = m_pipelineNormalCore;
-                usesStencil = true;
-                break;
-            case PipelineType::NormalSkirt:
-                wantPipe = m_pipelineNormalSkirt;
-                usesStencil = true;
-                break;
-            case PipelineType::MultiplyCore:
-                wantPipe = m_pipelineMultiplyCore;
-                usesStencil = true;
-                break;
-            case PipelineType::MultiplySkirt:
-                wantPipe = m_pipelineMultiplySkirt;
-                usesStencil = true;
-                break;
-            case PipelineType::Additive:
-                wantPipe = m_pipelineAdditive;
-                break;
-            case PipelineType::PencilCore:
-                wantPipe = m_pipelinePencilCore;
-                usesStencil = true;
-                break;
-            case PipelineType::PencilSkirt:
-                wantPipe = m_pipelinePencilSkirt;
-                usesStencil = true;
-                break;
-        }
-
-        if (wantPipe != currentPipe) {
-            SDL_BindGPUGraphicsPipeline(renderPass, wantPipe);
-            currentPipe = wantPipe;
-        }
-
-        if (usesStencil && m_depthStencilTexture) {
-            if (!hasLastStrokeId || dc.strokeId != lastStrokeId) {
-                currentStencilRef++;
-                if (currentStencilRef == 255) {
-                    // Stencil reference saturated: restart render pass to clear stencil buffer
-                    SDL_EndGPURenderPass(renderPass);
-                    renderPass = SDL_BeginGPURenderPass(cmdBuf, &colorTarget, 1, pDsTarget);
-                    SDL_SetGPUViewport(renderPass, &gpuVp);
-                    SDL_SetGPUScissor(renderPass, &scissor);
-                    SDL_BindGPUVertexBuffers(renderPass, 0, &vtxBind, 1);
-                    SDL_BindGPUIndexBuffer(renderPass, &idxBind, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-                    currentPipe = nullptr;
-                    SDL_BindGPUGraphicsPipeline(renderPass, wantPipe);
-                    currentPipe = wantPipe;
-                    currentStencilRef = 1;
-                }
-                lastStrokeId = dc.strokeId;
-                hasLastStrokeId = true;
+            switch (dc.pipeline) {
+                case PipelineType::NormalOpaque:
+                    wantPipe = m_pipelineNormal;
+                    break;
+                case PipelineType::NormalCore:
+                    wantPipe = m_pipelineNormalCore;
+                    usesStencil = true;
+                    break;
+                case PipelineType::NormalSkirt:
+                    wantPipe = m_pipelineNormalSkirt;
+                    usesStencil = true;
+                    break;
+                case PipelineType::MultiplyCore:
+                    wantPipe = m_pipelineMultiplyCore;
+                    usesStencil = true;
+                    break;
+                case PipelineType::MultiplySkirt:
+                    wantPipe = m_pipelineMultiplySkirt;
+                    usesStencil = true;
+                    break;
+                case PipelineType::Additive:
+                    wantPipe = m_pipelineAdditive;
+                    break;
+                case PipelineType::PencilCore:
+                    wantPipe = m_pipelinePencilCore;
+                    usesStencil = true;
+                    break;
+                case PipelineType::PencilSkirt:
+                    wantPipe = m_pipelinePencilSkirt;
+                    usesStencil = true;
+                    break;
             }
-            SDL_SetGPUStencilReference(renderPass, currentStencilRef);
-        }
 
-        SDL_PushGPUVertexUniformData(cmdBuf, 0, &dc.uniforms, sizeof(GpuStrokeUniforms));
-        SDL_DrawGPUIndexedPrimitives(renderPass, dc.indexCount, 1, dc.indexOffset, dc.vertexOffset, 0);
+            if (wantPipe != currentPipe) {
+                SDL_BindGPUGraphicsPipeline(renderPass, wantPipe);
+                currentPipe = wantPipe;
+            }
+
+            if (usesStencil && m_depthStencilTexture) {
+                if (!hasLastStrokeId || dc.strokeId != lastStrokeId) {
+                    currentStencilRef++;
+                    if (currentStencilRef == 255) {
+                        SDL_EndGPURenderPass(renderPass);
+                        renderPass = SDL_BeginGPURenderPass(cmdBuf, &colorTarget, 1, pDsTarget);
+                        SDL_SetGPUViewport(renderPass, &gpuVp);
+                        SDL_SetGPUScissor(renderPass, &scissor);
+                        SDL_BindGPUVertexBuffers(renderPass, 0, &vtxBind, 1);
+                        SDL_BindGPUIndexBuffer(renderPass, &idxBind, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+                        currentPipe = nullptr;
+                        SDL_BindGPUGraphicsPipeline(renderPass, wantPipe);
+                        currentPipe = wantPipe;
+                        currentStencilRef = 1;
+                    }
+                    lastStrokeId = dc.strokeId;
+                    hasLastStrokeId = true;
+                }
+                SDL_SetGPUStencilReference(renderPass, currentStencilRef);
+            }
+
+            SDL_PushGPUVertexUniformData(cmdBuf, 0, &dc.uniforms, sizeof(GpuStrokeUniforms));
+            SDL_DrawGPUIndexedPrimitives(renderPass, dc.indexCount, 1, dc.indexOffset, dc.vertexOffset, 0);
+        }
+    }
+
+    // Hardware Capsule SDF Instanced Rendering
+    if (!m_capsuleDrawCommands.empty() && m_capsuleBuffer) {
+        SDL_GPUBufferBinding capBind = { m_capsuleBuffer, 0 };
+        SDL_BindGPUVertexBuffers(renderPass, 0, &capBind, 1);
+
+        SDL_GPUGraphicsPipeline* currentCapPipe = nullptr;
+        for (auto& cdc : m_capsuleDrawCommands) {
+            if (cdc.capsuleCount == 0) continue;
+            cdc.uniforms.transform1[2] = static_cast<float>(surfW);
+            cdc.uniforms.transform1[3] = static_cast<float>(surfH);
+
+            SDL_GPUGraphicsPipeline* wantPipe = m_pipelineCapsuleNormal;
+            if (cdc.isPencil) {
+                wantPipe = m_pipelineCapsulePencil;
+            } else if (cdc.blendMode == BlendMode::Multiply) {
+                wantPipe = m_pipelineCapsuleMultiply;
+            } else if (cdc.blendMode == BlendMode::Additive) {
+                wantPipe = m_pipelineCapsuleAdditive;
+            }
+
+            if (wantPipe != currentCapPipe) {
+                SDL_BindGPUGraphicsPipeline(renderPass, wantPipe);
+                currentCapPipe = wantPipe;
+            }
+
+            SDL_PushGPUVertexUniformData(cmdBuf, 0, &cdc.uniforms, sizeof(GpuStrokeUniforms));
+            SDL_DrawGPUPrimitives(renderPass, 6, cdc.capsuleCount, 0, cdc.capsuleOffset);
+        }
     }
 
     SDL_EndGPURenderPass(renderPass);
@@ -1062,7 +1299,8 @@ bool GpuInkManager::FlushToSurface(BLImage& targetSurface,
 
     m_lastVertexCount   = static_cast<uint32_t>(m_stagedVertices.size());
     m_lastTriangleCount = static_cast<uint32_t>(m_stagedIndices.size() / 3);
-    m_lastDrawCallCount = static_cast<uint32_t>(m_drawCommands.size());
+    m_lastCapsuleCount  = static_cast<uint32_t>(m_stagedCapsules.size());
+    m_lastDrawCallCount = static_cast<uint32_t>(m_drawCommands.size() + m_capsuleDrawCommands.size());
 
     BeginBatch();
     return true;
@@ -1666,7 +1904,8 @@ bool GpuInkManager::FlushToSurfaceGLES(BLImageData& imgData, int surfW, int surf
 
     m_lastVertexCount   = static_cast<uint32_t>(m_stagedVertices.size());
     m_lastTriangleCount = static_cast<uint32_t>(m_stagedIndices.size() / 3);
-    m_lastDrawCallCount = static_cast<uint32_t>(m_drawCommands.size());
+    m_lastCapsuleCount  = static_cast<uint32_t>(m_stagedCapsules.size());
+    m_lastDrawCallCount = static_cast<uint32_t>(m_drawCommands.size() + m_capsuleDrawCommands.size());
 
     BeginBatch();
     return true;
@@ -1677,7 +1916,7 @@ bool GpuInkManager::FlushToContext(BLContext& ctx,
                                    int clipY,
                                    int clipW,
                                    int clipH) {
-    if (m_drawCommands.empty()) {
+    if (m_drawCommands.empty() && m_capsuleDrawCommands.empty()) {
         BeginBatch();
         return false;
     }

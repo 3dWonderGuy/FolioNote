@@ -209,16 +209,19 @@ void LiveInteractionLayer::RenderInFlightInk(BLContext& ctx, const Viewport& vie
 
             if (gpu.HasPendingDraws()) {
                 AABB liveBounds = GetInteractionScreenBounds(viewport);
+                bool flushed = false;
                 if (liveBounds.IsValid() && !liveBounds.IsEmpty()) {
                     int clipX = static_cast<int>(std::floor(liveBounds.minX));
                     int clipY = static_cast<int>(std::floor(liveBounds.minY));
                     int clipW = static_cast<int>(std::ceil(liveBounds.maxX)) - clipX;
                     int clipH = static_cast<int>(std::ceil(liveBounds.maxY)) - clipY;
-                    gpu.FlushToContext(ctx, clipX, clipY, clipW, clipH);
+                    flushed = gpu.FlushToContext(ctx, clipX, clipY, clipW, clipH);
                 } else {
-                    gpu.FlushToContext(ctx);
+                    flushed = gpu.FlushToContext(ctx);
                 }
-                return;
+                if (flushed) {
+                    return;
+                }
             }
         }
 

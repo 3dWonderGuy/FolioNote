@@ -74,7 +74,6 @@ struct Stroke {
     // =========================================================================
     std::vector<Segment1D>               segments;     ///< Swept segment tree for distance hit-testing & eraser slicing
     mutable BLPath                       outlinePath;  ///< Closed 2D polygon contour ribbon for Blend2D rendering / hit-testing
-    mutable Folio::InkMesh               meshCache;    ///< Hardware-accelerated SDL_GPU indexed triangle mesh cache
     mutable std::vector<CapsuleInstance> capsules;     ///< Hardware-accelerated GPU Capsule SDF instances
     AABB                                 bounds;       ///< Axis-aligned bounding box in millimeters (mm) for spatial R-Tree indexing
 
@@ -92,21 +91,11 @@ struct Stroke {
     /**
      * @brief Lazily builds or returns the cached GPU Capsule SDF instances for this stroke.
      */
-    [[nodiscard]] const std::vector<CapsuleInstance>& EnsureCapsules() const {
+    const std::vector<CapsuleInstance>& EnsureCapsules() const {
         if (capsules.empty() && !points.empty()) {
             CapsuleBuilder::BuildCapsuleInstances(points, PackPremultipliedGpuColor(ToColorRgba(color), opacity), capsules);
         }
         return capsules;
-    }
-
-    /**
-     * @brief Lazily builds or returns the cached SDL_GPU indexed triangle mesh for this stroke.
-     */
-    [[nodiscard]] const Folio::InkMesh& EnsureMeshCache() const {
-        if (meshCache.empty() && !points.empty()) {
-            Folio::BuildStrokeMesh(points, capType, Folio::PackGpuColor(color), meshCache, 3.7795f, strokePattern);
-        }
-        return meshCache;
     }
 
     /**

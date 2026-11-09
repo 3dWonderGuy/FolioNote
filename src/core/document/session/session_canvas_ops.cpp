@@ -129,9 +129,8 @@ void DocumentSession::CommitStroke(FinishedStrokeData&& data, const PenTool& too
     }
 
     stroke.capsules = std::move(data.capsules);
-    stroke.meshCache = std::move(data.mesh);
-    if (stroke.meshCache.empty() && !stroke.points.empty()) {
-        Folio::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache, 3.7795f, stroke.strokePattern);
+    if (stroke.capsules.empty() && !stroke.points.empty()) {
+        stroke.EnsureCapsules();
     }
     stroke.segments = std::move(data.liveSegments);
     container->AddStroke(stroke);
@@ -194,7 +193,7 @@ void DocumentSession::CommitStroke(std::vector<Segment1D>&& segments, const PenT
         stroke.points.push_back({ s.p1.x, s.p1.y, s.width * 0.5f });
     }
 
-    Folio::BuildStrokeMesh(stroke.points, tool.capType, Folio::PackGpuColor(tool.color), stroke.meshCache, 3.7795f, tool.strokePattern);
+    stroke.EnsureCapsules();
     Folio::InkPath rawOutline = Folio::InkEngine::BuildStrokeOutline(stroke.points, tool.capType, tool.strokePattern);
     ToBLPath(rawOutline, stroke.outlinePath);
     stroke.segments = std::move(segments);

@@ -271,11 +271,9 @@ void InkContainer::BakeTransform() {
         stroke.outlinePath.reset();
         stroke.capsules.clear();
         if (!stroke.points.empty()) {
-            Folio::BuildStrokeMesh(stroke.points, stroke.capType, Folio::PackGpuColor(stroke.color), stroke.meshCache, 3.7795f, stroke.strokePattern);
             Folio::InkPath path = Folio::InkEngine::BuildStrokeOutline(stroke.points, stroke.capType, stroke.strokePattern);
             ToBLPath(path, stroke.outlinePath);
-        } else {
-            stroke.meshCache.clear();
+            stroke.EnsureCapsules();
         }
     }
 
@@ -328,12 +326,6 @@ void InkContainer::Render(BLContext& ctx, const Viewport& viewport) const {
             if (!caps.empty()) {
                 const bool isPencil = (stroke.penType == PenType::Pencil || stroke.strokePattern == StrokePattern::TexturedPencil);
                 gpu.SubmitCapsules(caps, combinedMatrix, effectiveScale, combinedOpacity, effectiveBlend, currentStrokeId++, isPencil);
-                continue;
-            }
-            const auto& mesh = stroke.EnsureMeshCache();
-            if (!mesh.empty()) {
-                const bool isPencil = (stroke.penType == PenType::Pencil || stroke.strokePattern == StrokePattern::TexturedPencil);
-                gpu.SubmitMesh(mesh, combinedMatrix, effectiveScale, combinedOpacity, effectiveBlend, currentStrokeId++, isPencil);
                 continue;
             }
         }
@@ -462,11 +454,11 @@ bool InkContainer::SliceStrokeAt(double worldX, double worldY, double radius,
                     newStroke.points.push_back(makePointWithTelemetry(s.p1.x, s.p1.y, s.width * 0.5f));
                 }
 
-                Folio::BuildStrokeMesh(newStroke.points, newStroke.capType, Folio::PackGpuColor(newStroke.color), newStroke.meshCache, 3.7795f, newStroke.strokePattern);
                 newStroke.outlinePath.reset();
                 newStroke.capsules.clear();
                 Folio::InkPath newOutline = Folio::InkEngine::BuildStrokeOutline(newStroke.points, newStroke.capType, newStroke.strokePattern);
                 ToBLPath(newOutline, newStroke.outlinePath);
+                newStroke.EnsureCapsules();
                 newStrokes.push_back(std::move(newStroke));
             }
         } else {

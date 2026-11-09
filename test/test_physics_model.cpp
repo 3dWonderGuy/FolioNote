@@ -514,6 +514,32 @@ void TestGpuInkManagerRender() {
               << ", Self-overlap intra-stroke green: " << int(penGreenOverlap) << std::endl;
     assert(penGreenOverlap == penGreenSingle && penGreenSingle == 255);
 
+    // 4. Test Hardware Capsule SDF Rasterization via SDL_GPU
+    std::vector<CapsuleInstance> testCaps;
+    CapsuleBuilder::BuildCapsuleInstances(pts, PackPremultipliedGpuColor(ToColorRgba(inkColor)), testCaps);
+    assert(!testCaps.empty());
+
+    ctx.begin(surface);
+    ctx.set_comp_op(BL_COMP_OP_SRC_COPY);
+    ctx.set_fill_style(BLRgba32(0xFF, 0xFF, 0xFF, 0xFF));
+    ctx.fill_all();
+    ctx.end();
+
+    gpu.BeginBatch();
+    gpu.SubmitCapsules(testCaps, BLMatrix2D::make_identity(), 1.0f, 1.0f, BlendMode::Normal);
+    assert(gpu.HasPendingDraws());
+    bool capOk = gpu.FlushToSurface(surface);
+    assert(capOk);
+    assert(gpu.GetLastCapsuleCount() == testCaps.size());
+
+    surface.get_data(&imgData);
+    const uint8_t* capCenterPx = static_cast<const uint8_t*>(imgData.pixel_data) + 128 * imgData.stride + 128 * 4;
+    std::cout << "  capCenterPx: R=" << int(capCenterPx[2]) << " G=" << int(capCenterPx[1]) << " B=" << int(capCenterPx[0]) << " A=" << int(capCenterPx[3]) << std::endl;
+    assert(std::abs(int(capCenterPx[2]) - 0xE0) <= 4);
+    assert(std::abs(int(capCenterPx[1]) - 0x20) <= 4);
+    assert(std::abs(int(capCenterPx[0]) - 0x10) <= 4);
+    std::cout << "  [Capsule SDF Test] Hardware Capsule SDF Rasterization verified successfully!" << std::endl;
+
     gpu.Shutdown();
     std::cout << "[Test] SDL_GPU InkMesh Hardware Rasterization test passed (100% OK)!" << std::endl;
 }
